@@ -1706,17 +1706,18 @@ void TopBar::setupUniqueBadgeTooltip() {
 		const auto id = (collectible && widget && premium)
 			? collectible->id
 			: uint64();
-		if (_badgeCollectibleId == id) {
+		if (_badgeTooltip && _badgeCollectibleId == id) {
 			return;
 		}
 		hideBadgeTooltip();
-		if (!collectible || _localCollectible) {
+		if (!id || _localCollectible) {
 			return;
 		}
 		_badgeTooltip = std::make_unique<BadgeTooltip>(
 			this,
 			collectible,
 			widget);
+		_badgeCollectibleId = id;
 		const auto raw = _badgeTooltip.get();
 		raw->fade(true);
 		_badgeTooltipHide->callOnce(kGiftBadgeGlares * raw->glarePeriod()
@@ -1731,6 +1732,7 @@ void TopBar::setupUniqueBadgeTooltip() {
 
 void TopBar::hideBadgeTooltip() {
 	_badgeTooltipHide->cancel();
+	_badgeCollectibleId = 0;
 	if (auto old = base::take(_badgeTooltip)) {
 		const auto raw = old.get();
 		_badgeOldTooltips.push_back(std::move(old));
