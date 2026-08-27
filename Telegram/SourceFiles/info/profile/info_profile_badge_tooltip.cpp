@@ -40,7 +40,7 @@ BadgeTooltip::BadgeTooltip(
 , _glareDuration(_glareRange * kGlareDurationStep / _glareSize)
 , _glareTimer([=] { showGlare(); }) {
 	resize(_full + QSize(0, _st.shift));
-	setupGeometry(pointTo);
+	trackWidget(pointTo);
 }
 
 void BadgeTooltip::fade(bool shown) {
@@ -99,7 +99,9 @@ void BadgeTooltip::paintEvent(QPaintEvent *e) {
 	p.drawImage(0, top, _image);
 }
 
-void BadgeTooltip::setupGeometry(not_null<QWidget*> pointTo) {
+void BadgeTooltip::trackWidget(not_null<QWidget*> pointTo) {
+	_trackLifetime.destroy();
+
 	auto widget = pointTo.get();
 	const auto parent = parentWidget();
 
@@ -126,7 +128,7 @@ void BadgeTooltip::setupGeometry(not_null<QWidget*> pointTo) {
 	};
 	refresh();
 	while (widget && widget != parent) {
-		base::install_event_filter(this, widget, [=](not_null<QEvent*> e) {
+		base::install_event_filter(widget, [=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::Resize
 				|| e->type() == QEvent::Move
 				|| e->type() == QEvent::ZOrderChange) {
@@ -134,7 +136,7 @@ void BadgeTooltip::setupGeometry(not_null<QWidget*> pointTo) {
 				raise();
 			}
 			return base::EventFilterResult::Continue;
-		});
+		}, _trackLifetime);
 		widget = widget->parentWidget();
 	}
 }

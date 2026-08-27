@@ -31,12 +31,12 @@ public:
 	void fade(bool shown);
 	void finishAnimating();
 	void setOpacity(float64 opacity);
+	void trackWidget(not_null<QWidget*> pointTo);
 
 	[[nodiscard]] crl::time glarePeriod() const;
 
 private:
 	void paintEvent(QPaintEvent *e) override;
-	void setupGeometry(not_null<QWidget*> pointTo);
 	void prepareImage();
 	void showGlare();
 
@@ -65,6 +65,8 @@ private:
 
 	bool _shown = false;
 	float64 _opacity = 1.;
+	rpl::lifetime _trackLifetime;
+
 };
 
 } // namespace Info::Profile

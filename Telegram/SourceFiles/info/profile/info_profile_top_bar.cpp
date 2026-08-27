@@ -1707,6 +1707,9 @@ void TopBar::setupUniqueBadgeTooltip() {
 			? collectible->id
 			: uint64();
 		if (_badgeTooltip && _badgeCollectibleId == id) {
+			if (widget) {
+				_badgeTooltip->trackWidget(widget);
+			}
 			return;
 		}
 		hideBadgeTooltip();
