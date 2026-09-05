@@ -2959,9 +2959,6 @@ void TopBar::paintUserpic(QPainter &p, const QRect &geometry) {
 		if (!frame.isNull()) {
 			auto hq = PainterHighQualityEnabler(p);
 			p.drawImage(geometry, frame);
-			if (!paused) {
-				update();
-			}
 			return;
 		}
 	}
@@ -3381,7 +3378,9 @@ void TopBar::updateVideoUserpic() {
 		return;
 	}
 	if (!_videoUserpicPlayer) {
-		_videoUserpicPlayer = std::make_unique<Ui::VideoUserpicPlayer>();
+		_videoUserpicPlayer = std::make_unique<Ui::VideoUserpicPlayer>([=] {
+			update();
+		});
 	}
 	_videoUserpicPlayer->setup(_peer, photo);
 }
