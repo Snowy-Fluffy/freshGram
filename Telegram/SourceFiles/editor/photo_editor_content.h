@@ -18,6 +18,7 @@ namespace Editor {
 
 class AudioDiscButton;
 class Crop;
+class ItemVideo;
 class Paint;
 struct Controllers;
 
@@ -52,6 +53,8 @@ public:
 	[[nodiscard]] rpl::producer<> shapeItemDeselections() const;
 	[[nodiscard]] rpl::producer<bool> shapeToolStates() const;
 	[[nodiscard]] rpl::producer<> paintModeRequests() const;
+	[[nodiscard]] auto videoItemSelections() const
+		-> rpl::producer<std::shared_ptr<ItemVideo>>;
 	void applyAspectRatio(float64 ratio);
 	void save(PhotoModifications &modifications);
 
