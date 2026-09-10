@@ -13,6 +13,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Editor {
 
+ItemAnimated *ItemAnimated::asAnimated() {
+	return this;
+}
+
+ItemAnimated::Trim ItemAnimated::trim() const {
+	return {};
+}
+
 Media::Encode::AnimatedEntity ItemAnimated::animatedEntity(
 		const QTransform &sceneToCanvas) const {
 	const auto composed = QTransform().scale(flipped() ? -1. : 1., 1.)
@@ -30,6 +38,7 @@ Media::Encode::AnimatedEntity ItemAnimated::animatedEntity(
 		: (std::atan2(m12, m11) * 180. / M_PI);
 	const auto size = inner.size() * scale;
 	const auto center = composed.map(inner.center());
+	const auto segment = trim();
 	return {
 		.kind = entityKind(),
 		.bytes = content(),
@@ -38,6 +47,8 @@ Media::Encode::AnimatedEntity ItemAnimated::animatedEntity(
 			size),
 		.rotation = rotation,
 		.flipped = mirrored,
+		.from = segment.from,
+		.till = segment.till,
 	};
 }
 
