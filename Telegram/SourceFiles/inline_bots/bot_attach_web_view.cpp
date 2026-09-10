@@ -3099,7 +3099,8 @@ std::unique_ptr<Ui::DropdownMenu> MakeAttachBotsMenu(
 	for (const auto &bot : bots->attachBots()) {
 		if (!addBots
 			|| !bot.inAttachMenu
-			|| !PeerMatchesTypes(peer, bot.user, bot.types)) {
+			|| !PeerMatchesTypes(peer, bot.user, bot.types)
+			|| bot.user->isOldWalletBot()) {
 			continue;
 		}
 		const auto callback = [=] {
