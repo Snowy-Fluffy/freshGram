@@ -250,12 +250,15 @@ Media::Encode::Job ComposeAnimatedJob(
 
 	auto music = std::vector<Media::Encode::MusicTrack>();
 	if (const auto audio = scene->audio()) {
-		music.push_back({
-			.path = audio->path,
-			.bytes = audio->content,
-			.from = audio->from,
-			.till = (audio->till > audio->from) ? audio->till : 0,
-		});
+		if (audio->volume > 0.) {
+			music.push_back({
+				.path = audio->path,
+				.bytes = audio->content,
+				.from = audio->from,
+				.till = (audio->till > audio->from) ? audio->till : 0,
+				.volume = audio->volume,
+			});
+		}
 		longest = std::max(longest, audio->length());
 	}
 	auto base = bake(ExpandCanvas(image, crop));

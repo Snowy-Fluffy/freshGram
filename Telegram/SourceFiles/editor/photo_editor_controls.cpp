@@ -1301,6 +1301,10 @@ void PhotoEditorControls::refreshTimelines() {
 	_audioTimeline->entity()->refreshTrim();
 }
 
+void PhotoEditorControls::refreshAudioVolume() {
+	_audioTimeline->entity()->refreshVolume();
+}
+
 void PhotoEditorControls::commitTimelineEdits() {
 	_videoTimeline->entity()->commitPendingEdit();
 	_audioTimeline->entity()->commitPendingEdit();
@@ -1314,6 +1318,10 @@ rpl::producer<crl::time> PhotoEditorControls::trimLengthChanges() const {
 	return rpl::merge(
 		_videoTimeline->entity()->lengthChanges(),
 		_audioTimeline->entity()->lengthChanges());
+}
+
+rpl::producer<> PhotoEditorControls::audioRemoveRequests() const {
+	return _audioTimeline->entity()->removeRequests();
 }
 
 void PhotoEditorControls::updateTrimShortest() {
