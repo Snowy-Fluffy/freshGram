@@ -155,6 +155,7 @@ EmojiPan {
 	searchBackTextLeft: pixels;
 	searchBackTextTop: pixels;
 	photoButtonIcon: icon;
+	audioButtonIcon: icon;
 	colorAll: IconButton;
 	colorAllLabel: FlatLabel;
 	removeSet: IconButton;
@@ -638,7 +639,8 @@ stickersPhotoButtonHeight: 36px;
 stickersPhotoButtonRadius: 8px;
 stickersPhotoButtonPadding: margins(6px, 0px, 12px, 0px);
 stickersPhotoButtonIconSkip: 4px;
-stickersPhotoButtonFont: font(21px bold);
+stickersPhotoButtonFont: font(14px bold);
+stickersPhotoButtonSkip: 10px;
 mediaPreviewPhotoSkip: 48px;
 
 emojiPanColorAll: IconButton(stickerPanRemoveSet) {
@@ -836,6 +838,7 @@ defaultEmojiPan: EmojiPan {
 	searchBackTextLeft: 40px;
 	searchBackTextTop: 10px;
 	photoButtonIcon: icon {{ "photo_editor/camera-24x24", windowFg }};
+	audioButtonIcon: icon {{ "photo_editor/widget_music", windowFg }};
 	colorAll: emojiPanColorAll;
 	colorAllLabel: emojiPanColorAllLabel;
 	removeSet: stickerPanRemoveSet;

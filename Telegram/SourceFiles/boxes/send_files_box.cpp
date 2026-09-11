@@ -1509,6 +1509,8 @@ void SendFilesBox::pushBlock(int from, int till) {
 			show->session().saveSettings();
 		}
 		*openedOnce = true;
+		const auto videos = (_limits & SendFilesAllow::Videos);
+		const auto animated = videos || (_limits & SendFilesAllow::Gifs);
 		Editor::OpenWithPreparedFile(
 			this,
 			show,
@@ -1517,7 +1519,8 @@ void SendFilesBox::pushBlock(int from, int till) {
 			std::move(done),
 			PhotoSideLimit(true),
 			QSize(),
-			true);
+			animated,
+			videos);
 	};
 	const auto replaceAttachment = [=, show = _show](int index) {
 		applyBlockChanges();
