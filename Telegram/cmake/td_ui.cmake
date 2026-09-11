@@ -277,6 +277,8 @@ PRIVATE
     media/player/media_player_dropdown.cpp
     media/player/media_player_dropdown.h
 
+    media/media_audio_waveform.cpp
+    media/media_audio_waveform.h
     media/media_common.h
 
     menu/gift_resale_filter.cpp
