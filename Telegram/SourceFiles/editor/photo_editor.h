@@ -81,6 +81,7 @@ private:
 	bool _shapeItemSelected = false;
 	bool _videoItemSelected = false;
 	bool _audioSelected = false;
+	bool _matchingDurations = false;
 	bool _colorLineShown = false;
 	rpl::event_stream<PhotoModifications> _done;
 	rpl::event_stream<> _cancel;
