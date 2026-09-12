@@ -58,6 +58,7 @@ public:
 
 private:
 	void keyPressEvent(QKeyEvent *e) override;
+	void keyReleaseEvent(QKeyEvent *e) override;
 	void updateColorPickerVisibility(anim::type animated);
 
 	PhotoModifications _modifications;
