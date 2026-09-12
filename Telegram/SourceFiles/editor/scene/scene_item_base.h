@@ -68,6 +68,7 @@ public:
 		bool flipped = false;
 		int rotation = 0;
 		QSize imageSize;
+		float64 maxSizeRatio = 1.;
 		bool contentMargins = true;
 	};
 
@@ -161,6 +162,7 @@ private:
 
 	const std::shared_ptr<float64> _lastZ;
 	const QSize _imageSize;
+	const float64 _maxSizeRatio;
 	const bool _contentMargins;
 
 	struct {
