@@ -36,6 +36,7 @@ public:
 protected:
 	[[nodiscard]] virtual Media::Encode::AnimatedEntity::Kind entityKind()
 		const = 0;
+	[[nodiscard]] QRectF visibleRect() const override;
 
 	void paintFrame(
 		QPainter *p,
@@ -50,6 +51,7 @@ private:
 		QSize size;
 		bool flipped = false;
 	} _preview;
+	QSize _paintedFrameSize;
 
 };
 
