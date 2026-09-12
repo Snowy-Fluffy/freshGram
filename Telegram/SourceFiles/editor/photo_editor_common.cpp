@@ -234,7 +234,7 @@ Media::Encode::Job ComposeAnimatedJob(
 	auto longest = crl::time(0);
 	auto music = std::vector<Media::Encode::MusicTrack>();
 	for (const auto item : normal) {
-		const auto animated = dynamic_cast<ItemAnimated*>(item);
+		const auto animated = item->asAnimated();
 		if (!animated || !animated->animated()) {
 			run.push_back(item);
 			continue;

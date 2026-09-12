@@ -23,6 +23,9 @@ class PopupMenu;
 
 namespace Editor {
 
+class ItemAction;
+class ItemAnimated;
+
 class NumberedItem : public QGraphicsItem {
 public:
 	enum class Status {
@@ -46,6 +49,9 @@ public:
 
 	void setUndoable(bool undoable);
 	[[nodiscard]] bool undoable() const;
+
+	[[nodiscard]] virtual ItemAction *asAction();
+	[[nodiscard]] virtual ItemAnimated *asAnimated();
 
 	virtual void save(SaveState state);
 	virtual void restore(SaveState state);
