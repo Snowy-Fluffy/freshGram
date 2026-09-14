@@ -8864,6 +8864,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_folder_archive_failed" = "Failed to create archive.";
 "lng_folder_archive_status" = "ZIP archive";
 "lng_folder_archive_unpack" = "Unpack archive";
+"lng_folder_archive_pack" = "Pack into ZIP archive";
 
 // Keys finished
 
