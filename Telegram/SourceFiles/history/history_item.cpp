@@ -8282,6 +8282,8 @@ void HistoryItem::setServiceMessageByAction(const MTPmessageAction &action) {
 		preparePollDeleteAnswer,
 		PrepareEmptyText<MTPDmessageActionRequestedPeerSentMe>,
 		prepareChangeCommunity,
+		PrepareEmptyText<MTPDmessageActionGramTransfer>,
+		PrepareEmptyText<MTPDmessageActionWalletTonConnectRequest>,
 		PrepareErrorText<MTPDmessageActionEmpty>));
 
 	processAction(action);
