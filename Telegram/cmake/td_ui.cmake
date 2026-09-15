@@ -188,6 +188,8 @@ PRIVATE
     editor/editor_audio_menu.h
     editor/editor_crop.cpp
     editor/editor_crop.h
+    editor/editor_link_pill.cpp
+    editor/editor_link_pill.h
     editor/editor_layer_widget.cpp
     editor/editor_layer_widget.h
     editor/editor_trim_timeline.cpp
@@ -207,6 +209,8 @@ PRIVATE
     editor/scene/scene_item_image.h
     editor/scene/scene_item_line.cpp
     editor/scene/scene_item_line.h
+    editor/scene/scene_item_link.cpp
+    editor/scene/scene_item_link.h
     editor/scene/scene_item_shape.cpp
     editor/scene/scene_item_shape.h
     editor/scene/scene_item_text.cpp
