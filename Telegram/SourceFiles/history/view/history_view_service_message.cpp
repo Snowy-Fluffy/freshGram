@@ -635,8 +635,7 @@ QSize Service::performCountCurrentSize(int newWidth) {
 		}
 	}
 
-	const auto item = data();
-	if (const auto keyboard = item->inlineReplyKeyboard()) {
+	if (const auto keyboard = inlineReplyKeyboard()) {
 		const auto keyboardWidth = mediaDisplayed ? media->width() : contentWidth;
 		const auto keyboardHeight = st::msgBotKbButton.margin + keyboard->naturalHeight();
 		newHeight += keyboardHeight;
@@ -771,8 +770,7 @@ void Service::draw(Painter &p, const PaintContext &context) const {
 		p.translate(-reactionsPosition);
 	}
 
-	const auto item = data();
-	const auto keyboard = item->inlineReplyKeyboard();
+	const auto keyboard = inlineReplyKeyboard();
 	if (keyboard) {
 		// We need to count geometry without keyboard for bubble selection
 		// intervals counting below.
@@ -935,7 +933,7 @@ TextState Service::textState(QPoint point, StateRequest request) const {
 		}
 	}
 
-	auto keyboard = item->inlineReplyKeyboard();
+	auto keyboard = inlineReplyKeyboard();
 	auto keyboardHeight = 0;
 	if (keyboard) {
 		keyboardHeight = keyboard->naturalHeight();
