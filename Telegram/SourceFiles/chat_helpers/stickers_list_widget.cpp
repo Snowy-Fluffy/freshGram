@@ -336,6 +336,10 @@ rpl::producer<> StickersListWidget::audioRequests() const {
 	return _audioRequests.events();
 }
 
+rpl::producer<> StickersListWidget::linkRequests() const {
+	return _linkRequests.events();
+}
+
 rpl::producer<> StickersListWidget::scrollUpdated() const {
 	return _scrollUpdated.events();
 }
@@ -1005,6 +1009,12 @@ StickersListWidget::MakeMediaButtons(
 		button.textWidth = st::stickersPhotoButtonFont->width(button.text);
 		result.push_back(std::move(button));
 	};
+	if (features.linkButton) {
+		add(
+			MediaButton::Kind::Link,
+			tr::lng_link_header_short(tr::now),
+			&st.linkButtonIcon);
+	}
 	if (features.photoButton) {
 		add(
 			MediaButton::Kind::Photo,
@@ -2959,6 +2969,8 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 					_photoRequests.fire({});
 				} else if (kind == MediaButton::Kind::Audio) {
 					_audioRequests.fire({});
+				} else if (kind == MediaButton::Kind::Link) {
+					_linkRequests.fire({});
 				}
 			}
 			return;
