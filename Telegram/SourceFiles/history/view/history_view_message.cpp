@@ -1937,7 +1937,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	const auto customHighlight = mediaDisplayed && media->customHighlight();
 	if (!mediaSelectionIntervals.empty() || customHighlight) {
 		auto localMediaBottom = gForIntervals.top() + gForIntervals.height();
-		if (data()->repliesAreComments() || data()->externalReply()) {
+		if (hasCommentsButton()) {
 			localMediaBottom -= st::historyCommentsButtonHeight;
 		}
 		if (_viewButton) {
@@ -2332,6 +2332,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 			media->paintBubbleFireworks(p, g, context.now);
 		}
 	} else if (media && media->isDisplayed()) {
+		_lastMediaPosition = g.topLeft();
 		p.translate(g.topLeft());
 		media->draw(p, context.translated(
 			-g.topLeft()
@@ -2453,7 +2454,7 @@ void Message::paintCommentsButton(
 		return;
 	}
 
-	if (!data()->repliesAreComments() && !data()->externalReply()) {
+	if (!hasCommentsButton()) {
 		return;
 	}
 	if (!_comments) {
@@ -3386,7 +3387,6 @@ PointState Message::pointState(QPoint point) const {
 	}
 
 	const auto media = this->media();
-	const auto item = data();
 	const auto reactionsInBubble = _reactions && embedReactionsInBubble();
 	if (drawBubble()) {
 		if (!g.contains(point)) {
@@ -3401,7 +3401,7 @@ PointState Message::pointState(QPoint point) const {
 			auto mediaOnBottom = (mediaDisplayed && media->isBubbleBottom()) || check || (entry/* && entry->isBubbleBottom()*/);
 			auto mediaOnTop = (mediaDisplayed && media->isBubbleTop()) || (entry && entry->isBubbleTop());
 
-			if (item->repliesAreComments() || item->externalReply()) {
+			if (hasCommentsButton()) {
 				g.setHeight(g.height() - st::historyCommentsButtonHeight);
 			}
 
@@ -4004,6 +4004,7 @@ bool Message::hasFromPhoto() const {
 	case Context::History:
 	case Context::ChatPreview:
 	case Context::TTLViewer:
+	case Context::MediaEditor:
 	case Context::Pinned:
 	case Context::Replies:
 	case Context::SavedSublist:
@@ -4013,8 +4014,9 @@ bool Message::hasFromPhoto() const {
 			return false;
 		} else if (item->isPostHidingAuthor()) {
 			return false;
-		} else if (item->isPost()) {
-			return true;
+		if (item->isPost()) {
+			return (context() == Context::MediaEditor)
+				|| !item->isPostHidingAuthor();
 		} else if (item->isEmpty()
 			|| item->isFakeAboutView()
 			|| isCommentsRootView()) {
@@ -5983,6 +5985,7 @@ bool Message::hasFromName() const {
 	case Context::History:
 	case Context::ChatPreview:
 	case Context::TTLViewer:
+	case Context::MediaEditor:
 	case Context::Pinned:
 	case Context::Replies:
 	case Context::SavedSublist:
@@ -6184,7 +6187,9 @@ std::optional<QSize> Message::rightActionSize() const {
 		return {};
 	}
 
-	if (displayRightActionComments()) {
+	if (context() == Context::MediaEditor) {
+		return std::nullopt;
+	} else if (displayRightActionComments()) {
 		const auto views = data()->Get<HistoryMessageViews>();
 		Assert(views != nullptr);
 		return (views->repliesSmall.textWidth > 0)
@@ -7094,7 +7099,7 @@ int Message::resizeContentGetHeight(int newWidth) {
 			newHeight += (bottomInfoHeight - st::msgDateFont->height);
 		}
 
-		if (item->repliesAreComments() || item->externalReply()) {
+		if (hasCommentsButton()) {
 			if (!AyuFeatures::MessageShot::isTakingShot()) {
 				newHeight += st::historyCommentsButtonHeight;
 			}
@@ -7544,6 +7549,7 @@ const HistoryMessageEdited *Message::displayedEditBadge() const {
 
 void Message::ensureSummarizeButton() const {
 	if (data()->canBeSummarized()
+		&& (context() != Context::MediaEditor)
 		/*&& item->originalText().text.size() >= kSummarizeThreshold*/) {
 		if (!_summarize) {
 			_summarize

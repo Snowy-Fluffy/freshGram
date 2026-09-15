@@ -1019,8 +1019,7 @@ bool GroupedMedia::computeNeedBubble() const {
 		return true;
 	}
 	if (const auto item = _parent->data()) {
-		if (item->repliesAreComments()
-			|| item->externalReply()
+		if (_parent->hasCommentsButton()
 			|| item->viaBot()
 			|| _parent->displayReply()
 			|| _parent->displayForwardedFrom()

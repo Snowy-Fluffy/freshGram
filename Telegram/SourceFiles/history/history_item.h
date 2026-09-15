@@ -370,6 +370,9 @@ public:
 	[[nodiscard]] bool isFreshRestored() const {
 		return _deleted && isLocal() && !isService();
 	}
+	[[nodiscard]] bool isFakeHistoryItem() const {
+		return _flags & MessageFlag::FakeHistoryItem;
+	}
 	[[nodiscard]] bool canBeSelected() const;
 	[[nodiscard]] bool isFakeAboutView() const {
 		return _flags & MessageFlag::FakeAboutView;
