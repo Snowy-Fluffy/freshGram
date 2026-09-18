@@ -2363,6 +2363,10 @@ void Widget::updateSuggestions(anim::type animated) {
 			closeSuggestions();
 		}, _suggestions->lifetime());
 
+		_suggestions->persistReleased() | rpl::on_next([=] {
+			processSearchFocusChange();
+		}, _suggestions->lifetime());
+
 		updateControlsGeometry();
 
 		_suggestions->show(animated, [=] {
