@@ -329,6 +329,8 @@ std::vector<TextPart> ParseText(
 			[](const MTPDmessageEntityBlockquote&) {
 				return Type::Blockquote; },
 			[](const MTPDmessageEntityBankCard&) { return Type::BankCard; },
+			[](const MTPDmessageEntityTonAddress&) {
+				return Type::TonAddress; },
 			[](const MTPDmessageEntitySpoiler&) { return Type::Spoiler; },
 			[](const MTPDmessageEntityCustomEmoji&) { return Type::CustomEmoji; },
 			[](const MTPDmessageEntityFormattedDate&) { return Type::Unknown; },
@@ -617,7 +619,7 @@ RichText ParseRichText(const MTPRichText &text) {
 	}, [](const MTPDtextBankCard &data) {
 		return ParseRichTextWrapper(Type::BankCard, data.vtext());
 	}, [](const MTPDtextTonAddress &data) {
-		return ParseRichText(data.vtext());
+		return ParseRichTextWrapper(Type::TonAddress, data.vtext());
 	}, [](const MTPDtextMentionName &data) {
 		auto result = ParseRichTextWrapper(Type::MentionName, data.vtext());
 		result.id = uint64(data.vuser_id().v);
