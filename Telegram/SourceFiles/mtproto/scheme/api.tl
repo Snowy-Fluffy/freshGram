@@ -1650,7 +1650,7 @@ messageExtendedMedia#ee479c64 media:MessageMedia = MessageExtendedMedia;
 
 stickerKeyword#fcfeb29c document_id:long keyword:Vector<string> = StickerKeyword;
 
-username#b4073647 flags:# editable:flags.0?true active:flags.1?true username:string = Username;
+username#b4073647 flags:# editable:flags.0?true active:flags.1?true deletable:flags.2?true expired:flags.3?true username:string = Username;
 
 forumTopicDeleted#23f109b id:int = ForumTopic;
 forumTopic#fcdad815 flags:# my:flags.1?true closed:flags.2?true pinned:flags.3?true short:flags.5?true hidden:flags.6?true title_missing:flags.7?true id:int date:int peer:Peer title:string icon_color:int icon_emoji_id:flags.0?long top_message:int read_inbox_max_id:int read_outbox_max_id:int unread_count:int unread_mentions_count:int unread_reactions_count:int unread_poll_votes_count:int from_id:Peer notify_settings:PeerNotifySettings draft:flags.4?DraftMessage = ForumTopic;
@@ -2310,7 +2310,7 @@ walletTransactionPeerUser#d4ea706d flags:# user_id:long address:string domain:fl
 walletTransactionPeerAddress#62cc1bc flags:# address:string domain:flags.0?string = WalletTransactionPeer;
 walletTransactionPeerUnsupported#728bed5a = WalletTransactionPeer;
 
-walletTransaction#6f9986a1 flags:# incoming:flags.0?true failed:flags.2?true key_change:flags.5?true comment_encrypted:flags.6?true id:string amount:long fee:long date:int peer:WalletTransactionPeer comment:flags.3?string tx_hash:flags.4?string = WalletTransaction;
+walletTransaction#952dc143 flags:# incoming:flags.0?true gasless:flags.1?true failed:flags.2?true key_change:flags.5?true comment_encrypted:flags.6?true id:string amount:long fee:long date:int peer:WalletTransactionPeer comment:flags.3?string tx_hash:flags.4?string nft:flags.7?wallet.NftItem = WalletTransaction;
 
 wallet.transactions#4322d5a5 flags:# balance:long transactions:Vector<WalletTransaction> next_offset:flags.0?string chats:Vector<Chat> users:Vector<User> = wallet.Transactions;
 
@@ -2340,6 +2340,16 @@ tonConnectRequest#a15f8513 flags:# session_id:long msg_id:int body:bytes expires
 wallet.tonConnectPending#85c0f124 session:TonConnectSession requests:Vector<TonConnectRequest> = wallet.TonConnectPending;
 
 wallet.tonConnectSessions#e1f6896 sessions:Vector<TonConnectSession> = wallet.TonConnectSessions;
+
+wallet.existingBalance#bde90a8d flags:# has_balance:flags.0?true url:string = wallet.ExistingBalance;
+
+wallet.nftAttribute#4c1ef10e trait_type:string value:string = wallet.NftAttribute;
+
+wallet.nftItem#3441fd1c flags:# collection_address:flags.0?string address:string owner_address:string index:string name:flags.1?string description:flags.2?string image:flags.3?WebDocument image_small:flags.4?WebDocument content_url:flags.5?WebDocument lottie:flags.6?WebDocument attributes:flags.7?Vector<wallet.NftAttribute> extra:flags.8?DataJSON = wallet.NftItem;
+
+wallet.nftItems#794d486f flags:# items:Vector<wallet.NftItem> next_offset:flags.0?string = wallet.NftItems;
+
+auth.firebasePnvIntent#df5ac00c nonce:string digital_credential_payload:string = auth.FirebasePnvIntent;
 
 ---functions---
 
@@ -3207,7 +3217,8 @@ wallet.enableBackup#4500c525 flags:# parts:Vector<bytes> new_public_key:flags.1?
 wallet.getProofChallenge#2025e697 = wallet.ProofChallenge;
 wallet.sendTransfer#d9e5d9e2 flags:# data_normal:bytes data_gasless:flags.0?bytes user_id:InputUser random_id:long = Updates;
 wallet.getGaslessInfo#742df0a1 = Updates;
-wallet.getExistingWaltBalance#628746e3 = Bool;
+wallet.getExistingWaltBalance#691f4360 = wallet.ExistingBalance;
+wallet.getNfts#8c12f3a4 offset:string limit:int = wallet.NftItems;
 wallet.tonConnectCreateSession#cc931046 dapp_client_id:string manifest_url:string = TonConnectSession;
 wallet.tonConnectRegisterKey#338bcf1c session_id:long client_id:string = wallet.TonConnectChallenge;
 wallet.tonConnectSubmitConnectResult#c2c00779 flags:# error:flags.0?true session_id:long challenge_answer:bytes body:bytes trace_id:flags.1?string = Bool;
