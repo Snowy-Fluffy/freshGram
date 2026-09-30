@@ -278,6 +278,25 @@ int WideChatWidth() {
 	return st::msgMaxWidth + 2 * st::msgPhotoSkip + 2 * st::msgMargin.left();
 }
 
+bool ServiceAllowsSwipeReply(not_null<const HistoryItem*> item) {
+	if (item->Has<HistoryServiceGramTransfer>()) {
+		return true;
+	}
+	const auto media = item->media();
+	const auto gift = media ? media->gift() : nullptr;
+	if (!gift) {
+		return false;
+	}
+	using Type = Data::GiftType;
+	const auto types = std::array{
+		Type::Premium,
+		Type::Credits,
+		Type::Ton,
+		Type::StarGift,
+	};
+	return ranges::contains(types, gift->type);
+}
+
 void ServiceMessagePainter::PaintDate(
 		Painter &p,
 		not_null<const Ui::ChatStyle*> st,
@@ -723,6 +742,13 @@ void Service::draw(Painter &p, const PaintContext &context) const {
 
 	paintHighlight(p, context, g.height());
 
+	const auto gestureShift = context.gestureHorizontal.visualTranslationFor(
+		data()->id.bare);
+	const auto block = g;
+	if (gestureShift) {
+		p.translate(gestureShift, 0);
+	}
+
 	p.setTextPalette(st->serviceTextPalette());
 
 	const auto media = this->media();
@@ -838,6 +864,23 @@ void Service::draw(Painter &p, const PaintContext &context) const {
 		p.translate(position);
 		media->draw(p, context.translated(-position).withSelection({}));
 		p.translate(-position);
+	}
+	if (gestureShift) {
+		p.translate(-gestureShift, 0);
+		if (context.reactionInfo && context.reactionInfo->effectPaint) {
+			context.reactionInfo->effectOffset += QPoint(gestureShift, 0);
+		}
+		const auto blockWidth = std::max(
+			onlyMedia ? 0 : std::min(maxWidth(), block.width()),
+			mediaDisplayed ? media->width() : 0);
+		paintSwipeReplyIcon(
+			p,
+			context,
+			QRect(
+				block.x() + (block.width() - blockWidth) / 2,
+				block.y(),
+				blockWidth,
+				block.height()));
 	}
 }
 
