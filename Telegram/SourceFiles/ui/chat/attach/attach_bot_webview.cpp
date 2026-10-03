@@ -3391,7 +3391,6 @@ void Panel::processButtonMessage(
 		sendExternalShellButton(
 			(&button == &_mainButton) ? "main" : "secondary",
 			args);
-		sendViewport();
 		return;
 	}
 

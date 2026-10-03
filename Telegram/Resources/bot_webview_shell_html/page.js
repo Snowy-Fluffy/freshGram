@@ -64,6 +64,7 @@
 	let reloadSupported = false;
 	let reloadTimeout = null;
 	let viewportScheduled = false;
+	let sentViewportHeight = -1;
 	let dragRegionsScheduled = false;
 	let sentDragRegions = '';
 	let resizeObserver = null;
@@ -217,6 +218,10 @@
 		const height = Math.max(
 			0,
 			Math.round(frameShell.getBoundingClientRect().height));
+		if (height === sentViewportHeight) {
+			return;
+		}
+		sentViewportHeight = height;
 		postToFrame('viewport_changed', {
 			height: height,
 			is_state_stable: true,
@@ -914,6 +919,7 @@
 			}
 			setFrameLoaded(true);
 			flushPendingEvents();
+			sentViewportHeight = -1;
 			scheduleViewport();
 		});
 		setFrameLoaded(false);
@@ -1086,6 +1092,7 @@
 			if (!isNativeToken(token)) {
 				return;
 			}
+			sentViewportHeight = -1;
 			scheduleViewport();
 		}
 	};
