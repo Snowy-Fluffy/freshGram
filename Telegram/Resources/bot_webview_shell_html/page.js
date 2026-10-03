@@ -272,8 +272,6 @@
 		setMetric('--button-height', data.buttonHeight);
 		setMetric('--button-gap-x', data.buttonGapX);
 		setMetric('--button-gap-y', data.buttonGapY);
-		setMetric('--disclosure-skip', data.disclosureSkip);
-		setMetric('--footer-button-skip', data.footerButtonSkip);
 		setMetric('--fullscreen-control-width', data.fullscreenControlWidth);
 		setMetric('--fullscreen-control-height', data.fullscreenControlHeight);
 		setMetric('--fullscreen-control-top', data.fullscreenControlTop);
@@ -524,13 +522,6 @@
 		disclosure.classList.remove('visible');
 		buttonsWrap.classList.toggle('visible', hasButtons);
 		footer.classList.toggle('visible', hasButtons);
-		root.style.setProperty(
-			'--footer-gap',
-			shellState.isFullscreen
-				? '0px'
-				: hasButtons
-				? 'var(--footer-button-skip)'
-				: 'var(--disclosure-skip)');
 		scheduleViewport();
 	}
 
