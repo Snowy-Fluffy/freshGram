@@ -2181,6 +2181,12 @@ bool Panel::createWebview(const Webview::ThemeParams &params) {
 	_headerColorReceived = false;
 	_bodyColorReceived = false;
 	_bottomColorReceived = false;
+	_headerColorLifetime.destroy();
+	_bodyColorLifetime.destroy();
+	_bottomBarColorLifetime.destroy();
+	_externalShellColorState = {};
+	_bottomBarColor = std::nullopt;
+	_widget->overrideBottomBarColor(std::nullopt);
 	updateColorOverrides(params);
 	if (!_externalShell) {
 		createWebviewBottom();
