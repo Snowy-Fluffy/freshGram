@@ -75,6 +75,7 @@ private:
 	};
 
 	void closeEntry(SeparatePanel *panel);
+	void hidePanel(base::unique_qptr<SeparatePanel> panel);
 	void hideAllPanels();
 
 	std::vector<Entry> _entries;
@@ -83,6 +84,7 @@ private:
 	Platform::ForeignParent _transientParent;
 	rpl::event_stream<> _boxAdded;
 	rpl::event_stream<> _boxClosed;
+	std::vector<base::unique_qptr<SeparatePanel>> _closing;
 
 };
 
