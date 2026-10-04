@@ -1493,7 +1493,6 @@ void Panel::requestActivate() {
 
 void Panel::toggleProgress(bool shown) {
 	if (_externalShell) {
-		sendExternalShellMethod("setProgress", { { u"shown"_q, shown } });
 		return;
 	}
 	if (!_progress) {
