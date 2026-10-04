@@ -962,7 +962,7 @@
 			applyChrome(data || {});
 			shellState.bottomText = '';
 			title.textContent = (data && data.title) || '';
-			document.title = (data && data.title) || 'Telegram';
+			document.title = (data && data.windowTitle) || 'Telegram';
 			sameOrigin = !!(data && data.sameOrigin);
 			frameUrl = (data && data.url) || 'about:blank';
 			frameOrigin = sameOrigin ? originFromUrl(frameUrl) : '';
@@ -987,7 +987,7 @@
 				return;
 			}
 			title.textContent = (data && data.title) || '';
-			document.title = (data && data.title) || 'Telegram';
+			document.title = (data && data.windowTitle) || 'Telegram';
 		},
 		setChrome: function(data, token) {
 			if (!isNativeToken(token)) {
