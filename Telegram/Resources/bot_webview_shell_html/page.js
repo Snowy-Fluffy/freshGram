@@ -13,7 +13,6 @@
 	const menuBackdrop = document.getElementById('menu-backdrop');
 	const menu = document.getElementById('menu');
 	const menuList = document.getElementById('menu-list');
-	const blocker = document.getElementById('blocker');
 	const title = document.getElementById('title');
 	const controls = {
 		back: document.getElementById('back'),
@@ -828,14 +827,6 @@
 	});
 
 	menuBackdrop.addEventListener('mousedown', closeMenu);
-	blocker.addEventListener('click', function(event) {
-		if (!event.isTrusted || !shellState.blocked) {
-			return;
-		}
-		invokeShell('shell_close_layer', {});
-		event.preventDefault();
-		event.stopPropagation();
-	});
 
 	document.addEventListener('mousedown', function(event) {
 		if (!shellState.menuOpen) {

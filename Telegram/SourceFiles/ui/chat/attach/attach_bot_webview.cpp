@@ -2085,16 +2085,6 @@ void Panel::setExternalShellBlocked(bool blocked) {
 	}
 }
 
-void Panel::closeExternalShellLayer() {
-	if (!_externalShell) {
-		return;
-	}
-	if (_externalLayer) {
-		_externalLayer->hideLayers(anim::type::normal);
-	}
-	closeExternalShellPopup();
-}
-
 void Panel::closeExternalShellPopup() {
 	if (const auto close = base::take(_closeExternalShellPopup)) {
 		close();
@@ -2440,8 +2430,6 @@ bool Panel::createWebview(const Webview::ThemeParams &params) {
 				if (name.isString()) {
 					requestExternalShellButtonEmoji(name.toString());
 				}
-			} else if (command == "shell_close_layer") {
-				closeExternalShellLayer();
 			}
 			return;
 		}
