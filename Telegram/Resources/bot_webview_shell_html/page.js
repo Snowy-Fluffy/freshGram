@@ -26,7 +26,6 @@
 		badgeVisible: false,
 		bottomText: '',
 		isFullscreen: false,
-		blocked: false,
 		menuOpen: false,
 		menuItems: [],
 		buttons: {
@@ -591,7 +590,7 @@
 			node.type = 'button';
 			setupRipple(node);
 			node.addEventListener('click', function(event) {
-				if (!shellState.blocked && event.isTrusted) {
+				if (event.isTrusted) {
 					invokeShell('shell_menu_action', { id: item.id });
 					closeMenu();
 				}
@@ -701,9 +700,6 @@
 
 	function toggleMenu(event) {
 		if (event && !event.isTrusted) {
-			return;
-		}
-		if (shellState.blocked) {
 			return;
 		}
 		if (shellState.menuOpen) {
@@ -1053,16 +1049,6 @@
 			state.iconResolvedGeneration = state.iconGeneration;
 			state.iconUrl = (icon && icon.url) ? icon.url : '';
 			renderButtons();
-		},
-		setBlocked: function(data, token) {
-			if (!isNativeToken(token)) {
-				return;
-			}
-			shellState.blocked = !!(data && data.blocked);
-			root.classList.toggle('blocked', shellState.blocked);
-			if (shellState.blocked) {
-				closeMenu();
-			}
 		},
 		reloadFrame: function(data, token) {
 			if (!isNativeToken(token)) {

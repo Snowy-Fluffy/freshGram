@@ -242,7 +242,7 @@ private:
 	void requestExternalShellButtonEmoji(const QString &name);
 	void applyExternalShellFullscreen(bool fullscreen);
 	void sendExternalShellChrome();
-	void setExternalShellBlocked(bool blocked);
+	void setWebviewBlocked(bool blocked);
 	void closeExternalShellPopup();
 	[[nodiscard]] ExternalShellAnchor externalShellAnchor() const;
 	void showPopup(
@@ -333,7 +333,7 @@ private:
 	const not_null<Delegate*> _delegate;
 	QString _externalUrl;
 	QString _externalTitle;
-	int _externalBlockCount = 0;
+	int _webviewBlockCount = 0;
 	bool _closeNeedConfirmation = false;
 	bool _hasSettingsButton = false;
 	bool _externalTitleBadgeVisible = false;
