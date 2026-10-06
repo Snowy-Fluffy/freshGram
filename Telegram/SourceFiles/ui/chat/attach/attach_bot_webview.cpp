@@ -2518,15 +2518,17 @@ bool Panel::createWebview(const Webview::ThemeParams &params) {
 		}
 	});
 
-	raw->setNavigationStartHandler([=](const QString &uri, bool newWindow) {
+	raw->setNavigationPolicyHandler([=](const QString &uri, bool newWindow) {
 		if (_delegate->botHandleLocalUri(uri, false)) {
 			return false;
 		} else if (newWindow) {
 			return true;
 		}
 		_currentOrigin = OriginFromUrl(uri);
-		showWebviewProgress();
 		return true;
+	});
+	raw->setNavigationStartHandler([=] {
+		showWebviewProgress();
 	});
 	raw->setNavigationDoneHandler([=](bool success) {
 		hideWebviewProgress();
