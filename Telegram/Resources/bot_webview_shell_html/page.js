@@ -10,7 +10,7 @@
 	const buttonsWrap = document.getElementById('buttons-wrap');
 	const buttons = document.getElementById('buttons');
 	const badge = document.getElementById('badge');
-	const menuBackdrop = document.getElementById('menu-backdrop');
+	const pointerShield = document.getElementById('pointer-shield');
 	const menu = document.getElementById('menu');
 	const menuList = document.getElementById('menu-list');
 	const title = document.getElementById('title');
@@ -681,7 +681,7 @@
 			shellState.menuOpen
 				&& shellState.menuVisible
 				&& !!shellState.menuItems.length);
-		menuBackdrop.classList.toggle(
+		pointerShield.classList.toggle(
 			'visible',
 			menu.classList.contains('visible'));
 		controls.menu.classList.toggle(
@@ -782,16 +782,23 @@
 			}
 			const rect = button.getBoundingClientRect();
 			addRipple(button, event.clientX - rect.left, event.clientY - rect.top);
-		});
-		button.addEventListener('mouseup', function() {
-			if (!button.rippleHeld) {
-				stopRipples(button);
-			}
-		});
-		button.addEventListener('mouseleave', function() {
-			if (!button.rippleHeld) {
-				stopRipples(button);
-			}
+			// The shield keeps the release over the frame in this document.
+			button.classList.add('pressed');
+			pointerShield.classList.add('held');
+			const release = function(event) {
+				if (event.type === 'mouseup' && event.button !== 0) {
+					return;
+				}
+				window.removeEventListener('mouseup', release, true);
+				window.removeEventListener('blur', release);
+				button.classList.remove('pressed');
+				pointerShield.classList.remove('held');
+				if (!button.rippleHeld) {
+					stopRipples(button);
+				}
+			};
+			window.addEventListener('mouseup', release, true);
+			window.addEventListener('blur', release);
 		});
 	}
 
@@ -822,7 +829,7 @@
 		invokeWebApp(message.eventType, message.eventData, event.origin);
 	});
 
-	menuBackdrop.addEventListener('mousedown', closeMenu);
+	pointerShield.addEventListener('mousedown', closeMenu);
 	window.addEventListener('blur', closeMenu);
 
 	document.addEventListener('mousedown', function(event) {
@@ -832,7 +839,7 @@
 		const target = event.target;
 		if (menu.contains(target)
 			|| controls.menu.contains(target)
-			|| menuBackdrop.contains(target)) {
+			|| pointerShield.contains(target)) {
 			return;
 		}
 		closeMenu();
