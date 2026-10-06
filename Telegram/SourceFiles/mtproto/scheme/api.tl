@@ -3205,7 +3205,7 @@ wallet.disableBackup#b0bf0da flags:# password:flags.0?InputCheckPasswordSRP new_
 wallet.getBackupHolderDcs#d179d494 = Vector<wallet.HolderDc>;
 wallet.enableBackup#4500c525 flags:# parts:Vector<bytes> new_public_key:flags.1?bytes proof:flags.2?WalletOwnershipProof = WalletState;
 wallet.getProofChallenge#2025e697 = wallet.ProofChallenge;
-wallet.sendTransfer#d37d8fdb flags:# data_normal:bytes data_gasless:flags.0?bytes random_id:long = Updates;
+wallet.sendTransfer#d9e5d9e2 flags:# data_normal:bytes data_gasless:flags.0?bytes user_id:InputUser random_id:long = Updates;
 wallet.getGaslessInfo#742df0a1 = Updates;
 wallet.getExistingWaltBalance#628746e3 = Bool;
 wallet.tonConnectCreateSession#cc931046 dapp_client_id:string manifest_url:string = TonConnectSession;
