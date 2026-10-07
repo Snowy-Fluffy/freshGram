@@ -37,6 +37,7 @@ namespace Webview {
 struct Available;
 struct PopupArgs;
 struct PopupResult;
+enum class PermissionType;
 } // namespace Webview
 
 namespace Ui::Text {
@@ -289,6 +290,7 @@ private:
 	void replyRequestWriteAccess(bool allowed);
 	void requestPhone();
 	void replyRequestPhone(bool shared);
+	void requestPermission(Webview::PermissionType type, Fn<void(bool)> done);
 	void invokeCustomMethod(const QJsonObject &args);
 	void replyCustomMethod(QJsonValue requestId, QJsonObject response);
 	void requestClipboardText(const QJsonObject &args);
