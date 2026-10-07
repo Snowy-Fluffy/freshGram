@@ -1645,7 +1645,8 @@ void HistoryWidget::offerRichPaste(not_null<const QMimeData*> data) {
 	const auto tail = cursor.document()->characterCount() - till;
 	crl::on_main(this, [=] {
 		const auto now = _field->getTextWithTags();
-		if (now == was) {
+		if (now == was
+			|| !_richPasteOfferThrottle.take()) {
 			return;
 		}
 		ChatHelpers::ShowRichPasteToast({
