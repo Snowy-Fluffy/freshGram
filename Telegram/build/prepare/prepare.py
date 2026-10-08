@@ -1983,11 +1983,9 @@ release:
 """)
 
 stage('tlottie', """
-depends:patches/tlottie.patch
     git clone https://github.com/dkaraush/tlottie.git
     cd tlottie
-    git checkout 31f1b542f8
-    git apply ../patches/tlottie.patch
+    git checkout 92df98dc20
 win:
     SET "RUSTUP_HOME=%THIRDPARTY_DIR%\\rust\\rustup"
     SET "CARGO_HOME=%THIRDPARTY_DIR%\\rust\\cargo"
