@@ -1982,8 +1982,13 @@ void SendFilesBox::refreshControls(bool initial) {
 }
 
 void SendFilesBox::setupSendWayControls() {
+	const auto onlyOne = (_limits & SendFilesAllow::OnlyOne);
 	const auto groupFilesFirst = _sendWay.current().groupFiles();
-	const auto asPhotosFirst = _sendWay.current().sendImagesAsPhotos();
+	const auto asPhotosFirst = (_list.hasSendImagesAsPhotosOption(onlyOne)
+			&& (_list.overrideSendImagesAsPhotos
+				== _sendWay.current().sendImagesAsPhotos()))
+		? Core::App().settings().sendFilesWay().sendImagesAsPhotos()
+		: _sendWay.current().sendImagesAsPhotos();
 	_groupFiles.create(
 		this,
 		tr::lng_send_grouped(tr::now),
@@ -2721,9 +2726,7 @@ void SendFilesBox::saveSendWaySettings(bool rememberAll) {
 	} else if (_groupFiles->isHidden()) {
 		way.setGroupFiles(oldWay.groupFiles());
 	}
-	if (rememberAll
-		&& (_list.overrideSendImagesAsPhotos == way.sendImagesAsPhotos()
-			|| _sendImagesAsPhotos->isHidden())) {
+	if (rememberAll && _sendImagesAsPhotos->isHidden()) {
 		way.setSendImagesAsPhotos(oldWay.sendImagesAsPhotos());
 	}
 	if (way != oldWay) {
