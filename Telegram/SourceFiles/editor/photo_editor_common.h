@@ -15,6 +15,7 @@ namespace Editor {
 class Scene;
 
 enum class RoundedCornersLevel {
+	Circle,
 	Large,
 	Medium,
 	Small,
