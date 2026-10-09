@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_report.h"
 #include "window/section_widget.h"
 #include "window/window_session_controller.h"
+#include "history/view/controls/history_view_bot_menu_button.h"
 #include "ui/widgets/fields/input_field.h"
 #include "mtproto/sender.h"
 
@@ -956,11 +957,8 @@ private:
 	QPointer<Ui::IconButton> _giftToChannelDiscuss;
 	object_ptr<Ui::FlatButton> _discuss;
 	object_ptr<Ui::FlatButton> _reportMessages;
-	struct {
-		object_ptr<Ui::RoundButton> button = { nullptr };
-		QString text;
-		bool small = false;
-	} _botMenu;
+	std::unique_ptr<HistoryView::BotMenuButton> _botMenu;
+	PeerId _botMenuPeer = 0;
 	object_ptr<Ui::IconButton> _attachToggle;
 	object_ptr<Ui::IconButton> _replaceMedia = { nullptr };
 	object_ptr<Ui::SendAsButton> _sendAs = { nullptr };
