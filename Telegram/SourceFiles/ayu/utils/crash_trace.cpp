@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -103,8 +104,16 @@ void Install(const QString &directory) {
 	QDir().mkpath(directory);
 	const auto path = QFile::encodeName(directory + QStringLiteral("/crash_trace.txt"));
 	const auto flags = O_WRONLY | O_CREAT | O_TRUNC | O_APPEND;
-	TraceFd = ::open(path.constData(), flags, 0644);
+	TraceFd = ::open(path.constData(), flags, 0600);
 	if (TraceFd < 0) {
+		return;
+	}
+	// open() does not change the mode of an already existing file, so
+	// traces left by older versions are tightened explicitly. If even
+	// that fails, give up tracing rather than writing world-readable.
+	if (::fchmod(TraceFd, 0600) != 0) {
+		::close(TraceFd);
+		TraceFd = -1;
 		return;
 	}
 	const auto header = QByteArray("\n=== started, version ")
