@@ -8,10 +8,12 @@
 
 #include "api/api_text_entities.h"
 #include "ayu/features/translator/ayu_translator.h"
+#include "ayu/secret/secret_peer.h"
 #include "base/weak_ptr.h"
 #include "data/data_msg_id.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "logs.h"
 #include "main/main_session.h"
 
 #include <memory>
@@ -80,6 +82,16 @@ public:
 		if (!manager || to.twoLetterCode().isEmpty()) {
 			failAll();
 			return;
+		}
+		for (const auto &request : requests) {
+			if (AyuSecret::IsSecretPeerId(PeerId(request.peerId))) {
+				// Secret-chat text must never leave the device towards
+				// third-party translation services.
+				LOG(("Translator: refusing third-party translation "
+					"of a secret chat message."));
+				failAll();
+				return;
+			}
 		}
 		const auto doneFromResult = [=, session = _session](
 				const MTPmessages_TranslatedText &result) {
