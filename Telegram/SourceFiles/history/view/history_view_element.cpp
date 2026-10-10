@@ -74,6 +74,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_iv.h"
 
 #include "data/data_groups.h"
+#include "ui/chat/message_bubble.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/message_shot/message_shot.h"
 #include "ayu/utils/telegram_helpers.h"
@@ -2830,7 +2831,9 @@ void Element::setAttachToNext(bool attachToNext, Element *next) {
 		_flags &= ~Flag::AttachedToNext;
 		pending = true;
 	}
-	const auto bubble = attachToNext && !next->unwrapped();
+	const auto bubble = attachToNext
+		&& !next->unwrapped()
+		&& (!Ui::MaterialBubbles() || next->hasBubble());
 	if (bubble && !(_flags & Flag::BubbleAttachedToNext)) {
 		_flags |= Flag::BubbleAttachedToNext;
 		pending = true;
@@ -2854,7 +2857,9 @@ void Element::setAttachToPrevious(bool attachToPrevious, Element *previous) {
 		_flags &= ~Flag::AttachedToPrevious;
 		pending = true;
 	}
-	const auto bubble = attachToPrevious && !previous->unwrapped();
+	const auto bubble = attachToPrevious
+		&& !previous->unwrapped()
+		&& (!Ui::MaterialBubbles() || previous->hasBubble());
 	if (bubble && !(_flags & Flag::BubbleAttachedToPrevious)) {
 		_flags |= Flag::BubbleAttachedToPrevious;
 		pending = true;

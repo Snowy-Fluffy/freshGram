@@ -974,6 +974,7 @@ HistoryWidget::HistoryWidget(
 			for (const auto &block : _history->blocks) {
 				for (const auto &view : block->messages) {
 					view->unloadHeavyPart();
+					view->previousInBlocksChanged();
 				}
 			}
 		}
