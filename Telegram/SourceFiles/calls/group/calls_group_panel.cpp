@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_emoji_fingerprint.h"
 #include "calls/calls_window.h"
 #include "base/platform/base_platform_info.h"
+#include "platform/platform_window_title.h"
 #include "chat_helpers/compose/compose_show.h"
 #include "data/data_file_origin.h"
 #include "ui/platform/ui_platform_window_title.h" // TitleLayout
@@ -2984,9 +2985,10 @@ void Panel::refreshTitle() {
 		const auto top = _title
 			? st::groupCallSubtitleTop
 			: st::groupCallTitleTop;
-		_subtitle->moveToLeft(
-			(widget()->width() - _subtitle->width()) / 2,
-			top);
+		const auto left = Platform::WindowTitleAlignsLeft()
+			? computeTitleRect().x()
+			: (widget()->width() - _subtitle->width()) / 2;
+		_subtitle->moveToLeft(left, top);
 	}
 }
 
@@ -3067,7 +3069,9 @@ void Panel::refreshTitleGeometry() {
 		}
 	};
 
-	if (from >= left && from + best <= left + titleRect.width()) {
+	if (Platform::WindowTitleAlignsLeft()) {
+		layout(left);
+	} else if (from >= left && from + best <= left + titleRect.width()) {
 		layout(from);
 	} else if (titleRect.width() < best) {
 		layout(left);
