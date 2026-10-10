@@ -735,8 +735,11 @@ void MainMenu::setupMenu() {
 				const auto prev = ghost.sendReadMessages();
 				ghost.setSendReadMessages(false);
 
-				const auto chats = controller->session().data().chatsList();
-				MarkAsReadChatList(chats);
+				auto &owner = controller->session().data();
+				MarkAsReadChatList(owner.chatsList());
+				if (const auto folder = owner.folderLoaded(Data::Folder::kId)) {
+					MarkAsReadChatList(folder->chatsList());
+				}
 
 				ghost.setSendReadMessages(prev);
 			});
@@ -748,8 +751,11 @@ void MainMenu::setupMenu() {
 				const auto prev = ghost.sendReadMessages();
 				ghost.setSendReadMessages(true);
 
-				auto chats = controller->session().data().chatsList();
-				MarkAsReadChatList(chats);
+				auto &owner = controller->session().data();
+				MarkAsReadChatList(owner.chatsList());
+				if (const auto folder = owner.folderLoaded(Data::Folder::kId)) {
+					MarkAsReadChatList(folder->chatsList());
+				}
 
 				// slight delay for forums to send packets
 				dispatchToMainThread(crl::guard(controller, [=] {

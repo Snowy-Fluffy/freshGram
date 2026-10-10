@@ -956,8 +956,15 @@ void AddReadUntilAction(not_null<Ui::PopupMenu*> menu, HistoryItem *item) {
 }
 
 void AddBurnAction(not_null<Ui::PopupMenu*> menu, HistoryItem *item) {
-	if (!item->media() || (item->media()->ttlSeconds() <= 0 && item->unsupportedTTL() <= 0) || item->out() ||
-		!item->hasUnreadMediaFlag()) {
+	// An unsupported disappearing message (a photo or a video that the
+	// desktop shows as a service text) has no media, only the TTL mark.
+	// The unread mark is not checked: it is cleared locally when the message
+	// is viewed, while the server may still not know about it. Once the
+	// server burns the message, it loses the TTL mark and the item is hidden.
+	const auto media = item->media();
+	const auto ttl = (media && media->ttlSeconds() > 0)
+		|| (item->unsupportedTTL() > 0);
+	if (!ttl || item->out()) {
 		return;
 	}
 
