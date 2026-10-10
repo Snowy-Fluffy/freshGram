@@ -36,5 +36,6 @@ bool hasDeletedMessages(not_null<PeerData*> peer, ID topicId);
 void flushPending();
 void removeDeletedMessage(not_null<HistoryItem*> item);
 void clearDeletedMessages(not_null<PeerData*> peer, ID topicId);
+void clearAllDeleted();
 
 }

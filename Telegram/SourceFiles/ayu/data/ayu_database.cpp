@@ -775,6 +775,18 @@ void clearDeletedMessages(ID userId, ID dialogId, ID topicId) {
 	});
 }
 
+void clearAllDeleted() {
+	runVoid("clear all deleted", [&] {
+		inTransaction([&] {
+			storage.remove_all<DeletedExtra>();
+			storage.remove_all<DeletedMessage>();
+			storage.remove_all<DeletedDialog>();
+			storage.remove_all<KeptTopic>();
+			storage.remove_all<KeptDialog>();
+		});
+	});
+}
+
 void saveKeptDialog(const KeptDialog &dialog) {
 	runVoid("save kept dialog", [&] {
 		inTransaction([&] {

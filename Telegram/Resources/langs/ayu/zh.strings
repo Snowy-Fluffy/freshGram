@@ -471,6 +471,12 @@
 "ayu_StorageUnitDays" = "天";
 "ayu_StorageUnitHours" = "小时";
 "ayu_StorageDescription" = "调低限制不会删除已保存的内容。保留期限会在启动时生效，并永久删除更早保存的消息和编辑记录；已保存的媒体文件会保留在磁盘上。";
+"ayu_ClearAllDeleted" = "清除所有已删除的数据";
+"ayu_ClearAllDeletedFirst" = "将为所有账号删除已保存的已删除消息（包括其回应、评论和媒体）以及已保存的已删除聊天和话题。编辑记录会保留。";
+"ayu_ClearAllDeletedSecond" = "此操作无法撤销。在服务器上被删除的内容将永久丢失。确定要继续吗？";
+"ayu_ClearAllDeletedThird" = "最后警告。所有已保存的内容将立即被清除，freshGram 将重新启动。确定全部清除吗？";
+"ayu_ClearAllDeletedContinue" = "继续";
+"ayu_ClearAllDeletedAction" = "全部清除";
 "ayu_SecretMediaPhoto" = "照片";
 "ayu_SecretMediaVideo" = "视频";
 "ayu_SecretMediaVoice" = "语音消息";

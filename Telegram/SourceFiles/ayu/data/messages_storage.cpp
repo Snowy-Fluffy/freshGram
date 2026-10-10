@@ -74,11 +74,16 @@ bool FlushScheduled = false;
 std::vector<std::unique_ptr<PhotoSaveTask>> PhotoSaveTasks;
 std::vector<std::unique_ptr<DocumentSaveTask>> DocumentSaveTasks;
 
+[[nodiscard]] QString SavedMediaDirectory() {
+	return QStringLiteral("./tdata/ayu_media");
+}
+
 [[nodiscard]] QString SavedMediaPath(
 		ID userId,
 		ID dialogId,
 		int messageId) {
-	return QString("./tdata/ayu_media/%1_%2_%3.bin")
+	return QString("%1/%2_%3_%4.bin")
+		.arg(SavedMediaDirectory())
 		.arg(userId)
 		.arg(dialogId)
 		.arg(messageId);
@@ -694,6 +699,12 @@ void removeDeletedMessage(not_null<HistoryItem*> item) {
 	const auto peer = item->history()->peer;
 	const ID userId = peer->session().userId().bare & PeerId::kChatTypeMask;
 	AyuDatabase::removeDeletedMessage(userId, getDialogIdFromPeer(peer), item->id.bare);
+}
+
+void clearAllDeleted() {
+	flushPendingDeleted();
+	AyuDatabase::clearAllDeleted();
+	QDir(SavedMediaDirectory()).removeRecursively();
 }
 
 void clearDeletedMessages(not_null<PeerData*> peer, ID topicId) {

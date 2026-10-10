@@ -8,6 +8,7 @@
 
 #include "lang_auto.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/data/messages_storage.h"
 #include "ayu/secret/secret_policy.h"
 #include "ayu/ui/ayu_userpic.h"
 #include "ayu/ui/settings/ayu_builder.h"
@@ -31,6 +32,7 @@
 #include "styles/style_window.h"
 #include "ui/painter.h"
 #include "ui/vertical_list.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/boxes/single_choice_box.h"
 #include "ui/text/text.h"
 #include "ui/toast/toast.h"
@@ -740,6 +742,34 @@ void AddStorageSlider(
 	});
 }
 
+void ShowClearAllDeleted(not_null<Window::SessionController*> controller) {
+	const auto step = [=](
+			QString text,
+			QString action,
+			bool attention,
+			Fn<void()> next) {
+		controller->show(Ui::MakeConfirmBox({
+			.text = text,
+			.confirmed = [=](Fn<void()> &&close) {
+				close();
+				next();
+			},
+			.confirmText = action,
+			.cancelText = tr::lng_cancel(),
+			.confirmStyle = attention ? &st::attentionBoxButton : nullptr,
+		}));
+	};
+	const auto proceed = tr::ayu_ClearAllDeletedContinue(tr::now);
+	step(tr::ayu_ClearAllDeletedFirst(tr::now), proceed, false, [=] {
+		step(tr::ayu_ClearAllDeletedSecond(tr::now), proceed, true, [=] {
+			step(tr::ayu_ClearAllDeletedThird(tr::now), tr::ayu_ClearAllDeletedAction(tr::now), true, [] {
+				AyuMessages::clearAllDeleted();
+				Core::Restart();
+			});
+		});
+	});
+}
+
 void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	const auto &settings = AyuSettings::getInstance();
 	builder.addSubsectionTitle(tr::ayu_StorageHeader());
@@ -815,6 +845,19 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 			AyuSettings::getInstance().setBackupIntervalHours(value);
 		});
 
+	builder.addSkip();
+	const auto controller = builder.controller();
+	builder.addButton({
+		.id = u"ayu/clearAllDeleted"_q,
+		.title = tr::ayu_ClearAllDeleted(),
+		.st = &st::settingsAttentionButton,
+		.onClick = [=] {
+			if (controller) {
+				ShowClearAllDeleted(controller);
+			}
+		},
+		.keywords = { u"delete"_q, u"clear"_q, u"storage"_q },
+	});
 	builder.addSkip();
 	builder.addDividerText(tr::ayu_StorageDescription());
 }

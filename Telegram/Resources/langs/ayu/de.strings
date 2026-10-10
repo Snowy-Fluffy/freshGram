@@ -479,6 +479,12 @@
 "ayu_StorageUnitDays" = "T";
 "ayu_StorageUnitHours" = "Std.";
 "ayu_StorageDescription" = "Das Senken eines Limits löscht bereits Gespeichertes nicht. Die Aufbewahrungsdauer wird beim Start angewendet und entfernt ältere gespeicherte Nachrichten und Bearbeitungen endgültig; gespeicherte Mediendateien bleiben auf dem Datenträger.";
+"ayu_ClearAllDeleted" = "Alle gelöschten Daten löschen";
+"ayu_ClearAllDeletedFirst" = "Alle gespeicherten gelöschten Nachrichten mit Reaktionen, Kommentaren und Medien sowie alle gespeicherten gelöschten Chats und Themen werden für jedes Konto entfernt. Der Bearbeitungsverlauf bleibt erhalten.";
+"ayu_ClearAllDeletedSecond" = "Das kann nicht rückgängig gemacht werden. Alles, was auf dem Server gelöscht wurde, geht für immer verloren. Möchtest du wirklich fortfahren?";
+"ayu_ClearAllDeletedThird" = "Letzte Warnung. Alles Gespeicherte wird jetzt gelöscht und freshGram startet neu. Alles löschen?";
+"ayu_ClearAllDeletedContinue" = "Weiter";
+"ayu_ClearAllDeletedAction" = "Alles löschen";
 "ayu_SecretMediaPhoto" = "Foto";
 "ayu_SecretMediaVideo" = "Video";
 "ayu_SecretMediaVoice" = "Sprachnachricht";

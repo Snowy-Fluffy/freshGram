@@ -487,6 +487,12 @@
 "ayu_StorageUnitDays" = "j";
 "ayu_StorageUnitHours" = "h";
 "ayu_StorageDescription" = "Réduire une limite ne supprime pas ce qui est déjà enregistré. La durée de conservation est appliquée au démarrage et supprime définitivement les messages et modifications enregistrés plus anciens ; les fichiers médias enregistrés restent sur le disque.";
+"ayu_ClearAllDeleted" = "Effacer toutes les données supprimées";
+"ayu_ClearAllDeletedFirst" = "Tous les messages supprimés enregistrés, avec leurs réactions, commentaires et médias, ainsi que toutes les discussions et tous les sujets supprimés enregistrés seront supprimés pour chaque compte. L'historique des modifications est conservé.";
+"ayu_ClearAllDeletedSecond" = "Cette action est irréversible. Tout ce qui a été supprimé sur le serveur sera perdu définitivement. Voulez-vous vraiment continuer ?";
+"ayu_ClearAllDeletedThird" = "Dernier avertissement. Tout ce qui est enregistré sera effacé immédiatement et freshGram va redémarrer. Tout effacer ?";
+"ayu_ClearAllDeletedContinue" = "Continuer";
+"ayu_ClearAllDeletedAction" = "Tout effacer";
 "ayu_SecretMediaPhoto" = "Photo";
 "ayu_SecretMediaVideo" = "Vidéo";
 "ayu_SecretMediaVoice" = "Message vocal";

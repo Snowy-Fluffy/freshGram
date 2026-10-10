@@ -9273,6 +9273,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_StorageUnitDays" = "d";
 "ayu_StorageUnitHours" = "h";
 "ayu_StorageDescription" = "Lowering a limit does not delete what is already saved. The retention period is applied on startup and permanently removes older saved messages and edits; saved media files stay on disk.";
+"ayu_ClearAllDeleted" = "Clear all deleted data";
+"ayu_ClearAllDeletedFirst" = "This will remove all saved deleted messages with their reactions, comments and media, and all saved deleted chats and topics, for every account. Edit history stays.";
+"ayu_ClearAllDeletedSecond" = "This cannot be undone. Anything that was deleted on the server will be lost for good. Do you really want to continue?";
+"ayu_ClearAllDeletedThird" = "Last warning. Everything saved will be erased right now and freshGram will restart. Erase everything?";
+"ayu_ClearAllDeletedContinue" = "Continue";
+"ayu_ClearAllDeletedAction" = "Erase everything";
 "ayu_SecretMediaPhoto" = "Photo";
 "ayu_SecretMediaVideo" = "Video";
 "ayu_SecretMediaVoice" = "Voice message";
