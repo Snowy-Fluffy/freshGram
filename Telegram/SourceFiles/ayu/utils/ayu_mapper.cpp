@@ -13,8 +13,11 @@
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
+#include "history/history_item_reply_markup.h"
 #include "mtproto/connection_abstract.h"
 #include "mtproto/details/mtproto_dump_to_text.h"
+
+#include <QtCore/QDataStream>
 
 namespace AyuMapper {
 
@@ -130,6 +133,96 @@ std::vector<char> serializeReactions(not_null<HistoryItem*> item) {
 
 MTPMessageReactions deserializeReactions(const std::vector<char> &serialized) {
 	return deserializeObject<MTPMessageReactions>(serialized);
+}
+
+std::vector<char> serializeReplyMarkup(not_null<HistoryItem*> item) {
+	const auto markup = item->inlineReplyMarkup();
+	if (!markup || markup->data.rows.empty()) {
+		return {};
+	}
+	auto bytes = QByteArray();
+	auto stream = QDataStream(&bytes, QIODevice::WriteOnly);
+	stream.setVersion(QDataStream::Qt_5_15);
+	stream << qint32(1)
+		<< quint32(uint32(markup->data.flags.value()))
+		<< markup->data.placeholder
+		<< qint32(markup->data.rows.size());
+	for (const auto &row : markup->data.rows) {
+		stream << qint32(row.size());
+		for (const auto &button : row) {
+			stream << quint8(button.type)
+				<< button.text
+				<< button.forwardText
+				<< button.data
+				<< qint64(button.buttonId)
+				<< quint64(button.visual.iconId)
+				<< quint8(button.visual.color);
+		}
+	}
+	return std::vector<char>(bytes.constData(), bytes.constData() + bytes.size());
+}
+
+HistoryMessageMarkupData deserializeReplyMarkup(const std::vector<char> &serialized) {
+	auto result = HistoryMessageMarkupData();
+	if (serialized.empty()) {
+		return result;
+	}
+	auto bytes = QByteArray(serialized.data(), qsizetype(serialized.size()));
+	auto stream = QDataStream(&bytes, QIODevice::ReadOnly);
+	stream.setVersion(QDataStream::Qt_5_15);
+	auto version = qint32();
+	auto flags = quint32();
+	auto placeholder = QString();
+	auto rowsCount = qint32();
+	stream >> version >> flags >> placeholder >> rowsCount;
+	if (stream.status() != QDataStream::Ok
+		|| version != 1
+		|| rowsCount <= 0
+		|| rowsCount > 1000) {
+		return result;
+	}
+	using Button = HistoryMessageMarkupButton;
+	auto rows = std::vector<std::vector<Button>>();
+	for (auto i = 0; i != rowsCount; ++i) {
+		auto count = qint32();
+		stream >> count;
+		if (stream.status() != QDataStream::Ok || count < 0 || count > 1000) {
+			return result;
+		}
+		auto row = std::vector<Button>();
+		for (auto j = 0; j != count; ++j) {
+			auto type = quint8();
+			auto text = QString();
+			auto forwardText = QString();
+			auto data = QByteArray();
+			auto buttonId = qint64();
+			auto iconId = quint64();
+			auto color = quint8();
+			stream >> type >> text >> forwardText >> data >> buttonId >> iconId >> color;
+			if (stream.status() != QDataStream::Ok
+				|| type >= uint8(Button::Type::kCount)
+				|| color > uint8(Button::Color::Success)) {
+				return result;
+			}
+			row.emplace_back(
+				Button::Type(type),
+				text,
+				Button::Visual{ DocumentId(iconId), Button::Color(color) },
+				data,
+				forwardText,
+				buttonId);
+		}
+		if (!row.empty()) {
+			rows.push_back(std::move(row));
+		}
+	}
+	if (rows.empty()) {
+		return result;
+	}
+	result.rows = std::move(rows);
+	result.flags = ReplyMarkupFlags::from_raw(flags) & ~ReplyMarkupFlag::IsNull;
+	result.placeholder = placeholder;
+	return result;
 }
 
 std::pair<std::string, std::vector<char>> serializeTextWithEntities(not_null<HistoryItem*> item) {

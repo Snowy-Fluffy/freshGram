@@ -16,6 +16,7 @@ struct Row {
 	MsgId localId;
 	bool dead = false;
 	std::optional<DeletedExtra> extra;
+	std::vector<char> markup;
 };
 
 void noteDeleted(not_null<History*> history);

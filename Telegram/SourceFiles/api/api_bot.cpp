@@ -329,6 +329,12 @@ void ActivateBotButton(ClickHandlerContext context, BotButtonLookup lookup) {
 	}
 
 	using ButtonType = HistoryMessageMarkupButton::Type;
+	if (item->isAyuRestored()
+		&& button->type != ButtonType::Url
+		&& button->type != ButtonType::CopyText
+		&& button->type != ButtonType::UserProfile) {
+		return;
+	}
 	switch (button->type) {
 	case ButtonType::Default: {
 		// Copy string before passing it to the sending method

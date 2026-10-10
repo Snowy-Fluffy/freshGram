@@ -137,6 +137,15 @@ auto storage = make_storage(
 		make_column("lastMessageDate", &KeptDialog::lastMessageDate),
 		make_column("lost", &KeptDialog::lost)
 	),
+	make_table<DeletedMarkup>(
+		"DeletedMarkup",
+		make_column("fakeId", &DeletedMarkup::fakeId, primary_key().autoincrement()),
+		make_column("userId", &DeletedMarkup::userId),
+		make_column("dialogId", &DeletedMarkup::dialogId),
+		make_column("messageId", &DeletedMarkup::messageId),
+		make_column("markup", &DeletedMarkup::markup),
+		make_column("entityCreateDate", &DeletedMarkup::entityCreateDate)
+	),
 	make_table<DeletedExtra>(
 		"DeletedExtra",
 		make_column("fakeId", &DeletedExtra::fakeId, primary_key().autoincrement()),
@@ -538,6 +547,8 @@ void purgeOlderThan(int days) {
 					where(column<EditedMessage>(&EditedMessage::entityCreateDate) < cutoff));
 				storage.remove_all<DeletedExtra>(
 					where(column<DeletedExtra>(&DeletedExtra::entityCreateDate) < cutoff));
+				storage.remove_all<DeletedMarkup>(
+					where(column<DeletedMarkup>(&DeletedMarkup::entityCreateDate) < cutoff));
 			});
 		});
 	});
@@ -628,6 +639,36 @@ void addDeletedExtras(const std::vector<DeletedExtra> &extras) {
 				storage.insert(extra);
 			}
 		});
+	});
+}
+
+void addDeletedMarkups(const std::vector<DeletedMarkup> &markups) {
+	if (markups.empty()) {
+		return;
+	}
+	runVoid("save deleted markups", [&] {
+		inTransaction([&] {
+			for (const auto &markup : markups) {
+				storage.remove_all<DeletedMarkup>(
+					where(
+						column<DeletedMarkup>(&DeletedMarkup::userId) == markup.userId and
+						column<DeletedMarkup>(&DeletedMarkup::dialogId) == markup.dialogId and
+						column<DeletedMarkup>(&DeletedMarkup::messageId) == markup.messageId
+					)
+				);
+				storage.insert(markup);
+			}
+		});
+	});
+}
+
+std::vector<DeletedMarkup> getDeletedMarkups(ID userId, ID dialogId) {
+	return run<std::vector<DeletedMarkup>>("load deleted markups", {}, [&] {
+		return storage.get_all<DeletedMarkup>(
+			where(
+				column<DeletedMarkup>(&DeletedMarkup::userId) == userId and
+				column<DeletedMarkup>(&DeletedMarkup::dialogId) == dialogId
+			));
 	});
 }
 
@@ -745,6 +786,13 @@ void removeDeletedMessage(ID userId, ID dialogId, ID messageId) {
 				column<DeletedExtra>(&DeletedExtra::messageId) == messageId
 			)
 		);
+		storage.remove_all<DeletedMarkup>(
+			where(
+				column<DeletedMarkup>(&DeletedMarkup::userId) == userId and
+				column<DeletedMarkup>(&DeletedMarkup::dialogId) == dialogId and
+				column<DeletedMarkup>(&DeletedMarkup::messageId) == messageId
+			)
+		);
 		storage.remove_all<DeletedMessage>(
 			where(
 				column<DeletedMessage>(&DeletedMessage::userId) == userId and
@@ -764,6 +812,12 @@ void clearDeletedMessages(ID userId, ID dialogId, ID topicId) {
 					column<DeletedExtra>(&DeletedExtra::dialogId) == dialogId
 				)
 			);
+			storage.remove_all<DeletedMarkup>(
+				where(
+					column<DeletedMarkup>(&DeletedMarkup::userId) == userId and
+					column<DeletedMarkup>(&DeletedMarkup::dialogId) == dialogId
+				)
+			);
 		}
 		storage.remove_all<DeletedMessage>(
 			where(
@@ -779,6 +833,7 @@ void clearAllDeleted() {
 	runVoid("clear all deleted", [&] {
 		inTransaction([&] {
 			storage.remove_all<DeletedExtra>();
+			storage.remove_all<DeletedMarkup>();
 			storage.remove_all<DeletedMessage>();
 			storage.remove_all<DeletedDialog>();
 			storage.remove_all<KeptTopic>();

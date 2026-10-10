@@ -77,6 +77,18 @@ public:
 	int entityCreateDate;
 };
 
+// Inline buttons of a deleted message, kept in their own table.
+class DeletedMarkup
+{
+public:
+	ID fakeId;
+	ID userId;
+	ID dialogId;
+	int messageId;
+	std::vector<char> markup;
+	int entityCreateDate;
+};
+
 class DeletedDialog
 {
 public:

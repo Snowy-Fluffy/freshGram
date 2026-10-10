@@ -171,8 +171,10 @@ void State::load(ID userId, ID dialogId) {
 	crl::async([=] {
 		auto messages = std::vector<AyuMessageBase>();
 		auto extras = std::vector<DeletedExtra>();
+		auto markups = std::vector<DeletedMarkup>();
 		try {
 			extras = AyuMessages::loadDeletedExtras(userId, dialogId);
+			markups = AyuMessages::loadDeletedMarkups(userId, dialogId);
 			messages = AyuMessages::loadDeletedMessages(
 				userId,
 				dialogId,
@@ -185,7 +187,7 @@ void State::load(ID userId, ID dialogId) {
 			messages.clear();
 		}
 
-		crl::on_main([=, messages = std::move(messages), extras = std::move(extras)]() mutable {
+		crl::on_main([=, messages = std::move(messages), extras = std::move(extras), markups = std::move(markups)]() mutable {
 			const auto strong = weak.get();
 			if (!strong || strong->_disabled) {
 				return;
@@ -206,6 +208,12 @@ void State::load(ID userId, ID dialogId) {
 				for (const auto &extra : extras) {
 					if (extra.messageId == strong->_rows.back().message.messageId) {
 						strong->_rows.back().extra = extra;
+						break;
+					}
+				}
+				for (const auto &markup : markups) {
+					if (markup.messageId == strong->_rows.back().message.messageId) {
+						strong->_rows.back().markup = markup.markup;
 						break;
 					}
 				}
@@ -525,6 +533,7 @@ HistoryItem *State::create(Row &row) {
 		&_history->session(),
 		AyuMapper::deserializeTextWithEntities(message.textEntities).v);
 
+	const auto markup = AyuMapper::deserializeReplyMarkup(row.markup);
 	const auto build = [&](TextWithEntities text) {
 		return _history->makeMessage({
 			.id = owner.nextLocalMessageId(),
@@ -533,6 +542,7 @@ HistoryItem *State::create(Row &row) {
 			.replyTo = replyTo,
 			.date = message.date,
 			.postAuthor = QString::fromStdString(message.postAuthor),
+			.markup = markup,
 		}, std::move(text), AyuMessages::restoredMedia(message));
 	};
 	auto item = build(text);

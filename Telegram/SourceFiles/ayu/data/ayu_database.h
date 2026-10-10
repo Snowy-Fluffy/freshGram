@@ -31,6 +31,8 @@ void addDeletedMessage(const DeletedMessage &message);
 void addDeletedMessages(const std::vector<DeletedMessage> &messages);
 void addDeletedExtras(const std::vector<DeletedExtra> &extras);
 std::vector<DeletedExtra> getDeletedExtras(ID userId, ID dialogId);
+void addDeletedMarkups(const std::vector<DeletedMarkup> &markups);
+std::vector<DeletedMarkup> getDeletedMarkups(ID userId, ID dialogId);
 std::vector<DeletedMessage> searchDeletedMessages(ID userId, ID dialogId, ID topicId, ID fromId, const std::string &searchQuery, int totalLimit);
 std::vector<DeletedMessage> getDeletedMessages(ID userId, ID dialogId, ID topicId, ID minId, ID maxId, int totalLimit, const std::string &searchQuery = "");
 bool hasDeletedMessages(ID userId, ID dialogId, ID topicId);
