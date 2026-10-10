@@ -804,6 +804,17 @@ Bytes BuildScreenshot(int64_t randomId, const std::vector<int64_t> &ids) {
 	return IdsAction(kActionScreenshotMessages, randomId, ids);
 }
 
+Bytes BuildRequestKey(
+		int64_t randomId,
+		int64_t exchangeId,
+		const Bytes &gA) {
+	auto action = Writer();
+	action.writeUInt(kActionRequestKey);
+	action.writeLong(exchangeId);
+	WriteBytesField(action, gA);
+	return ServiceMessage(randomId, action);
+}
+
 Bytes BuildAcceptKey(
 		int64_t randomId,
 		int64_t exchangeId,

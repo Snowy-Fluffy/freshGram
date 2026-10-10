@@ -68,6 +68,10 @@ struct Inbound {
 [[nodiscard]] Bytes BuildScreenshot(
 	int64_t randomId,
 	const std::vector<int64_t> &ids);
+[[nodiscard]] Bytes BuildRequestKey(
+	int64_t randomId,
+	int64_t exchangeId,
+	const Bytes &gA);
 [[nodiscard]] Bytes BuildAcceptKey(
 	int64_t randomId,
 	int64_t exchangeId,

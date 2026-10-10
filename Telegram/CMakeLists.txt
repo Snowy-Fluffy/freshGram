@@ -279,6 +279,7 @@ set(ayugram_files
         ayu/secret/secret_policy.h
         ayu/secret/secret_protocol.cpp
         ayu/secret/secret_protocol.h
+        ayu/secret/secret_rekey.h
         ayu/secret/secret_send.cpp
         ayu/secret/secret_send.h
         ayu/secret/secret_tl.h
