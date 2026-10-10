@@ -190,6 +190,7 @@ private:
 	bool search(bool inCache = false, SearchRequestDelay after = {});
 	void searchTopics();
 	void searchMore();
+	void searchDeleted();
 
 	void slideFinished();
 	void searchReceived(
@@ -433,6 +434,7 @@ private:
 	ChannelData *_searchQueryCommunity = nullptr;
 	ChatTypeFilter _searchQueryFilter = {};
 	SearchMediaFilter _searchQueryMedia = SearchMediaFilter::All;
+	int _deletedSearchToken = 0;
 	int _searchClientCount = 0;
 	int _searchClientEmptyPages = 0;
 	bool _searchQueryFromArchive = true;

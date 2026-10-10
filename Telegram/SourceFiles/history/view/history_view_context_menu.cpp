@@ -1936,6 +1936,8 @@ void FillContextMenuItems(
 					.append('\n')
 					.append(item->originalText()))
 				: item->originalText();
+			// A deleted message does not exist on the server.
+			const auto byText = mediaHasTextForCopy || item->isDeleted();
 			if ((!item->translation() || !item->history()->translatedTo())
 				&& !translate.text.isEmpty()
 				&& !Ui::SkipTranslate(translate)) {
@@ -1944,9 +1946,7 @@ void FillContextMenuItems(
 						list->controller()->show(Box(
 							Ui::TranslateBox,
 							item->history()->peer,
-							mediaHasTextForCopy
-								? MsgId()
-								: item->fullId().msg,
+							byText ? MsgId() : item->fullId().msg,
 							translate,
 							list->hasCopyRestriction(view->data())));
 					}

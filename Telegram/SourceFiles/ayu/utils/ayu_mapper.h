@@ -14,6 +14,8 @@ template<typename MTPObject>
 template<typename MTPObject>
 [[nodiscard]] std::vector<char> serializeObject(MTPObject object);
 
+[[nodiscard]] std::vector<char> serializeReactions(not_null<HistoryItem*> item);
+[[nodiscard]] MTPMessageReactions deserializeReactions(const std::vector<char> &serialized);
 std::pair<std::string, std::vector<char>> serializeTextWithEntities(not_null<HistoryItem*> item);
 [[nodiscard]] MTPVector<MTPMessageEntity> deserializeTextWithEntities(std::vector<char> serialized);
 [[nodiscard]] std::vector<char> serializeSavableMedia(const MTPMessageMedia &media);

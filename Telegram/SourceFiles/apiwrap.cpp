@@ -1552,7 +1552,16 @@ void ApiWrap::deleteAllFromParticipant(
 			items.push_back(item);
 		}
 	}
-	_session->data().destroyMessagesWithCacheCleanup(items);
+	// Saved messages stay as deleted ones instead of being destroyed.
+	auto toDestroy = std::vector<not_null<HistoryItem*>>();
+	for (const auto &item : items) {
+		if (isMessageSavable(item)) {
+			processMessageDelete(item);
+		} else {
+			toDestroy.push_back(item);
+		}
+	}
+	_session->data().destroyMessagesWithCacheCleanup(toDestroy);
 
 	_session->data().sendHistoryChangeNotifications();
 

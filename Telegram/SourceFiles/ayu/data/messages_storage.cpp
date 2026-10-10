@@ -29,12 +29,16 @@
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
+#include "history/history_item_reply_markup.h"
 #include "main/main_session.h"
 #include "storage/cache/storage_cache_database.h"
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+
+#include <cstdlib>
+#include <optional>
 
 namespace AyuMessages {
 
@@ -65,6 +69,7 @@ struct DocumentSaveTask {
 };
 
 std::vector<DeletedMessage> PendingDeleted;
+std::vector<DeletedExtra> PendingExtras;
 bool FlushScheduled = false;
 std::vector<std::unique_ptr<PhotoSaveTask>> PhotoSaveTasks;
 std::vector<std::unique_ptr<DocumentSaveTask>> DocumentSaveTasks;
@@ -226,7 +231,10 @@ void flushPendingDeleted() {
 	}
 	auto batch = std::move(PendingDeleted);
 	PendingDeleted.clear();
+	auto extras = std::move(PendingExtras);
+	PendingExtras.clear();
 	AyuDatabase::addDeletedMessages(batch);
+	AyuDatabase::addDeletedExtras(extras);
 }
 
 }
@@ -527,6 +535,41 @@ std::vector<ID> loadDeletedDialogIds(ID userId) {
 	return AyuDatabase::getDeletedDialogIds(userId);
 }
 
+std::optional<DeletedExtra> MakeExtra(
+		not_null<HistoryItem*> item,
+		const AyuMessageBase &message) {
+	auto extra = DeletedExtra();
+	extra.fakeId = 0;
+	extra.userId = message.userId;
+	extra.dialogId = message.dialogId;
+	extra.messageId = message.messageId;
+	extra.reactions = AyuMapper::serializeReactions(item);
+	extra.repliesCount = 0;
+	extra.commentsChannelId = 0;
+	extra.commentsRootId = 0;
+	extra.commentsReadTill = 0;
+	extra.commentsMaxId = 0;
+	extra.entityCreateDate = base::unixtime::now();
+	if (const auto views = item->Get<HistoryMessageViews>();
+		views && views->commentsMegagroupId) {
+		extra.repliesCount = std::max(views->replies.count, 0);
+		extra.commentsChannelId = ID(views->commentsMegagroupId.bare);
+		extra.commentsRootId = int(views->commentsRootId.bare);
+		extra.commentsReadTill = int(views->commentsInboxReadTillId.bare);
+		extra.commentsMaxId = int(views->commentsMaxId.bare);
+		for (const auto &replier : views->recentRepliers) {
+			if (!extra.repliers.empty()) {
+				extra.repliers += ',';
+			}
+			extra.repliers += std::to_string(replier.value);
+		}
+	}
+	if (extra.reactions.empty() && !extra.commentsChannelId) {
+		return std::nullopt;
+	}
+	return extra;
+}
+
 void addDeletedMessage(not_null<HistoryItem*> item) {
 	if (AyuSecret::IsSecretPeer(item->history()->peer)) {
 		return;
@@ -556,6 +599,9 @@ void addDeletedMessage(not_null<HistoryItem*> item) {
 		return;
 	}
 
+	if (const auto extra = MakeExtra(item, message)) {
+		PendingExtras.push_back(*extra);
+	}
 	PendingDeleted.push_back(std::move(message));
 	AyuRestore::noteDeleted(item->history());
 	if (!FlushScheduled) {
@@ -577,6 +623,65 @@ std::vector<AyuMessageBase> loadDeletedMessages(
 
 void flushPending() {
 	flushPendingDeleted();
+}
+
+std::vector<AyuMessageBase> searchDeletedMessages(
+		ID userId,
+		ID dialogId,
+		ID topicId,
+		ID fromId,
+		const std::string &query,
+		int limit) {
+	return convertToBase(AyuDatabase::searchDeletedMessages(
+		userId,
+		dialogId,
+		topicId,
+		fromId,
+		query,
+		limit));
+}
+
+std::vector<DeletedExtra> loadDeletedExtras(ID userId, ID dialogId) {
+	return AyuDatabase::getDeletedExtras(userId, dialogId);
+}
+
+void restoreExtra(not_null<HistoryItem*> item, const DeletedExtra &extra) {
+	if (!extra.reactions.empty()) {
+		const auto reactions = AyuMapper::deserializeReactions(
+			extra.reactions);
+		item->updateReactions(&reactions);
+	}
+	if (!extra.commentsChannelId) {
+		return;
+	}
+	const auto channelId = ChannelId(uint64(extra.commentsChannelId));
+	auto data = HistoryMessageRepliesData();
+	data.isNull = false;
+	data.repliesCount = extra.repliesCount;
+	data.channelId = channelId;
+	data.readMaxId = MsgId(extra.commentsReadTill);
+	data.maxId = MsgId(extra.commentsMaxId);
+	auto start = size_t(0);
+	while (start < extra.repliers.size()) {
+		auto end = extra.repliers.find(',', start);
+		if (end == std::string::npos) {
+			end = extra.repliers.size();
+		}
+		const auto value = std::strtoull(
+			extra.repliers.substr(start, end - start).c_str(),
+			nullptr,
+			10);
+		if (value) {
+			data.recentRepliers.push_back(PeerId(value));
+		}
+		start = end + 1;
+	}
+	item->setReplies(std::move(data));
+	if (extra.commentsRootId) {
+		item->setCommentsItemId(FullMsgId(
+			peerFromChannel(channelId),
+			MsgId(extra.commentsRootId)));
+	}
 }
 
 bool hasDeletedMessages(not_null<PeerData*> peer, ID topicId) {

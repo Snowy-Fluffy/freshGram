@@ -112,6 +112,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ayu/ayu_settings.h"
 #include "ayu/utils/id_search.h"
+#include "ayu/data/messages_storage.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "base/platform/base_platform_haptic.h"
 
@@ -3896,6 +3897,10 @@ void Widget::searchReceived(
 	listScrollUpdated();
 	update();
 
+	if (type.start && !type.migrated && !type.posts) {
+		searchDeleted();
+	}
+
 	if (clientMedia && !process->full) {
 		if (!messages.empty()) {
 			_searchClientEmptyPages = 0;
@@ -3903,6 +3908,76 @@ void Widget::searchReceived(
 			crl::on_main(this, [=] { searchMore(); });
 		}
 	}
+}
+
+void Widget::searchDeleted() {
+	const auto token = ++_deletedSearchToken;
+	const auto tab = _searchState.tab;
+	const auto inChat = (tab == ChatSearchTab::ThisPeer)
+		|| (tab == ChatSearchTab::ThisTopic);
+	if (!AyuSettings::getInstance().saveDeletedMessages()
+		|| (!inChat && tab != ChatSearchTab::MyMessages)
+		|| _searchState.inChat.sublist()
+		|| _searchQueryMedia != SearchMediaFilter::All
+		|| !_searchQueryTags.empty()) {
+		return;
+	}
+	const auto query = _searchQuery.trimmed();
+	if (query.isEmpty() && !_searchQueryFrom) {
+		return;
+	}
+	const auto peer = inChat ? searchInPeer() : nullptr;
+	if (inChat && !peer) {
+		return;
+	}
+	const auto topic = searchInTopic();
+	const auto from = _searchQueryFrom;
+	const auto userId = AyuMessages::storageUserId(session().user());
+	const auto dialogId = peer ? getDialogIdFromPeer(peer) : ID(0);
+	const auto topicId = topic ? ID(topic->rootId().bare) : ID(0);
+	const auto fromId = from ? getBareID(from) : ID(0);
+	const auto text = query.toStdString();
+	AyuMessages::flushPending();
+	crl::async([=] {
+		auto rows = AyuMessages::searchDeletedMessages(
+			userId,
+			dialogId,
+			topicId,
+			fromId,
+			text,
+			kSearchPerPage);
+		crl::on_main(this, [=, rows = std::move(rows)] {
+			if (token != _deletedSearchToken || _searchQuery.trimmed() != query) {
+				return;
+			}
+			auto items = std::vector<not_null<HistoryItem*>>();
+			items.reserve(rows.size());
+			for (const auto &row : rows) {
+				const auto target = peer
+					? peer
+					: (row.dialogId > 0)
+					? session().data().peerLoaded(
+						peerFromUser(UserId(uint64(row.dialogId))))
+					: [&]() -> PeerData* {
+						const auto bare = uint64(-row.dialogId);
+						if (const auto channel = session().data().peerLoaded(
+								peerFromChannel(ChannelId(bare)))) {
+							return channel;
+						}
+						return session().data().peerLoaded(
+							peerFromChat(ChatId(bare)));
+					}();
+				if (!target) {
+					continue;
+				}
+				const auto history = session().data().history(target);
+				if (const auto item = history->ayuDeletedItem(row)) {
+					items.push_back(item);
+				}
+			}
+			_inner->addDeletedSearchResults(std::move(items));
+		});
+	});
 }
 
 void Widget::peerSearchReceived(Api::PeerSearchResult result) {

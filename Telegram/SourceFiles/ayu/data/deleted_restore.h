@@ -15,9 +15,15 @@ struct Row {
 	AyuMessageBase message;
 	MsgId localId;
 	bool dead = false;
+	std::optional<DeletedExtra> extra;
 };
 
 void noteDeleted(not_null<History*> history);
+
+// Calls back with the ids of dialogs that have saved deleted messages.
+void withDeletedDialogs(
+	ID userId,
+	Fn<void(const base::flat_set<ID> &)> callback);
 
 class State final : public base::has_weak_ptr {
 public:
@@ -30,6 +36,7 @@ public:
 	void dropDuplicates();
 	[[nodiscard]] HistoryItem *find(MsgId id, not_null<HistoryItem*> holder);
 	void restoreThread(MsgId rootId);
+	[[nodiscard]] HistoryItem *itemFor(const AyuMessageBase &message);
 	[[nodiscard]] std::vector<not_null<HistoryItem*>> orphans(
 		TimeId from,
 		TimeId till) const;

@@ -3752,6 +3752,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						&& (view->hasVisibleText() || mediaHasTextForCopy)) {
 						const auto peer = item->history()->peer;
 						const auto itemId = item->id;
+						// A deleted message does not exist on the server.
+						const auto byText = mediaHasTextForCopy
+							|| item->isDeleted();
 						const auto translate = mediaHasTextForCopy
 							? (HistoryView::TransribedText(item)
 								.append('\n')
@@ -3763,7 +3766,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 								_controller->show(Box(
 									Ui::TranslateBox,
 									peer,
-									mediaHasTextForCopy ? MsgId() : itemId,
+									byText ? MsgId() : itemId,
 									translate,
 									hasRestriction));
 							}, &st::menuIconTranslate);

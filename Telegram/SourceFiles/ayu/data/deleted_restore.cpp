@@ -96,6 +96,12 @@ void WithDeletedDialogs(
 
 } // namespace
 
+void withDeletedDialogs(
+		ID userId,
+		Fn<void(const base::flat_set<ID> &)> callback) {
+	WithDeletedDialogs(userId, std::move(callback));
+}
+
 void noteDeleted(not_null<History*> history) {
 	const auto peer = history->peer;
 	if (!Supported(peer)) {
@@ -164,7 +170,9 @@ void State::load(ID userId, ID dialogId) {
 	AyuMessages::flushPending();
 	crl::async([=] {
 		auto messages = std::vector<AyuMessageBase>();
+		auto extras = std::vector<DeletedExtra>();
 		try {
+			extras = AyuMessages::loadDeletedExtras(userId, dialogId);
 			messages = AyuMessages::loadDeletedMessages(
 				userId,
 				dialogId,
@@ -177,7 +185,7 @@ void State::load(ID userId, ID dialogId) {
 			messages.clear();
 		}
 
-		crl::on_main([=, messages = std::move(messages)]() mutable {
+		crl::on_main([=, messages = std::move(messages), extras = std::move(extras)]() mutable {
 			const auto strong = weak.get();
 			if (!strong || strong->_disabled) {
 				return;
@@ -195,6 +203,12 @@ void State::load(ID userId, ID dialogId) {
 					message.messageId,
 					int(strong->_rows.size()));
 				strong->_rows.push_back({ std::move(message), MsgId() });
+				for (const auto &extra : extras) {
+					if (extra.messageId == strong->_rows.back().message.messageId) {
+						strong->_rows.back().extra = extra;
+						break;
+					}
+				}
 			}
 			strong->_loaded = true;
 			strong->_pending = false;
@@ -231,6 +245,35 @@ void State::restoreThread(MsgId rootId) {
 		materializeThread(rootId);
 	} else if (_pending) {
 		_threads.emplace(rootId);
+	}
+}
+
+HistoryItem *State::itemFor(const AyuMessageBase &message) {
+	auto &owner = _history->owner();
+	const auto peer = _history->peer;
+	if (const auto existing = owner.message(peer, MsgId(message.messageId))) {
+		return existing;
+	} else if (_disabled) {
+		return nullptr;
+	}
+	auto i = _index.find(message.messageId);
+	if (i == _index.end()) {
+		i = _index.emplace(
+			message.messageId,
+			int(_rows.size())).first;
+		_rows.push_back({ message, MsgId() });
+	}
+	auto &row = _rows[i->second];
+	if (row.dead) {
+		return nullptr;
+	} else if (row.localId) {
+		return owner.message(peer, row.localId);
+	}
+	try {
+		return create(row);
+	} catch (...) {
+		row.dead = true;
+		return nullptr;
 	}
 }
 
@@ -507,6 +550,9 @@ HistoryItem *State::create(Row &row) {
 		return nullptr;
 	}
 	AyuMessages::restoreSavedMedia(item, message);
+	if (row.extra) {
+		AyuMessages::restoreExtra(item, *row.extra);
+	}
 	if (peer->isUser() || !_history->ayuKept()) {
 		item->setDeleted();
 		item->ayuSetDeletedAt(message.entityCreateDate);

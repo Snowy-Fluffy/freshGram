@@ -137,6 +137,21 @@ auto storage = make_storage(
 		make_column("lastMessageDate", &KeptDialog::lastMessageDate),
 		make_column("lost", &KeptDialog::lost)
 	),
+	make_table<DeletedExtra>(
+		"DeletedExtra",
+		make_column("fakeId", &DeletedExtra::fakeId, primary_key().autoincrement()),
+		make_column("userId", &DeletedExtra::userId),
+		make_column("dialogId", &DeletedExtra::dialogId),
+		make_column("messageId", &DeletedExtra::messageId),
+		make_column("reactions", &DeletedExtra::reactions),
+		make_column("repliesCount", &DeletedExtra::repliesCount),
+		make_column("commentsChannelId", &DeletedExtra::commentsChannelId),
+		make_column("commentsRootId", &DeletedExtra::commentsRootId),
+		make_column("commentsReadTill", &DeletedExtra::commentsReadTill),
+		make_column("commentsMaxId", &DeletedExtra::commentsMaxId),
+		make_column("repliers", &DeletedExtra::repliers),
+		make_column("entityCreateDate", &DeletedExtra::entityCreateDate)
+	),
 	make_table<KeptTopic>(
 		"KeptTopic",
 		make_column("fakeId", &KeptTopic::fakeId, primary_key().autoincrement()),
@@ -521,6 +536,8 @@ void purgeOlderThan(int days) {
 					where(column<DeletedMessage>(&DeletedMessage::entityCreateDate) < cutoff));
 				storage.remove_all<EditedMessage>(
 					where(column<EditedMessage>(&EditedMessage::entityCreateDate) < cutoff));
+				storage.remove_all<DeletedExtra>(
+					where(column<DeletedExtra>(&DeletedExtra::entityCreateDate) < cutoff));
 			});
 		});
 	});
@@ -594,6 +611,36 @@ void addDeletedMessages(const std::vector<DeletedMessage> &messages) {
 	});
 }
 
+void addDeletedExtras(const std::vector<DeletedExtra> &extras) {
+	if (extras.empty()) {
+		return;
+	}
+	runVoid("save deleted extras", [&] {
+		inTransaction([&] {
+			for (const auto &extra : extras) {
+				storage.remove_all<DeletedExtra>(
+					where(
+						column<DeletedExtra>(&DeletedExtra::userId) == extra.userId and
+						column<DeletedExtra>(&DeletedExtra::dialogId) == extra.dialogId and
+						column<DeletedExtra>(&DeletedExtra::messageId) == extra.messageId
+					)
+				);
+				storage.insert(extra);
+			}
+		});
+	});
+}
+
+std::vector<DeletedExtra> getDeletedExtras(ID userId, ID dialogId) {
+	return run<std::vector<DeletedExtra>>("load deleted extras", {}, [&] {
+		return storage.get_all<DeletedExtra>(
+			where(
+				column<DeletedExtra>(&DeletedExtra::userId) == userId and
+				column<DeletedExtra>(&DeletedExtra::dialogId) == dialogId
+			));
+	});
+}
+
 void addDeletedMessage(const DeletedMessage &message) {
 	addDeletedMessages({message});
 }
@@ -642,6 +689,31 @@ std::vector<DeletedMessage> getDeletedMessages(ID userId, ID dialogId, ID topicI
 	});
 }
 
+std::vector<DeletedMessage> searchDeletedMessages(ID userId, ID dialogId, ID topicId, ID fromId, const std::string &searchQuery, int totalLimit) {
+	return run<std::vector<DeletedMessage>>("search deleted messages", {}, [&] {
+		std::string escaped;
+		escaped.reserve(searchQuery.size());
+		for (const auto c : searchQuery) {
+			if (c == '%' || c == '_' || c == '\\') {
+				escaped += '\\';
+			}
+			escaped += c;
+		}
+		const auto pattern = "%" + escaped + "%";
+		return storage.get_all<DeletedMessage>(
+			where(
+				column<DeletedMessage>(&DeletedMessage::userId) == userId and
+				(column<DeletedMessage>(&DeletedMessage::dialogId) == dialogId or dialogId == 0) and
+				(column<DeletedMessage>(&DeletedMessage::topicId) == topicId or topicId == 0) and
+				(column<DeletedMessage>(&DeletedMessage::fromId) == fromId or fromId == 0) and
+				like(column<DeletedMessage>(&DeletedMessage::text), pattern, "\\")
+			),
+			order_by(column<DeletedMessage>(&DeletedMessage::date)).desc(),
+			limit(totalLimit)
+		);
+	});
+}
+
 bool hasDeletedMessages(ID userId, ID dialogId, ID topicId) {
 	return run<bool>("check deleted messages", false, [&] {
 		return !storage.select(
@@ -666,6 +738,13 @@ std::vector<ID> getDeletedDialogIds(ID userId) {
 
 void removeDeletedMessage(ID userId, ID dialogId, ID messageId) {
 	runVoid("remove deleted message", [&] {
+		storage.remove_all<DeletedExtra>(
+			where(
+				column<DeletedExtra>(&DeletedExtra::userId) == userId and
+				column<DeletedExtra>(&DeletedExtra::dialogId) == dialogId and
+				column<DeletedExtra>(&DeletedExtra::messageId) == messageId
+			)
+		);
 		storage.remove_all<DeletedMessage>(
 			where(
 				column<DeletedMessage>(&DeletedMessage::userId) == userId and
@@ -678,6 +757,14 @@ void removeDeletedMessage(ID userId, ID dialogId, ID messageId) {
 
 void clearDeletedMessages(ID userId, ID dialogId, ID topicId) {
 	runVoid("clear deleted messages", [&] {
+		if (!topicId) {
+			storage.remove_all<DeletedExtra>(
+				where(
+					column<DeletedExtra>(&DeletedExtra::userId) == userId and
+					column<DeletedExtra>(&DeletedExtra::dialogId) == dialogId
+				)
+			);
+		}
 		storage.remove_all<DeletedMessage>(
 			where(
 				column<DeletedMessage>(&DeletedMessage::userId) == userId and

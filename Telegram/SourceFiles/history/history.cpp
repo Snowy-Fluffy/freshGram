@@ -4316,6 +4316,13 @@ void History::ayuRestoreThread(MsgId rootId) {
 	_ayuRestore->restoreThread(rootId);
 }
 
+HistoryItem *History::ayuDeletedItem(const AyuMessageBase &message) {
+	if (!_ayuRestore) {
+		_ayuRestore = std::make_unique<AyuRestore::State>(this);
+	}
+	return _ayuRestore->itemFor(message);
+}
+
 void History::ayuRestoreMarkStale() {
 	if (_ayuRestore) {
 		_ayuRestore->markStale();

@@ -8,6 +8,8 @@
 
 #include "apiwrap.h"
 #include "api/api_text_entities.h"
+#include "data/data_message_reaction_id.h"
+#include "data/data_message_reactions.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
@@ -81,6 +83,53 @@ MTPObject deserializeObject(std::vector<char> serialized) {
 		return MTPObject();
 	}
 	return std::move(*result);
+}
+
+std::vector<char> serializeReactions(not_null<HistoryItem*> item) {
+	const auto &list = item->reactions();
+	if (list.empty()) {
+		return {};
+	}
+	auto results = QVector<MTPReactionCount>();
+	results.reserve(list.size());
+	auto order = 0;
+	for (const auto &reaction : list) {
+		results.push_back(MTP_reactionCount(
+			MTP_flags(reaction.my
+				? MTPDreactionCount::Flag::f_chosen_order
+				: MTPDreactionCount::Flag()),
+			MTP_int(reaction.my ? ++order : 0),
+			Data::ReactionToMTP(reaction.id),
+			MTP_int(reaction.count)));
+	}
+	// Who reacted, as far as the client knows it (the recent reactions).
+	auto recent = QVector<MTPMessagePeerReaction>();
+	for (const auto &[id, list] : item->recentReactions()) {
+		for (const auto &reaction : list) {
+			using Flag = MTPDmessagePeerReaction::Flag;
+			recent.push_back(MTP_messagePeerReaction(
+				MTP_flags((reaction.big ? Flag::f_big : Flag())
+					| (reaction.my ? Flag::f_my : Flag())),
+				peerToMTP(reaction.peer->id),
+				MTP_int(item->date()),
+				Data::ReactionToMTP(id)));
+		}
+	}
+	const auto withRecent = !recent.isEmpty();
+	return serializeObject(MTP_messageReactions(
+		MTP_flags(withRecent
+			? MTPDmessageReactions::Flag::f_recent_reactions
+				| MTPDmessageReactions::Flag::f_can_see_list
+			: MTPDmessageReactions::Flag()),
+		MTP_vector<MTPReactionCount>(std::move(results)),
+		withRecent
+			? MTP_vector<MTPMessagePeerReaction>(std::move(recent))
+			: MTPVector<MTPMessagePeerReaction>(),
+		MTPVector<MTPMessageReactor>()));
+}
+
+MTPMessageReactions deserializeReactions(const std::vector<char> &serialized) {
+	return deserializeObject<MTPMessageReactions>(serialized);
 }
 
 std::pair<std::string, std::vector<char>> serializeTextWithEntities(not_null<HistoryItem*> item) {

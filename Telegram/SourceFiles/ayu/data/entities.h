@@ -58,6 +58,25 @@ class EditedMessage : public AyuMessageBase
 {
 };
 
+// Reactions and comments of a deleted message, they are kept apart from
+// the main row, so that the table of deleted messages stays compatible.
+class DeletedExtra
+{
+public:
+	ID fakeId;
+	ID userId;
+	ID dialogId;
+	int messageId;
+	std::vector<char> reactions;
+	int repliesCount;
+	ID commentsChannelId;
+	int commentsRootId;
+	int commentsReadTill;
+	int commentsMaxId;
+	std::string repliers;
+	int entityCreateDate;
+};
+
 class DeletedDialog
 {
 public:

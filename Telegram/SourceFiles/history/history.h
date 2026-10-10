@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class History;
 class HistoryBlock;
+class AyuMessageBase;
 class HistoryTranslation;
 class HistoryItem;
 struct HistoryItemCommonFields;
@@ -113,6 +114,7 @@ public:
 	void restoreAyuKept();
 	void ayuRestoreMarkStale();
 	void ayuRestoreThread(MsgId rootId);
+	[[nodiscard]] HistoryItem *ayuDeletedItem(const AyuMessageBase &message);
 	[[nodiscard]] HistoryItem *ayuRestored(
 		MsgId id,
 		not_null<HistoryItem*> holder);

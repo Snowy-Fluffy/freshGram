@@ -4304,6 +4304,17 @@ ClickHandlerPtr Message::createGoToCommentsLink() const {
 					return;
 				}
 			}
+			// A deleted post does not exist on the server anymore, but its
+			// comments live in the discussion group: open them from there.
+			const auto comments = item->commentsItemId();
+			if ((item->isDeleted() || item->isLocal())
+				&& comments.peer
+				&& comments.msg) {
+				controller->showRepliesForMessage(
+					history->owner().history(comments.peer),
+					comments.msg);
+				return;
+			}
 			controller->showRepliesForMessage(history, item->id);
 		}
 	});

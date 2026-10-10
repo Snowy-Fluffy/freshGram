@@ -119,7 +119,7 @@ bool TranslateTracker::add(
 
 	if ((item->out() && !item->history()->peer->autoTranslation())
 		|| item->isService()
-		|| !item->isRegular()
+		|| (!item->isRegular() && !item->isAyuRestored())
 		|| item->isOnlyEmojiAndSpaces()) {
 		return false;
 	}
@@ -346,7 +346,7 @@ void TranslateTracker::requestSome() {
 			requests.push_back(Ui::PrepareTranslateProviderRequest(
 				_provider.get(),
 				session->data().peer(id.peer),
-				id.msg,
+				item->isDeleted() ? MsgId() : id.msg,
 				item->originalText()));
 			ids.push_back(id);
 		}
