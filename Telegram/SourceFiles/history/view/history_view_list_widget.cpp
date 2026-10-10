@@ -3610,6 +3610,9 @@ void ListWidget::copySelectedText() {
 		text,
 		getSelectedRichBlocks(),
 		&session());
+	if (hasSelectedItems()) {
+		clearSelected();
+	}
 }
 
 MessageIdsList ListWidget::getSelectedIds() const {
