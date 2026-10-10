@@ -8,7 +8,7 @@ here="$(dirname "$(realpath "$0")")"
 sudo apt-get update
 sudo apt-get install -y flatpak flatpak-builder
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user -y --noninteractive flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+flatpak install --user -y --noninteractive flathub org.gnome.Platform//51 org.gnome.Sdk//51
 
 mkdir -p "$(dirname "$bundle")"
 work="$(mktemp -d)"
