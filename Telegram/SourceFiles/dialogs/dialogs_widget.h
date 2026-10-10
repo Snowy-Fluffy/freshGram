@@ -433,6 +433,8 @@ private:
 	ChannelData *_searchQueryCommunity = nullptr;
 	ChatTypeFilter _searchQueryFilter = {};
 	SearchMediaFilter _searchQueryMedia = SearchMediaFilter::All;
+	int _searchClientCount = 0;
+	int _searchClientEmptyPages = 0;
 	bool _searchQueryFromArchive = true;
 
 	Ui::Controls::SwipeBackResult _swipeBackData;

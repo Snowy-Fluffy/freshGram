@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/flat_map.h"
 #include "base/unique_qptr.h"
 #include "dialogs/dialogs_search_media.h"
 #include "ui/rp_widget.h"
@@ -53,7 +54,9 @@ public:
 		std::shared_ptr<Ui::DynamicImage> fromUserpic,
 		QString fromName,
 		SearchMediaFilter media,
-		std::shared_ptr<Ui::DynamicImage> mediaIcon);
+		base::flat_map<
+			SearchMediaFilter,
+			std::shared_ptr<Ui::DynamicImage>> mediaIcons);
 
 	[[nodiscard]] rpl::producer<> cancelInRequests() const;
 	[[nodiscard]] rpl::producer<> cancelFromRequests() const;
@@ -90,7 +93,9 @@ private:
 	Section _media;
 	rpl::variable<ChatSearchTab> _active;
 	SearchMediaFilter _mediaCurrent = SearchMediaFilter::All;
-	std::shared_ptr<Ui::DynamicImage> _mediaIcon;
+	base::flat_map<
+		SearchMediaFilter,
+		std::shared_ptr<Ui::DynamicImage>> _mediaIcons;
 	rpl::event_stream<SearchMediaFilter> _mediaChanges;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;

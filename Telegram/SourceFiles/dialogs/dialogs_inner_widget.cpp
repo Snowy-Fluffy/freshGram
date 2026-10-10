@@ -5403,6 +5403,23 @@ void InnerWidget::updateSearchIn() {
 		&& !sublist
 		&& ((_searchState.tab == ChatSearchTab::ThisPeer)
 			|| (_searchState.tab == ChatSearchTab::ThisTopic));
+	auto mediaIcons = base::flat_map<
+		SearchMediaFilter,
+		std::shared_ptr<Ui::DynamicImage>>();
+	if (showMedia) {
+		const auto add = [&](SearchMediaFilter media, const style::icon &icon) {
+			mediaIcons.emplace(media, Ui::MakeIconThumbnail(icon));
+		};
+		add(SearchMediaFilter::All, st::menuIconShowAll);
+		add(SearchMediaFilter::Photos, st::ayuSearchMediaPhoto);
+		add(SearchMediaFilter::Videos, st::ayuSearchMediaVideo);
+		add(SearchMediaFilter::Files, st::ayuSearchMediaFile);
+		add(SearchMediaFilter::Music, st::ayuSearchMediaMusic);
+		add(SearchMediaFilter::Voice, st::ayuSearchMediaVoice);
+		add(SearchMediaFilter::RoundVideo, st::ayuSearchMediaRound);
+		add(SearchMediaFilter::Links, st::ayuSearchMediaLink);
+		add(SearchMediaFilter::Gifs, st::ayuSearchMediaGif);
+	}
 	_searchIn->apply({
 		{ ChatSearchTab::ThisTopic, topicIcon },
 		{ ChatSearchTab::ThisPeer, peerIcon },
@@ -5410,9 +5427,7 @@ void InnerWidget::updateSearchIn() {
 		{ ChatSearchTab::Archive, archiveIcon },
 		{ ChatSearchTab::MyMessages, myIcon },
 		{ ChatSearchTab::PublicPosts, publicIcon },
-	}, _searchState.tab, peerTabType, fromImage, fromName, _searchState.media, showMedia
-		? Ui::MakeIconThumbnail(st::menuIconShowAll)
-		: std::shared_ptr<Ui::DynamicImage>());
+	}, _searchState.tab, peerTabType, fromImage, fromName, _searchState.media, mediaIcons);
 }
 
 void InnerWidget::repaintSearchResult(int index) {

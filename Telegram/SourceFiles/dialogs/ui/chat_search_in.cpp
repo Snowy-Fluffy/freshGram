@@ -314,7 +314,9 @@ void ChatSearchIn::apply(
 		std::shared_ptr<Ui::DynamicImage> fromUserpic,
 		QString fromName,
 		SearchMediaFilter media,
-		std::shared_ptr<Ui::DynamicImage> mediaIcon) {
+		base::flat_map<
+			SearchMediaFilter,
+			std::shared_ptr<Ui::DynamicImage>> mediaIcons) {
 	_tabs = std::move(tabs);
 	_peerTabType = peerTabType;
 	_active = active;
@@ -334,10 +336,13 @@ void ChatSearchIn::apply(
 	updateSection(&_from, std::move(fromUserpic), std::move(text));
 
 	_mediaCurrent = media;
-	_mediaIcon = mediaIcon;
+	_mediaIcons = std::move(mediaIcons);
+	const auto current = _mediaIcons.find(media);
 	updateSection(
 		&_media,
-		std::move(mediaIcon),
+		(current != _mediaIcons.end())
+			? current->second
+			: nullptr,
 		tr::ayu_SearchMediaType(
 			tr::now,
 			lt_type,
@@ -371,18 +376,20 @@ rpl::producer<SearchMediaFilter> ChatSearchIn::mediaChanges() const {
 }
 
 void ChatSearchIn::showMediaMenu() {
+	if (_mediaIcons.empty()) {
+		return;
+	}
 	_menu = base::make_unique_q<Ui::PopupMenu>(
 		this,
 		st::dialogsSearchInMenu);
 	auto activeIndex = 0;
-	const auto icon = _mediaIcon;
 	for (const auto value : kMediaFilters) {
 		if (value == _mediaCurrent) {
 			activeIndex = _menu->actions().size();
 		}
 		auto action = base::make_unique_q<Action>(
 			_menu.get(),
-			icon,
+			_mediaIcons[value],
 			SearchMediaLabel(value),
 			(value == _mediaCurrent));
 		action->setActionTriggered([=] {

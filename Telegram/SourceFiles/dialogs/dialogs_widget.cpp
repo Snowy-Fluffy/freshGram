@@ -120,6 +120,7 @@ namespace Dialogs {
 namespace {
 
 constexpr auto kSearchPerPage = 50;
+constexpr auto kSearchClientEmptyPages = 30;
 constexpr auto kStoriesExpandDuration = crl::time(200);
 constexpr auto kSearchRequestDelay = crl::time(900);
 
@@ -421,6 +422,35 @@ void Widget::BottomButton::paintEvent(QPaintEvent *e) {
 		break;
 	}
 	return MTP_inputMessagesFilterEmpty();
+}
+
+// The server rejects a type filter together with an author in some cases,
+// so with an author the type is checked on the client.
+[[nodiscard]] static MTPMessagesFilter ServerMediaFilter(
+		SearchMediaFilter media,
+		PeerData *from) {
+	return from ? MTPMessagesFilter(MTP_inputMessagesFilterEmpty()) : MediaFilter(media);
+}
+
+[[nodiscard]] static std::optional<Storage::SharedMediaType> ClientMediaType(
+		SearchMediaFilter media,
+		PeerData *from) {
+	using Type = Storage::SharedMediaType;
+	if (!from) {
+		return std::nullopt;
+	}
+	switch (media) {
+	case SearchMediaFilter::Photos: return Type::Photo;
+	case SearchMediaFilter::Videos: return Type::Video;
+	case SearchMediaFilter::Files: return Type::File;
+	case SearchMediaFilter::Music: return Type::MusicFile;
+	case SearchMediaFilter::Voice: return Type::VoiceFile;
+	case SearchMediaFilter::RoundVideo: return Type::RoundFile;
+	case SearchMediaFilter::Links: return Type::Link;
+	case SearchMediaFilter::Gifs: return Type::GIF;
+	case SearchMediaFilter::All: break;
+	}
+	return std::nullopt;
 }
 
 Widget::Widget(
@@ -3282,7 +3312,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 								Data::ReactionToMTP
 							)),
 						MTP_int(topic ? topic->rootId() : 0),
-						MediaFilter(media),
+						ServerMediaFilter(media, fromPeer),
 						MTP_int(0), // min_date
 						MTP_int(0), // max_date
 						MTP_int(0), // offset_id
@@ -3546,7 +3576,7 @@ void Widget::searchMore() {
 								Data::ReactionToMTP
 							)),
 						MTP_int(topic ? topic->rootId() : 0),
-						MediaFilter(_searchQueryMedia),
+						ServerMediaFilter(_searchQueryMedia, fromPeer),
 						MTP_int(0), // min_date
 						MTP_int(0), // max_date
 						MTP_int(process->lastId),
@@ -3600,7 +3630,7 @@ void Widget::searchMore() {
 					MTPInputPeer(), // saved_peer_id
 					MTPVector<MTPReaction>(), // saved_reaction
 					MTPint(), // top_msg_id
-					MediaFilter(_searchQueryMedia),
+					ServerMediaFilter(_searchQueryMedia, _searchQueryFrom),
 					MTP_int(0), // min_date
 					MTP_int(0), // max_date
 					MTP_int(_migratedProcess.lastId),
@@ -3748,7 +3778,14 @@ void Widget::searchReceived(
 	if (type.start) {
 		process->lastPeer = nullptr;
 		process->lastId = 0;
+		if (!type.migrated) {
+			_searchClientCount = 0;
+			_searchClientEmptyPages = 0;
+		}
 	}
+	const auto clientMedia = (type.peer || type.migrated)
+		? ClientMediaType(_searchQueryMedia, _searchQueryFrom)
+		: std::nullopt;
 	const auto processList = [&](const MTPVector<MTPMessage> &messages) {
 		auto result = std::vector<not_null<HistoryItem*>>();
 		for (const auto &message : messages.v) {
@@ -3761,7 +3798,10 @@ void Widget::searchReceived(
 						message,
 						MessageFlags(),
 						NewMessageType::Existing);
-					result.push_back(item);
+					if (!clientMedia
+						|| item->sharedMediaTypes().test(*clientMedia)) {
+						result.push_back(item);
+					}
 				}
 				process->lastPeer = peer;
 			} else {
@@ -3842,11 +3882,27 @@ void Widget::searchReceived(
 		process->full = true;
 		return std::vector<not_null<HistoryItem*>>();
 	});
+	if (clientMedia) {
+		if (type.migrated) {
+			fullCount = int(messages.size());
+		} else {
+			_searchClientCount += int(messages.size());
+			fullCount = _searchClientCount;
+		}
+	}
 	_inner->searchReceived(messages, inject, type, fullCount);
 
 	process->requestId = 0;
 	listScrollUpdated();
 	update();
+
+	if (clientMedia && !process->full) {
+		if (!messages.empty()) {
+			_searchClientEmptyPages = 0;
+		} else if (++_searchClientEmptyPages <= kSearchClientEmptyPages) {
+			crl::on_main(this, [=] { searchMore(); });
+		}
+	}
 }
 
 void Widget::peerSearchReceived(Api::PeerSearchResult result) {

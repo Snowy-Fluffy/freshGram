@@ -12,6 +12,15 @@ using "ui/chat/chat.style";
 using "ui/widgets/widgets.style";
 using "dialogs/dialogs.style";
 
+ayuSearchMediaPhoto: icon {{ "info/info_media_photo", menuIconColor }};
+ayuSearchMediaVideo: icon {{ "info/info_media_video", menuIconColor }};
+ayuSearchMediaFile: icon {{ "info/info_media_file", menuIconColor }};
+ayuSearchMediaMusic: icon {{ "info/info_media_audio", menuIconColor }};
+ayuSearchMediaVoice: icon {{ "info/info_media_voice", menuIconColor }};
+ayuSearchMediaRound: icon {{ "info/info_media_round", menuIconColor }};
+ayuSearchMediaLink: icon {{ "info/info_media_link", menuIconColor }};
+ayuSearchMediaGif: icon {{ "info/info_media_gif", menuIconColor }};
+
 ayuSecretChatIcon: ThreeStateIcon {
 	icon: icon {{ "ayu/secret_lock", dialogsChatIconFg, point(2px, 4px) }};
 	over: icon {{ "ayu/secret_lock", dialogsChatIconFgOver, point(2px, 4px) }};
