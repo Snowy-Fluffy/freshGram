@@ -204,6 +204,27 @@ jobs:
           path: dist/
           retention-days: 7
 
+      - name: Collect symbols
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $pdb = Get-ChildItem freshGram/out/Release -Filter *.pdb -ErrorAction SilentlyContinue
+          if ($pdb) {
+            New-Item -ItemType Directory -Force symbols | Out-Null
+            7z a -mx=3 symbols/freshGram-pdb.7z ($pdb | ForEach-Object { $_.FullName })
+          } else {
+            Write-Host "No .pdb files were found in freshGram/out/Release."
+          }
+
+      - name: Upload symbols
+        if: hashFiles('symbols/*.7z') != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: freshGram-windows-x64-symbols
+          path: symbols/
+          retention-days: 30
+
       - name: Resolve release tag
         id: release
         shell: bash

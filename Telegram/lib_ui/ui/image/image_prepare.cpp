@@ -1006,7 +1006,10 @@ QImage GenerateShadow(
 }
 
 QImage Circle(QImage &&image, QRect target) {
-	Expects(!image.isNull());
+	if (image.isNull()) {
+		LOG(("Images::Circle: got a null image."));
+		return std::move(image);
+	}
 
 	if (target.isNull()) {
 		target = QRect(QPoint( ), image.size());
@@ -1033,6 +1036,10 @@ QImage Round(
 		QImage &&image,
 		CornersMaskRef mask,
 		QRect target) {
+	if (image.isNull()) {
+		LOG(("Images::Round: got a null image."));
+		return std::move(image);
+	}
 	if (target.isNull()) {
 		target = QRect(QPoint(), image.size());
 	} else {

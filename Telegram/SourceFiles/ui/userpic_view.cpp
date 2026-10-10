@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/userpic_view.h"
 
+#include "base/debug_log.h"
+
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ui/empty_userpic.h"
 #include "ui/painter.h"
@@ -169,6 +171,16 @@ void ValidateUserpicCache(
 
 	const auto ayuOverride = AyuUserpic::ShouldOverrideShape(shape);
 
+	if (cloud && (cloud->isNull() || full.isEmpty())) {
+		static auto logged = false;
+		if (!logged) {
+			logged = true;
+			LOG(("Userpic: cannot scale the image, cloud %1x%2, size %3."
+				).arg(cloud->width()).arg(cloud->height()).arg(size));
+		}
+		view.cached = QImage();
+		return;
+	}
 	if (cloud) {
 		view.cached = cloud->scaled(
 			full,
