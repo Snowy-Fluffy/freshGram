@@ -5386,6 +5386,9 @@ std::unique_ptr<QMimeData> ListWidget::prepareDrag() {
 		pressedView,
 		_pressItemExact ? _pressItemExact : pressedItem,
 		_pressState);
+	if (uponSelected && hasCopyRestrictionForSelected()) {
+		return nullptr;
+	}
 
 	auto urls = QList<QUrl>();
 	const auto selectedText = [&] {
@@ -5428,6 +5431,9 @@ std::unique_ptr<QMimeData> ListWidget::prepareDrag() {
 		const auto exactItem = _pressItemExact
 			? _pressItemExact
 			: pressedItem;
+		if (hasCopyRestriction(exactItem)) {
+			return nullptr;
+		}
 		if (forwardSelection) {
 			forwardIds = collectSelectedIds();
 		} else if (_mouseCursorState == CursorState::Date) {
