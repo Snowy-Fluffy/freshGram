@@ -45,7 +45,7 @@ void PrepareFullWidthRoundButton(
 
 [[nodiscard]] bool TitleFitsBesideSwitcher(const TextWithEntities &title) {
 	const auto &st = st::urlAuthBoxTitle;
-	const auto available = st::boxWidth
+	const auto available = st::boxWideWidth
 		- st::boxRowPadding.left()
 		- st::boxRowPadding.right();
 	const auto widths = Ui::Text::String(
@@ -54,9 +54,9 @@ void PrepareFullWidthRoundButton(
 		kMarkupTextOptions,
 		st.minWidth
 	).countLineWidths(available);
-	const auto free = st::boxWidth / 2
+	const auto free = st::boxWideWidth / 2
 		- SwitchableUserpicButton::MaxWidth()
-		- SwitchableUserpicButton::Skip();
+		- SwitchableUserpicButton::RightSkip();
 	return widths.empty() || (widths.front() <= 2 * free);
 }
 
@@ -236,6 +236,14 @@ int SwitchableUserpicButton::MaxWidth() {
 
 int SwitchableUserpicButton::Skip() {
 	return st::lineWidth * 4;
+}
+
+int SwitchableUserpicButton::RightSkip() {
+	return st::boxScroll.width - Skip();
+}
+
+int SwitchableUserpicButton::TopSkip() {
+	return st::boxTopMargin;
 }
 
 SwitchableUserpicButton::SwitchableUserpicButton(
@@ -463,10 +471,13 @@ void ShowDetails(
 		const QString &region,
 		rpl::producer<QStringList> matchCodes,
 		bool isApp) {
-	box->setWidth(st::boxWidth);
-	box->setStyle(st::urlAuthBox);
+	box->setWidth(st::boxWideWidth);
+	box->setStyle(st::urlAuthDetailsBox);
+	box->setNoContentMargin(true);
 
 	const auto content = box->verticalLayout();
+	const auto bottom = box->setPinnedToBottomContent(
+		object_ptr<Ui::VerticalLayout>(box));
 
 	const auto withUserpic = (userpicOwned != nullptr);
 	const auto reserve = content->add(object_ptr<Ui::RpWidget>(content));
@@ -504,9 +515,10 @@ void ShowDetails(
 		title->setMarkedText(text);
 		reserve->resize(
 			reserve->width(),
-			(withUserpic || TitleFitsBesideSwitcher(text))
-				? (2 * st::defaultVerticalListSkip)
-				: SwitchableUserpicButton::Size());
+			SwitchableUserpicButton::TopSkip()
+				+ ((withUserpic || TitleFitsBesideSwitcher(text))
+					? (2 * st::defaultVerticalListSkip)
+					: SwitchableUserpicButton::Size()));
 	}, title->lifetime());
 	Ui::AddSkip(content);
 
@@ -572,16 +584,16 @@ void ShowDetails(
 		state->matchCodes = codes;
 	}, box->lifetime());
 
-	Ui::AddSkip(content);
+	Ui::AddSkip(bottom);
 	{
 		const auto &padding = st::boxRowPadding;
-		const auto button = content->add(
+		const auto button = bottom->add(
 			object_ptr<Ui::RoundButton>(
-				content,
+				bottom,
 				tr::lng_url_auth_login_button(),
 				st::defaultLightButton),
 			padding);
-		PrepareFullWidthRoundButton(button, content, padding);
+		PrepareFullWidthRoundButton(button, bottom, padding);
 		button->setClickedCallback([=] {
 			if (state->matchCodes.isEmpty()) {
 				callback({
@@ -609,20 +621,21 @@ void ShowDetails(
 			}));
 		});
 	}
-	Ui::AddSkip(content);
+	Ui::AddSkip(bottom);
 	{
 		const auto &padding = st::boxRowPadding;
-		const auto button = content->add(
+		const auto button = bottom->add(
 			object_ptr<Ui::RoundButton>(
-				content,
+				bottom,
 				tr::lng_suggest_action_decline(),
 				st::attentionBoxButton),
 			padding);
-		PrepareFullWidthRoundButton(button, content, padding);
+		PrepareFullWidthRoundButton(button, bottom, padding);
 		button->setClickedCallback([=] {
 			box->closeBox();
 		});
 	}
+	Ui::AddSkip(bottom, st::urlAuthBox.buttonPadding.bottom());
 }
 
 } // namespace UrlAuthBox
