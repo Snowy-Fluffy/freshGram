@@ -8820,6 +8820,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_SuggestGhostModeBeforeViewingStoryDescription" = "Displays an alert before opening a story, suggesting you enable Ghost Mode.";
 "ayu_SpyEssentialsHeader" = "Spy essentials";
 "ayu_SaveDeletedMessages" = "Save Deleted Messages";
+"ayu_SaveLocallyDeletedMessages" = "Save Messages Deleted by You";
 "ayu_SaveMessagesHistory" = "Save Edits History";
 "ayu_MessageSavingSaveMedia" = "Save Attachments";
 "ayu_MessageSavingSaveMediaHint" = "Configure chats & limits";

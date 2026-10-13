@@ -34,6 +34,7 @@
 "ayu_SuggestGhostModeBeforeViewingStoryDescription" = "打开故事前显示提醒，建议你启用幽灵模式。";
 "ayu_SpyEssentialsHeader" = "间谍基础";
 "ayu_SaveDeletedMessages" = "保存已删除的消息";
+"ayu_SaveLocallyDeletedMessages" = "保存由您删除的消息";
 "ayu_SaveMessagesHistory" = "保存编辑历史";
 "ayu_MessageSavingSaveMedia" = "保存附件";
 "ayu_MessageSavingSaveMediaHint" = "配置聊天和限制";

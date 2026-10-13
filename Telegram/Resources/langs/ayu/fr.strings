@@ -34,6 +34,7 @@
 "ayu_SuggestGhostModeBeforeViewingStoryDescription" = "Affiche une alerte avant d'ouvrir une story pour vous proposer d'activer le mode fantôme.";
 "ayu_SpyEssentialsHeader" = "Bases de l'espion";
 "ayu_SaveDeletedMessages" = "Enregistrer les messages supprimés";
+"ayu_SaveLocallyDeletedMessages" = "Enregistrer les messages supprimés par vous";
 "ayu_SaveMessagesHistory" = "Enregistrer l'historique des modifications";
 "ayu_MessageSavingSaveMedia" = "Enregistrer les pièces jointes";
 "ayu_MessageSavingSaveMediaHint" = "Configurer les discussions et les limites";

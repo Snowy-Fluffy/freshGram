@@ -1563,7 +1563,8 @@ void ApiWrap::deleteAllFromParticipant(
 	// Saved messages stay as deleted ones instead of being destroyed.
 	auto toDestroy = std::vector<not_null<HistoryItem*>>();
 	for (const auto &item : items) {
-		if (isMessageSavable(item)) {
+		if (AyuSettings::getInstance().saveLocallyDeletedMessages()
+			&& isMessageSavable(item)) {
 			processMessageDelete(item);
 		} else {
 			toDestroy.push_back(item);

@@ -666,6 +666,12 @@ void AyuSettings::setSaveDeletedMessages(bool val) {
 	save();
 }
 
+void AyuSettings::setSaveLocallyDeletedMessages(bool val) {
+	if (_saveLocallyDeletedMessages.current() == val) return;
+	_saveLocallyDeletedMessages = val;
+	save();
+}
+
 void AyuSettings::setSecretChatsEnabled(bool val) {
 	if (_secretChatsEnabled.current() == val) return;
 	_secretChatsEnabled = val;
@@ -1421,6 +1427,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"ghostModeSettings", ghostAccounts},
 		{"useGlobalGhostMode", s._useGlobalGhostMode.current()},
 		{"saveDeletedMessages", s._saveDeletedMessages.current()},
+		{"saveLocallyDeletedMessages", s._saveLocallyDeletedMessages.current()},
 		{"secretChatsEnabled", s._secretChatsEnabled.current()},
 		{"saveMessagesHistory", s._saveMessagesHistory.current()},
 		{"saveForBots", s._saveForBots.current()},
@@ -1558,6 +1565,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._accountsVaulted = j.value("accountsVaulted", false);
 	s._useGlobalGhostMode = j.value("useGlobalGhostMode", defaults._useGlobalGhostMode.current());
 	s._saveDeletedMessages = j.value("saveDeletedMessages", defaults._saveDeletedMessages.current());
+	s._saveLocallyDeletedMessages = j.value("saveLocallyDeletedMessages", defaults._saveLocallyDeletedMessages.current());
 	s._secretChatsEnabled = j.value("secretChatsEnabled", defaults._secretChatsEnabled.current());
 	s._saveMessagesHistory = j.value("saveMessagesHistory", defaults._saveMessagesHistory.current());
 	s._saveForBots = j.value("saveForBots", defaults._saveForBots.current());

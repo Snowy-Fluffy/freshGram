@@ -34,6 +34,7 @@
 "ayu_SuggestGhostModeBeforeViewingStoryDescription" = "Mostra un avviso prima di aprire una storia, suggerendoti di attivare la modalità fantasma.";
 "ayu_SpyEssentialsHeader" = "Basi della spia";
 "ayu_SaveDeletedMessages" = "Salva i messaggi eliminati";
+"ayu_SaveLocallyDeletedMessages" = "Salva i messaggi eliminati da te";
 "ayu_SaveMessagesHistory" = "Salva la cronologia delle modifiche";
 "ayu_MessageSavingSaveMedia" = "Salva gli allegati";
 "ayu_MessageSavingSaveMediaHint" = "Configura chat e limiti";

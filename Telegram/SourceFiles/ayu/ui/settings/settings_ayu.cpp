@@ -634,6 +634,12 @@ void BuildSpyEssentials(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.setter = &AyuSettings::setSaveDeletedMessages,
 	});
 	ayu.addSettingToggle({
+		.id = u"ayu/saveLocallyDeletedMessages"_q,
+		.title = tr::ayu_SaveLocallyDeletedMessages(),
+		.getter = &AyuSettings::saveLocallyDeletedMessages,
+		.setter = &AyuSettings::setSaveLocallyDeletedMessages,
+	});
+	ayu.addSettingToggle({
 		.id = u"ayu/saveMessagesHistory"_q,
 		.title = tr::ayu_SaveMessagesHistory(),
 		.getter = &AyuSettings::saveMessagesHistory,

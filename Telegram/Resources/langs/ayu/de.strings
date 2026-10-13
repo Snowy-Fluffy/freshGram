@@ -34,6 +34,7 @@
 "ayu_SuggestGhostModeBeforeViewingStoryDescription" = "Zeigt vor dem Öffnen einer Story einen Hinweis an und schlägt vor, den Geistermodus zu aktivieren.";
 "ayu_SpyEssentialsHeader" = "Spion-Grundlagen";
 "ayu_SaveDeletedMessages" = "Gelöschte Nachrichten speichern";
+"ayu_SaveLocallyDeletedMessages" = "Von Ihnen gelöschte Nachrichten speichern";
 "ayu_SaveMessagesHistory" = "Bearbeitungsverlauf speichern";
 "ayu_MessageSavingSaveMedia" = "Anhänge speichern";
 "ayu_MessageSavingSaveMediaHint" = "Chats und Limits festlegen";

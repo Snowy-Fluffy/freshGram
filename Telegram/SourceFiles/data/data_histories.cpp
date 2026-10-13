@@ -1072,10 +1072,12 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 				AyuMessages::removeDeletedMessage(item);
 			} else if (item->isRegular()) {
 				idsByPeer[history].push_back(MTP_int(itemId.msg));
-				if (isMessageSavable(item)) {
+				if (AyuSettings::getInstance().saveLocallyDeletedMessages()
+					&& isMessageSavable(item)) {
 					keep.push_back(item);
 				} else {
 					remove.push_back(item);
+					AyuMessages::removeDeletedMessage(item);
 				}
 			} else {
 				remove.push_back(item);

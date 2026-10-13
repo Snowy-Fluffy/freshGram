@@ -34,6 +34,7 @@
 "ayu_SuggestGhostModeBeforeViewingStoryDescription" = "Показывает предупреждение перед открытием истории с предложением включить режим призрака.";
 "ayu_SpyEssentialsHeader" = "Основы шпиона";
 "ayu_SaveDeletedMessages" = "Сохранять удалённые сообщения";
+"ayu_SaveLocallyDeletedMessages" = "Сохранять сообщения, удалённые вами";
 "ayu_SaveMessagesHistory" = "Сохранять историю правок";
 "ayu_MessageSavingSaveMedia" = "Сохранять вложения";
 "ayu_MessageSavingSaveMediaHint" = "Настроить чаты и лимиты";
