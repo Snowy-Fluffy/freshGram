@@ -660,7 +660,6 @@ HistorySelectedTextParts HistoryItemTextForSelectedCopy(
 	if (const auto photo = SelectedCopyImage(item)) {
 		AddImageSlot(mediaResult, {
 			.photo = photo,
-			.itemId = item->fullId(),
 			.before = u"\n"_q,
 		});
 	}
@@ -685,7 +684,6 @@ HistorySelectedTextParts HistoryGroupTextForSelectedCopy(
 		if (const auto photo = SelectedCopyImage(item)) {
 			AddImageSlot(mediaResult, {
 				.photo = photo,
-				.itemId = item->fullId(),
 				.before = u"\n"_q,
 			});
 		}
@@ -709,7 +707,6 @@ HistorySelectedTextParts HistoryItemTextParts(not_null<HistoryItem*> item) {
 		auto result = TextParts(TextForMimeData());
 		AddImageSlot(result, {
 			.photo = photo,
-			.itemId = item->fullId(),
 			.after = rest.empty() ? QString() : u"\n\n"_q,
 		});
 		result.texts.back() = std::move(rest);
@@ -718,7 +715,6 @@ HistorySelectedTextParts HistoryItemTextParts(not_null<HistoryItem*> item) {
 	auto result = TextParts(HistoryItemMainText(item));
 	AddImageSlot(result, {
 		.photo = photo,
-		.itemId = item->fullId(),
 		.before = u"\n\n"_q,
 	});
 	return AppendExtraCopyText(item, std::move(result));
