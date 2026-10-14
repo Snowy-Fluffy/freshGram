@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ayu/data/kept_dialogs.h"
+#include "ayu/features/compose_stash/compose_stash.h"
 #include "data/data_forum.h"
 
 #include "data/components/recent_peers.h"

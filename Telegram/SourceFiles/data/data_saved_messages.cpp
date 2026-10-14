@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_saved_messages.h"
+#include "ayu/features/compose_stash/compose_stash.h"
 
 #include "apiwrap.h"
 #include "core/application.h"

@@ -4,14 +4,17 @@
 #include "ayu/ui/boxes/delete_own_topics_box.h"
 #include "base/unixtime.h"
 #include "base/weak_ptr.h"
+#include "rpl/producer.h"
 #include "lang/lang_keys.h"
 #include "lang_auto.h"
 #include "data/data_forum.h"
 #include "ui/boxes/choose_date_time.h"
 #include "ui/layers/generic_box.h"
+#include "ui/qt_object_factory.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/number_input.h"
+#include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "styles/style_ayu_styles.h"
@@ -130,18 +133,26 @@ void FillDeleteOwnMessagesBox(
 			box,
 			object_ptr<Ui::VerticalLayout>(box)),
 		style::margins(st::deleteOwnNestedSkip, 0, 0, 0));
-	const auto periodInput = periodWrap->entity()->add(
-		object_ptr<Ui::NumberInput>(
+	const auto periodInputWrap = periodWrap->entity()->add(
+		object_ptr<Ui::FixedHeightWidget>(
 			periodWrap,
-			st::defaultInputField,
-			tr::ayu_DeleteOwnMessagesNumber(),
-			u"24"_q,
-			kPeriodLimit),
+			st::defaultInputField.heightMin),
 		style::margins(
 			st::deleteOwnRowPadding.left(),
 			0,
 			st::deleteOwnRowPadding.right(),
 			0));
+	const auto periodInput = Ui::CreateChild<Ui::NumberInput>(
+		periodInputWrap,
+		st::defaultInputField,
+		tr::ayu_DeleteOwnMessagesNumber(),
+		u"24"_q,
+		kPeriodLimit);
+	periodInputWrap->widthValue(
+	) | rpl::on_next([=](int width) {
+		periodInput->resize(width, periodInput->height());
+		periodInput->moveToLeft(0, 0);
+	}, periodInput->lifetime());
 	periodInput->setMaximumWidth(st::deleteOwnFieldWidth);
 	const auto units = std::array{
 		tr::ayu_DeleteOwnMessagesHours(tr::now),
@@ -207,18 +218,26 @@ void FillDeleteOwnMessagesBox(
 			box,
 			object_ptr<Ui::VerticalLayout>(box)),
 		style::margins(st::deleteOwnNestedSkip, 0, 0, 0));
-	const auto countInput = countWrap->entity()->add(
-		object_ptr<Ui::NumberInput>(
+	const auto countInputWrap = countWrap->entity()->add(
+		object_ptr<Ui::FixedHeightWidget>(
 			countWrap,
-			st::defaultInputField,
-			tr::ayu_DeleteOwnMessagesNumber(),
-			u"100"_q,
-			kCountLimit),
+			st::defaultInputField.heightMin),
 		style::margins(
 			st::deleteOwnRowPadding.left(),
 			0,
 			st::deleteOwnRowPadding.right(),
 			0));
+	const auto countInput = Ui::CreateChild<Ui::NumberInput>(
+		countInputWrap,
+		st::defaultInputField,
+		tr::ayu_DeleteOwnMessagesNumber(),
+		u"100"_q,
+		kCountLimit);
+	countInputWrap->widthValue(
+	) | rpl::on_next([=](int width) {
+		countInput->resize(width, countInput->height());
+		countInput->moveToLeft(0, 0);
+	}, countInput->lifetime());
 	countInput->setMaximumWidth(st::deleteOwnFieldWidth);
 	countWrap->toggle(false, anim::type::instant);
 
