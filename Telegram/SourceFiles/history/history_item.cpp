@@ -5314,7 +5314,8 @@ void HistoryItem::createComponents(CreateConfig &&config) {
 	if (config.reply.messageId
 		|| config.reply.externalSenderId
 		|| !config.reply.externalSenderName.isEmpty()
-		|| config.reply.storyId) {
+		|| config.reply.storyId
+		|| config.reply.richQuote) {
 		mask |= HistoryMessageReply::Bit();
 	}
 	if (config.viaBotId) {
