@@ -6033,6 +6033,10 @@ void HistoryInner::refreshAboutView(bool force) {
 				|| user->isFullLoaded()) {
 				refresh();
 			} else {
+				if (force && _aboutView) {
+					_aboutView = nullptr;
+					updateSize();
+				}
 				session().api().requestFullPeer(user);
 			}
 		}
