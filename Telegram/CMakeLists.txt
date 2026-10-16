@@ -1504,6 +1504,8 @@ PRIVATE
     history/view/history_view_reply_button.h
     history/view/history_view_requests_bar.cpp
     history/view/history_view_requests_bar.h
+    history/view/history_view_rich_quote.cpp
+    history/view/history_view_rich_quote.h
     history/view/history_view_schedule_box.cpp
     history/view/history_view_schedule_box.h
     history/view/history_view_scheduled_section.cpp

@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_click_handler.h"
 #include "iv/markdown/iv_markdown_article_layout_structure.h"
 #include "iv/markdown/iv_markdown_article_paint.h"
+#include "iv/markdown/iv_markdown_article_quote.h"
 #include "iv/markdown/iv_markdown_article_selection.h"
 #include "iv/markdown/iv_markdown_article_text.h"
 #include "iv/markdown/iv_markdown_button_row.h"
@@ -4045,6 +4046,13 @@ public:
 	[[nodiscard]] int segmentIndexForEditableLeaf(
 		const PreparedEditLeafSource &source) const;
 
+	void appendDisplayRangesForLeafText(
+		const PreparedEditLeafSource &source,
+		std::span<const MarkdownArticleTextRange> ranges,
+		not_null<std::vector<MarkdownArticleSearchMatch>*> result) const;
+	[[nodiscard]] QRect displayRangesRect(
+		const std::vector<MarkdownArticleSearchMatch> &ranges) const;
+
 	[[nodiscard]] QRect textSegmentRect(int segmentIndex) const;
 	[[nodiscard]] QRect logicalSegmentRect(int segmentIndex) const;
 
@@ -4479,7 +4487,9 @@ void MarkdownArticle::Impl::updatePreparedLeaf(
 		const MarkdownArticleContent &prepared) {
 	if (!ValidBlockPath(source.block)
 		|| (_content.mediaRuntime != prepared.mediaRuntime)
-		|| (_content.editMode != prepared.editMode)) {
+		|| (_content.editMode != prepared.editMode)
+		|| IsQuotableNativeContent(_content)
+		|| IsQuotableNativeContent(prepared)) {
 		setContent(prepared);
 		return;
 	}
@@ -5247,6 +5257,39 @@ int MarkdownArticle::Impl::segmentIndexForEditableLeaf(
 		}
 	}
 	return -1;
+}
+
+void MarkdownArticle::Impl::appendDisplayRangesForLeafText(
+		const PreparedEditLeafSource &source,
+		std::span<const MarkdownArticleTextRange> ranges,
+		not_null<std::vector<MarkdownArticleSearchMatch>*> result) const {
+	const auto prepared = FindPreparedArticleLeaf(
+		_content.blocks.blocks,
+		source);
+	AppendDisplayRangesForLeafText({
+		.content = &_content,
+		.segment = FindSegment(
+			&_segments,
+			segmentIndexForEditableLeaf(source)),
+		.block = prepared.block,
+		.cell = prepared.cell,
+	}, source, ranges, result);
+}
+
+QRect MarkdownArticle::Impl::displayRangesRect(
+		const std::vector<MarkdownArticleSearchMatch> &ranges) const {
+	return DisplayRangesRect(
+		_segments,
+		ranges,
+		layoutStyle(),
+		currentDevicePixelRatio(),
+		[&](int index) {
+			const auto owner = findHorizontalScrollOwner(index);
+			return QuoteSegmentGeometry{
+				.logical = logicalSegmentRect(index),
+				.scrollOwner = owner ? owner->block : nullptr,
+			};
+		});
 }
 
 QRect MarkdownArticle::Impl::textSegmentRect(int segmentIndex) const {
@@ -7340,6 +7383,18 @@ std::optional<PreparedEditLeafSource> MarkdownArticle::editableLeafForSegment(
 int MarkdownArticle::segmentIndexForEditableLeaf(
 		const PreparedEditLeafSource &source) const {
 	return _impl->segmentIndexForEditableLeaf(source);
+}
+
+void MarkdownArticle::appendDisplayRangesForLeafText(
+		const PreparedEditLeafSource &source,
+		std::span<const MarkdownArticleTextRange> ranges,
+		not_null<std::vector<MarkdownArticleSearchMatch>*> result) const {
+	_impl->appendDisplayRangesForLeafText(source, ranges, result);
+}
+
+QRect MarkdownArticle::displayRangesRect(
+		const std::vector<MarkdownArticleSearchMatch> &ranges) const {
+	return _impl->displayRangesRect(ranges);
 }
 
 QRect MarkdownArticle::textSegmentRect(int segmentIndex) const {

@@ -41,6 +41,7 @@ class PathShiftGradient;
 struct BubblePattern;
 struct ChatPaintContext;
 struct ChatPaintHighlight;
+struct ChatPaintRichQuote;
 class ChatStyle;
 struct ReactionFlyAnimationArgs;
 class ReactionFlyAnimation;
@@ -69,6 +70,7 @@ struct MessageSelection;
 class Media;
 class Reply;
 struct HistoryMessageRichPage;
+struct HighlightYRange;
 
 enum class Context : char {
 	History,
@@ -596,6 +598,10 @@ public:
 		const MessageSelection &selection) const;
 	virtual TextSelection selectionFromQuote(
 		const SelectedQuote &quote) const = 0;
+	[[nodiscard]] Ui::ChatPaintRichQuote richSelectionFromQuote(
+		const SelectedQuote &quote) const;
+	[[nodiscard]] virtual HighlightYRange richQuoteHighlightYRange(
+		const Ui::ChatPaintRichQuote &quote) const;
 	[[nodiscard]] virtual TextSelection adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const;
