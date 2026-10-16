@@ -2066,6 +2066,9 @@ QByteArray SerializeMessage(
 		pushActor();
 		pushAction("managed_bot_created");
 		pushBare("bot", wrapUserName(data.botId));
+	}, [&](const ActionNoPaidMessagesTokenUsed &data) {
+		pushActor();
+		pushAction("no_paid_messages_token_used");
 	}, [](v::null_t) {});
 
 	if (v::is_null(message.action.content)) {

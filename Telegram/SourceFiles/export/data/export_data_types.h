@@ -1108,6 +1108,9 @@ struct ActionManagedBotCreated {
 	UserId botId = 0;
 };
 
+struct ActionNoPaidMessagesTokenUsed {
+};
+
 struct ServiceAction {
 	std::variant<
 		v::null_t,
@@ -1169,7 +1172,8 @@ struct ServiceAction {
 		ActionNoForwardsRequest,
 		ActionNewCreatorPending,
 		ActionChangeCreator,
-		ActionManagedBotCreated> content;
+		ActionManagedBotCreated,
+		ActionNoPaidMessagesTokenUsed> content;
 };
 
 ServiceAction ParseServiceAction(

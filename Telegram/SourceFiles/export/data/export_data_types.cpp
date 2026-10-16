@@ -2808,6 +2808,8 @@ ServiceAction ParseServiceAction(
 		result.content = content;
 	}, [](const MTPDmessageActionGramTransfer &) {
 	}, [](const MTPDmessageActionWalletTonConnectRequest &) {
+	}, [&](const MTPDmessageActionNoPaidMessagesTokenUsed &) {
+		result.content = ActionNoPaidMessagesTokenUsed();
 	}, [](const MTPDmessageActionEmpty &data) {});
 	return result;
 }

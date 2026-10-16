@@ -4391,6 +4391,8 @@ auto HtmlWriter::Wrap::pushMessage(
 		return serviceFrom
 			+ " created a bot "
 			+ peers.wrapUserName(data.botId);
+	}, [&](const ActionNoPaidMessagesTokenUsed &data) {
+		return serviceFrom + " started a chat via a free messages link";
 	}, [](v::null_t) { return QByteArray(); });
 
 	if (!serviceText.isEmpty()) {
