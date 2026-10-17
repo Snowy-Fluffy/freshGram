@@ -524,12 +524,7 @@ TabbedSelector::TabbedSelector(
 
 	style::PaletteChanged(
 	) | rpl::on_next([=] {
-		_panelRounding = Ui::PrepareCornerPixmaps(
-			st::emojiPanRadius,
-			_st.bg);
-		_categoriesRounding = Ui::PrepareCornerPixmaps(
-			st::emojiPanRadius,
-			_st.categoriesBg);
+		refreshRounding();
 	}, lifetime());
 
 	if (hasEmojiTab() && _mode == Mode::Full) {
@@ -906,6 +901,12 @@ void TabbedSelector::paintEvent(QPaintEvent *e) {
 	}
 }
 
+void TabbedSelector::refreshRounding() {
+	const auto radius = _roundRadius ? _roundRadius : st::emojiPanRadius;
+	_panelRounding = Ui::PrepareCornerPixmaps(radius, _st.bg);
+	_categoriesRounding = Ui::PrepareCornerPixmaps(radius, _st.categoriesBg);
+}
+
 void TabbedSelector::paintSlideFrame(QPainter &p) {
 	if (_roundRadius > 0) {
 		paintBgRoundedPart(p);
@@ -1279,6 +1280,7 @@ void TabbedSelector::handleScroll() {
 
 void TabbedSelector::setRoundRadius(int radius) {
 	_roundRadius = radius;
+	refreshRounding();
 	if (_tabsSlider) {
 		_tabsSlider->setRippleTopRoundRadius(_roundRadius);
 	}
