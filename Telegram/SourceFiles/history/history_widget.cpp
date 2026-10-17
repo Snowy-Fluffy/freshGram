@@ -6039,7 +6039,8 @@ Api::SendAction HistoryWidget::prepareSendAction(
 	if (const auto forum = _history->asForum()) {
 		if (forum->bot() && Data::IsBotUserCreatesTopics(_history->peer)) {
 			const auto readyRootId = [&]() -> MsgId {
-				if (const auto id = result.replyTo.messageId) {
+				const auto id = result.replyTo.messageId;
+				if (id.peer == _history->peer->id) {
 					if (const auto item = session().data().message(id)) {
 						return item->topicRootId();
 					}
@@ -6060,8 +6061,13 @@ Api::SendAction HistoryWidget::prepareSendAction(
 							std::move(draft));
 					}
 				}
-				result = Api::SendAction(_creatingBotTopic, options);
-				result.replyTo.topicRootId = _creatingBotTopic->rootId();
+				const auto rootId = _creatingBotTopic->rootId();
+				if (!result.replyTo.messageId) {
+					result.replyTo.messageId = FullMsgId(
+						_history->peer->id,
+						rootId);
+				}
+				result.replyTo.topicRootId = rootId;
 			}
 		}
 	}
@@ -11633,9 +11639,10 @@ void HistoryWidget::updateReplyEditText(not_null<HistoryItem*> item) {
 				return answer->text;
 			}
 		}
-		return (_editMsgId || _replyTo.quote.empty())
+		const auto &quote = HistoryView::Reply::ComposePreviewQuote(_replyTo);
+		return (_editMsgId || quote.empty())
 			? item->inReplyText()
-			: _replyTo.quote;
+			: quote;
 	}();
 	_replyEditMsgText.setMarkedText(
 		st::defaultTextStyle,
@@ -11841,9 +11848,11 @@ void HistoryWidget::drawField(Painter &p, const QRect &rect) {
 		if (_suggestOptions) {
 			_suggestOptions->paintIcon(p, 0, backy, width());
 		} else {
+			const auto quoted = _replyTo
+				&& !HistoryView::Reply::ComposePreviewQuote(_replyTo).empty();
 			(_editMsgId
 				? st::historyEditIcon
-				: (_replyTo && !_replyTo.quote.empty())
+				: quoted
 				? st::historyQuoteIcon
 				: st::historyReplyIcon).paint(
 					p,

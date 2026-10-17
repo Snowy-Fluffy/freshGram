@@ -1044,16 +1044,25 @@ MTPMessageReplyHeader NewMessageReplyHeader(const Api::SendAction &action) {
 		const auto replyToTop = LookupReplyToTop(action.history, replyTo);
 		const auto topicPost = replyTo.topicRootId
 			&& (replyTo.topicRootId != Data::ForumTopic::kGeneralId);
+		const auto rich = replyTo.messageId
+			? replyTo.richQuote.get()
+			: nullptr;
 		const auto quoteNormalized = reverseLocalPremiumEmoji(replyTo.quote, action.history, true);
-		auto quoteEntities = Api::EntitiesToMTP(
-			&action.history->session(),
-			quoteNormalized.entities,
-			Api::ConvertOption::SkipLocal);
+		auto quoteEntities = rich
+			? MTPVector<MTPMessageEntity>()
+			: Api::EntitiesToMTP(
+				&action.history->session(),
+				quoteNormalized.entities,
+				Api::ConvertOption::SkipLocal);
 		return MTP_messageReplyHeader(
 			MTP_flags(Flag::f_reply_to_msg_id
 				| (replyToTop ? Flag::f_reply_to_top_id : Flag())
 				| (externalPeerId ? Flag::f_reply_to_peer_id : Flag())
-				| (quoteNormalized.empty()
+				| (rich
+					? (Flag::f_quote
+						| Flag::f_quote_rich
+						| (rich->offset ? Flag::f_quote_offset : Flag()))
+					: quoteNormalized.empty()
 					? Flag()
 					: (Flag::f_quote
 						| Flag::f_quote_text
@@ -1073,9 +1082,10 @@ MTPMessageReplyHeader NewMessageReplyHeader(const Api::SendAction &action) {
 			MTP_int(replyToTop),
 			MTP_string(replyTo.quote.text),
 			quoteEntities,
-			MTP_int(replyTo.quoteOffset),
+			MTP_int(rich ? rich->offset.value_or(0) : replyTo.quoteOffset),
 			MTP_int(replyTo.todoItemId),
-			MTP_bytes(replyTo.pollOption));
+			MTP_bytes(replyTo.pollOption),
+			(rich ? rich->fragments : MTPVector<MTPRichText>())); // quote_rich
 	}
 	return MTPMessageReplyHeader();
 }
