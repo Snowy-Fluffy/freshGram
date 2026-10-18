@@ -1679,6 +1679,8 @@ PRIVATE
     info/profile/info_profile_phone_menu.h
     info/profile/info_profile_qr_emoji.cpp
     info/profile/info_profile_qr_emoji.h
+    info/profile/info_profile_qr_gifts.cpp
+    info/profile/info_profile_qr_gifts.h
     info/profile/info_profile_section_stack.cpp
     info/profile/info_profile_section_stack.h
     info/profile/info_profile_share_theme.cpp
@@ -2482,6 +2484,10 @@ PRIVATE
     ui/effects/peer_qr_colors_panel.h
     ui/effects/peer_qr_emoji_field.cpp
     ui/effects/peer_qr_emoji_field.h
+    ui/effects/peer_qr_gift_field.cpp
+    ui/effects/peer_qr_gift_field.h
+    ui/effects/peer_qr_gifts_panel.cpp
+    ui/effects/peer_qr_gifts_panel.h
     ui/effects/peer_qr_layer.cpp
     ui/effects/peer_qr_layer.h
     ui/effects/peer_qr_panel.cpp
