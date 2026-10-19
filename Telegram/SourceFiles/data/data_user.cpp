@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_credits.h"
 #include "api/api_global_privacy.h"
 #include "api/api_sensitive_content.h"
+#include "api/api_share_themes.h"
 #include "api/api_statistics.h"
 #include "api/api_text_entities.h"
 #include "base/timer_rpl.h"
@@ -1140,6 +1141,8 @@ void ApplyUserUpdate(not_null<UserData*> user, const MTPDuserFull &update) {
 	user->setNoForwardsFlags(
 		update.is_noforwards_my_enabled(),
 		update.is_noforwards_peer_enabled());
+
+	user->session().api().shareThemes().apply(user, update.vshare_theme());
 
 	user->fullUpdated();
 }
