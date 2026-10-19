@@ -9,3 +9,5 @@
 *.lottie binary
 
 Telegram/lib_ui/emoji.txt -text
+# Raw float tables, such as the 3D diamond model data
+*.bin binary
