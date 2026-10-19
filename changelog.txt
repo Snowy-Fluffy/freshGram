@@ -1,3 +1,19 @@
+7.5.8 beta (20.10.26)
+
+- Add Argon2id passcode protection, wipe after failed attempts and lock triggers.
+- Add a new lock screen with a clock, own background, text and a Telegram style.
+- Add auto-translate of the message text on send.
+- Add Delete own messages to the topics menu and New story to the main menu.
+- Restore the Telegram Desktop look in the Telegram design.
+- Improve the Fagram profile, settings cover and main menu footer.
+- Keep saved media always encrypted and delete the files with saved messages.
+- Retry failed database writes and protect the database journal.
+- Ignore notification replies and actions while the app is locked.
+- Fix the import of an old snapshot that left the database unavailable.
+- Fix the actions of deleted messages restored after a restart.
+- Fix the translate button icon.
+- Fix moving the mini app windows with the mouse on Linux.
+
 7.5.5 beta (18.10.26)
 
 - Add a button to translate the text of the message field.

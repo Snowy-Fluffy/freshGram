@@ -35,8 +35,8 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 7,5,5,0
- PRODUCTVERSION 7,5,5,0
+ FILEVERSION 7,5,8,0
+ PRODUCTVERSION 7,5,8,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -53,10 +53,10 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Snowy-Fluffy"
             VALUE "FileDescription", "freshGram Updater"
-            VALUE "FileVersion", "7.5.5.0"
+            VALUE "FileVersion", "7.5.8.0"
             VALUE "LegalCopyright", "Copyright (C) 2014-2026"
             VALUE "ProductName", "freshGram"
-            VALUE "ProductVersion", "7.5.5.0"
+            VALUE "ProductVersion", "7.5.8.0"
         END
     END
     BLOCK "VarFileInfo"
