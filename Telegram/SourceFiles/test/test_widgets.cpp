@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
 #include <qpa/qwindowsysteminterface.h>
+#endif // !DESKTOP_APP_DISABLE_PRIVATE_QT_API
 
 namespace Test {
 namespace {
@@ -102,6 +103,7 @@ void DeliverPointerLeave(const base::weak_qptr<QWidget> &widget) {
 }
 
 void InjectActivation(QWindow *window) {
+#ifndef DESKTOP_APP_DISABLE_PRIVATE_QT_API
 #if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
 	QWindowSystemInterface::handleFocusWindowChanged(
 		window,
@@ -112,6 +114,7 @@ void InjectActivation(QWindow *window) {
 		Qt::ActiveWindowFocusReason);
 #endif // Qt < 6.3.0
 	QWindowSystemInterface::flushWindowSystemEvents();
+#endif // !DESKTOP_APP_DISABLE_PRIVATE_QT_API
 }
 
 [[nodiscard]] QString WheelStopRefusal(
