@@ -1842,16 +1842,17 @@ Section DetailsFiller::makeInfo() {
 			usernameLine.text->parentWidget(),
 			st::infoProfileLabeledButtonQr);
 		qrButton->setAccessibleName(tr::lng_group_invite_context_qr(tr::now));
+		const auto rightSkip = st::infoProfileLabeledButtonQrRightSkip;
+		const auto showQr = [=, show = controller->uiShow()] {
+			Ui::DefaultShowFillPeerQrBoxCallback(show, user);
+			return false;
+		};
 		UsernamesValue(_peer) | rpl::on_next([=](const auto &u) {
 			qrButton->setVisible(!u.empty());
 		}, qrButton->lifetime());
-		const auto rightSkip = st::infoProfileLabeledButtonQrRightSkip;
 		fitLabelToButton(qrButton, usernameLine.text, rightSkip);
 		fitLabelToButton(qrButton, usernameLine.subtext, rightSkip);
-		qrButton->setClickedCallback([=, show = controller->uiShow()] {
-			Ui::DefaultShowFillPeerQrBoxCallback(show, user);
-			return false;
-		});
+		qrButton->setClickedCallback(showQr);
 
 		if (!user->isBot()) {
 			tracker.track(result->add(
