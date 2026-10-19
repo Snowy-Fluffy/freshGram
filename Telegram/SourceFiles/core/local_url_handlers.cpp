@@ -88,6 +88,9 @@ namespace {
 
 using Match = qthelp::RegularExpressionMatch;
 
+constexpr auto kGetPremiumLocal = "internal:tme_getpremium"_cs;
+constexpr auto kGetPremiumRefMaxLength = 32;
+
 class PersonalChannelController final : public PeerListController {
 public:
 	explicit PersonalChannelController(
@@ -1511,6 +1514,50 @@ bool ResolvePremiumOffer(
 	return true;
 }
 
+[[nodiscard]] QString GetPremiumSource(const QString &ref) {
+	const auto lower = ref.toLower();
+	const auto allowed = [](QChar ch) {
+		return (ch >= 'a' && ch <= 'z')
+			|| (ch >= '0' && ch <= '9')
+			|| (ch == '_');
+	};
+	const auto valid = !lower.isEmpty()
+		&& (lower.size() <= kGetPremiumRefMaxLength)
+		&& ranges::all_of(lower, allowed);
+	return valid ? (u"tme_getpremium_"_q + lower) : u"tme_getpremium"_q;
+}
+
+bool ResolveGetPremium(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto params = url_parse_params(
+		match->captured(1).mid(1),
+		qthelp::UrlParamNameTransform::ToLower);
+	::Settings::ShowPremium(
+		controller,
+		GetPremiumSource(params.value(u"ref"_q)));
+	controller->window().activate();
+	return true;
+}
+
+[[nodiscard]] QString GetPremiumLocalUrl(QStringView query) {
+	const auto hash = query.indexOf('#');
+	const auto path = (hash >= 0) ? query.left(hash) : query;
+	const auto question = path.indexOf('?');
+	const auto ref = (question >= 0)
+		? url_parse_params(
+			path.mid(question + 1).toString(),
+			qthelp::UrlParamNameTransform::ToLower).value(u"ref"_q)
+		: QString();
+	// internal:, so no external tg:// link can report this source.
+	return kGetPremiumLocal.utf16()
+		+ (ref.isEmpty() ? QString() : (u"?ref="_q + qthelp::url_encode(ref)));
+}
+
 bool ResolvePremiumMultigift(
 		Window::SessionController *controller,
 		const Match &match,
@@ -1955,6 +2002,10 @@ const std::vector<LocalUrlHandler> &InternalUrlHandlers() {
 			u"^about_popular_apps$"_q,
 			ShowPopularAppsAbout,
 		},
+		{
+			u"^tme_getpremium(\\?.*)?$"_q,
+			ResolveGetPremium,
+		},
 	};
 	return Result;
 }
@@ -1983,7 +2034,8 @@ QString TryConvertUrlToLocal(QString url) {
 				+ name
 				+ subdomainMatch->captured(3)
 				+ subdomainMatch->captured(4));
-			return result.startsWith("tg://resolve?domain=")
+			return (result.startsWith("tg://resolve?domain=")
+					|| IsGetPremiumLocalUrl(result))
 				? result
 				: url;
 		}
@@ -2091,6 +2143,8 @@ QString TryConvertUrlToLocal(QString url) {
 		} else if (const auto ayuSettingsMatch = regex_match(
 			u"^(?:ayuSettings|exteraSettings)/?\\?(.+)$"_q, query, matchOptions)) {
 			return u"tg://ayusettings?"_q + ayuSettingsMatch->captured(1);
+		} else if (regex_match(u"^getpremium(/|\\?|#|$)"_q, query, matchOptions)) {
+			return GetPremiumLocalUrl(query);
 		} else if (const auto usernameMatch = regex_match(u"^"
 			"([a-zA-Z0-9\\.\\_]+)"
 			"("
@@ -2134,6 +2188,12 @@ QString TryConvertUrlToLocal(QString url) {
 		}
 	}
 	return url;
+}
+
+bool IsGetPremiumLocalUrl(const QString &url) {
+	const auto prefix = kGetPremiumLocal.utf16();
+	return url.startsWith(prefix, Qt::CaseInsensitive)
+		&& ((url.size() == prefix.size()) || (url[prefix.size()] == '?'));
 }
 
 bool IsMiniAppUrl(const QString &url) {
