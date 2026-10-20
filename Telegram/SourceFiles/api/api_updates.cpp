@@ -2244,7 +2244,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 						|| user->phone().isEmpty())
 						? QString()
 						: Ui::FormatPhone(user->phone())),
-					user->username());
+					user->editableUsername());
 
 				session().changes().peerUpdated(
 					user,
