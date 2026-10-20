@@ -327,6 +327,8 @@ void AddUniqueCloseMoreButton(
 	not_null<Ui::GenericBox*> box,
 	Settings::CreditsEntryBoxStyleOverrides st,
 	Fn<void(not_null<Ui::PopupMenu*>)> fillMenu = nullptr,
-	Fn<void()> launchCraft = nullptr);
+	Fn<void()> launchCraft = nullptr,
+	const style::IconButton *closeSt = nullptr,
+	const style::IconButton *menuSt = nullptr);
 
 } // namespace Settings

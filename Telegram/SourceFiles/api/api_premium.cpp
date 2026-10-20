@@ -1090,6 +1090,7 @@ std::optional<Data::SavedStarGift> FromTL(
 		.pinned = data.is_pinned_to_top() && hasUnique,
 		.hidden = data.is_unsaved(),
 		.mine = to->isSelf(),
+		.refunded = data.is_refunded(),
 	};
 }
 

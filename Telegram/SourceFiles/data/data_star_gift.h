@@ -281,6 +281,7 @@ struct SavedStarGift {
 	bool pinned = false;
 	bool hidden = false;
 	bool mine = false;
+	bool refunded = false;
 };
 
 struct GiftUpgradeSpinner {
