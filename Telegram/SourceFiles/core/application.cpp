@@ -111,6 +111,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ayu/features/passcode_guard/lock_background.h"
 #include "ayu/features/passcode_guard/lock_triggers.h"
+#include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/passcode_guard/passcode_guard.h"
 #include "ayu/ayu_infra.h"
 #include "ayu/ayu_settings.h"
@@ -296,6 +297,7 @@ Application::~Application() {
 	closeAdditionalWindows();
 
 	_private->proxyRotation = nullptr;
+	AyuPlugins::Stop();
 	AyuMessages::flushPending();
 	_domain->finish();
 	AyuDatabase::finish();
@@ -466,6 +468,7 @@ void Application::run() {
 	startDomain();
 	startTray();
 	AyuLockTriggers::Init();
+	AyuPlugins::Start();
 
 	_lastActivePrimaryWindow->firstShow();
 
