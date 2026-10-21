@@ -1,7 +1,7 @@
 #include "check.h"
-#include "signature.h"
+#include "fgpl/signature.h"
 #include "zip_builder.h"
-#include "zip_reader.h"
+#include "fgpl/zip_reader.h"
 
 #include <string>
 #include <vector>

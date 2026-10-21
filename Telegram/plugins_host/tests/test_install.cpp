@@ -1,8 +1,8 @@
 #include "check.h"
 #include "fakes.h"
-#include "host_client.h"
+#include "fgpl/host_client.h"
 #include "package_builder.h"
-#include "permissions.h"
+#include "fgpl/permissions.h"
 #include "python_support.h"
 
 #include <fstream>

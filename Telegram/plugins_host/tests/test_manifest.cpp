@@ -1,5 +1,5 @@
 #include "check.h"
-#include "manifest.h"
+#include "fgpl/manifest.h"
 #include "package_builder.h"
 
 #include <functional>

@@ -1,7 +1,7 @@
-#include "broker.h"
+#include "fgpl/broker.h"
 #include "check.h"
 #include "fakes.h"
-#include "host_client.h"
+#include "fgpl/host_client.h"
 #include "python_support.h"
 
 #include <fstream>

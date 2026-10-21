@@ -35,26 +35,26 @@ function(fgpl_options target)
 	endif()
 endfunction()
 
-add_library(fgpl_core STATIC src/cbor.cpp src/vfs.cpp src/sha256.cpp src/module_cache.cpp
-	src/base64.cpp src/json.cpp src/semver.cpp src/zip_reader.cpp src/signature.cpp src/net_policy.cpp src/manifest.cpp
-	src/wasm_scan.cpp src/package.cpp src/zip_writer.cpp src/broker.cpp
-	src/permissions.cpp src/file_storage.cpp)
+add_library(fgpl_core STATIC src/fgpl/cbor.cpp src/fgpl/vfs.cpp src/fgpl/sha256.cpp src/fgpl/module_cache.cpp
+	src/fgpl/base64.cpp src/fgpl/json.cpp src/fgpl/semver.cpp src/fgpl/zip_reader.cpp src/fgpl/signature.cpp src/fgpl/net_policy.cpp src/fgpl/manifest.cpp
+	src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/broker.cpp
+	src/fgpl/permissions.cpp src/fgpl/file_storage.cpp)
 target_include_directories(fgpl_core PUBLIC src)
 target_link_libraries(fgpl_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto)
 fgpl_options(fgpl_core)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-	add_library(fgpl_sandbox STATIC src/sandbox_linux.cpp)
+	add_library(fgpl_sandbox STATIC src/fgpl/sandbox_linux.cpp)
 	target_include_directories(fgpl_sandbox PUBLIC src)
 	fgpl_warnings(fgpl_sandbox)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-	add_library(fgpl_ipc STATIC src/ipc.cpp)
+	add_library(fgpl_ipc STATIC src/fgpl/ipc.cpp)
 	target_link_libraries(fgpl_ipc PUBLIC fgpl_core)
 	fgpl_options(fgpl_ipc)
-	add_library(fgpl_client STATIC src/host_client.cpp src/cached_load.cpp
-		src/manager.cpp)
+	add_library(fgpl_client STATIC src/fgpl/host_client.cpp src/fgpl/cached_load.cpp
+		src/fgpl/manager.cpp)
 	target_link_libraries(fgpl_client PUBLIC fgpl_ipc)
 	fgpl_options(fgpl_client)
 endif()
@@ -67,16 +67,16 @@ if (UNIX)
 	set_property(TARGET wasmtime PROPERTY INTERFACE_LINK_LIBRARIES pthread dl m)
 endif()
 
-add_executable(fgpl_tool src/tool_main.cpp)
+add_executable(fgpl_tool src/fgpl/tool_main.cpp)
 target_link_libraries(fgpl_tool PRIVATE fgpl_runtime)
 fgpl_options(fgpl_tool)
 
-add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp)
+add_library(fgpl_runtime STATIC src/fgpl/runtime.cpp src/fgpl/wasi_host.cpp)
 target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
 fgpl_options(fgpl_runtime)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
-	add_executable(fgpl_plugin_host src/host_main.cpp)
+	add_executable(fgpl_plugin_host src/fgpl/host_main.cpp)
 	target_link_libraries(fgpl_plugin_host PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
 	fgpl_options(fgpl_plugin_host)
 endif()

@@ -1,7 +1,7 @@
-#include "abi.h"
+#include "fgpl/abi.h"
 #include "check.h"
 #include "package_builder.h"
-#include "wasi_host.h"
+#include "fgpl/wasi_host.h"
 
 #include <algorithm>
 #include <filesystem>
