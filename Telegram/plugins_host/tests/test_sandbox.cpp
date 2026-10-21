@@ -1,5 +1,5 @@
 #include "check.h"
-#include "sandbox_linux.h"
+#include "fgpl/sandbox_linux.h"
 
 #include <signal.h>
 #include <sys/socket.h>

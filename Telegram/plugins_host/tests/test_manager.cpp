@@ -1,6 +1,6 @@
 #include "check.h"
 #include "fakes.h"
-#include "manager.h"
+#include "fgpl/manager.h"
 #include "package_builder.h"
 #include "python_support.h"
 

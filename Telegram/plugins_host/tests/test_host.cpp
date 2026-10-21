@@ -1,5 +1,5 @@
 #include "check.h"
-#include "host_client.h"
+#include "fgpl/host_client.h"
 #include "wat_module.h"
 
 #include <signal.h>

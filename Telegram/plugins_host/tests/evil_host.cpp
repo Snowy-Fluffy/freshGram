@@ -1,5 +1,5 @@
-#include "ipc.h"
-#include "protocol.h"
+#include "fgpl/ipc.h"
+#include "fgpl/protocol.h"
 
 #include <signal.h>
 #include <unistd.h>

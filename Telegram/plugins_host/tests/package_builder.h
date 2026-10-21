@@ -1,9 +1,9 @@
 #pragma once
 
-#include "base64.h"
-#include "json.h"
-#include "package.h"
-#include "signature.h"
+#include "fgpl/base64.h"
+#include "fgpl/json.h"
+#include "fgpl/package.h"
+#include "fgpl/signature.h"
 #include "wat_module.h"
 #include "zip_builder.h"
 
