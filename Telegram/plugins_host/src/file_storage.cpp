@@ -104,7 +104,8 @@ bool FileStorage::flush() {
 	}
 	auto error = std::error_code();
 	std::filesystem::create_directories(_file.parent_path(), error);
-	const auto temporary = _file.string() + "." + std::to_string(getpid()) + ".tmp";
+	const auto temporary = _file.string() + "." + std::to_string(getpid())
+		+ "." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".tmp";
 	{
 		auto stream = std::ofstream(temporary, std::ios::binary | std::ios::trunc);
 		if (!stream.write(

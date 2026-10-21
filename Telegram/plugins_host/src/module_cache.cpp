@@ -1,6 +1,7 @@
 #include "module_cache.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <fstream>
@@ -127,8 +128,11 @@ bool ModuleCache::store(
 	content.insert(content.end(), mac.begin(), mac.end());
 
 	const auto target = pathFor(wasm);
+	static auto counter = std::atomic<uint64_t>(0);
 	const auto temporary = target.string()
-		+ "." + std::to_string(getpid()) + ".tmp";
+		+ "." + std::to_string(getpid())
+		+ "." + std::to_string(counter.fetch_add(1))
+		+ ".tmp";
 	{
 		auto stream = std::ofstream(temporary, std::ios::binary | std::ios::trunc);
 		if (!stream.write(

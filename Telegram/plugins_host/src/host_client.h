@@ -5,7 +5,9 @@
 #include "result.h"
 #include "runtime.h"
 
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -73,7 +75,8 @@ public:
 		const HostConfig &config,
 		const cbor::Bytes &wasm,
 		size_t maxBytes = size_t(128) << 20,
-		int timeoutMs = 120000);
+		int timeoutMs = 120000,
+		const std::atomic<bool> *cancel = nullptr);
 
 	[[nodiscard]] const SandboxInfo &sandbox() const {
 		return _sandbox;
@@ -93,8 +96,10 @@ public:
 	void kill();
 
 	[[nodiscard]] int pid() const {
-		return _pid;
+		return _pid.load();
 	}
+
+	void abort();
 	[[nodiscard]] bool alive() const {
 		return _fd >= 0;
 	}
@@ -107,12 +112,14 @@ private:
 		const cbor::Value &value,
 		Bridge &bridge);
 	[[nodiscard]] ClientFailure died(const std::string &context);
+	int reap(int pid, int &status, int flags);
 	[[nodiscard]] ClientFailure fail(
 		ipc::IoError error,
 		const std::string &context);
 
 	int _fd = -1;
-	int _pid = -1;
+	std::atomic<int> _pid{ -1 };
+	std::mutex _reap;
 	int _timeoutMs = 500;
 	int _startMs = 10000;
 	bool _fresh = false;
