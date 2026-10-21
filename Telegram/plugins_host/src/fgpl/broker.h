@@ -159,6 +159,7 @@ struct BrokerServices {
 	std::function<int64_t()> clockMs;
 	std::function<void(std::string_view line)> log;
 	std::function<void(std::string_view op, std::string_view outcome)> audit;
+	std::function<bool(std::string_view kind, const cbor::Value &payload)> ui;
 };
 
 class Broker final : public Bridge {
@@ -170,6 +171,7 @@ public:
 
 	[[nodiscard]] std::optional<cbor::Value> filterEvent(
 		const cbor::Value &event) const;
+	[[nodiscard]] cbor::Value filterTargeted(const cbor::Value &event) const;
 
 	[[nodiscard]] const Grants &grants() const {
 		return _grants;

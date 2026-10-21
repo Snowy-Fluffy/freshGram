@@ -1,4 +1,5 @@
 #include "fgpl/broker.h"
+#include "fgpl/ui_tree.h"
 
 #include "fgpl/net_policy.h"
 
@@ -249,6 +250,21 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "storage.private");
 		}
 		return storageCall(op, args);
+	} else if (op == "ui.settings.set") {
+		if (!has("ui.settings_page")) {
+			return api::Fail(api::error::kDenied, "ui.settings_page");
+		}
+		const auto page = Arg(args, "page");
+		if (!page) {
+			return api::Fail(api::error::kInvalid, "page");
+		}
+		const auto checked = ui::ValidatePage(*page);
+		if (!checked.ok()) {
+			return api::Fail(api::error::kInvalid, checked.error());
+		} else if (!_services.ui || !_services.ui("settings", checked.value())) {
+			return api::Fail(api::error::kUnavailable, "settings page");
+		}
+		return api::Ok();
 	} else if (op == "net.fetch") {
 		if (!has("net.hosts")) {
 			return api::Fail(api::error::kDenied, "net.hosts");
@@ -530,6 +546,31 @@ cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 		return api::Ok();
 	}
 	return api::Fail(api::error::kInvalid, "unknown operation");
+}
+
+cbor::Value Broker::filterTargeted(const cbor::Value &event) const {
+	const auto chat = event.find("chat");
+	const auto id = chat ? chat->asInt() : std::nullopt;
+	const auto secret = event.find("secret");
+	const auto isSecret = secret && secret->asBool().value_or(false);
+	const auto visible = id && chatVisible(*id, isSecret);
+	const auto reading = has("messages.read");
+	auto reduced = cbor::Map();
+	for (const auto &entry : *event.asMap()) {
+		if (entry.key == "chat" || entry.key == "message" || entry.key == "from") {
+			if (!visible) {
+				continue;
+			}
+		} else if (entry.key == "text" || entry.key == "old_text") {
+			if (!visible || !reading) {
+				continue;
+			}
+		} else if (entry.key == "secret") {
+			continue;
+		}
+		reduced.push_back(entry);
+	}
+	return cbor::Value::FromMap(std::move(reduced));
 }
 
 std::optional<cbor::Value> Broker::filterEvent(const cbor::Value &event) const {

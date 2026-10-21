@@ -413,6 +413,110 @@ void TestDataIsFilteredByTheBroker() {
 	CHECK(Code(broker.call(Request("ui.toast", { { "text", Text(std::string(500, 'x')) } }))) == "invalid");
 }
 
+[[nodiscard]] cbor::Value Item(std::vector<std::pair<std::string, cbor::Value>> fields) {
+	auto map = cbor::Map();
+	for (auto &field : fields) {
+		map.push_back({ field.first, std::move(field.second) });
+	}
+	return cbor::Value::FromMap(std::move(map));
+}
+
+[[nodiscard]] cbor::Value Page(std::vector<cbor::Value> items, const std::string &title = "Demo") {
+	return Item({
+		{ "title", Text(title) },
+		{ "items", cbor::Value::FromArray(std::move(items)) },
+	});
+}
+
+void TestSettingsPage() {
+	auto fixture = Fixture({ "ui.settings_page" });
+	auto received = std::vector<cbor::Value>();
+	fixture.services.ui = [&](std::string_view kind, const cbor::Value &page) {
+		received.push_back(page);
+		return kind == "settings";
+	};
+	auto broker = fixture.make();
+	const auto call = [&](cbor::Value page) {
+		return broker.call(Request("ui.settings.set", { { "page", std::move(page) } }));
+	};
+	const auto good = Page({
+		Item({ { "type", Text("text") }, { "text", Text("Line one\nline two") } }),
+		Item({ { "type", Text("toggle") }, { "id", Text("loud") }, { "label", Text("Loud") }, { "value", cbor::Value::FromBool(true) } }),
+		Item({ { "type", Text("input") }, { "id", Text("name") }, { "label", Text("Name") } }),
+		Item({ { "type", Text("select") }, { "id", Text("mode") }, { "label", Text("Mode") }, { "value", Text("nope") },
+			{ "options", cbor::Value::FromArray({
+				Item({ { "value", Text("a") }, { "label", Text("A") } }),
+				Item({ { "value", Text("b") }, { "label", Text("B") } }),
+			}) } }),
+		Item({ { "type", Text("button") }, { "id", Text("go") }, { "label", Text("Go") } }),
+		Item({ { "type", Text("divider") } }),
+	});
+	CHECK(IsOk(call(good)));
+	CHECK(received.size() == 1);
+	const auto &items = *received[0].find("items")->asArray();
+	CHECK(items.size() == 6);
+	CHECK(*items[2].find("value")->asText() == "");
+	CHECK(*items[3].find("value")->asText() == "a");
+
+	const auto bad = [&](cbor::Value page) {
+		return Code(call(std::move(page))) == "invalid";
+	};
+	CHECK(bad(Page({ Item({ { "type", Text("webview") } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("button") }, { "id", Text("Go") }, { "label", Text("x") } }) })));
+	CHECK(bad(Page({
+		Item({ { "type", Text("button") }, { "id", Text("go") }, { "label", Text("x") } }),
+		Item({ { "type", Text("button") }, { "id", Text("go") }, { "label", Text("y") } }),
+	})));
+	CHECK(bad(Page({ Item({ { "type", Text("button") }, { "id", Text("go") }, { "label", Text("x") }, { "script", Text("1") } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("text") }, { "text", Text(std::string(2000, 'x')) } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("text") }, { "text", Text("a\x01") } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("text") }, { "text", Text("evil \xE2\x80\xAE text") } }) })));
+	CHECK(bad(Page({}, "bad \xE2\x81\xA6")));
+	CHECK(bad(Page({ Item({ { "type", Text("select") }, { "id", Text("m") }, { "label", Text("m") }, { "options", cbor::Value::FromArray({}) } }) })));
+	auto many = std::vector<cbor::Value>();
+	for (auto i = 0; i != 65; ++i) {
+		many.push_back(Item({ { "type", Text("divider") } }));
+	}
+	CHECK(bad(Page(std::move(many))));
+	CHECK(bad(Text("not a page")));
+	CHECK(received.size() == 1);
+
+	auto denied = Fixture({ "ui.toast" });
+	denied.services.ui = fixture.services.ui;
+	auto refused = denied.make();
+	CHECK(Code(refused.call(Request("ui.settings.set", { { "page", good } }))) == "denied");
+	auto none = Fixture({ "ui.settings_page" });
+	auto unavailable = none.make();
+	CHECK(Code(unavailable.call(Request("ui.settings.set", { { "page", good } }))) == "unavailable");
+}
+
+void TestTargetedEvents() {
+	auto fixture = Fixture({ "ui.menu" });
+	fixture.grants.chats = std::set<int64_t>{ 1 };
+	auto broker = fixture.make();
+	const auto click = [&](int64_t chat, bool secret) {
+		return Item({
+			{ "type", Text("menu.click") }, { "surface", Text("message") }, { "id", Text("x") },
+			{ "chat", Int(chat) }, { "message", Int(5) }, { "from", Int(9) }, { "text", Text("hello") },
+			{ "secret", cbor::Value::FromBool(secret) },
+		});
+	};
+	const auto inScope = broker.filterTargeted(click(1, false));
+	CHECK(inScope.find("chat") && inScope.find("message") && inScope.find("from"));
+	CHECK(!inScope.find("text") && !inScope.find("secret"));
+	CHECK(inScope.find("id") && inScope.find("surface"));
+	const auto outside = broker.filterTargeted(click(2, false));
+	CHECK(!outside.find("chat") && !outside.find("message") && !outside.find("text"));
+	CHECK(outside.find("id") != nullptr);
+	CHECK(!broker.filterTargeted(click(1, true)).find("chat"));
+	CHECK(!broker.filterTargeted(click(api::kServiceChat, false)).find("chat"));
+
+	auto reading = Fixture({ "ui.menu", "messages.read" });
+	auto reader = reading.make();
+	CHECK(reader.filterTargeted(click(1, false)).find("text") != nullptr);
+	CHECK(reader.filterTargeted(click(1, true)).find("text") == nullptr);
+}
+
 void TestChatScope() {
 	auto fixture = Fixture({ "chats.list", "messages.history", "messages.send", "composer.draft" });
 	fixture.grants.chats = std::set<int64_t>{ 1, api::kServiceChat, 3 };
@@ -516,6 +620,8 @@ int main() {
 	TestKeyCountLimit();
 	TestNetwork();
 	TestDataIsFilteredByTheBroker();
+	TestSettingsPage();
+	TestTargetedEvents();
 	TestChatScope();
 	TestRateLimit();
 	TestMalformedRequests();

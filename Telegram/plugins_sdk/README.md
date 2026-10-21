@@ -38,6 +38,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `account.info` | `account.info` | no phone number |
 | `stars.balance` | `stars.balance` | read only |
 | `composer.draft`, `composer.set_draft` | `composer.draft` | |
+| `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
 | `ui.toast` `{text}` | `ui.toast` | the plugin name is prefixed |
 
 Every call counts against a per-second budget; a plugin may make at most 256
@@ -49,6 +50,24 @@ The host delivers `init` once and then `event` messages. A `message.*` event is
 only delivered with `messages.read`, only for chats in scope, never for secret
 chats or chat 777000; `message.deleted` loses its text without
 `messages.read_deleted`.
+
+## UI contributions
+
+A plugin never draws widgets. It declares menu items and commands in the manifest
+(`contributes.menus`, `contributes.commands`, each needing `ui.menu` / `ui.command`) and the
+app draws them with the plugin's name next to the title. Activations come back as events:
+
+| Event | Fields |
+|---|---|
+| `menu.click` | `surface` (`message`, `chat`, `main_menu`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`) |
+| `command` | `name`, `args` (the text after `/name`), `chat` when in scope |
+| `settings.change` | `id`, `value` of a toggle, input or select |
+| `settings.click` | `id` of a button |
+
+The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items": [...]}` with up to
+64 items of type `text`, `divider`, `toggle`, `input`, `select` and `button` (`id` is a lowercase
+token, unique within the page). The app validates it, shows it in its own window and keeps the last
+version; send it again to change it. Text cannot contain control or bidi override characters.
 
 ## Python
 

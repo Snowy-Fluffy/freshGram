@@ -24,6 +24,7 @@ add_library(fgpl_app STATIC
 	${fgpl_src}/permissions.cpp
 	${fgpl_src}/file_storage.cpp
 	${fgpl_src}/runtime_bundle.cpp
+	${fgpl_src}/ui_tree.cpp
 	${fgpl_src}/ipc.cpp
 	${fgpl_src}/host_client.cpp
 	${fgpl_src}/cached_load.cpp
