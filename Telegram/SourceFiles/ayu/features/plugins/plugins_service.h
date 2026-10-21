@@ -33,7 +33,9 @@ void NotifyListChanged();
 [[nodiscard]] fgpl::PluginManager *Manager();
 
 [[nodiscard]] QString StorePath();
+[[nodiscard]] QString RuntimeRootPath();
 [[nodiscard]] QString RuntimePath();
+void NotifyRuntimeChanged();
 [[nodiscard]] QString AccountId(not_null<Main::Session*> session);
 
 } // namespace AyuPlugins

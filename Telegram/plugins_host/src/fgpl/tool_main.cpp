@@ -233,6 +233,32 @@ int SignRuntime(const std::string &path, const std::string &keyPath, const std::
 	return 0;
 }
 
+int PackRuntime(const fs::path &directory, const std::string &output) {
+	auto files = std::vector<std::pair<std::string, cbor::Bytes>>();
+	for (const auto &entry : fs::recursive_directory_iterator(directory)) {
+		if (!entry.is_regular_file()) {
+			continue;
+		}
+		auto content = ReadFile(entry.path());
+		if (!content) {
+			std::fprintf(stderr, "cannot read %s\n", entry.path().string().c_str());
+			return 1;
+		}
+		files.emplace_back(fs::relative(entry.path(), directory).generic_string(), std::move(*content));
+	}
+	std::sort(files.begin(), files.end(), [](const auto &a, const auto &b) {
+		return a.first < b.first;
+	});
+	const auto archive = WriteZip(files);
+	auto stream = std::ofstream(output, std::ios::binary | std::ios::trunc);
+	if (!stream.write(reinterpret_cast<const char *>(archive.data()), std::streamsize(archive.size()))) {
+		std::fprintf(stderr, "cannot write %s\n", output.c_str());
+		return 1;
+	}
+	std::printf("wrote %s: \"sha256\": \"%s\", \"size\": %zu\n", output.c_str(), HashText(archive).c_str(), archive.size());
+	return 0;
+}
+
 int HashFile(const std::string &path) {
 	const auto bytes = ReadFile(path);
 	if (!bytes) {
@@ -253,7 +279,8 @@ int main(int argc, char **argv) {
 			"  fgpl_tool pack <directory> <output.fgpl> [--key <name>.key]\n"
 			"  fgpl_tool verify <package.fgpl>\n"
 			"  fgpl_tool sign-runtime <index.json> <name>.key <output.json>\n"
-			"  fgpl_tool hash <file>\n");
+			"  fgpl_tool hash <file>\n"
+			"  fgpl_tool pack-runtime <directory> <output.zip>\n");
 		return 64;
 	};
 	if (argc < 3) {
@@ -262,6 +289,8 @@ int main(int argc, char **argv) {
 	const auto command = std::string(argv[1]);
 	if (command == "keygen") {
 		return KeyGen(argv[2]);
+	} else if (command == "pack-runtime" && argc == 4) {
+		return PackRuntime(argv[2], argv[3]);
 	} else if (command == "hash") {
 		return HashFile(argv[2]);
 	} else if (command == "sign-runtime" && argc == 5) {

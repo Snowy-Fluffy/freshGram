@@ -23,6 +23,7 @@
 
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
+#include "fgpl/runtime_bundle.h"
 #include "fgpl/semver.h"
 #endif
 
@@ -61,6 +62,10 @@ struct Service {
 	return RuntimePath() + u"/fgpl_plugin_host"_q;
 }
 
+[[nodiscard]] std::optional<fgpl::InstalledRuntime> Installed() {
+	return fgpl::ReadInstalledRuntime(RuntimeRootPath().toStdString());
+}
+
 [[nodiscard]] fgpl::Version KernelVersion() {
 	const auto text = QSysInfo::kernelVersion().toStdString();
 	auto length = size_t(0);
@@ -86,12 +91,17 @@ struct Service {
 	config.services.transport = NetworkTransport();
 	RefreshProxy();
 
+	const auto installed = Installed();
+	if (!installed || !fgpl::VerifyInstalledRuntime(*installed)) {
+		return nullptr;
+	}
 	const auto runtime = RuntimePath().toStdString();
+	config.python.expectedHash = installed->pythonHash;
 	config.python.wasm = runtime + "/python/python.wasm";
 	config.python.library = runtime + "/python/lib";
 	config.python.sdk = runtime + "/sdk";
 
-	config.cache.directory = RuntimePath().toStdString() + "/cache";
+	config.cache.directory = (cWorkingDir() + u"tdata/plugins/cache"_q).toStdString();
 	if (!DeriveSecret("freshgram.plugins.cache", config.cache.secret)
 		|| !DeriveSecret("freshgram.plugins.state", config.stateKey)) {
 		return nullptr;
@@ -107,7 +117,7 @@ struct Service {
 [[nodiscard]] State Compute() {
 	if (!AyuSettings::getInstance().pluginsEnabled()) {
 		return State::Disabled;
-	} else if (!QFileInfo::exists(HostBinary())) {
+	} else if (!Installed()) {
 		return State::NoRuntime;
 	} else if (!AyuVault::HasKey()) {
 		return State::NoKey;
@@ -143,7 +153,7 @@ void Refresh() {
 			service.pump.callEach(kPumpEach);
 			StartAccounts(service);
 		} else {
-			service.state = State::NoKey;
+			service.state = AyuVault::HasKey() ? State::NoRuntime : State::NoKey;
 			return;
 		}
 	}
@@ -333,8 +343,20 @@ QString StorePath() {
 	return cWorkingDir() + u"tdata/plugins/store"_q;
 }
 
+QString RuntimeRootPath() {
+	return cWorkingDir() + u"tdata/plugins/runtime"_q;
+}
+
 QString RuntimePath() {
-	return cWorkingDir() + u"tdata/plugins/runtime/current"_q;
+	return RuntimeRootPath() + u"/current"_q;
+}
+
+void NotifyRuntimeChanged() {
+#ifdef FRESHGRAM_PLUGINS
+	if (GetService().started) {
+		Refresh();
+	}
+#endif
 }
 
 QString AccountId(not_null<Main::Session*> session) {
