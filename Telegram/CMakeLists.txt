@@ -140,6 +140,8 @@ set(ayugram_files
         ayu/features/fake_passcode/fake_passcode.cpp
         ayu/features/plugins/plugins_service.cpp
         ayu/features/plugins/plugins_service.h
+        ayu/ui/boxes/plugin_install_box.cpp
+        ayu/ui/boxes/plugin_install_box.h
         ayu/ui/settings/plugins_settings.cpp
         ayu/ui/settings/plugins_settings.h
         ayu/features/compose_stash/compose_stash.h

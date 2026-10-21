@@ -40,6 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeDatabase>
 
 #include "ayu/ui/boxes/plugin_info_box.h"
+#include "ayu/ui/boxes/plugin_install_box.h"
 #include <QtCore/QFile>
 
 
@@ -259,6 +260,17 @@ void ResolveDocument(
 	const auto openPluginInfo = [&] {
 		if (document->size >= Images::kReadBytesLimit) {
 			return false;
+		}
+		if (controller
+			&& document->filename().endsWith(
+				u".fgpl"_q,
+				Qt::CaseInsensitive)
+			&& !document->filepath(true).isEmpty()) {
+			auto file = QFile(document->location(true).name());
+			if (file.open(QIODevice::ReadOnly)) {
+				AyuUi::ShowPluginInstallBox(controller, file.readAll());
+				return true;
+			}
 		}
 		if (controller
 			&& document->filename().endsWith(
