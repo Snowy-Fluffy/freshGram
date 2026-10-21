@@ -37,6 +37,15 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	fgpl_warnings(fgpl_sandbox)
 endif()
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	add_library(fgpl_ipc STATIC src/ipc.cpp)
+	target_link_libraries(fgpl_ipc PUBLIC fgpl_core)
+	fgpl_options(fgpl_ipc)
+	add_library(fgpl_client STATIC src/host_client.cpp)
+	target_link_libraries(fgpl_client PUBLIC fgpl_ipc)
+	fgpl_options(fgpl_client)
+endif()
+
 add_library(wasmtime STATIC IMPORTED)
 set_target_properties(wasmtime PROPERTIES
 	IMPORTED_LOCATION "${FGPL_WASMTIME_DIR}/lib/libwasmtime.a"
@@ -48,6 +57,12 @@ endif()
 add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp)
 target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
 fgpl_options(fgpl_runtime)
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
+	add_executable(fgpl_plugin_host src/host_main.cpp)
+	target_link_libraries(fgpl_plugin_host PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
+	fgpl_options(fgpl_plugin_host)
+endif()
 
 if (FGPL_BUILD_TESTS)
 	enable_testing()
@@ -82,6 +97,16 @@ if (FGPL_BUILD_TESTS)
 		add_dependencies(test_sandbox sandbox_probe)
 		fgpl_warnings(test_sandbox)
 		add_test(NAME test_sandbox COMMAND test_sandbox)
+	endif()
+
+	if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
+		add_executable(test_host tests/test_host.cpp)
+		target_link_libraries(test_host PRIVATE fgpl_client wasmtime)
+		target_compile_definitions(test_host PRIVATE
+			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>")
+		add_dependencies(test_host fgpl_plugin_host)
+		fgpl_warnings(test_host)
+		add_test(NAME test_host COMMAND test_host)
 	endif()
 
 	if (fgpl_wasm_ready)

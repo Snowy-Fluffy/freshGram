@@ -24,6 +24,8 @@ struct RuntimeLimits {
 
 struct RuntimeOptions {
 	size_t stackBytes = size_t(512) << 10;
+	uint64_t memoryReservation = 0;
+	uint64_t memoryGuard = 0;
 };
 
 enum class LoadError : uint8_t {

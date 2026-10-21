@@ -343,6 +343,12 @@ void LinkHost(
 	config.wasm_reference_types(true);
 	config.parallel_compilation(false);
 	config.debug_info(false);
+	config.memory_init_cow(false);
+	if (options.memoryReservation != 0) {
+		config.memory_reservation(options.memoryReservation);
+		config.memory_guard_size(options.memoryGuard);
+		config.memory_reservation_for_growth(0);
+	}
 	return config;
 }
 
