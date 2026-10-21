@@ -43,6 +43,7 @@ include(cmake/td_scheme.cmake)
 include(cmake/td_tde2e.cmake)
 include(cmake/td_ui.cmake)
 include(cmake/td_webauthn.cmake)
+include(plugins_host/app.cmake)
 include(cmake/telegram_apple_swift_runtime.cmake)
 include(cmake/generate_appstream_changelog.cmake)
 
@@ -113,6 +114,11 @@ PRIVATE
 
     ayugram::lib_icu
 )
+
+if (TARGET fgpl_app)
+    target_link_libraries(Telegram PRIVATE fgpl_app)
+    target_compile_definitions(Telegram PRIVATE FRESHGRAM_PLUGINS)
+endif()
 
 set(ayugram_files
         ayu/ayu_worker.cpp
