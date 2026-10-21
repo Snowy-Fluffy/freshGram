@@ -4,6 +4,7 @@
 #include "wasi_host.h"
 
 #include <chrono>
+#include <deque>
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -61,6 +62,7 @@ using EntryFn = wasmtime::TypedFunc<std::tuple<int32_t, int32_t>, int32_t>;
 using ReleaseFn = wasmtime::TypedFunc<
 	std::tuple<int32_t, int32_t>,
 	std::tuple<>>;
+using StartFn = wasmtime::TypedFunc<std::tuple<>, std::tuple<>>;
 
 } // namespace
 
@@ -84,7 +86,12 @@ struct PluginState {
 	std::optional<EntryFn> onInit;
 	std::optional<EntryFn> onEvent;
 	std::optional<ReleaseFn> release;
+	std::optional<StartFn> start;
 	std::unique_ptr<Wasi> wasi;
+	Dispatcher *dispatcher = nullptr;
+	std::vector<uint8_t> frameBuffer;
+	std::deque<std::vector<uint8_t>> replies;
+	int64_t currentId = -1;
 	std::string logLines[3];
 	std::string lastError;
 	size_t callsLeft = 0;
@@ -274,11 +281,11 @@ void LinkHost(
 	state.wasi->link(linker, defined);
 }
 
-[[nodiscard]] Result<int32_t, CallError> Dispatch(
+[[nodiscard]] Result<int32_t, CallError> Invoke(
 		PluginState &state,
 		const EntryFn &entry,
 		const cbor::Value &message) {
-	if (state.dead) {
+	if (state.dead || state.start) {
 		return CallError::Dead;
 	}
 	auto bytes = cbor::Bytes();
@@ -320,6 +327,130 @@ void LinkHost(
 	return status.unwrap();
 }
 
+[[nodiscard]] std::vector<uint8_t> Framed(const cbor::Value &message) {
+	auto body = cbor::Bytes();
+	if (!cbor::Encode(message, body, 24)) {
+		return {};
+	}
+	const auto size = uint32_t(body.size());
+	auto result = std::vector<uint8_t>{
+		uint8_t(size >> 24),
+		uint8_t(size >> 16),
+		uint8_t(size >> 8),
+		uint8_t(size),
+	};
+	result.insert(result.end(), body.begin(), body.end());
+	return result;
+}
+
+[[nodiscard]] cbor::Value Pair(std::string key, cbor::Value value) {
+	return cbor::Value::FromMap({ { std::move(key), std::move(value) } });
+}
+
+[[nodiscard]] int32_t CommandOutput(
+		PluginState &state,
+		int fd,
+		std::span<const uint8_t> bytes) {
+	if (fd != 1 || !state.dispatcher) {
+		AppendLog(state, size_t(fd), bytes.data(), bytes.size());
+		return 0;
+	}
+	constexpr auto kIo = int32_t(29);
+	auto &buffer = state.frameBuffer;
+	buffer.insert(buffer.end(), bytes.begin(), bytes.end());
+	while (buffer.size() >= 4) {
+		const auto size = (size_t(buffer[0]) << 24)
+			| (size_t(buffer[1]) << 16)
+			| (size_t(buffer[2]) << 8)
+			| size_t(buffer[3]);
+		if (size > state.limits.maxMessageBytes) {
+			state.dead = true;
+			state.lastError = "a protocol frame is too large";
+			return kIo;
+		} else if (buffer.size() < 4 + size) {
+			break;
+		}
+		const auto decoded = cbor::Decode(
+			std::span<const uint8_t>(buffer.data() + 4, size),
+			state.limits.cbor);
+		buffer.erase(buffer.begin(), buffer.begin() + 4 + ptrdiff_t(size));
+		if (!decoded.ok()) {
+			state.dead = true;
+			state.lastError = "a malformed protocol frame";
+			return kIo;
+		}
+		const auto &message = decoded.value();
+		const auto type = message.find("t");
+		const auto name = (type && type->asText()) ? *type->asText() : std::string();
+		if (name == "call") {
+			const auto request = message.find("v");
+			auto reply = cbor::Value();
+			if (state.callsLeft == 0) {
+				reply = Pair("error", cbor::Value::FromText("too_many_calls"));
+			} else {
+				--state.callsLeft;
+				reply = state.bridge->call(request ? *request : cbor::Value());
+			}
+			auto frame = Framed(cbor::Value::FromMap({
+				{ "t", cbor::Value::FromText("reply") },
+				{ "v", std::move(reply) },
+			}));
+			if (frame.empty() || frame.size() > state.limits.maxMessageBytes + 64) {
+				state.dead = true;
+				state.lastError = "a reply does not fit the limits";
+				return kIo;
+			}
+			state.replies.push_back(std::move(frame));
+		} else if (name == "done") {
+			const auto status = message.find("status");
+			const auto number = status ? status->asInt() : std::nullopt;
+			state.dispatcher->finished(
+				state.currentId,
+				int32_t(number.value_or(0)));
+			state.currentId = -1;
+		} else {
+			state.dead = true;
+			state.lastError = "an unknown protocol frame: " + name;
+			return kIo;
+		}
+	}
+	return 0;
+}
+
+[[nodiscard]] std::optional<std::vector<uint8_t>> CommandInput(
+		PluginState &state) {
+	if (!state.replies.empty()) {
+		auto frame = std::move(state.replies.front());
+		state.replies.pop_front();
+		return frame;
+	} else if (!state.dispatcher || state.dead) {
+		return std::nullopt;
+	}
+	if (state.currentId >= 0) {
+		state.dispatcher->finished(state.currentId, 0);
+		state.currentId = -1;
+	}
+	auto item = state.dispatcher->next();
+	if (item.kind == Dispatch::Kind::Stop) {
+		return std::nullopt;
+	}
+	state.currentId = item.id;
+	state.callsLeft = state.limits.maxCallsPerDispatch;
+	auto frame = Framed(cbor::Value::FromMap({
+		{ "t", cbor::Value::FromText(
+			item.kind == Dispatch::Kind::Init ? "init" : "event") },
+		{ "id", cbor::Value::FromInt(item.id) },
+		{ "v", std::move(item.value) },
+	}));
+	if (frame.empty()) {
+		state.dead = true;
+		state.lastError = "a message does not fit the protocol";
+		return std::nullopt;
+	}
+	SetDeadline(state);
+	return frame;
+}
+
 [[nodiscard]] wasmtime::Config MakeConfig(const RuntimeOptions &options) {
 	auto config = wasmtime::Config();
 	config.epoch_interruption(true);
@@ -344,6 +475,9 @@ void LinkHost(
 	config.parallel_compilation(false);
 	config.debug_info(false);
 	config.memory_init_cow(false);
+	if (options.baselineCompiler) {
+		config.strategy(wasmtime::Strategy::Winch);
+	}
 	if (options.memoryReservation != 0) {
 		config.memory_reservation(options.memoryReservation);
 		config.memory_guard_size(options.memoryGuard);
@@ -361,11 +495,38 @@ Plugin::Plugin(std::unique_ptr<PluginState> state)
 Plugin::~Plugin() = default;
 
 Result<int32_t, CallError> Plugin::init(const cbor::Value &info) {
-	return Dispatch(*_state, *_state->onInit, info);
+	return Invoke(*_state, *_state->onInit, info);
 }
 
 Result<int32_t, CallError> Plugin::deliver(const cbor::Value &event) {
-	return Dispatch(*_state, *_state->onEvent, event);
+	return Invoke(*_state, *_state->onEvent, event);
+}
+
+bool Plugin::isCommand() const {
+	return _state->start.has_value();
+}
+
+Result<int32_t, CallError> Plugin::runCommand(Dispatcher &dispatcher) {
+	auto &state = *_state;
+	if (state.dead || !state.start) {
+		return CallError::Dead;
+	}
+	state.dispatcher = &dispatcher;
+	state.callsLeft = state.limits.maxCallsPerDispatch;
+	SetDeadline(state);
+	auto result = state.start->call(state.store.context(), std::tuple<>());
+	FlushLogs(state);
+	state.dispatcher = nullptr;
+	const auto code = state.wasi->exitCode();
+	if (!result) {
+		if (code && *code == 0) {
+			state.dead = true;
+			return 0;
+		}
+		return Fail(state, result.err());
+	}
+	state.dead = true;
+	return 0;
 }
 
 bool Plugin::dead() const {
@@ -390,7 +551,8 @@ Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::load(
 		std::span<const uint8_t> wasm,
 		Bridge &bridge,
 		const RuntimeLimits &limits,
-		std::shared_ptr<const Vfs> files) {
+		std::shared_ptr<const Vfs> files,
+		const ProcessSpec &process) {
 	const auto fail = [](LoadError error, std::string detail) {
 		return LoadFailure{ error, std::move(detail) };
 	};
@@ -410,8 +572,13 @@ Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::load(
 		.files = std::move(files),
 		.mounts = { "plugin", "runtime" },
 		.maxIoBytes = limits.maxMessageBytes,
+		.args = process.args,
+		.env = process.env,
 		.output = [raw](int fd, std::span<const uint8_t> bytes) {
-			AppendLog(*raw, size_t(fd), bytes.data(), bytes.size());
+			return CommandOutput(*raw, fd, bytes);
+		},
+		.input = [raw] {
+			return CommandInput(*raw);
 		},
 	});
 
@@ -457,6 +624,16 @@ Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::load(
 	const auto alloc = function("fg_alloc");
 	const auto init = function("fg_init");
 	const auto event = function("fg_on_event");
+	if (!event) {
+		if (const auto start = function("_start")) {
+			auto typed = start->typed<std::tuple<>, std::tuple<>>(context);
+			if (!typed) {
+				return fail(LoadError::BadExport, "_start");
+			}
+			state->start = typed.unwrap();
+			return std::unique_ptr<Plugin>(new Plugin(std::move(state)));
+		}
+	}
 	if (!alloc) {
 		return fail(LoadError::MissingExport, "fg_alloc");
 	} else if (!init) {

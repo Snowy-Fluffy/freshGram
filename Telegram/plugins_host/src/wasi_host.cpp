@@ -103,6 +103,7 @@ template <typename Read>
 		int32_t count,
 		int32_t donePointer,
 		size_t maxTotal,
+		bool stopAfterFirst,
 		Read &&read) {
 	if (count < 0 || count > kMaxVectors) {
 		return code::kInval;
@@ -132,7 +133,7 @@ template <typename Read>
 			break;
 		}
 		total += done.value();
-		if (done.value() < wanted) {
+		if (done.value() < wanted || (stopAfterFirst && total != 0)) {
 			break;
 		}
 	}
@@ -192,6 +193,25 @@ const Wasi::Fd *Wasi::find(int32_t fd) const {
 	return (slot.kind == Fd::Kind::Free) ? nullptr : &slot;
 }
 
+Result<size_t, Errc> Wasi::readStdin(std::span<uint8_t> out) {
+	if (_stdinPosition >= _stdin.size()) {
+		if (_stdinEnded || !_config.input) {
+			return size_t(0);
+		}
+		auto more = _config.input();
+		if (!more) {
+			_stdinEnded = true;
+			return size_t(0);
+		}
+		_stdin = std::move(*more);
+		_stdinPosition = 0;
+	}
+	const auto count = std::min(out.size(), _stdin.size() - _stdinPosition);
+	std::memcpy(out.data(), _stdin.data() + _stdinPosition, count);
+	_stdinPosition += count;
+	return count;
+}
+
 int32_t Wasi::allocate(VfsSession::Handle handle) {
 	auto index = _firstDynamic;
 	while (index != _fds.size() && _fds[index].kind != Fd::Kind::Free) {
@@ -218,26 +238,52 @@ void Wasi::linkClocks(
 		wasmtime::Linker &linker,
 		std::unordered_set<std::string> &defined) {
 	constexpr auto module = std::string_view("wasi_snapshot_preview1");
-	const auto sizes = [](wasmtime::Caller caller, int32_t a, int32_t b)
-	-> int32_t {
-		const auto data = ViewOf(caller);
-		if (!data
-			|| !InRange(*data, uint32_t(a), 4)
-			|| !InRange(*data, uint32_t(b), 4)) {
-			return code::kFault;
-		}
-		PutU32(*data, uint32_t(a), 0);
-		PutU32(*data, uint32_t(b), 0);
-		return code::kSuccess;
+	const auto sizesOf = [](const std::vector<std::string> &list) {
+		return [&list](wasmtime::Caller caller, int32_t a, int32_t b)
+		-> int32_t {
+			const auto data = ViewOf(caller);
+			if (!data
+				|| !InRange(*data, uint32_t(a), 4)
+				|| !InRange(*data, uint32_t(b), 4)) {
+				return code::kFault;
+			}
+			auto total = uint64_t(0);
+			for (const auto &item : list) {
+				total += item.size() + 1;
+			}
+			PutU32(*data, uint32_t(a), uint32_t(list.size()));
+			PutU32(*data, uint32_t(b), uint32_t(total));
+			return code::kSuccess;
+		};
 	};
-	Define(linker, defined, module, "args_sizes_get", sizes);
-	Define(linker, defined, module, "environ_sizes_get", sizes);
-	Define(linker, defined, module, "args_get", [](int32_t, int32_t) -> int32_t {
-		return code::kSuccess;
-	});
-	Define(linker, defined, module, "environ_get", [](int32_t, int32_t) -> int32_t {
-		return code::kSuccess;
-	});
+	const auto fillOf = [](const std::vector<std::string> &list) {
+		return [&list](wasmtime::Caller caller, int32_t vectorsPointer, int32_t bufferPointer)
+		-> int32_t {
+			const auto data = ViewOf(caller);
+			if (!data) {
+				return code::kFault;
+			}
+			auto total = uint64_t(0);
+			for (const auto &item : list) {
+				total += item.size() + 1;
+			}
+			if (!InRange(*data, uint32_t(vectorsPointer), list.size() * 4)
+				|| !InRange(*data, uint32_t(bufferPointer), total)) {
+				return code::kFault;
+			}
+			auto at = uint32_t(bufferPointer);
+			for (auto i = size_t(0); i != list.size(); ++i) {
+				PutU32(*data, uint32_t(vectorsPointer) + uint32_t(i) * 4, at);
+				std::memcpy(data->data() + at, list[i].c_str(), list[i].size() + 1);
+				at += uint32_t(list[i].size() + 1);
+			}
+			return code::kSuccess;
+		};
+	};
+	Define(linker, defined, module, "args_sizes_get", sizesOf(_config.args));
+	Define(linker, defined, module, "environ_sizes_get", sizesOf(_config.env));
+	Define(linker, defined, module, "args_get", fillOf(_config.args));
+	Define(linker, defined, module, "environ_get", fillOf(_config.env));
 	Define(
 		linker,
 		defined,
@@ -314,6 +360,7 @@ void Wasi::linkClocks(
 		"proc_exit",
 		[this](int32_t exitCode)
 		-> wasmtime::Result<std::monostate, wasmtime::Trap> {
+			_exitCode = exitCode;
 			_exitReason = "the plugin called proc_exit("
 				+ std::to_string(exitCode)
 				+ ")";
@@ -361,9 +408,14 @@ void Wasi::linkFiles(
 					return code::kFault;
 				}
 				if (_config.output) {
-					_config.output(fd, std::span<const uint8_t>(
-						data->data() + pointer,
-						length));
+					if (const auto error = _config.output(
+							fd,
+							std::span<const uint8_t>(
+								data->data() + pointer,
+								length))
+						; error != code::kSuccess) {
+						return error;
+					}
 				}
 			}
 			PutU32(*data, uint32_t(writtenPointer), uint32_t(total));
@@ -516,8 +568,9 @@ void Wasi::linkFiles(
 					count,
 					donePointer,
 					_config.maxIoBytes,
-					[](std::span<uint8_t>) -> Result<size_t, Errc> {
-						return size_t(0);
+					true,
+					[this](std::span<uint8_t> out) {
+						return readStdin(out);
 					});
 			}
 			return ReadVectors(
@@ -526,6 +579,7 @@ void Wasi::linkFiles(
 				count,
 				donePointer,
 				_config.maxIoBytes,
+				false,
 				[&](std::span<uint8_t> out) {
 					return _session->read(slot->handle, out);
 				});
@@ -558,6 +612,7 @@ void Wasi::linkFiles(
 				count,
 				donePointer,
 				_config.maxIoBytes,
+				false,
 				[&](std::span<uint8_t> out) {
 					const auto done = _session->readAt(
 						slot->handle,

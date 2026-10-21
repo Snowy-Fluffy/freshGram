@@ -51,6 +51,8 @@ struct LoadRequest {
 	cbor::Bytes wasm;
 	std::vector<std::pair<std::string, cbor::Bytes>> files;
 	RuntimeLimits limits;
+	std::vector<std::string> args;
+	std::vector<std::string> env;
 };
 
 class HostClient {

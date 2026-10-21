@@ -165,11 +165,20 @@ Result<std::monostate, ClientFailure> HostClient::load(
 			{ "d", cbor::Value::FromBytes(file.second) },
 		}));
 	}
+	const auto texts = [](const std::vector<std::string> &list) {
+		auto result = cbor::Array();
+		for (const auto &item : list) {
+			result.push_back(proto::Text(item));
+		}
+		return cbor::Value::FromArray(std::move(result));
+	};
 	_timeoutMs = int(request.limits.callTimeoutMs);
 	const auto sent = ipc::WriteFrame(_fd, proto::Map({
 		{ "t", proto::Text("load") },
 		{ "wasm", cbor::Value::FromBytes(request.wasm) },
 		{ "files", cbor::Value::FromArray(std::move(files)) },
+		{ "args", texts(request.args) },
+		{ "env", texts(request.env) },
 		{ "limits", proto::Map({
 			{ "memory", proto::Int(int64_t(request.limits.memoryBytes)) },
 			{ "timeout", proto::Int(int64_t(request.limits.callTimeoutMs)) },

@@ -109,6 +109,18 @@ if (FGPL_BUILD_TESTS)
 		add_test(NAME test_host COMMAND test_host)
 	endif()
 
+	if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
+		add_executable(test_python tests/test_python.cpp)
+		target_link_libraries(test_python PRIVATE fgpl_client)
+		target_compile_definitions(test_python PRIVATE
+			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
+			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python")
+		add_dependencies(test_python fgpl_plugin_host)
+		fgpl_warnings(test_python)
+		add_test(NAME test_python COMMAND test_python)
+	endif()
+
 	if (fgpl_wasm_ready)
 		set(probe_wasm ${CMAKE_CURRENT_BINARY_DIR}/wasi_probe.wasm)
 		add_custom_command(OUTPUT ${probe_wasm}

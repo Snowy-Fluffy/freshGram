@@ -10,6 +10,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fgpl {
 
@@ -26,6 +27,7 @@ struct RuntimeOptions {
 	size_t stackBytes = size_t(512) << 10;
 	uint64_t memoryReservation = 0;
 	uint64_t memoryGuard = 0;
+	bool baselineCompiler = false;
 };
 
 enum class LoadError : uint8_t {
@@ -62,6 +64,31 @@ constexpr auto kTooManyCalls = int32_t(-5);
 
 } // namespace guest_status
 
+struct ProcessSpec {
+	std::vector<std::string> args;
+	std::vector<std::string> env;
+};
+
+struct Dispatch {
+	enum class Kind : uint8_t {
+		Init,
+		Event,
+		Stop,
+	};
+
+	Kind kind = Kind::Stop;
+	int64_t id = 0;
+	cbor::Value value;
+};
+
+class Dispatcher {
+public:
+	virtual ~Dispatcher() = default;
+
+	[[nodiscard]] virtual Dispatch next() = 0;
+	virtual void finished(int64_t id, int32_t status) = 0;
+};
+
 class Bridge {
 public:
 	virtual ~Bridge() = default;
@@ -79,6 +106,9 @@ public:
 
 	[[nodiscard]] Result<int32_t, CallError> init(const cbor::Value &info);
 	[[nodiscard]] Result<int32_t, CallError> deliver(const cbor::Value &event);
+	[[nodiscard]] Result<int32_t, CallError> runCommand(Dispatcher &dispatcher);
+
+	[[nodiscard]] bool isCommand() const;
 
 	[[nodiscard]] bool dead() const;
 	[[nodiscard]] const std::string &lastError() const;
@@ -102,7 +132,8 @@ public:
 		std::span<const uint8_t> wasm,
 		Bridge &bridge,
 		const RuntimeLimits &limits = {},
-		std::shared_ptr<const Vfs> files = nullptr);
+		std::shared_ptr<const Vfs> files = nullptr,
+		const ProcessSpec &process = {});
 
 private:
 	std::shared_ptr<RuntimeState> _state;
