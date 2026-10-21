@@ -2275,7 +2275,9 @@ void ApiWrap::clearHistory(not_null<PeerData*> peer, bool revoke) {
 }
 
 void ApiWrap::deleteConversation(not_null<PeerData*> peer, bool revoke) {
-	if (const auto chat = peer->asChat()) {
+	const auto chat = peer->asChat();
+	// Leaving first hands a legacy group to its successor at once.
+	if (chat && !(revoke && chat->amCreator())) {
 		FreshKept::userLeaving(chat);
 		request(MTPmessages_DeleteChatUser(
 			MTP_flags(0),
