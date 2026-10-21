@@ -17,6 +17,7 @@ namespace fgpl {
 struct RuntimeLimits {
 	uint64_t memoryBytes = uint64_t(64) << 20;
 	uint32_t callTimeoutMs = 500;
+	uint32_t startTimeoutMs = 10000;
 	size_t maxModuleBytes = size_t(32) << 20;
 	size_t maxMessageBytes = size_t(1) << 20;
 	size_t maxCallsPerDispatch = 256;

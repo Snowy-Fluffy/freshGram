@@ -122,9 +122,12 @@ using namespace guest;
 	return typed.unwrap();
 }
 
+void SetDeadline(PluginState &state, uint32_t milliseconds) {
+	state.store.context().set_epoch_deadline(milliseconds / kTickMs + 1);
+}
+
 void SetDeadline(PluginState &state) {
-	const auto ticks = state.limits.callTimeoutMs / kTickMs + 1;
-	state.store.context().set_epoch_deadline(ticks);
+	SetDeadline(state, state.limits.callTimeoutMs);
 }
 
 void FlushLog(PluginState &state, size_t index) {
@@ -515,7 +518,7 @@ Result<int32_t, CallError> Plugin::runCommand(Dispatcher &dispatcher) {
 	}
 	state.dispatcher = &dispatcher;
 	state.callsLeft = state.limits.maxCallsPerDispatch;
-	SetDeadline(state);
+	SetDeadline(state, state.limits.startTimeoutMs);
 	auto result = state.start->call(state.store.context(), std::tuple<>());
 	FlushLogs(state);
 	state.dispatcher = nullptr;

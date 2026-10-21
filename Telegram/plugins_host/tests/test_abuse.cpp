@@ -52,6 +52,7 @@ public:
 	config.path = FGPL_HOST_BINARY;
 	config.selftest = selftest;
 	config.cpuSeconds = cpuSeconds;
+	config.addressSpaceMb = 2048;
 	config.extraArguments = std::move(extra);
 	auto started = HostClient::Start(config);
 	CHECK(started.ok());
@@ -76,7 +77,17 @@ void TestGuestCallSpamIsCapped() {
 			(local.set $i (i32.add (local.get $i) (i32.const 1)))
 			(br_if $l (i32.lt_u (local.get $i) (i32.const 100000))))
 		(local.get $s))"));
-	CHECK(client->load(request).ok());
+	const auto loadedSpam = client->load(request);
+	if (!loadedSpam.ok()) {
+		std::fprintf(
+			stderr,
+			"load failed: %s (error %d, signal %d, exit %d)\n",
+			loadedSpam.error().detail.c_str(),
+			int(loadedSpam.error().error),
+			loadedSpam.error().signal,
+			loadedSpam.error().exitCode);
+	}
+	CHECK(loadedSpam.ok());
 	auto bridge = AbuseBridge();
 	const auto begin = std::chrono::steady_clock::now();
 	const auto result = client->deliver(kEvent(), bridge);
@@ -210,6 +221,16 @@ void TestPython(
 	request.limits.callTimeoutMs = 700;
 	request.limits.memoryBytes = uint64_t(256) << 20;
 	const auto loaded = client->load(request);
+	if (!loaded.ok()) {
+		std::fprintf(
+			stderr,
+			"python load failed: %s (error %d, signal %d, exit %d, code %d)\n",
+			loaded.error().detail.c_str(),
+			int(loaded.error().error),
+			loaded.error().signal,
+			loaded.error().exitCode,
+			loaded.error().code);
+	}
 	CHECK(loaded.ok());
 	if (!loaded.ok()) {
 		return;
