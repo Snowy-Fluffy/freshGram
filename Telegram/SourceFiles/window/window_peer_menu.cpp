@@ -140,6 +140,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 #include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/data/local_pins.h"
 #include "ayu/data/kept_dialogs.h"
 #include "ayu/utils/telegram_helpers.h"
@@ -1851,6 +1852,20 @@ void Filler::fill() {
 	case Section::SubsectionTabsMenu: fillContextMenuActions(); break;
 	case Section::SavedSublist: fillMonoforumPeerActions(); break;
 	default: Unexpected("_request.section in Filler::fill.");
+	}
+	if (_peer
+		&& !_folder
+		&& (_request.section == Section::ChatsList
+			|| _request.section == Section::History
+			|| _request.section == Section::Profile
+			|| _request.section == Section::ContextMenu)) {
+		AyuPlugins::AddPeerMenuItems(
+			_controller,
+			_peer,
+			_request.section == Section::Profile,
+			[&](const QString &text, Fn<void()> handler) {
+				_addAction(text, std::move(handler), &st::menuIconBot);
+			});
 	}
 }
 

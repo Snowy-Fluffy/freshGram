@@ -5,6 +5,7 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/ui/boxes/plugin_install_box.h"
 #include "lang/lang_keys.h"
 #include "settings/settings_common.h"
@@ -99,26 +100,12 @@ void AddPluginRow(
 			st::boxDividerLabel),
 		st::defaultBoxDividerLabelPadding);
 
-	const auto remove = Settings::AddButtonWithIcon(
+	const auto details = Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginsRemove(),
-		st::settingsAttentionButton);
-	remove->addClickHandler([=] {
-		controller->show(Ui::MakeConfirmBox({
-			.text = tr::ayu_PluginsRemoveConfirmation(
-				tr::now,
-				lt_name,
-				tr::bold(name),
-				tr::marked),
-			.confirmed = [=](Fn<void()> &&close) {
-				if (const auto manager = AyuPlugins::Manager()) {
-					manager->uninstall(id, true);
-					AyuPlugins::NotifyListChanged();
-				}
-				close();
-			},
-			.confirmText = tr::ayu_PluginsRemove(),
-		}));
+		tr::ayu_PluginDetails(),
+		st::settingsButtonNoIcon);
+	details->addClickHandler([=] {
+		AyuPlugins::ShowPluginDetails(controller, QString::fromStdString(id));
 	});
 	Ui::AddSkip(container);
 }

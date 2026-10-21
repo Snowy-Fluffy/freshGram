@@ -135,6 +135,23 @@ void FillInstallBox(
 			: tr::ayu_PluginUnsigned(tr::now),
 		st::boxLabel));
 
+	auto contributes = QStringList();
+	if (!manifest.menus.empty()) {
+		contributes.push_back(tr::ayu_PluginContribMenus(tr::now));
+	}
+	if (!manifest.commands.empty()) {
+		contributes.push_back(tr::ayu_PluginContribCommands(tr::now));
+	}
+	if (manifest.settingsPage) {
+		contributes.push_back(tr::ayu_PluginContribSettings(tr::now));
+	}
+	if (!contributes.isEmpty()) {
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::ayu_PluginContributes(tr::now, lt_list, contributes.join(u", "_q)),
+			st::boxDividerLabel));
+	}
+
 	auto requested = std::set<std::string>();
 	auto boxes = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
 	if (!manifest.permissions.empty()) {

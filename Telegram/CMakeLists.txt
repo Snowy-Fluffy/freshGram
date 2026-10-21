@@ -147,6 +147,8 @@ set(ayugram_files
         ayu/features/plugins/plugins_runtime.cpp
         ayu/features/plugins/plugins_runtime.h
         ayu/features/plugins/plugins_transport.cpp
+        ayu/features/plugins/plugins_ui.cpp
+        ayu/features/plugins/plugins_ui.h
         ayu/features/plugins/plugins_transport.h
         ayu/features/plugins/plugins_service.cpp
         ayu/features/plugins/plugins_service.h
