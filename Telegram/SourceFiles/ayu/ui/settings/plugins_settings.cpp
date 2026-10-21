@@ -4,6 +4,7 @@
 #include "lang_auto.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "ayu/ui/boxes/plugin_install_box.h"
 #include "lang/lang_keys.h"
 #include "settings/settings_common.h"
 #include "styles/style_boxes.h"
@@ -174,6 +175,18 @@ void AddPluginsSettings(
 		Ui::PostponeCall(list, rebuild);
 	}, list->lifetime());
 	rebuild();
+
+	const auto install = Settings::AddButtonWithIcon(
+		container,
+		tr::ayu_PluginsInstallFromFile(),
+		st::settingsButtonNoIcon);
+	install->addClickHandler([=] {
+		if (AyuPlugins::Manager()) {
+			ChoosePluginFile(controller);
+		} else {
+			controller->showToast(tr::ayu_PluginsEnableFirst(tr::now));
+		}
+	});
 #endif
 }
 
