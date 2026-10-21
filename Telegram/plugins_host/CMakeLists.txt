@@ -78,6 +78,7 @@ fgpl_options(fgpl_runtime)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
 	add_executable(fgpl_plugin_host src/fgpl/host_main.cpp)
 	target_link_libraries(fgpl_plugin_host PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
+	target_link_options(fgpl_plugin_host PRIVATE -static-libstdc++ -static-libgcc)
 	fgpl_options(fgpl_plugin_host)
 endif()
 
