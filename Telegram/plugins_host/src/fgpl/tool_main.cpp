@@ -2,6 +2,7 @@
 #include "fgpl/json.h"
 #include "fgpl/package.h"
 #include "fgpl/permissions.h"
+#include "fgpl/runtime_bundle.h"
 #include "fgpl/zip_writer.h"
 
 #include <openssl/rand.h>
@@ -193,6 +194,55 @@ int Pack(const fs::path &directory, const std::string &output, const std::string
 	return Describe(checked.value());
 }
 
+int SignRuntime(const std::string &path, const std::string &keyPath, const std::string &output) {
+	const auto bytes = ReadFile(path);
+	const auto seed = ReadSeed(keyPath);
+	if (!bytes || !seed) {
+		std::fprintf(stderr, "cannot read the index or the key\n");
+		return 1;
+	}
+	auto document = json::Parse(std::string(bytes->begin(), bytes->end()));
+	if (!document.ok() || !document.value().asMap()) {
+		std::fprintf(stderr, "the index is not a JSON object\n");
+		return 1;
+	}
+	auto map = cbor::Map();
+	for (auto &entry : *document.value().asMap()) {
+		if (entry.key != "signature") {
+			map.push_back(std::move(entry));
+		}
+	}
+	auto signedDocument = cbor::Value::FromMap(std::move(map));
+	const auto text = SignedText(signedDocument);
+	const auto signature = Ed25519Sign(*seed, {
+		reinterpret_cast<const uint8_t *>(text.data()), text.size() });
+	if (!signature) {
+		std::fprintf(stderr, "cannot sign\n");
+		return 1;
+	}
+	signedDocument.asMap()->push_back({ "signature", cbor::Value::FromMap({
+		{ "alg", cbor::Value::FromText("ed25519") },
+		{ "value", cbor::Value::FromText(Base64Encode(*signature)) },
+	}) });
+	const auto key = Ed25519PublicKey(*seed);
+	if (!WriteFile(output, json::Canonical(signedDocument))) {
+		std::fprintf(stderr, "cannot write %s\n", output.c_str());
+		return 1;
+	}
+	std::printf("wrote %s, public key %s\n", output.c_str(), Base64Encode(*key).c_str());
+	return 0;
+}
+
+int HashFile(const std::string &path) {
+	const auto bytes = ReadFile(path);
+	if (!bytes) {
+		std::fprintf(stderr, "cannot read %s\n", path.c_str());
+		return 1;
+	}
+	std::printf("\"sha256\": \"%s\", \"size\": %zu\n", HashText(*bytes).c_str(), bytes->size());
+	return 0;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -201,7 +251,9 @@ int main(int argc, char **argv) {
 			"usage:\n"
 			"  fgpl_tool keygen <name>\n"
 			"  fgpl_tool pack <directory> <output.fgpl> [--key <name>.key]\n"
-			"  fgpl_tool verify <package.fgpl>\n");
+			"  fgpl_tool verify <package.fgpl>\n"
+			"  fgpl_tool sign-runtime <index.json> <name>.key <output.json>\n"
+			"  fgpl_tool hash <file>\n");
 		return 64;
 	};
 	if (argc < 3) {
@@ -210,6 +262,10 @@ int main(int argc, char **argv) {
 	const auto command = std::string(argv[1]);
 	if (command == "keygen") {
 		return KeyGen(argv[2]);
+	} else if (command == "hash") {
+		return HashFile(argv[2]);
+	} else if (command == "sign-runtime" && argc == 5) {
+		return SignRuntime(argv[2], argv[3], argv[4]);
 	} else if (command == "verify") {
 		return Verify(argv[2]);
 	} else if (command == "pack" && argc >= 4) {
