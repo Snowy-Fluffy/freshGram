@@ -7,6 +7,8 @@
 #include "apiwrap.h"
 #include "core/application.h"
 #include "crl/crl_on_main.h"
+#include "data/data_changes.h"
+#include "data/data_drafts.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
@@ -255,8 +257,30 @@ public:
 		}, std::string());
 	}
 
-	bool setDraft(int64_t, const std::string &) override {
-		return false;
+	bool setDraft(int64_t chat, const std::string &text) override {
+		return OnMain<bool>([=] {
+			const auto history = historyOf(chat);
+			if (!history || AyuSecret::IsSecretPeerId(history->peer->id)) {
+				return false;
+			}
+			const auto textWithTags = TextWithTags{ QString::fromStdString(text) };
+			const auto cursor = MessageCursor{
+				int(textWithTags.text.size()),
+				int(textWithTags.text.size()),
+				Ui::kQFixedMax
+			};
+			history->setLocalDraft(std::make_unique<Data::Draft>(
+				textWithTags,
+				FullReplyTo(),
+				SuggestOptions(),
+				cursor,
+				Data::WebPageDraft()));
+			history->clearLocalEditDraft({}, {});
+			history->session().changes().entryUpdated(
+				history,
+				Data::EntryUpdate::Flag::LocalDraftSet);
+			return true;
+		}, false);
 	}
 
 	bool send(int64_t chat, const std::string &text) override {

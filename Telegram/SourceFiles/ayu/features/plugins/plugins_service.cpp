@@ -5,6 +5,7 @@
 #include "ayu/data/ayu_vault.h"
 #include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_transport.h"
+#include "data/data_changes.h"
 #include "data/data_session.h"
 #include "history/history_item.h"
 #include "base/flat_set.h"
@@ -202,6 +203,13 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 		) | rpl::on_next([=](not_null<HistoryItem*> item) {
 			if (WantsEvents()) {
 				SendMessageEvent("message.new", item, id);
+			}
+		}, i->second.events);
+		session->changes().messageUpdates(
+			Data::MessageUpdate::Flag::Edited
+		) | rpl::on_next([=](const Data::MessageUpdate &update) {
+			if (WantsEvents()) {
+				SendMessageEvent("message.edited", update.item, id);
 			}
 		}, i->second.events);
 		session->data().itemRemoved(
