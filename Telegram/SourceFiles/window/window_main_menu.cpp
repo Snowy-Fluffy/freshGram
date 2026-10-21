@@ -81,6 +81,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 
 #include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/features/stories/story_entry.h"
 #include "ayu/ui/fagram/fagram_design.h"
 #include "ayu/ui/fagram/fagram_nav_drawer.h"
@@ -779,6 +780,8 @@ void MainMenu::setupMenu() {
 		)->setClickedCallback([=] {
 			controller->showPeerHistory(controller->session().user());
 		});
+
+		AyuPlugins::AddMainMenuItems(_menu, controller);
 
 		if (settings.showLReadToggleInDrawer()) {
 			addAction(

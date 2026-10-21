@@ -5,6 +5,8 @@
 #include "ayu/data/ayu_vault.h"
 #include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_transport.h"
+#include "ayu/features/plugins/plugins_ui.h"
+#include "crl/crl_on_main.h"
 #include "data/data_changes.h"
 #include "data/data_session.h"
 #include "history/history_item.h"
@@ -90,6 +92,14 @@ struct Service {
 	config.host.requireLandlock = false;
 	config.services.dataFor = &DataFor;
 	config.services.transport = NetworkTransport();
+	config.services.settingsPage = [](
+			const std::string &id,
+			const std::string &account,
+			const fgpl::cbor::Value &page) {
+		crl::on_main([=] {
+			StoreSettingsPage(id, account, page);
+		});
+	};
 	RefreshProxy();
 
 	const auto installed = Installed();

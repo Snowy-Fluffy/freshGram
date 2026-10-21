@@ -39,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_draw_to_reply.h"
 #include "history/view/controls/history_view_rich_draft_preview.h"
 #include "ayu/features/compose_stash/compose_stash_hint.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/features/compose_stash/compose_stash_manager.h"
 #include "ui/emoji_config.h"
 #include "ui/chat/attach/attach_prepare.h"
@@ -6040,6 +6041,14 @@ void HistoryWidget::send(Api::SendOptions options) {
 		return;
 	} else if (const auto page = shownRichMessage()) {
 		sendRichDraft(page, options);
+		return;
+	} else if (!options.scheduled
+		&& AyuPlugins::TryRunCommand(
+			controller(),
+			_history->peer,
+			_field->getTextWithAppliedMarkdown().text)) {
+		clearFieldText();
+		saveDraftWithTextNow();
 		return;
 	}
 	if (!options.scheduled) {
