@@ -118,6 +118,10 @@ PRIVATE
 if (TARGET fgpl_app)
     target_link_libraries(Telegram PRIVATE fgpl_app)
     target_compile_definitions(Telegram PRIVATE FRESHGRAM_PLUGINS)
+    set(FRESHGRAM_RUNTIME_KEY "" CACHE STRING "Base64 ed25519 key that verifies the plugin runtime index.")
+    if (FRESHGRAM_RUNTIME_KEY)
+        target_compile_definitions(Telegram PRIVATE FRESHGRAM_RUNTIME_KEY="${FRESHGRAM_RUNTIME_KEY}")
+    endif()
 endif()
 
 set(ayugram_files
@@ -140,6 +144,8 @@ set(ayugram_files
         ayu/features/fake_passcode/fake_passcode.cpp
         ayu/features/plugins/plugins_data.cpp
         ayu/features/plugins/plugins_data.h
+        ayu/features/plugins/plugins_runtime.cpp
+        ayu/features/plugins/plugins_runtime.h
         ayu/features/plugins/plugins_transport.cpp
         ayu/features/plugins/plugins_transport.h
         ayu/features/plugins/plugins_service.cpp
