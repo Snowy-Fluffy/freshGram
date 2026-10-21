@@ -3,6 +3,8 @@
 #include "guest.h"
 #include "wasi_host.h"
 
+#include <wasmtime.h>
+
 #include <chrono>
 #include <deque>
 #include <condition_variable>
@@ -547,8 +549,49 @@ Runtime::Runtime(const RuntimeOptions &options)
 
 Runtime::~Runtime() = default;
 
+const char *Runtime::EngineVersion() {
+	return WASMTIME_VERSION;
+}
+
 Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::load(
 		std::span<const uint8_t> wasm,
+		Bridge &bridge,
+		const RuntimeLimits &limits,
+		std::shared_ptr<const Vfs> files,
+		const ProcessSpec &process) {
+	return loadFrom(wasm, false, bridge, limits, std::move(files), process);
+}
+
+Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::loadCompiled(
+		std::span<const uint8_t> compiled,
+		Bridge &bridge,
+		const RuntimeLimits &limits,
+		std::shared_ptr<const Vfs> files,
+		const ProcessSpec &process) {
+	return loadFrom(compiled, true, bridge, limits, std::move(files), process);
+}
+
+Result<std::vector<uint8_t>, LoadFailure> Runtime::compile(
+		std::span<const uint8_t> wasm,
+		const RuntimeLimits &limits) {
+	if (wasm.size() > limits.maxModuleBytes) {
+		return LoadFailure{ LoadError::TooLarge, "the module is too large" };
+	}
+	auto bytes = std::vector<uint8_t>(wasm.begin(), wasm.end());
+	auto module = wasmtime::Module::compile(_state->engine, bytes);
+	if (!module) {
+		return LoadFailure{ LoadError::InvalidModule, module.err().message() };
+	}
+	auto serialized = module.unwrap().serialize();
+	if (!serialized) {
+		return LoadFailure{ LoadError::InvalidModule, serialized.err().message() };
+	}
+	return serialized.unwrap();
+}
+
+Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::loadFrom(
+		std::span<const uint8_t> input,
+		bool precompiled,
 		Bridge &bridge,
 		const RuntimeLimits &limits,
 		std::shared_ptr<const Vfs> files,
@@ -556,11 +599,16 @@ Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::load(
 	const auto fail = [](LoadError error, std::string detail) {
 		return LoadFailure{ error, std::move(detail) };
 	};
-	if (wasm.size() > limits.maxModuleBytes) {
+	const auto allowed = precompiled
+		? limits.maxModuleBytes * 4
+		: limits.maxModuleBytes;
+	if (input.size() > allowed) {
 		return fail(LoadError::TooLarge, "the module is too large");
 	}
-	auto bytes = std::vector<uint8_t>(wasm.begin(), wasm.end());
-	auto compiled = wasmtime::Module::compile(_state->engine, bytes);
+	auto bytes = std::vector<uint8_t>(input.begin(), input.end());
+	auto compiled = precompiled
+		? wasmtime::Module::deserialize(_state->engine, bytes)
+		: wasmtime::Module::compile(_state->engine, bytes);
 	if (!compiled) {
 		return fail(LoadError::InvalidModule, compiled.err().message());
 	}

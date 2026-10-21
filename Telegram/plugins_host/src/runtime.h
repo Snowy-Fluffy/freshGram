@@ -128,6 +128,8 @@ public:
 	explicit Runtime(const RuntimeOptions &options = {});
 	~Runtime();
 
+	[[nodiscard]] static const char *EngineVersion();
+
 	[[nodiscard]] Result<std::unique_ptr<Plugin>, LoadFailure> load(
 		std::span<const uint8_t> wasm,
 		Bridge &bridge,
@@ -135,7 +137,26 @@ public:
 		std::shared_ptr<const Vfs> files = nullptr,
 		const ProcessSpec &process = {});
 
+	[[nodiscard]] Result<std::unique_ptr<Plugin>, LoadFailure> loadCompiled(
+		std::span<const uint8_t> compiled,
+		Bridge &bridge,
+		const RuntimeLimits &limits = {},
+		std::shared_ptr<const Vfs> files = nullptr,
+		const ProcessSpec &process = {});
+
+	[[nodiscard]] Result<std::vector<uint8_t>, LoadFailure> compile(
+		std::span<const uint8_t> wasm,
+		const RuntimeLimits &limits = {});
+
 private:
+	[[nodiscard]] Result<std::unique_ptr<Plugin>, LoadFailure> loadFrom(
+		std::span<const uint8_t> bytes,
+		bool precompiled,
+		Bridge &bridge,
+		const RuntimeLimits &limits,
+		std::shared_ptr<const Vfs> files,
+		const ProcessSpec &process);
+
 	std::shared_ptr<RuntimeState> _state;
 
 };

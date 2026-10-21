@@ -7,6 +7,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -96,6 +97,50 @@ void Reply(int fd, const cbor::Value &message) {
 	}
 }
 
+void RunCompiler(int fd, Runtime &runtime) {
+	auto frame = ipc::ReadFrame(fd, ipc::TrustedLimits());
+	if (!frame.ok() || proto::TypeOf(frame.value()) != "compile") {
+		std::_Exit(3);
+	}
+	const auto wasm = frame.value().find("wasm");
+	const auto bytes = wasm ? wasm->asBytes() : nullptr;
+	if (!bytes) {
+		Reply(fd, proto::Map({
+			{ "t", proto::Text("compile_failed") },
+			{ "detail", proto::Text("no module") },
+		}));
+		std::_Exit(0);
+	}
+	const auto compiled = runtime.compile(*bytes);
+	if (!compiled.ok()) {
+		Reply(fd, proto::Map({
+			{ "t", proto::Text("compile_failed") },
+			{ "detail", proto::Text(compiled.error().detail) },
+		}));
+		std::_Exit(0);
+	}
+	constexpr auto kChunk = size_t(1) << 20;
+	const auto &data = compiled.value();
+	const auto count = (data.size() + kChunk - 1) / kChunk;
+	for (auto i = size_t(0); i != count; ++i) {
+		const auto from = i * kChunk;
+		const auto to = std::min(data.size(), from + kChunk);
+		Reply(fd, proto::Map({
+			{ "t", proto::Text("compiled") },
+			{ "i", proto::Int(int64_t(i)) },
+			{ "n", proto::Int(int64_t(count)) },
+			{ "d", cbor::Value::FromBytes(cbor::Bytes(
+				data.begin() + ptrdiff_t(from),
+				data.begin() + ptrdiff_t(to))) },
+		}));
+	}
+	Reply(fd, proto::Map({
+		{ "t", proto::Text("compile_done") },
+		{ "total", proto::Int(int64_t(data.size())) },
+	}));
+	std::_Exit(0);
+}
+
 void HandleLoad(
 		int fd,
 		const cbor::Value &message,
@@ -109,8 +154,12 @@ void HandleLoad(
 			{ "detail", proto::Text(detail) },
 		}));
 	};
+	const auto compiledField = message.find("compiled");
+	const auto compiledBytes = compiledField ? compiledField->asBytes() : nullptr;
 	const auto wasm = message.find("wasm");
-	const auto bytes = wasm ? wasm->asBytes() : nullptr;
+	const auto bytes = compiledBytes
+		? compiledBytes
+		: (wasm ? wasm->asBytes() : nullptr);
 	if (!bytes) {
 		return failure(-1, "the load message has no module");
 	}
@@ -138,12 +187,19 @@ void HandleLoad(
 			}
 		}
 	}
-	auto loaded = runtime.load(
-		*bytes,
-		bridge,
-		LimitsFrom(message),
-		builder.finish(),
-		process);
+	auto loaded = compiledBytes
+		? runtime.loadCompiled(
+			*bytes,
+			bridge,
+			LimitsFrom(message),
+			builder.finish(),
+			process)
+		: runtime.load(
+			*bytes,
+			bridge,
+			LimitsFrom(message),
+			builder.finish(),
+			process);
 	if (!loaded.ok()) {
 		return failure(
 			int64_t(loaded.error().error),
@@ -253,6 +309,7 @@ int main(int argc, char **argv) {
 	auto layers = sandbox::kLayersAll;
 	auto requireLandlock = false;
 	auto selftest = std::string();
+	auto compileOnly = false;
 	auto addressSpaceMb = uint64_t(0);
 	auto cpuSeconds = uint64_t(0);
 	auto runtimeOptions = RuntimeOptions();
@@ -276,6 +333,8 @@ int main(int argc, char **argv) {
 			runtimeOptions.memoryGuard = 64 << 10;
 		} else if (argument.rfind("--cpu-seconds=", 0) == 0) {
 			cpuSeconds = std::strtoull(argument.c_str() + 14, nullptr, 10);
+		} else if (argument == "--compile-only") {
+			compileOnly = true;
 		} else if (argument == "--winch") {
 			runtimeOptions.baselineCompiler = true;
 		} else if (argument.rfind("--selftest=", 0) == 0) {
@@ -307,6 +366,7 @@ int main(int argc, char **argv) {
 		{ "landlock", proto::Bool(report.landlock) },
 		{ "seccomp", proto::Bool(report.seccomp) },
 		{ "rlimits", proto::Bool(report.rlimits) },
+		{ "engine", proto::Text(Runtime::EngineVersion()) },
 	}));
 
 	if (selftest == "open") {
@@ -325,6 +385,9 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	if (compileOnly) {
+		RunCompiler(fd, runtime);
+	}
 	auto bridge = SocketBridge(fd);
 	auto plugin = std::unique_ptr<Plugin>();
 	while (true) {

@@ -191,7 +191,72 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 	client->_sandbox.landlock = flag("landlock");
 	client->_sandbox.seccomp = flag("seccomp");
 	client->_sandbox.rlimits = flag("rlimits");
+	client->_sandbox.engine = proto::TextField(hello.value(), "engine");
 	return client;
+}
+
+Result<cbor::Bytes, ClientFailure> HostClient::Compile(
+		const HostConfig &config,
+		const cbor::Bytes &wasm,
+		size_t maxBytes,
+		int timeoutMs) {
+	auto compileConfig = config;
+	compileConfig.extraArguments.push_back("--compile-only");
+	auto started = Start(compileConfig);
+	if (!started.ok()) {
+		return started.error();
+	}
+	auto &client = *started.value();
+	if (!ipc::WriteFrame(client._fd, proto::Map({
+			{ "t", proto::Text("compile") },
+			{ "wasm", cbor::Value::FromBytes(wasm) },
+		})).ok()) {
+		return client.died("sending the module");
+	}
+	const auto deadline = std::chrono::steady_clock::now()
+		+ std::chrono::milliseconds(timeoutMs);
+	auto result = cbor::Bytes();
+	auto expected = int64_t(0);
+	while (true) {
+		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		auto frame = ipc::ReadFrame(
+			client._fd,
+			ipc::StrictLimits(),
+			ipc::kMaxFrameBytes,
+			int(left > 0 ? left : 0));
+		if (!frame.ok()) {
+			return client.fail(frame.error(), "compiling the module");
+		}
+		const auto type = proto::TypeOf(frame.value());
+		if (type == "compiled") {
+			const auto data = frame.value().find("d");
+			const auto bytes = data ? data->asBytes() : nullptr;
+			if (!bytes
+				|| proto::IntField(frame.value(), "i") != expected
+				|| result.size() + bytes->size() > maxBytes) {
+				client.kill();
+				return Failure(ClientError::Protocol, "a bad compiled chunk");
+			}
+			++expected;
+			result.insert(result.end(), bytes->begin(), bytes->end());
+		} else if (type == "compile_done") {
+			if (proto::IntField(frame.value(), "total") != int64_t(result.size())) {
+				client.kill();
+				return Failure(ClientError::Protocol, "a wrong compiled size");
+			}
+			return result;
+		} else if (type == "compile_failed") {
+			auto failure = Failure(
+				ClientError::LoadFailed,
+				proto::TextField(frame.value(), "detail"));
+			client.kill();
+			return failure;
+		} else {
+			client.kill();
+			return Failure(ClientError::Protocol, "unexpected message: " + type);
+		}
+	}
 }
 
 Result<std::monostate, ClientFailure> HostClient::load(
@@ -216,7 +281,10 @@ Result<std::monostate, ClientFailure> HostClient::load(
 	_timeoutMs = int(request.limits.callTimeoutMs);
 	const auto sent = ipc::WriteFrame(_fd, proto::Map({
 		{ "t", proto::Text("load") },
-		{ "wasm", cbor::Value::FromBytes(request.wasm) },
+		{ request.compiled.empty() ? "wasm" : "compiled",
+			cbor::Value::FromBytes(request.compiled.empty()
+				? request.wasm
+				: request.compiled) },
 		{ "files", cbor::Value::FromArray(std::move(files)) },
 		{ "args", texts(request.args) },
 		{ "env", texts(request.env) },

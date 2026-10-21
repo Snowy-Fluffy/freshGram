@@ -50,10 +50,12 @@ struct SandboxInfo {
 	bool landlock = false;
 	bool seccomp = false;
 	bool rlimits = false;
+	std::string engine;
 };
 
 struct LoadRequest {
 	cbor::Bytes wasm;
+	cbor::Bytes compiled;
 	std::vector<std::pair<std::string, cbor::Bytes>> files;
 	RuntimeLimits limits;
 	std::vector<std::string> args;
@@ -66,6 +68,12 @@ public:
 
 	[[nodiscard]] static Result<std::unique_ptr<HostClient>, ClientFailure>
 	Start(const HostConfig &config);
+
+	[[nodiscard]] static Result<cbor::Bytes, ClientFailure> Compile(
+		const HostConfig &config,
+		const cbor::Bytes &wasm,
+		size_t maxBytes = size_t(128) << 20,
+		int timeoutMs = 120000);
 
 	[[nodiscard]] const SandboxInfo &sandbox() const {
 		return _sandbox;

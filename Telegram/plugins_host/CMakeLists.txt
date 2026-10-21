@@ -27,7 +27,7 @@ function(fgpl_options target)
 	endif()
 endfunction()
 
-add_library(fgpl_core STATIC src/cbor.cpp src/vfs.cpp)
+add_library(fgpl_core STATIC src/cbor.cpp src/vfs.cpp src/sha256.cpp src/module_cache.cpp)
 target_include_directories(fgpl_core PUBLIC src)
 fgpl_options(fgpl_core)
 
@@ -41,7 +41,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	add_library(fgpl_ipc STATIC src/ipc.cpp)
 	target_link_libraries(fgpl_ipc PUBLIC fgpl_core)
 	fgpl_options(fgpl_ipc)
-	add_library(fgpl_client STATIC src/host_client.cpp)
+	add_library(fgpl_client STATIC src/host_client.cpp src/cached_load.cpp)
 	target_link_libraries(fgpl_client PUBLIC fgpl_ipc)
 	fgpl_options(fgpl_client)
 endif()
@@ -76,7 +76,7 @@ if (FGPL_BUILD_TESTS)
 		endif()
 	endif()
 
-	foreach (name test_cbor test_vfs test_runtime)
+	foreach (name test_cbor test_vfs test_cache test_runtime)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
 		if (name STREQUAL "test_runtime")
@@ -119,6 +119,16 @@ if (FGPL_BUILD_TESTS)
 		add_dependencies(test_abuse fgpl_plugin_host)
 		fgpl_warnings(test_abuse)
 		add_test(NAME test_abuse COMMAND test_abuse)
+
+		add_executable(test_compile tests/test_compile.cpp)
+		target_link_libraries(test_compile PRIVATE fgpl_client wasmtime)
+		target_compile_definitions(test_compile PRIVATE
+			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
+			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python")
+		add_dependencies(test_compile fgpl_plugin_host)
+		fgpl_warnings(test_compile)
+		add_test(NAME test_compile COMMAND test_compile)
 
 		add_executable(test_python tests/test_python.cpp)
 		target_link_libraries(test_python PRIVATE fgpl_client)
