@@ -4,6 +4,7 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/data/ayu_vault.h"
 #include "ayu/features/plugins/plugins_data.h"
+#include "ayu/features/plugins/plugins_transport.h"
 #include "data/data_session.h"
 #include "history/history_item.h"
 #include "base/flat_set.h"
@@ -82,6 +83,8 @@ struct Service {
 	config.host.path = HostBinary().toStdString();
 	config.host.requireLandlock = false;
 	config.services.dataFor = &DataFor;
+	config.services.transport = NetworkTransport();
+	RefreshProxy();
 
 	const auto runtime = RuntimePath().toStdString();
 	config.python.wasm = runtime + "/python/python.wasm";
@@ -247,6 +250,11 @@ void Start() {
 	) | rpl::on_next([] {
 		SyncAccounts();
 		Refresh();
+	}, service.lifetime);
+
+	Core::App().proxyChanges(
+	) | rpl::on_next([] {
+		RefreshProxy();
 	}, service.lifetime);
 
 	Core::App().passcodeLockValue(
