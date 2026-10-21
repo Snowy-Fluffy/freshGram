@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <spawn.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -53,6 +54,11 @@ ClientFailure HostClient::died(const std::string &context) {
 			usleep(5000);
 			waited = waitpid(_pid, &status, WNOHANG);
 		}
+		if (waited == 0) {
+			::kill(_pid, SIGKILL);
+			waited = waitpid(_pid, &status, 0);
+			failure.detail += ": the host stopped answering";
+		}
 		if (waited == _pid) {
 			_pid = -1;
 			if (WIFSIGNALED(status)) {
@@ -66,6 +72,24 @@ ClientFailure HostClient::died(const std::string &context) {
 		}
 	}
 	return failure;
+}
+
+ClientFailure HostClient::fail(ipc::IoError error, const std::string &context) {
+	switch (error) {
+	case ipc::IoError::Closed:
+	case ipc::IoError::Failed:
+		return died(context);
+	case ipc::IoError::Timeout:
+		kill();
+		return Failure(ClientError::Timeout, context);
+	case ipc::IoError::TooLarge:
+	case ipc::IoError::Malformed:
+		kill();
+		return Failure(
+			ClientError::Protocol,
+			context + ": a malformed or oversized message");
+	}
+	return Failure(ClientError::Protocol, context);
 }
 
 Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
@@ -97,6 +121,9 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 		arguments.push_back(
 			"--address-space-mb=" + std::to_string(config.addressSpaceMb));
 	}
+	if (config.cpuSeconds > 0) {
+		arguments.push_back("--cpu-seconds=" + std::to_string(config.cpuSeconds));
+	}
 	if (config.reservationMb > 0) {
 		arguments.push_back(
 			"--reservation-mb=" + std::to_string(config.reservationMb));
@@ -119,6 +146,13 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 		environ);
 	posix_spawn_file_actions_destroy(&actions);
 	close(pair[1]);
+	if (config.sendTimeoutMs > 0) {
+		const auto timeout = timeval{
+			.tv_sec = config.sendTimeoutMs / 1000,
+			.tv_usec = (config.sendTimeoutMs % 1000) * 1000,
+		};
+		setsockopt(pair[0], SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+	}
 	if (spawned != 0) {
 		close(pair[0]);
 		return Failure(ClientError::SpawnFailed, std::strerror(spawned));
@@ -133,14 +167,18 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 		ipc::kMaxFrameBytes,
 		config.startupTimeoutMs);
 	if (!hello.ok()) {
-		return client->died("the host did not start");
+		return client->fail(hello.error(), "the host did not start");
 	}
+	client->_maxLogBytes = config.maxLogBytes;
+	client->_maxCalls = config.maxCalls;
 	const auto type = proto::TypeOf(hello.value());
 	if (type == "fatal") {
+		client->kill();
 		return Failure(
 			ClientError::Sandbox,
 			proto::TextField(hello.value(), "detail"));
 	} else if (type != "hello") {
+		client->kill();
 		return Failure(ClientError::Protocol, "unexpected first message");
 	}
 	const auto flag = [&](const char *key) {
@@ -158,6 +196,9 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 
 Result<std::monostate, ClientFailure> HostClient::load(
 		const LoadRequest &request) {
+	if (_fd < 0) {
+		return Failure(ClientError::HostDied, "the host is not running");
+	}
 	auto files = cbor::Array();
 	for (const auto &file : request.files) {
 		files.push_back(proto::Map({
@@ -194,11 +235,7 @@ Result<std::monostate, ClientFailure> HostClient::load(
 		ipc::kMaxFrameBytes,
 		_timeoutMs + kCallGraceMs + 10000);
 	if (!reply.ok()) {
-		if (reply.error() == ipc::IoError::Timeout) {
-			kill();
-			return Failure(ClientError::Timeout, "loading the module");
-		}
-		return died("loading the module");
+		return fail(reply.error(), "loading the module");
 	}
 	const auto type = proto::TypeOf(reply.value());
 	if (type == "loaded") {
@@ -210,6 +247,7 @@ Result<std::monostate, ClientFailure> HostClient::load(
 		failure.code = int(proto::IntField(reply.value(), "code"));
 		return failure;
 	}
+	kill();
 	return Failure(ClientError::Protocol, "unexpected reply to load: " + type);
 }
 
@@ -217,7 +255,12 @@ Result<int32_t, ClientFailure> HostClient::run(
 		const char *type,
 		const cbor::Value &value,
 		Bridge &bridge) {
+	if (_fd < 0) {
+		return Failure(ClientError::HostDied, "the host is not running");
+	}
 	const auto id = _nextId++;
+	auto logBytes = size_t(0);
+	auto calls = 0;
 	if (!ipc::WriteFrame(_fd, proto::Map({
 			{ "t", proto::Text(type) },
 			{ "id", proto::Int(id) },
@@ -236,20 +279,20 @@ Result<int32_t, ClientFailure> HostClient::run(
 			ipc::kMaxFrameBytes,
 			int(left > 0 ? left : 0));
 		if (!frame.ok()) {
-			if (frame.error() == ipc::IoError::Timeout) {
-				kill();
-				return Failure(ClientError::Timeout, "the host did not answer");
-			} else if (frame.error() == ipc::IoError::Malformed
-				|| frame.error() == ipc::IoError::TooLarge) {
-				kill();
-				return Failure(ClientError::Protocol, "a malformed message");
-			}
-			return died("waiting for the host");
+			return fail(frame.error(), "waiting for the host");
 		}
 		const auto kind = proto::TypeOf(frame.value());
 		if (kind == "log") {
-			bridge.log(proto::TextField(frame.value(), "line"));
+			const auto line = proto::TextField(frame.value(), "line");
+			logBytes += line.size() + 1;
+			if (logBytes <= _maxLogBytes) {
+				bridge.log(line);
+			}
 		} else if (kind == "call") {
+			if (++calls > _maxCalls) {
+				kill();
+				return Failure(ClientError::Protocol, "too many calls");
+			}
 			const auto request = frame.value().find("v");
 			const auto response = bridge.call(request ? *request : cbor::Value());
 			if (!ipc::WriteFrame(_fd, proto::Map({
@@ -286,6 +329,9 @@ Result<int32_t, ClientFailure> HostClient::deliver(
 }
 
 Result<cbor::Value, ClientFailure> HostClient::waitFor(int timeoutMs) {
+	if (_fd < 0) {
+		return Failure(ClientError::HostDied, "the host is not running");
+	}
 	auto frame = ipc::ReadFrame(
 		_fd,
 		ipc::StrictLimits(),
@@ -295,7 +341,7 @@ Result<cbor::Value, ClientFailure> HostClient::waitFor(int timeoutMs) {
 		if (frame.error() == ipc::IoError::Timeout) {
 			return Failure(ClientError::Timeout, "no message");
 		}
-		return died("waiting for a message");
+		return fail(frame.error(), "waiting for a message");
 	}
 	return std::move(frame.value());
 }

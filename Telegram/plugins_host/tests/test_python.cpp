@@ -1,5 +1,6 @@
 #include "check.h"
 #include "host_client.h"
+#include "python_support.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -12,7 +13,7 @@
 namespace {
 
 using namespace fgpl;
-namespace fs = std::filesystem;
+using pysupport::PythonRequest;
 
 class TestBridge final : public Bridge {
 public:
@@ -30,46 +31,6 @@ public:
 	std::vector<std::string> logs;
 
 };
-
-[[nodiscard]] cbor::Bytes ReadFile(const fs::path &path) {
-	auto stream = std::ifstream(path, std::ios::binary);
-	return { std::istreambuf_iterator<char>(stream), {} };
-}
-
-[[nodiscard]] LoadRequest PythonRequest() {
-	const auto root = fs::path(FGPL_CPYTHON_DIR);
-	auto request = LoadRequest();
-	request.wasm = ReadFile(root / "python.wasm");
-	const auto library = root / "lib";
-	for (const auto &entry : fs::recursive_directory_iterator(library)) {
-		if (entry.is_regular_file()) {
-			request.files.emplace_back(
-				"runtime/lib/" + fs::relative(entry.path(), library).generic_string(),
-				ReadFile(entry.path()));
-		}
-	}
-	const auto plugin = fs::path(FGPL_PYTHON_PLUGIN_DIR);
-	for (const auto &entry : fs::directory_iterator(plugin)) {
-		if (entry.is_regular_file()) {
-			request.files.emplace_back(
-				"plugin/" + entry.path().filename().generic_string(),
-				ReadFile(entry.path()));
-		}
-	}
-	request.args = { "python", "-S", "-B", "/plugin/main.py" };
-	request.env = {
-		"PYTHONHOME=/runtime",
-		"PYTHONPATH=/plugin",
-		"PYTHONDONTWRITEBYTECODE=1",
-		"PYTHONNOUSERSITE=1",
-		"PYTHONUTF8=1",
-		"PYTHONUNBUFFERED=1",
-		"PYTHONHASHSEED=0",
-	};
-	request.limits.callTimeoutMs = 20000;
-	request.limits.memoryBytes = uint64_t(256) << 20;
-	return request;
-}
 
 [[nodiscard]] double Seconds(std::chrono::steady_clock::time_point since) {
 	return std::chrono::duration<double>(
@@ -156,7 +117,7 @@ void RunWith(const char *label, const std::vector<std::string> &extra) {
 } // namespace
 
 int main() {
-	if (!fs::exists(fs::path(FGPL_CPYTHON_DIR) / "python.wasm")) {
+	if (!pysupport::Installed()) {
 		std::fprintf(stderr, "python.wasm is not installed, skipping\n");
 		return 0;
 	}

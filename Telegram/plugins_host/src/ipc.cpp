@@ -97,13 +97,16 @@ Result<std::monostate, IoError> WriteFrame(
 		return IoError::TooLarge;
 	}
 	const auto size = uint32_t(body.size());
-	const uint8_t header[4] = {
+	auto frame = cbor::Bytes();
+	frame.reserve(4 + body.size());
+	frame.insert(frame.end(), {
 		uint8_t(size >> 24),
 		uint8_t(size >> 16),
 		uint8_t(size >> 8),
 		uint8_t(size),
-	};
-	if (!WriteAll(fd, header, 4) || !WriteAll(fd, body.data(), body.size())) {
+	});
+	frame.insert(frame.end(), body.begin(), body.end());
+	if (!WriteAll(fd, frame.data(), frame.size())) {
 		return IoError::Failed;
 	}
 	return std::monostate();

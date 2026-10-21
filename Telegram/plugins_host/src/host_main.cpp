@@ -254,6 +254,7 @@ int main(int argc, char **argv) {
 	auto requireLandlock = false;
 	auto selftest = std::string();
 	auto addressSpaceMb = uint64_t(0);
+	auto cpuSeconds = uint64_t(0);
 	auto runtimeOptions = RuntimeOptions();
 	for (auto i = 1; i < argc; ++i) {
 		const auto argument = std::string(argv[i]);
@@ -273,6 +274,8 @@ int main(int argc, char **argv) {
 				nullptr,
 				10) << 20;
 			runtimeOptions.memoryGuard = 64 << 10;
+		} else if (argument.rfind("--cpu-seconds=", 0) == 0) {
+			cpuSeconds = std::strtoull(argument.c_str() + 14, nullptr, 10);
 		} else if (argument == "--winch") {
 			runtimeOptions.baselineCompiler = true;
 		} else if (argument.rfind("--selftest=", 0) == 0) {
@@ -287,6 +290,7 @@ int main(int argc, char **argv) {
 	options.layers = layers;
 	options.requireLandlock = requireLandlock;
 	options.addressSpaceBytes = addressSpaceMb << 20;
+	options.cpuSeconds = cpuSeconds;
 	auto restricted = sandbox::Restrict(options);
 	if (!restricted.ok()) {
 		Fatal(fd, restricted.error());
@@ -308,6 +312,11 @@ int main(int argc, char **argv) {
 	if (selftest == "open") {
 		if (open("/etc/passwd", O_RDONLY) >= 0) {
 			Reply(fd, proto::Map({ { "t", proto::Text("selftest_survived") } }));
+		}
+	} else if (selftest == "spin") {
+		volatile auto counter = uint64_t(0);
+		while (true) {
+			counter = counter + 1;
 		}
 	} else if (selftest == "hang") {
 		while (true) {

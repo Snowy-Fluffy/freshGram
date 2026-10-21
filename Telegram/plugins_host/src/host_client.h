@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cbor.h"
+#include "ipc.h"
 #include "result.h"
 #include "runtime.h"
 
@@ -37,6 +38,10 @@ struct HostConfig {
 	std::vector<std::string> extraArguments;
 	int addressSpaceMb = 1024;
 	int reservationMb = 16;
+	size_t maxLogBytes = size_t(1) << 20;
+	int maxCalls = 512;
+	int cpuSeconds = 0;
+	int sendTimeoutMs = 5000;
 	int startupTimeoutMs = 10000;
 };
 
@@ -79,6 +84,10 @@ public:
 
 	void kill();
 
+	[[nodiscard]] int pid() const {
+		return _pid;
+	}
+
 private:
 	HostClient() = default;
 
@@ -87,11 +96,16 @@ private:
 		const cbor::Value &value,
 		Bridge &bridge);
 	[[nodiscard]] ClientFailure died(const std::string &context);
+	[[nodiscard]] ClientFailure fail(
+		ipc::IoError error,
+		const std::string &context);
 
 	int _fd = -1;
 	int _pid = -1;
 	int _timeoutMs = 500;
 	int64_t _nextId = 1;
+	size_t _maxLogBytes = 0;
+	int _maxCalls = 0;
 	SandboxInfo _sandbox;
 
 };
