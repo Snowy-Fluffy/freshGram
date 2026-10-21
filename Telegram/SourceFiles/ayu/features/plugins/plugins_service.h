@@ -27,6 +27,9 @@ void Stop();
 [[nodiscard]] State CurrentState();
 [[nodiscard]] rpl::producer<State> StateValue();
 
+[[nodiscard]] rpl::producer<> ListChanges();
+void NotifyListChanged();
+
 [[nodiscard]] fgpl::PluginManager *Manager();
 
 [[nodiscard]] QString StorePath();
