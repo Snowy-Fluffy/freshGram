@@ -38,6 +38,7 @@ struct PythonRuntime {
 
 struct ManagerServices {
 	DataProvider *data = nullptr;
+	std::function<DataProvider*(const std::string &account)> dataFor;
 	Transport *transport = nullptr;
 	std::function<int64_t()> clockMs;
 };
