@@ -32,7 +32,8 @@ endfunction()
 
 add_library(fgpl_core STATIC src/cbor.cpp src/vfs.cpp src/sha256.cpp src/module_cache.cpp
 	src/base64.cpp src/json.cpp src/semver.cpp src/zip_reader.cpp src/signature.cpp src/net_policy.cpp src/manifest.cpp
-	src/wasm_scan.cpp src/package.cpp src/zip_writer.cpp)
+	src/wasm_scan.cpp src/package.cpp src/zip_writer.cpp src/broker.cpp
+	src/permissions.cpp src/file_storage.cpp)
 target_include_directories(fgpl_core PUBLIC src)
 target_link_libraries(fgpl_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto)
 fgpl_options(fgpl_core)
@@ -47,7 +48,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	add_library(fgpl_ipc STATIC src/ipc.cpp)
 	target_link_libraries(fgpl_ipc PUBLIC fgpl_core)
 	fgpl_options(fgpl_ipc)
-	add_library(fgpl_client STATIC src/host_client.cpp src/cached_load.cpp)
+	add_library(fgpl_client STATIC src/host_client.cpp src/cached_load.cpp
+		src/manager.cpp)
 	target_link_libraries(fgpl_client PUBLIC fgpl_ipc)
 	fgpl_options(fgpl_client)
 endif()
@@ -64,7 +66,7 @@ add_executable(fgpl_tool src/tool_main.cpp)
 target_link_libraries(fgpl_tool PRIVATE fgpl_runtime)
 fgpl_options(fgpl_tool)
 
-add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp src/broker.cpp src/permissions.cpp)
+add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp)
 target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
 fgpl_options(fgpl_runtime)
 
@@ -153,6 +155,21 @@ if (FGPL_BUILD_TESTS)
 		add_dependencies(test_sdk fgpl_plugin_host)
 		fgpl_warnings(test_sdk)
 		add_test(NAME test_sdk COMMAND test_sdk)
+
+		add_executable(test_manager tests/test_manager.cpp)
+		target_link_libraries(test_manager PRIVATE fgpl_client fgpl_runtime)
+		target_compile_definitions(test_manager PRIVATE
+			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
+			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python"
+			FGPL_PYTHON_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
+		if (fgpl_wasm_ready)
+			add_dependencies(test_manager counter_wasm_target)
+			target_compile_definitions(test_manager PRIVATE FGPL_COUNTER_WASM="${counter_wasm}")
+		endif()
+		add_dependencies(test_manager fgpl_plugin_host)
+		fgpl_warnings(test_manager)
+		add_test(NAME test_manager COMMAND test_manager)
 
 		add_executable(test_tool tests/test_tool.cpp)
 		target_link_libraries(test_tool PRIVATE fgpl_runtime)

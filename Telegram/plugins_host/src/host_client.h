@@ -95,6 +95,9 @@ public:
 	[[nodiscard]] int pid() const {
 		return _pid;
 	}
+	[[nodiscard]] bool alive() const {
+		return _fd >= 0;
+	}
 
 private:
 	HostClient() = default;
