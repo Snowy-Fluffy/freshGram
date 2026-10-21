@@ -54,7 +54,7 @@ if (UNIX)
 	set_property(TARGET wasmtime PROPERTY INTERFACE_LINK_LIBRARIES pthread dl m)
 endif()
 
-add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp)
+add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp src/broker.cpp src/net_policy.cpp)
 target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
 fgpl_options(fgpl_runtime)
 
@@ -76,10 +76,10 @@ if (FGPL_BUILD_TESTS)
 		endif()
 	endif()
 
-	foreach (name test_cbor test_vfs test_cache test_runtime)
+	foreach (name test_cbor test_vfs test_cache test_runtime test_broker)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
-		if (name STREQUAL "test_runtime")
+		if (name STREQUAL "test_runtime" OR name STREQUAL "test_broker")
 			target_link_libraries(${name} PRIVATE fgpl_runtime)
 		endif()
 		fgpl_options(${name})
@@ -115,17 +115,41 @@ if (FGPL_BUILD_TESTS)
 		target_compile_definitions(test_abuse PRIVATE
 			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
 			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
-			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python")
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python"
+			FGPL_PYTHON_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
 		add_dependencies(test_abuse fgpl_plugin_host)
 		fgpl_warnings(test_abuse)
 		add_test(NAME test_abuse COMMAND test_abuse)
+
+		add_executable(test_sdk tests/test_sdk.cpp)
+		target_link_libraries(test_sdk PRIVATE fgpl_client fgpl_runtime)
+		target_compile_definitions(test_sdk PRIVATE
+			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
+			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python"
+			FGPL_PYTHON_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
+		if (fgpl_wasm_ready)
+			set(counter_wasm ${CMAKE_CURRENT_BINARY_DIR}/counter.wasm)
+			add_custom_command(OUTPUT ${counter_wasm}
+				COMMAND ${FGPL_CLANG} --target=wasm32 -O2 -nostdlib -fno-builtin
+					-Wall -Wextra -Wl,--no-entry -o ${counter_wasm}
+					${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/c/examples/counter.c
+				DEPENDS ../plugins_sdk/c/examples/counter.c ../plugins_sdk/c/freshgram.h)
+			add_custom_target(counter_wasm_target DEPENDS ${counter_wasm})
+			add_dependencies(test_sdk counter_wasm_target)
+			target_compile_definitions(test_sdk PRIVATE FGPL_COUNTER_WASM="${counter_wasm}")
+		endif()
+		add_dependencies(test_sdk fgpl_plugin_host)
+		fgpl_warnings(test_sdk)
+		add_test(NAME test_sdk COMMAND test_sdk)
 
 		add_executable(test_compile tests/test_compile.cpp)
 		target_link_libraries(test_compile PRIVATE fgpl_client wasmtime)
 		target_compile_definitions(test_compile PRIVATE
 			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
 			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
-			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python")
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python"
+			FGPL_PYTHON_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
 		add_dependencies(test_compile fgpl_plugin_host)
 		fgpl_warnings(test_compile)
 		add_test(NAME test_compile COMMAND test_compile)
@@ -135,7 +159,8 @@ if (FGPL_BUILD_TESTS)
 		target_compile_definitions(test_python PRIVATE
 			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
 			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
-			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python")
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python"
+			FGPL_PYTHON_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
 		add_dependencies(test_python fgpl_plugin_host)
 		fgpl_warnings(test_python)
 		add_test(NAME test_python COMMAND test_python)

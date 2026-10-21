@@ -39,10 +39,19 @@ using namespace fgpl;
 				ReadFile(entry.path()));
 		}
 	}
+	const auto sdk = fs::path(FGPL_PYTHON_SDK_DIR);
+	for (const auto &entry : fs::recursive_directory_iterator(sdk)) {
+		if (entry.is_regular_file()
+			&& entry.path().extension() == ".py") {
+			request.files.emplace_back(
+				"runtime/sdk/" + fs::relative(entry.path(), sdk).generic_string(),
+				ReadFile(entry.path()));
+		}
+	}
 	request.args = { "python", "-S", "-B", std::string("/plugin/") + main };
 	request.env = {
 		"PYTHONHOME=/runtime",
-		"PYTHONPATH=/plugin",
+		"PYTHONPATH=/runtime/sdk:/plugin",
 		"PYTHONDONTWRITEBYTECODE=1",
 		"PYTHONNOUSERSITE=1",
 		"PYTHONUTF8=1",
