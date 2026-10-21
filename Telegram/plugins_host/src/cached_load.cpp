@@ -22,7 +22,8 @@ Result<CachedLoadResult, ClientFailure> LoadWithCache(
 		HostClient &client,
 		const HostConfig &compilerConfig,
 		LoadRequest request,
-		const CacheSettings &settings) {
+		const CacheSettings &settings,
+		const std::atomic<bool> *cancel) {
 	auto key = CacheKey();
 	key.secret = settings.secret;
 	key.fingerprint = Fingerprint(client, compilerConfig);
@@ -56,7 +57,15 @@ Result<CachedLoadResult, ClientFailure> LoadWithCache(
 		return direct();
 	}
 
-	auto compiled = HostClient::Compile(compilerConfig, wasm);
+	auto compiled = HostClient::Compile(
+		compilerConfig,
+		wasm,
+		size_t(128) << 20,
+		120000,
+		cancel);
+	if (cancel && cancel->load()) {
+		return ClientFailure{ ClientError::Timeout, "cancelled" };
+	}
 	if (!compiled.ok()) {
 		return direct();
 	}

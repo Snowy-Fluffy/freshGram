@@ -78,6 +78,7 @@ PluginManager::PluginManager(ManagerConfig config)
 				std::chrono::steady_clock::now().time_since_epoch()).count());
 		};
 	}
+	_freeSlots = std::max(1, _config.maxConcurrentStarts);
 	loadState();
 }
 
@@ -273,11 +274,105 @@ bool PluginManager::mayRun() const {
 	return !_locked && !_hidden;
 }
 
-void PluginManager::addLog(Record &record, std::string_view line) {
-	record.log.emplace_back(line.substr(0, 500));
-	while (record.log.size() > _config.logLines) {
-		record.log.pop_front();
+namespace {
+
+void AppendLog(LogRing &ring, size_t maxLines, std::string_view line) {
+	const auto lock = std::scoped_lock(ring.mutex);
+	ring.lines.emplace_back(line.substr(0, 500));
+	while (ring.lines.size() > maxLines) {
+		ring.lines.pop_front();
 	}
+}
+
+[[nodiscard]] size_t EncodedSize(const cbor::Value &event) {
+	auto bytes = cbor::Bytes();
+	return cbor::Encode(event, bytes, 16) ? bytes.size() : 0;
+}
+
+} // namespace
+
+void PluginManager::addLog(Record &record, std::string_view line) {
+	AppendLog(*record.log, _config.logLines, line);
+}
+
+std::vector<std::string> PluginManager::log(const std::string &id) const {
+	const auto found = _records.find(id);
+	if (found == _records.end()) {
+		return {};
+	}
+	const auto lock = std::scoped_lock(found->second.log->mutex);
+	return { found->second.log->lines.begin(), found->second.log->lines.end() };
+}
+
+void PluginManager::post(Completion completion) {
+	{
+		const auto lock = std::scoped_lock(_outboxMutex);
+		_outbox.push_back(std::move(completion));
+	}
+	_outboxWake.notify_all();
+}
+
+void PluginManager::stopMany(const std::vector<Key> &keys) {
+	auto victims = std::vector<Instance *>();
+	for (const auto &key : keys) {
+		const auto i = _instances.find(key);
+		if (i == _instances.end()) {
+			continue;
+		}
+		auto &instance = *i->second;
+		{
+			const auto lock = std::scoped_lock(instance.mutex);
+			instance.closing = true;
+			instance.queue.clear();
+			instance.queuedBytes = 0;
+		}
+		instance.cancel.store(true);
+		instance.wake.notify_all();
+		if (const auto client = instance.live.load()) {
+			client->abort();
+		}
+		victims.push_back(&instance);
+	}
+	{
+		const auto lock = std::scoped_lock(_slotMutex);
+	}
+	_slotWake.notify_all();
+	for (const auto instance : victims) {
+		if (instance->thread.joinable()) {
+			instance->thread.join();
+		}
+		if (instance->client) {
+			instance->client->kill();
+		}
+		if (instance->storage) {
+			instance->storage->flush();
+		}
+	}
+	for (const auto &key : keys) {
+		_instances.erase(key);
+	}
+}
+
+void PluginManager::stop(const Key &key) {
+	stopMany({ key });
+}
+
+void PluginManager::stopPlugin(const std::string &id) {
+	auto keys = std::vector<Key>();
+	for (const auto &item : _instances) {
+		if (item.first.first == id) {
+			keys.push_back(item.first);
+		}
+	}
+	stopMany(keys);
+}
+
+void PluginManager::stopAll() {
+	auto keys = std::vector<Key>();
+	for (const auto &item : _instances) {
+		keys.push_back(item.first);
+	}
+	stopMany(keys);
 }
 
 Result<InstallReport, InstallFailure> PluginManager::install(
@@ -405,32 +500,6 @@ Result<InstallReport, InstallFailure> PluginManager::install(
 	}
 	saveState();
 	return report;
-}
-
-void PluginManager::stop(const Key &key) {
-	const auto i = _instances.find(key);
-	if (i == _instances.end()) {
-		return;
-	}
-	if (i->second->storage) {
-		i->second->storage->flush();
-	}
-	if (i->second->client) {
-		i->second->client->kill();
-	}
-	_instances.erase(i);
-}
-
-void PluginManager::stopPlugin(const std::string &id) {
-	auto keys = std::vector<Key>();
-	for (const auto &item : _instances) {
-		if (item.first.first == id) {
-			keys.push_back(item.first);
-		}
-	}
-	for (const auto &key : keys) {
-		stop(key);
-	}
 }
 
 bool PluginManager::uninstall(const std::string &id, bool removeData) {
@@ -563,14 +632,6 @@ std::vector<PluginInfo> PluginManager::list() const {
 	return result;
 }
 
-std::vector<std::string> PluginManager::log(const std::string &id) const {
-	const auto found = _records.find(id);
-	if (found == _records.end()) {
-		return {};
-	}
-	return { found->second.log.begin(), found->second.log.end() };
-}
-
 bool PluginManager::loadPython() {
 	if (_pythonLoaded) {
 		return _pythonAvailable;
@@ -634,21 +695,20 @@ Result<LoadRequest, std::string> PluginManager::buildRequest(
 	return request;
 }
 
-std::string PluginManager::start(
+Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::prepare(
 		Record &record,
-		const std::string &account,
-		std::unique_ptr<Instance> &out) {
+		const std::string &account) {
 	const auto opened = openInstalled(record, record.current, record.archiveHash);
 	if (!opened.ok()) {
 		return "the plugin files are not usable: " + opened.error();
 	}
 	const auto &package = opened.value();
 	if (!CheckCompatibility(package.manifest, _config.environment).empty()) {
-		return "the plugin is not compatible with this version";
+		return std::string("the plugin is not compatible with this version");
 	}
 	const auto grant = record.grants.find(account);
 	if (grant == record.grants.end()) {
-		return "no permissions were granted for this account";
+		return std::string("no permissions were granted for this account");
 	}
 	auto request = buildRequest(package);
 	if (!request.ok()) {
@@ -658,6 +718,7 @@ std::string PluginManager::start(
 	auto instance = std::make_unique<Instance>();
 	instance->id = record.id;
 	instance->account = account;
+	instance->generation = _nextGeneration++;
 	instance->storage = std::make_unique<FileStorage>(
 		_config.root / record.id / "data" / account / "store.cbor");
 	auto services = BrokerServices();
@@ -665,45 +726,142 @@ std::string PluginManager::start(
 	services.data = _config.services.data;
 	services.transport = _config.services.transport;
 	services.clockMs = _config.services.clockMs;
-	const auto raw = &record;
-	services.log = [this, raw](std::string_view line) {
-		addLog(*raw, line);
+	const auto ring = record.log;
+	const auto maxLines = _config.logLines;
+	services.log = [ring, maxLines](std::string_view line) {
+		AppendLog(*ring, maxLines, line);
 	};
 	instance->broker = std::make_unique<Broker>(
 		MakeGrants(package.manifest, { grant->second.granted, grant->second.chats }),
 		std::move(services));
 
-	auto hostConfig = _config.host;
+	instance->plan.host = _config.host;
 	if (package.manifest.kind == "python") {
-		hostConfig.addressSpaceMb = std::max(hostConfig.addressSpaceMb, 2048);
+		instance->plan.host.addressSpaceMb = std::max(
+			instance->plan.host.addressSpaceMb,
+			2048);
 	}
-	auto started = HostClient::Start(hostConfig);
+	instance->plan.request = std::move(request.value());
+	instance->plan.cache = _config.cache;
+	instance->plan.init = cbor::Value::FromMap({
+		{ "account", Text(account) },
+		{ "plugin", Text(record.id) },
+		{ "version", Text(record.current) },
+		{ "api", cbor::Value::FromInt(api::kVersion) },
+	});
+	return instance;
+}
+
+void PluginManager::run(Instance &instance) {
+	const auto fail = [&](std::string detail) {
+		post({
+			instance.id,
+			instance.account,
+			instance.generation,
+			Completion::Kind::Failed,
+			std::move(detail),
+		});
+		const auto lock = std::scoped_lock(instance.mutex);
+		instance.finished = true;
+	};
+	{
+		auto lock = std::unique_lock(_slotMutex);
+		_slotWake.wait(lock, [&] {
+			return _freeSlots > 0 || instance.cancel.load();
+		});
+		if (instance.cancel.load()) {
+			lock.unlock();
+			fail("cancelled");
+			return;
+		}
+		--_freeSlots;
+	}
+	const auto releaseSlot = [&] {
+		{
+			const auto lock = std::scoped_lock(_slotMutex);
+			++_freeSlots;
+		}
+		_slotWake.notify_one();
+	};
+
+	auto problem = std::string();
+	auto started = HostClient::Start(instance.plan.host);
 	if (!started.ok()) {
-		return "the host did not start: " + started.error().detail;
+		problem = "the host did not start: " + started.error().detail;
+	} else {
+		instance.client = std::move(started.value());
+		instance.live.store(instance.client.get());
+		if (instance.cancel.load()) {
+			problem = "cancelled";
+		} else {
+			const auto loaded = LoadWithCache(
+				*instance.client,
+				instance.plan.host,
+				std::move(instance.plan.request),
+				instance.plan.cache,
+				&instance.cancel);
+			if (!loaded.ok()) {
+				problem = "the module did not load: " + loaded.error().detail;
+			} else if (const auto init = instance.client->init(
+					instance.plan.init,
+					*instance.broker); !init.ok()) {
+				problem = "the plugin failed to start: " + init.error().detail;
+			}
+		}
 	}
-	instance->client = std::move(started.value());
-	const auto loaded = LoadWithCache(
-		*instance->client,
-		hostConfig,
-		std::move(request.value()),
-		_config.cache);
-	if (!loaded.ok()) {
-		return "the module did not load: " + loaded.error().detail;
+	releaseSlot();
+	instance.plan.request = LoadRequest();
+	if (!problem.empty()) {
+		fail(std::move(problem));
+		return;
 	}
-	const auto init = instance->client->init(
-		cbor::Value::FromMap({
-			{ "account", Text(account) },
-			{ "plugin", Text(record.id) },
-			{ "version", Text(record.current) },
-			{ "api", cbor::Value::FromInt(api::kVersion) },
-		}),
-		*instance->broker);
-	if (!init.ok()) {
-		return "the plugin failed to start: " + init.error().detail;
+	instance.storage->flush();
+	post({
+		instance.id,
+		instance.account,
+		instance.generation,
+		Completion::Kind::Started,
+		{},
+	});
+	{
+		const auto lock = std::scoped_lock(instance.mutex);
+		instance.ready = true;
 	}
-	instance->storage->flush();
-	out = std::move(instance);
-	return {};
+
+	while (true) {
+		auto event = cbor::Value();
+		{
+			auto lock = std::unique_lock(instance.mutex);
+			instance.wake.wait(lock, [&] {
+				return instance.closing || !instance.queue.empty();
+			});
+			if (instance.closing) {
+				return;
+			}
+			event = std::move(instance.queue.front().first);
+			instance.queuedBytes -= instance.queue.front().second;
+			instance.queue.pop_front();
+			instance.busy = true;
+		}
+		const auto result = instance.client->deliver(event, *instance.broker);
+		instance.storage->flush();
+		if (result.ok()) {
+			post({
+				instance.id,
+				instance.account,
+				instance.generation,
+				Completion::Kind::Delivered,
+				{},
+			});
+			const auto lock = std::scoped_lock(instance.mutex);
+			instance.busy = false;
+			continue;
+		}
+		fail(result.error().detail.empty()
+			? std::string("the plugin stopped answering")
+			: result.error().detail);
+		return;
+	}
 }
 
 PluginManager::Instance *PluginManager::ensure(
@@ -711,10 +869,7 @@ PluginManager::Instance *PluginManager::ensure(
 		const std::string &account) {
 	const auto key = Key{ record.id, account };
 	if (const auto i = _instances.find(key); i != _instances.end()) {
-		if (i->second->client->alive()) {
-			return i->second.get();
-		}
-		stop(key);
+		return i->second.get();
 	}
 	if (!mayRun() || !record.enabled || !record.grants.contains(account)) {
 		return nullptr;
@@ -722,14 +877,17 @@ PluginManager::Instance *PluginManager::ensure(
 		gate != _notBefore.end() && now() < gate->second) {
 		return nullptr;
 	}
-	auto instance = std::unique_ptr<Instance>();
-	const auto problem = start(record, account, instance);
-	if (!problem.empty()) {
-		noteFailure(record, account, problem);
+	auto prepared = prepare(record, account);
+	if (!prepared.ok()) {
+		noteFailure(record, account, prepared.error());
 		return nullptr;
 	}
-	addLog(record, "started for " + account);
-	return _instances.emplace(key, std::move(instance)).first->second.get();
+	const auto instance = prepared.value().get();
+	_instances.emplace(key, std::move(prepared.value()));
+	instance->thread = std::thread([this, instance] {
+		run(*instance);
+	});
+	return instance;
 }
 
 void PluginManager::noteFailure(
@@ -783,6 +941,75 @@ void PluginManager::commitUpdate(Record &record) {
 	saveState();
 }
 
+int PluginManager::pump() {
+	auto batch = std::deque<Completion>();
+	{
+		const auto lock = std::scoped_lock(_outboxMutex);
+		batch.swap(_outbox);
+	}
+	auto handled = 0;
+	for (auto &completion : batch) {
+		const auto key = Key{ completion.id, completion.account };
+		const auto found = _instances.find(key);
+		const auto record = _records.find(completion.id);
+		if (found == _instances.end()
+			|| found->second->generation != completion.generation
+			|| record == _records.end()) {
+			continue;
+		}
+		++handled;
+		auto &instance = *found->second;
+		switch (completion.kind) {
+		case Completion::Kind::Started:
+			addLog(record->second, "started for " + completion.account);
+			break;
+		case Completion::Kind::Delivered:
+			++record->second.stats.events;
+			++_deliveredTotal;
+			_streak.erase(key);
+			if (!instance.committed) {
+				instance.committed = true;
+				commitUpdate(record->second);
+			}
+			break;
+		case Completion::Kind::Failed:
+			++_failedTotal;
+			stop(key);
+			noteFailure(record->second, completion.account, completion.detail);
+			break;
+		}
+	}
+	return handled;
+}
+
+bool PluginManager::drain(int timeoutMs) {
+	const auto deadline = std::chrono::steady_clock::now()
+		+ std::chrono::milliseconds(timeoutMs);
+	while (true) {
+		pump();
+		auto idle = true;
+		for (const auto &item : _instances) {
+			auto &instance = *item.second;
+			const auto lock = std::scoped_lock(instance.mutex);
+			idle = idle && (instance.finished
+				|| (instance.ready && instance.queue.empty() && !instance.busy));
+		}
+		{
+			const auto lock = std::scoped_lock(_outboxMutex);
+			idle = idle && _outbox.empty();
+		}
+		if (idle) {
+			return true;
+		} else if (std::chrono::steady_clock::now() >= deadline) {
+			return false;
+		}
+		auto lock = std::unique_lock(_outboxMutex);
+		_outboxWake.wait_for(lock, std::chrono::milliseconds(20), [&] {
+			return !_outbox.empty();
+		});
+	}
+}
+
 DispatchReport PluginManager::dispatch(
 		const std::string &account,
 		const cbor::Value &event) {
@@ -790,6 +1017,7 @@ DispatchReport PluginManager::dispatch(
 	if (!ValidAccount(account) || !mayRun()) {
 		return report;
 	}
+	pump();
 	auto ids = std::vector<std::string>();
 	for (const auto &item : _records) {
 		ids.push_back(item.first);
@@ -803,7 +1031,6 @@ DispatchReport PluginManager::dispatch(
 		if (!record.enabled || !record.grants.contains(account)) {
 			continue;
 		}
-		const auto key = Key{ id, account };
 		const auto before = _instances.size();
 		auto *instance = ensure(record, account);
 		if (!instance) {
@@ -817,24 +1044,40 @@ DispatchReport PluginManager::dispatch(
 			++report.skipped;
 			continue;
 		}
-		const auto result = instance->client->deliver(*filtered, *instance->broker);
-		instance->storage->flush();
-		if (result.ok()) {
-			++report.delivered;
-			++record.stats.events;
-			_streak.erase(key);
-			if (!instance->committed) {
-				instance->committed = true;
-				commitUpdate(record);
+		const auto size = EncodedSize(*filtered);
+		{
+			const auto lock = std::scoped_lock(instance->mutex);
+			if (instance->closing || instance->finished) {
+				++report.skipped;
+				continue;
 			}
-			continue;
+			while (!instance->queue.empty()
+				&& (instance->queue.size() >= _config.maxQueuedEvents
+					|| instance->queuedBytes + size > _config.maxQueuedBytes)) {
+				instance->queuedBytes -= instance->queue.front().second;
+				instance->queue.pop_front();
+				++record.stats.dropped;
+				++report.dropped;
+			}
+			instance->queue.emplace_back(*filtered, size);
+			instance->queuedBytes += size;
 		}
-		++report.failed;
-		stop(key);
-		noteFailure(record, account, result.error().detail.empty()
-			? std::string("the plugin stopped answering")
-			: result.error().detail);
+		instance->wake.notify_one();
+		++report.queued;
 	}
+	return report;
+}
+
+DispatchReport PluginManager::dispatchAndWait(
+		const std::string &account,
+		const cbor::Value &event,
+		int timeoutMs) {
+	const auto delivered = _deliveredTotal;
+	const auto failed = _failedTotal;
+	auto report = dispatch(account, event);
+	drain(timeoutMs);
+	report.delivered = int(_deliveredTotal - delivered);
+	report.failed = int(_failedTotal - failed);
 	return report;
 }
 
@@ -862,13 +1105,7 @@ DispatchReport PluginManager::startEnabled(const std::string &account) {
 
 void PluginManager::onLock() {
 	_locked = true;
-	auto keys = std::vector<Key>();
-	for (const auto &item : _instances) {
-		keys.push_back(item.first);
-	}
-	for (const auto &key : keys) {
-		stop(key);
-	}
+	stopAll();
 }
 
 void PluginManager::onUnlock() {
@@ -878,8 +1115,7 @@ void PluginManager::onUnlock() {
 void PluginManager::setHidden(bool hidden) {
 	_hidden = hidden;
 	if (hidden) {
-		onLock();
-		_locked = false;
+		stopAll();
 	}
 }
 
@@ -890,9 +1126,7 @@ void PluginManager::onLogout(const std::string &account) {
 			keys.push_back(item.first);
 		}
 	}
-	for (const auto &key : keys) {
-		stop(key);
-	}
+	stopMany(keys);
 	for (auto &item : _records) {
 		item.second.grants.erase(account);
 	}
@@ -900,13 +1134,7 @@ void PluginManager::onLogout(const std::string &account) {
 }
 
 void PluginManager::shutdown() {
-	auto keys = std::vector<Key>();
-	for (const auto &item : _instances) {
-		keys.push_back(item.first);
-	}
-	for (const auto &key : keys) {
-		stop(key);
-	}
+	stopAll();
 	if (!_records.empty()) {
 		saveState();
 	}

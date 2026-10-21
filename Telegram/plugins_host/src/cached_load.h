@@ -28,6 +28,7 @@ struct CacheSettings {
 	HostClient &client,
 	const HostConfig &compilerConfig,
 	LoadRequest request,
-	const CacheSettings &settings);
+	const CacheSettings &settings,
+	const std::atomic<bool> *cancel = nullptr);
 
 } // namespace fgpl

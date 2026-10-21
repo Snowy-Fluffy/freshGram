@@ -4,10 +4,16 @@
 #include "package_builder.h"
 #include "python_support.h"
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <chrono>
 #include <string>
+#include <thread>
+
+#include <dirent.h>
+#include <unistd.h>
 
 namespace {
 
@@ -110,7 +116,7 @@ struct Lab {
 		environment.platform = "linux";
 		environment.platformVersion = *ParseVersion("6.1.0");
 		services.data = &data;
-		services.clockMs = [this] { return time; };
+		services.clockMs = [this] { return time.load(); };
 		cacheSettings.directory = root / "cache";
 		cacheSettings.secret.fill(0x33);
 		key.fill(0x77);
@@ -132,6 +138,9 @@ struct Lab {
 		result.environment = environment;
 		result.services = services;
 		result.stateKey = key;
+		if (std::getenv("FGPL_NO_SANDBOX")) {
+			result.host.layers = 0;
+		}
 		return result;
 	}
 
@@ -154,7 +163,7 @@ struct Lab {
 	ManagerServices services;
 	CacheSettings cacheSettings;
 	std::array<uint8_t, 32> key = {};
-	int64_t time = 1000;
+	std::atomic<int64_t> time{ 1000 };
 
 };
 
@@ -191,16 +200,16 @@ void TestLifecycleAndPersistence() {
 		CHECK(infos[0].requests.size() == 2);
 		CHECK(infos[0].issues.empty());
 
-		CHECK(manager.dispatch("A", Event()).delivered == 0);
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 		Prepare(manager, "com.example.counter");
 		for (auto i = 0; i != 3; ++i) {
-			const auto report = manager.dispatch("A", Event());
+			const auto report = manager.dispatchAndWait("A", Event());
 			CHECK(report.delivered == 1);
 		}
 		CHECK(manager.runningCount() == 1);
 		CHECK(manager.list()[0].status == PluginStatus::Running);
 		CHECK(manager.list()[0].stats.events == 3);
-		CHECK(manager.dispatch("A", Event(api::kServiceChat)).delivered == 0);
+		CHECK(manager.dispatchAndWait("A", Event(api::kServiceChat)).delivered == 0);
 		const auto logs = manager.log("com.example.counter");
 		auto startedLine = false;
 		for (const auto &line : logs) {
@@ -215,7 +224,7 @@ void TestLifecycleAndPersistence() {
 		const auto infos = manager.list();
 		CHECK(infos.size() == 1 && infos[0].enabled);
 		CHECK(manager.grants("com.example.counter", "A").has_value());
-		CHECK(manager.dispatch("A", Event()).delivered == 1);
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 		manager.shutdown();
 	}
 	CHECK(lab.stored("com.example.counter", "A", "count")->asInt() == 4);
@@ -239,11 +248,11 @@ void TestLifecycleAndPersistence() {
 		CHECK(infos.size() == 1 && !infos[0].enabled);
 		CHECK(infos[0].disabledReason.find("outside the app") != std::string::npos);
 		CHECK(!manager.grants("com.example.counter", "A").has_value());
-		CHECK(manager.dispatch("A", Event()).delivered == 0);
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 		CHECK(manager.setEnabled("com.example.counter", true));
-		CHECK(manager.dispatch("A", Event()).delivered == 0);
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 		CHECK(manager.grant("com.example.counter", "A", Everything()));
-		CHECK(manager.dispatch("A", Event()).delivered == 1);
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	}
 #endif
 }
@@ -307,7 +316,7 @@ void TestUpdatesAndRollback() {
 	const auto id = std::string("com.example.updating");
 	CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
 	Prepare(manager, id);
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 
 	const auto update = manager.install(CounterArchive(id, "1.1.0", 1, {
 		{ "messages.read", {} },
@@ -319,7 +328,7 @@ void TestUpdatesAndRollback() {
 	CHECK(manager.list()[0].pendingUpdate);
 	CHECK(manager.list()[0].version == "1.1.0");
 	CHECK(manager.grants(id, "A")->granted.size() == 2);
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	CHECK(!manager.list()[0].pendingUpdate);
 	CHECK(!fs::exists(lab.root / "plugins" / id / "1.0.0"));
 	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
@@ -327,7 +336,7 @@ void TestUpdatesAndRollback() {
 	const auto broken = manager.install(WatArchive(id, "1.2.0", CrashOnInit()));
 	CHECK(broken.ok());
 	CHECK(manager.list()[0].version == "1.2.0");
-	const auto failed = manager.dispatch("A", Event());
+	const auto failed = manager.dispatchAndWait("A", Event());
 	CHECK(failed.delivered == 0);
 	CHECK(manager.list()[0].version == "1.1.0");
 	CHECK(!manager.list()[0].pendingUpdate);
@@ -337,12 +346,12 @@ void TestUpdatesAndRollback() {
 	}
 	CHECK(rolled);
 	CHECK(manager.list()[0].enabled);
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	CHECK(lab.stored(id, "A", "count")->asInt() == 3);
 
 	const auto crashing = manager.install(WatArchive(id, "1.3.0", CrashOnEvent()));
 	CHECK(crashing.ok());
-	CHECK(manager.dispatch("A", Event()).failed == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).failed == 1);
 	CHECK(manager.list()[0].version == "1.1.0");
 #endif
 }
@@ -354,18 +363,18 @@ void TestCrashLoopDisablesThePlugin() {
 	CHECK(manager.install(WatArchive(id, "1.0.0", CrashOnEvent())).ok());
 	Prepare(manager, id);
 
-	CHECK(manager.dispatch("A", Event()).failed == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).failed == 1);
 	CHECK(manager.runningCount() == 0);
-	const auto waiting = manager.dispatch("A", Event());
+	const auto waiting = manager.dispatchAndWait("A", Event());
 	CHECK(waiting.skipped == 1 && waiting.failed == 0);
 	CHECK(manager.list()[0].stats.dropped == 1);
 
 	lab.time += 1500;
-	CHECK(manager.dispatch("A", Event()).failed == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).failed == 1);
 	lab.time += 500;
-	CHECK(manager.dispatch("A", Event()).skipped == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).skipped == 1);
 	lab.time += 3000;
-	CHECK(manager.dispatch("A", Event()).failed == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).failed == 1);
 
 	const auto info = manager.list()[0];
 	CHECK(!info.enabled);
@@ -373,11 +382,11 @@ void TestCrashLoopDisablesThePlugin() {
 	CHECK(info.disabledReason.find("repeated failures") != std::string::npos);
 	CHECK(info.stats.failures == 3);
 	lab.time += 100000;
-	CHECK(manager.dispatch("A", Event()).failed == 0);
+	CHECK(manager.dispatchAndWait("A", Event()).failed == 0);
 
 	CHECK(manager.setEnabled(id, true));
 	CHECK(manager.list()[0].disabledReason.empty());
-	CHECK(manager.dispatch("A", Event()).failed == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).failed == 1);
 }
 
 void TestLockHiddenAndLogout() {
@@ -388,38 +397,50 @@ void TestLockHiddenAndLogout() {
 	CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
 	Prepare(manager, id, "A");
 	CHECK(manager.grant(id, "B", Everything()));
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
-	CHECK(manager.dispatch("B", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("B", Event()).delivered == 1);
 	CHECK(manager.runningCount() == 2);
 	CHECK(lab.stored(id, "A", "count")->asInt() == 1);
 	CHECK(lab.stored(id, "B", "count")->asInt() == 1);
 
 	manager.onLock();
 	CHECK(manager.runningCount() == 0);
-	CHECK(manager.dispatch("A", Event()).delivered == 0);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 	CHECK(!manager.startEnabled("A").started);
 	manager.onUnlock();
 	CHECK(manager.startEnabled("A").started == 1);
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
 
 	manager.setHidden(true);
 	CHECK(manager.list().empty());
 	CHECK(manager.runningCount() == 0);
-	CHECK(manager.dispatch("A", Event()).delivered == 0);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 	manager.setHidden(false);
 	CHECK(manager.list().size() == 1);
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 
 	manager.onLogout("A");
 	CHECK(!manager.grants(id, "A").has_value());
 	CHECK(manager.grants(id, "B").has_value());
-	CHECK(manager.dispatch("A", Event()).delivered == 0);
-	CHECK(manager.dispatch("B", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
+	const auto afterLogout = manager.dispatchAndWait("B", Event());
+	CHECK(afterLogout.delivered == 1);
+	if (afterLogout.delivered != 1) {
+		for (const auto &line : manager.log(id)) {
+			std::fprintf(stderr, "  log after logout: %s\n", line.c_str());
+		}
+	}
 
 	CHECK(manager.grant(id, "B", { { "messages.read" }, std::nullopt }));
-	CHECK(manager.dispatch("B", Event()).delivered == 1);
+	const auto restricted = manager.dispatchAndWait("B", Event());
+	CHECK(restricted.delivered == 1);
 	CHECK(lab.stored(id, "B", "count")->asInt() == 2);
+	if (restricted.delivered != 1) {
+		for (const auto &line : manager.log(id)) {
+			std::fprintf(stderr, "  log: %s\n", line.c_str());
+		}
+	}
 	CHECK(!manager.grant(id, "../evil", Everything()));
 	CHECK(!manager.grant("com.example.nothing", "A", Everything()));
 #endif
@@ -432,7 +453,7 @@ void TestUninstallAndDamage() {
 	const auto id = std::string("com.example.fragile");
 	CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
 	Prepare(manager, id);
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 
 	manager.onLock();
 	manager.onUnlock();
@@ -443,7 +464,7 @@ void TestUninstallAndDamage() {
 		auto stream = std::ofstream(path, std::ios::binary | std::ios::trunc);
 		stream.write(reinterpret_cast<const char *>(bytes.data()), std::streamsize(bytes.size()));
 	}
-	CHECK(manager.dispatch("A", Event()).delivered == 0);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 	auto damaged = false;
 	for (const auto &line : manager.log(id)) {
 		damaged = damaged || line.find("changed after it was installed") != std::string::npos;
@@ -478,8 +499,8 @@ void TestPythonPlugin() {
 	const auto installed = manager.install(built.archive);
 	CHECK(installed.ok());
 	Prepare(manager, "com.example.pycounter");
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
-	CHECK(manager.dispatch("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	CHECK(lab.stored("com.example.pycounter", "A", "count")->asInt() == 2);
 	auto logged = false;
 	for (const auto &line : manager.log("com.example.pycounter")) {
@@ -490,15 +511,259 @@ void TestPythonPlugin() {
 	CHECK(fs::exists(lab.root / "cache"));
 }
 
+
+[[nodiscard]] std::string SlowModule(int64_t iterations) {
+	return wat::Module("", "(local $i i32) (loop $l (local.set $i (i32.add (local.get $i) (i32.const 1))) (br_if $l (i32.lt_u (local.get $i) (i32.const "
+		+ std::to_string(iterations) + ")))) (i32.const 0)");
+}
+
+[[nodiscard]] cbor::Bytes SlowArchive(const std::string &id, int64_t iterations) {
+	auto document = Document(id, "1.0.0");
+	Set(document, "runtime.limits.eventTimeoutMs", Int(30000));
+	const auto key = Seed(1);
+	return Build(document, { { "plugin.wasm", wat::Wasm(SlowModule(iterations)) } }, &key).archive;
+}
+
+[[nodiscard]] int ChildProcesses() {
+	auto count = 0;
+	const auto me = getpid();
+	auto *directory = opendir("/proc");
+	if (!directory) {
+		return 0;
+	}
+	while (const auto *entry = readdir(directory)) {
+		const auto name = std::string(entry->d_name);
+		if (name.empty() || name.find_first_not_of("0123456789") != std::string::npos) {
+			continue;
+		}
+		auto stream = std::ifstream("/proc/" + name + "/stat");
+		auto line = std::string();
+		if (!std::getline(stream, line)) {
+			continue;
+		}
+		const auto close = line.rfind(')');
+		if (close == std::string::npos) {
+			continue;
+		}
+		auto state = char(0);
+		auto parent = 0;
+		if (std::sscanf(line.c_str() + close + 2, "%c %d", &state, &parent) == 2
+			&& parent == me
+			&& state != 'Z') {
+			++count;
+		}
+	}
+	closedir(directory);
+	return count;
+}
+
+[[nodiscard]] bool NoChildren(int waitMs = 2000) {
+	for (auto waited = 0; waited <= waitMs; waited += 50) {
+		if (ChildProcesses() == 0) {
+			return true;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	}
+	return false;
+}
+
+[[nodiscard]] double Since(std::chrono::steady_clock::time_point begin) {
+	return std::chrono::duration<double>(
+		std::chrono::steady_clock::now() - begin).count();
+}
+
+void TestDispatchDoesNotBlockAndKeepsOrder() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-order");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.ordered");
+	CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
+	Prepare(manager, id);
+	const auto begin = std::chrono::steady_clock::now();
+	auto queued = 0;
+	for (auto chat = 1; chat <= 20; ++chat) {
+		queued += manager.dispatch("A", Event(chat)).queued;
+	}
+	CHECK(queued == 20);
+	CHECK(Since(begin) < 1.0);
+	CHECK(manager.drain());
+	CHECK(lab.stored(id, "A", "count")->asInt() == 20);
+	CHECK(lab.stored(id, "A", "last_chat")->asInt() == 20);
+	CHECK(manager.list()[0].stats.events == 20);
+#endif
+}
+
+void TestSlowPluginDoesNotDelayOthers() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-fair");
+	auto manager = PluginManager(lab.config());
+	CHECK(manager.install(SlowArchive("com.example.slow", 800000000)).ok());
+	CHECK(manager.install(CounterArchive("com.example.fast", "1.0.0")).ok());
+	Prepare(manager, "com.example.slow");
+	Prepare(manager, "com.example.fast");
+	const auto begin = std::chrono::steady_clock::now();
+	for (auto chat = 1; chat <= 4; ++chat) {
+		CHECK(manager.dispatch("A", Event(chat)).queued == 2);
+	}
+	auto fastDone = 0.;
+	while (Since(begin) < 20) {
+		manager.pump();
+		const auto count = lab.stored("com.example.fast", "A", "count");
+		if (count && count->asInt() == 4) {
+			fastDone = Since(begin);
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	}
+	CHECK(fastDone > 0 && fastDone < 5);
+	manager.pump();
+	auto slowEvents = uint64_t(99);
+	for (const auto &info : manager.list()) {
+		if (info.id == "com.example.slow") {
+			slowEvents = info.stats.events;
+		}
+	}
+	CHECK(slowEvents < 4);
+	CHECK(manager.drain(60000));
+	manager.shutdown();
+#endif
+}
+
+void TestQueueOverflowDropsTheOldest() {
+	auto lab = Lab("fgpl-manager-overflow");
+	auto config = lab.config();
+	config.maxQueuedEvents = 4;
+	auto manager = PluginManager(config);
+	CHECK(manager.install(SlowArchive("com.example.busy", 300000000)).ok());
+	Prepare(manager, "com.example.busy");
+	CHECK(manager.dispatch("A", Event()).queued == 1);
+	CHECK(manager.drain());
+	auto dropped = 0;
+	auto queued = 0;
+	for (auto i = 0; i != 30; ++i) {
+		const auto report = manager.dispatch("A", Event(i + 1));
+		dropped += report.dropped;
+		queued += report.queued;
+	}
+	CHECK(queued == 30);
+	CHECK(dropped >= 20);
+	CHECK(manager.drain(60000));
+	const auto info = manager.list()[0];
+	CHECK(info.stats.dropped >= 20);
+	CHECK(info.stats.events <= 12);
+	CHECK(info.stats.events >= 5);
+}
+
+void TestLockIsPromptWhileBusy() {
+	auto lab = Lab("fgpl-manager-busylock");
+	auto manager = PluginManager(lab.config());
+	CHECK(manager.install(SlowArchive("com.example.long", 4000000000)).ok());
+	Prepare(manager, "com.example.long");
+	CHECK(manager.dispatch("A", Event()).queued == 1);
+	for (auto waited = 0; waited < 5000 && manager.pump() + manager.runningCount() == 0; waited += 20) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	}
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	const auto begin = std::chrono::steady_clock::now();
+	manager.onLock();
+	CHECK(Since(begin) < 2.0);
+	CHECK(manager.runningCount() == 0);
+	CHECK(NoChildren());
+	CHECK(manager.dispatch("A", Event()).queued == 0);
+	manager.onUnlock();
+	CHECK(manager.dispatch("A", Event()).queued == 1);
+	manager.onLock();
+	CHECK(NoChildren());
+}
+
+void TestManyPluginsAndAccounts() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-stress");
+	auto config = lab.config();
+	config.maxConcurrentStarts = 1;
+	auto manager = PluginManager(config);
+	const auto ids = std::vector<std::string>{
+		"com.example.stress1", "com.example.stress2", "com.example.stress3",
+	};
+	for (const auto &id : ids) {
+		CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
+		CHECK(manager.setEnabled(id, true));
+		CHECK(manager.grant(id, "A", Everything()));
+		CHECK(manager.grant(id, "B", Everything()));
+	}
+	for (auto round = 1; round <= 25; ++round) {
+		CHECK(manager.dispatch("A", Event(round)).queued == 3);
+		CHECK(manager.dispatch("B", Event(round)).queued == 3);
+	}
+	CHECK(manager.drain(120000));
+	CHECK(manager.runningCount() == 6);
+	if (manager.runningCount() != 6) {
+		for (const auto &id : ids) {
+			for (const auto &line : manager.log(id)) {
+				std::fprintf(stderr, "  %s: %s\n", id.c_str(), line.c_str());
+			}
+		}
+	}
+	for (const auto &id : ids) {
+		for (const auto account : { "A", "B" }) {
+			const auto count = lab.stored(id, account, "count");
+			CHECK(count && count->asInt() == 25);
+			CHECK(lab.stored(id, account, "last_chat")->asInt() == 25);
+		}
+	}
+	manager.shutdown();
+	CHECK(NoChildren());
+#endif
+}
+
+void TestStopWhileStartingIsPrompt() {
+	if (!pysupport::Installed()) {
+		return;
+	}
+	auto lab = Lab("fgpl-manager-cancel");
+	auto manager = PluginManager(lab.config());
+	auto document = Document("com.example.pyslow", "1.0.0");
+	Set(document, "runtime.kind", Text("python"));
+	Remove(document, "runtime.module");
+	Set(document, "runtime.entry", Text("main.py"));
+	const auto key = Seed(4);
+	const auto built = Build(document, {
+		{ "main.py", ReadFile(fs::path(FGPL_PYTHON_PLUGIN_DIR) / "counter_plugin.py") },
+	}, &key);
+	CHECK(manager.install(built.archive).ok());
+	Prepare(manager, "com.example.pyslow");
+	CHECK(manager.dispatch("A", Event()).queued == 1);
+	std::this_thread::sleep_for(std::chrono::milliseconds(800));
+	const auto begin = std::chrono::steady_clock::now();
+	manager.onLock();
+	CHECK(Since(begin) < 3.0);
+	CHECK(manager.runningCount() == 0);
+	CHECK(NoChildren());
+	manager.onUnlock();
+	CHECK(manager.dispatchAndWait("A", Event(), 120000).delivered == 1);
+}
+
 } // namespace
 
-int main() {
-	TestLifecycleAndPersistence();
-	TestInstallPolicy();
-	TestUpdatesAndRollback();
-	TestCrashLoopDisablesThePlugin();
-	TestLockHiddenAndLogout();
-	TestUninstallAndDamage();
-	TestPythonPlugin();
+int main(int argc, char **argv) {
+	const auto only = (argc > 1) ? std::string(argv[1]) : std::string();
+	const auto run = [&](const char *name, void (*test)()) {
+		if (only.empty() || only == name) {
+			test();
+		}
+	};
+	run("life", TestLifecycleAndPersistence);
+	run("policy", TestInstallPolicy);
+	run("update", TestUpdatesAndRollback);
+	run("crash", TestCrashLoopDisablesThePlugin);
+	run("lock", TestLockHiddenAndLogout);
+	run("damage", TestUninstallAndDamage);
+	run("python", TestPythonPlugin);
+	run("order", TestDispatchDoesNotBlockAndKeepsOrder);
+	run("fair", TestSlowPluginDoesNotDelayOthers);
+	run("overflow", TestQueueOverflowDropsTheOldest);
+	run("busylock", TestLockIsPromptWhileBusy);
+	run("stress", TestManyPluginsAndAccounts);
+	run("cancel", TestStopWhileStartingIsPrompt);
 	return Failures() ? 1 : 0;
 }

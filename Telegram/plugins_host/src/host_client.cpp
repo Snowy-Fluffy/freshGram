@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -32,35 +33,55 @@ HostClient::~HostClient() {
 	kill();
 }
 
+int HostClient::reap(int pid, int &status, int flags) {
+	const auto lock = std::scoped_lock(_reap);
+	if (_pid.load() != pid) {
+		return pid;
+	}
+	const auto waited = waitpid(pid, &status, flags);
+	if (waited == pid) {
+		_pid.store(-1);
+	}
+	return waited;
+}
+
+void HostClient::abort() {
+	const auto lock = std::scoped_lock(_reap);
+	const auto pid = _pid.load();
+	if (pid > 0) {
+		::kill(pid, SIGKILL);
+	}
+}
+
 void HostClient::kill() {
 	if (_fd >= 0) {
 		close(_fd);
 		_fd = -1;
 	}
-	if (_pid > 0) {
-		::kill(_pid, SIGKILL);
+	const auto pid = _pid.load();
+	if (pid > 0) {
+		abort();
 		auto status = 0;
-		waitpid(_pid, &status, 0);
-		_pid = -1;
+		reap(pid, status, 0);
 	}
 }
 
 ClientFailure HostClient::died(const std::string &context) {
 	auto failure = Failure(ClientError::HostDied, context);
-	if (_pid > 0) {
+	const auto pid = _pid.load();
+	if (pid > 0) {
 		auto status = 0;
-		auto waited = waitpid(_pid, &status, WNOHANG);
+		auto waited = reap(pid, status, WNOHANG);
 		for (auto i = 0; waited == 0 && i != 200; ++i) {
 			usleep(5000);
-			waited = waitpid(_pid, &status, WNOHANG);
+			waited = reap(pid, status, WNOHANG);
 		}
 		if (waited == 0) {
-			::kill(_pid, SIGKILL);
-			waited = waitpid(_pid, &status, 0);
+			abort();
+			waited = reap(pid, status, 0);
 			failure.detail += ": the host stopped answering";
 		}
-		if (waited == _pid) {
-			_pid = -1;
+		if (waited == pid) {
 			if (WIFSIGNALED(status)) {
 				failure.signal = WTERMSIG(status);
 				if (failure.signal == SIGSYS) {
@@ -159,7 +180,7 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 	}
 	auto client = std::unique_ptr<HostClient>(new HostClient());
 	client->_fd = pair[0];
-	client->_pid = pid;
+	client->_pid.store(pid);
 
 	auto hello = ipc::ReadFrame(
 		client->_fd,
@@ -199,7 +220,8 @@ Result<cbor::Bytes, ClientFailure> HostClient::Compile(
 		const HostConfig &config,
 		const cbor::Bytes &wasm,
 		size_t maxBytes,
-		int timeoutMs) {
+		int timeoutMs,
+		const std::atomic<bool> *cancel) {
 	auto compileConfig = config;
 	compileConfig.extraArguments.push_back("--compile-only");
 	auto started = Start(compileConfig);
@@ -218,14 +240,21 @@ Result<cbor::Bytes, ClientFailure> HostClient::Compile(
 	auto result = cbor::Bytes();
 	auto expected = int64_t(0);
 	while (true) {
+		if (cancel && cancel->load()) {
+			client.kill();
+			return Failure(ClientError::Timeout, "cancelled");
+		}
 		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
 			deadline - std::chrono::steady_clock::now()).count();
 		auto frame = ipc::ReadFrame(
 			client._fd,
 			ipc::StrictLimits(),
 			ipc::kMaxFrameBytes,
-			int(left > 0 ? left : 0));
+			int(std::clamp<int64_t>(left, 0, 200)));
 		if (!frame.ok()) {
+			if (frame.error() == ipc::IoError::Timeout && left > 200) {
+				continue;
+			}
 			return client.fail(frame.error(), "compiling the module");
 		}
 		const auto type = proto::TypeOf(frame.value());

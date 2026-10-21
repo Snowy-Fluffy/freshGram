@@ -8,16 +8,25 @@
 #include "package.h"
 #include "permissions.h"
 
+#include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace fgpl {
+
+struct LogRing {
+	std::mutex mutex;
+	std::deque<std::string> lines;
+};
 
 struct PythonRuntime {
 	std::filesystem::path wasm;
@@ -44,6 +53,9 @@ struct ManagerConfig {
 	int maxFailures = 3;
 	int64_t failureWindowMs = 600000;
 	size_t logLines = 200;
+	size_t maxQueuedEvents = 256;
+	size_t maxQueuedBytes = size_t(8) << 20;
+	int maxConcurrentStarts = 2;
 };
 
 struct InstallOptions {
@@ -108,10 +120,12 @@ struct PluginInfo {
 };
 
 struct DispatchReport {
-	int delivered = 0;
+	int queued = 0;
 	int skipped = 0;
-	int failed = 0;
+	int dropped = 0;
 	int started = 0;
+	int delivered = 0;
+	int failed = 0;
 };
 
 class PluginManager {
@@ -142,7 +156,14 @@ public:
 	void setHidden(bool hidden);
 
 	DispatchReport dispatch(const std::string &account, const cbor::Value &event);
+	DispatchReport dispatchAndWait(
+		const std::string &account,
+		const cbor::Value &event,
+		int timeoutMs = 60000);
 	DispatchReport startEnabled(const std::string &account);
+
+	int pump();
+	bool drain(int timeoutMs = 60000);
 
 	void shutdown();
 
@@ -176,16 +197,48 @@ private:
 		std::map<std::string, StoredGrant> grants;
 		PluginStats stats;
 		std::deque<int64_t> failures;
-		std::deque<std::string> log;
+		std::shared_ptr<LogRing> log = std::make_shared<LogRing>();
+	};
+
+	struct StartPlan {
+		HostConfig host;
+		LoadRequest request;
+		CacheSettings cache;
+		cbor::Value init;
 	};
 
 	struct Instance {
 		std::string id;
 		std::string account;
+		uint64_t generation = 0;
 		std::unique_ptr<FileStorage> storage;
 		std::unique_ptr<Broker> broker;
 		std::unique_ptr<HostClient> client;
+		StartPlan plan;
+		std::thread thread;
+		std::mutex mutex;
+		std::condition_variable wake;
+		std::deque<std::pair<cbor::Value, size_t>> queue;
+		size_t queuedBytes = 0;
+		bool closing = false;
+		bool busy = false;
+		bool ready = false;
+		bool finished = false;
+		std::atomic<bool> cancel{ false };
+		std::atomic<HostClient*> live{ nullptr };
 		bool committed = false;
+	};
+
+	struct Completion {
+		std::string id;
+		std::string account;
+		uint64_t generation = 0;
+		enum class Kind : uint8_t {
+			Started,
+			Delivered,
+			Failed,
+		} kind = Kind::Started;
+		std::string detail;
 	};
 
 	using Key = std::pair<std::string, std::string>;
@@ -207,12 +260,15 @@ private:
 	[[nodiscard]] cbor::Value stateDocument() const;
 
 	[[nodiscard]] Instance *ensure(Record &record, const std::string &account);
-	[[nodiscard]] std::string start(
+	[[nodiscard]] Result<std::unique_ptr<Instance>, std::string> prepare(
 		Record &record,
-		const std::string &account,
-		std::unique_ptr<Instance> &out);
+		const std::string &account);
+	void run(Instance &instance);
+	void post(Completion completion);
 	void stop(const Key &key);
+	void stopMany(const std::vector<Key> &keys);
 	void stopPlugin(const std::string &id);
+	void stopAll();
 	void noteFailure(Record &record, const std::string &account, const std::string &why);
 	void commitUpdate(Record &record);
 	void addLog(Record &record, std::string_view line);
@@ -231,6 +287,15 @@ private:
 	bool _hidden = false;
 	bool _tampered = false;
 	bool _saveFailed = false;
+	uint64_t _nextGeneration = 1;
+	std::mutex _outboxMutex;
+	std::condition_variable _outboxWake;
+	std::deque<Completion> _outbox;
+	std::mutex _slotMutex;
+	std::condition_variable _slotWake;
+	int _freeSlots = 0;
+	uint64_t _deliveredTotal = 0;
+	uint64_t _failedTotal = 0;
 	bool _pythonLoaded = false;
 	bool _pythonAvailable = false;
 	cbor::Bytes _pythonWasm;
