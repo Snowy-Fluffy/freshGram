@@ -85,3 +85,5 @@ test-artifacts/
 
 # Project specific
 Telegram/SourceFiles/_other/packer_private.h
+/Telegram/plugins_host/third_party/
+/Telegram/plugins_host/build*/
