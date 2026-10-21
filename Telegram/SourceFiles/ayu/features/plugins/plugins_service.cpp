@@ -42,6 +42,7 @@ struct Service {
 	base::Timer pump;
 	std::map<Main::Account*, Watched> watched;
 	rpl::variable<State> state = State::Disabled;
+	rpl::event_stream<> list;
 	rpl::lifetime lifetime;
 	bool started = false;
 };
@@ -137,6 +138,7 @@ void Refresh() {
 		}
 	}
 	service.state = wanted;
+	service.list.fire({});
 }
 
 void ForgetAccount(Service &service, Main::Account *account) {
@@ -209,8 +211,9 @@ void Start() {
 		return;
 	}
 	service.pump.setCallback([] {
-		if (const auto manager = GetService().manager.get()) {
-			manager->pump();
+		auto &service = GetService();
+		if (service.manager && service.manager->pump() > 0) {
+			service.list.fire({});
 		}
 	});
 
@@ -270,6 +273,20 @@ rpl::producer<State> StateValue() {
 	return GetService().state.value();
 #else
 	return rpl::single(State::Unavailable);
+#endif
+}
+
+rpl::producer<> ListChanges() {
+#ifdef FRESHGRAM_PLUGINS
+	return GetService().list.events();
+#else
+	return rpl::never<>();
+#endif
+}
+
+void NotifyListChanged() {
+#ifdef FRESHGRAM_PLUGINS
+	GetService().list.fire({});
 #endif
 }
 
