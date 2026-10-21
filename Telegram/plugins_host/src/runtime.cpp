@@ -1,13 +1,13 @@
 #include "runtime.h"
 
-#include <wasmtime.hh>
+#include "guest.h"
+#include "wasi_host.h"
 
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
 #include <optional>
-#include <random>
 #include <thread>
 #include <tuple>
 #include <unordered_set>
@@ -54,18 +54,7 @@ namespace {
 
 constexpr auto kTickMs = uint32_t(10);
 constexpr auto kHostModule = std::string_view("freshgram");
-constexpr auto kWasiModule = std::string_view("wasi_snapshot_preview1");
 constexpr auto kLogLineLimit = size_t(4096);
-constexpr auto kClockGranularityNs = uint64_t(1000000);
-
-namespace wasi_errno {
-
-constexpr auto kSuccess = int32_t(0);
-constexpr auto kBadf = int32_t(8);
-constexpr auto kFault = int32_t(21);
-constexpr auto kInval = int32_t(28);
-
-} // namespace wasi_errno
 
 using AllocFn = wasmtime::TypedFunc<std::tuple<int32_t>, int32_t>;
 using EntryFn = wasmtime::TypedFunc<std::tuple<int32_t, int32_t>, int32_t>;
@@ -95,6 +84,7 @@ struct PluginState {
 	std::optional<EntryFn> onInit;
 	std::optional<EntryFn> onEvent;
 	std::optional<ReleaseFn> release;
+	std::unique_ptr<Wasi> wasi;
 	std::string logLines[3];
 	std::string lastError;
 	size_t callsLeft = 0;
@@ -104,46 +94,7 @@ struct PluginState {
 
 namespace {
 
-[[nodiscard]] bool InRange(
-		wasmtime::Span<uint8_t> memory,
-		uint32_t pointer,
-		uint64_t length) {
-	return uint64_t(pointer) + length <= memory.size();
-}
-
-void PutU32(wasmtime::Span<uint8_t> memory, uint32_t pointer, uint32_t value) {
-	for (auto i = 0; i != 4; ++i) {
-		memory.data()[pointer + i] = uint8_t(value >> (8 * i));
-	}
-}
-
-void PutU64(wasmtime::Span<uint8_t> memory, uint32_t pointer, uint64_t value) {
-	for (auto i = 0; i != 8; ++i) {
-		memory.data()[pointer + i] = uint8_t(value >> (8 * i));
-	}
-}
-
-[[nodiscard]] uint32_t GetU32(
-		wasmtime::Span<uint8_t> memory,
-		uint32_t pointer) {
-	auto result = uint32_t(0);
-	for (auto i = 0; i != 4; ++i) {
-		result |= uint32_t(memory.data()[pointer + i]) << (8 * i);
-	}
-	return result;
-}
-
-[[nodiscard]] std::optional<wasmtime::Memory> MemoryOf(
-		wasmtime::Caller &caller) {
-	const auto found = caller.get_export("memory");
-	if (!found) {
-		return std::nullopt;
-	}
-	if (const auto memory = std::get_if<wasmtime::Memory>(&*found)) {
-		return *memory;
-	}
-	return std::nullopt;
-}
+using namespace guest;
 
 [[nodiscard]] std::optional<AllocFn> AllocOf(wasmtime::Caller &caller) {
 	const auto found = caller.get_export("fg_alloc");
@@ -307,18 +258,6 @@ struct Placed {
 	return guest_status::kOk;
 }
 
-template <typename F>
-void Define(
-		wasmtime::Linker &linker,
-		std::unordered_set<std::string> &defined,
-		std::string_view module,
-		std::string_view name,
-		F &&function) {
-	if (linker.func_wrap(module, name, std::forward<F>(function))) {
-		defined.insert(std::string(module) + "::" + std::string(name));
-	}
-}
-
 void LinkHost(
 		wasmtime::Linker &linker,
 		PluginState &state,
@@ -332,178 +271,7 @@ void LinkHost(
 		-> wasmtime::Result<int32_t, wasmtime::Trap> {
 			return HostCall(state, caller, a, b, c, d);
 		});
-
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"args_sizes_get",
-		[](wasmtime::Caller caller, int32_t countPointer, int32_t sizePointer)
-		-> int32_t {
-			const auto memory = MemoryOf(caller);
-			if (!memory) {
-				return wasi_errno::kFault;
-			}
-			const auto data = memory->data(caller.context());
-			if (!InRange(data, uint32_t(countPointer), 4)
-				|| !InRange(data, uint32_t(sizePointer), 4)) {
-				return wasi_errno::kFault;
-			}
-			PutU32(data, uint32_t(countPointer), 0);
-			PutU32(data, uint32_t(sizePointer), 0);
-			return wasi_errno::kSuccess;
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"args_get",
-		[](int32_t, int32_t) -> int32_t {
-			return wasi_errno::kSuccess;
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"environ_sizes_get",
-		[](wasmtime::Caller caller, int32_t countPointer, int32_t sizePointer)
-		-> int32_t {
-			const auto memory = MemoryOf(caller);
-			if (!memory) {
-				return wasi_errno::kFault;
-			}
-			const auto data = memory->data(caller.context());
-			if (!InRange(data, uint32_t(countPointer), 4)
-				|| !InRange(data, uint32_t(sizePointer), 4)) {
-				return wasi_errno::kFault;
-			}
-			PutU32(data, uint32_t(countPointer), 0);
-			PutU32(data, uint32_t(sizePointer), 0);
-			return wasi_errno::kSuccess;
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"environ_get",
-		[](int32_t, int32_t) -> int32_t {
-			return wasi_errno::kSuccess;
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"clock_time_get",
-		[](wasmtime::Caller caller, int32_t id, int64_t, int32_t timePointer)
-		-> int32_t {
-			const auto memory = MemoryOf(caller);
-			if (!memory) {
-				return wasi_errno::kFault;
-			}
-			const auto data = memory->data(caller.context());
-			if (!InRange(data, uint32_t(timePointer), 8)) {
-				return wasi_errno::kFault;
-			} else if (id != 0 && id != 1) {
-				return wasi_errno::kInval;
-			}
-			const auto now = (id == 0)
-				? std::chrono::duration_cast<std::chrono::nanoseconds>(
-					std::chrono::system_clock::now().time_since_epoch())
-				: std::chrono::duration_cast<std::chrono::nanoseconds>(
-					std::chrono::steady_clock::now().time_since_epoch());
-			const auto value = uint64_t(now.count());
-			PutU64(
-				data,
-				uint32_t(timePointer),
-				value - value % kClockGranularityNs);
-			return wasi_errno::kSuccess;
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"random_get",
-		[&state](wasmtime::Caller caller, int32_t pointer, int32_t length)
-		-> int32_t {
-			const auto memory = MemoryOf(caller);
-			if (!memory) {
-				return wasi_errno::kFault;
-			}
-			const auto data = memory->data(caller.context());
-			if (length < 0
-				|| uint32_t(length) > state.limits.maxMessageBytes) {
-				return wasi_errno::kInval;
-			} else if (!InRange(data, uint32_t(pointer), uint32_t(length))) {
-				return wasi_errno::kFault;
-			}
-			auto device = std::random_device();
-			for (auto i = uint32_t(0); i < uint32_t(length);) {
-				const auto word = device();
-				for (auto k = 0; k != 4 && i < uint32_t(length); ++k, ++i) {
-					data.data()[uint32_t(pointer) + i] = uint8_t(word >> (8 * k));
-				}
-			}
-			return wasi_errno::kSuccess;
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"sched_yield",
-		[]() -> int32_t {
-			std::this_thread::yield();
-			return wasi_errno::kSuccess;
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"proc_exit",
-		[&state](int32_t code) -> wasmtime::Result<std::monostate, wasmtime::Trap> {
-			state.lastError = "the plugin called proc_exit(" + std::to_string(code) + ")";
-			return wasmtime::Trap(state.lastError);
-		});
-	Define(
-		linker,
-		defined,
-		kWasiModule,
-		"fd_write",
-		[&state](
-			wasmtime::Caller caller,
-			int32_t fd,
-			int32_t vectorsPointer,
-			int32_t vectorsCount,
-			int32_t writtenPointer) -> int32_t {
-			if (fd != 1 && fd != 2) {
-				return wasi_errno::kBadf;
-			}
-			const auto memory = MemoryOf(caller);
-			if (!memory) {
-				return wasi_errno::kFault;
-			}
-			const auto data = memory->data(caller.context());
-			if (vectorsCount < 0 || vectorsCount > 1024) {
-				return wasi_errno::kInval;
-			} else if (!InRange(data, uint32_t(vectorsPointer), uint64_t(vectorsCount) * 8)
-				|| !InRange(data, uint32_t(writtenPointer), 4)) {
-				return wasi_errno::kFault;
-			}
-			auto total = uint64_t(0);
-			for (auto i = int32_t(0); i != vectorsCount; ++i) {
-				const auto at = uint32_t(vectorsPointer) + uint32_t(i) * 8;
-				const auto pointer = GetU32(data, at);
-				const auto length = GetU32(data, at + 4);
-				total += length;
-				if (total > state.limits.maxMessageBytes) {
-					return wasi_errno::kInval;
-				} else if (!InRange(data, pointer, length)) {
-					return wasi_errno::kFault;
-				}
-				AppendLog(state, size_t(fd), data.data() + pointer, length);
-			}
-			PutU32(data, uint32_t(writtenPointer), uint32_t(total));
-			return wasi_errno::kSuccess;
-		});
+	state.wasi->link(linker, defined);
 }
 
 [[nodiscard]] Result<int32_t, CallError> Dispatch(
@@ -615,7 +383,8 @@ Runtime::~Runtime() = default;
 Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::load(
 		std::span<const uint8_t> wasm,
 		Bridge &bridge,
-		const RuntimeLimits &limits) {
+		const RuntimeLimits &limits,
+		std::shared_ptr<const Vfs> files) {
 	const auto fail = [](LoadError error, std::string detail) {
 		return LoadFailure{ error, std::move(detail) };
 	};
@@ -630,6 +399,15 @@ Result<std::unique_ptr<Plugin>, LoadFailure> Runtime::load(
 	const auto module = compiled.unwrap();
 	auto state = std::make_unique<PluginState>(_state, bridge, limits);
 	state->store.limiter(int64_t(limits.memoryBytes), 10000, 1, 100, 1);
+	const auto raw = state.get();
+	state->wasi = std::make_unique<Wasi>(WasiConfig{
+		.files = std::move(files),
+		.mounts = { "plugin", "runtime" },
+		.maxIoBytes = limits.maxMessageBytes,
+		.output = [raw](int fd, std::span<const uint8_t> bytes) {
+			AppendLog(*raw, size_t(fd), bytes.data(), bytes.size());
+		},
+	});
 
 	auto linker = wasmtime::Linker(_state->engine);
 	auto defined = std::unordered_set<std::string>();

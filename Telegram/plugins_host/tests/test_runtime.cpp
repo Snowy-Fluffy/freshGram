@@ -212,13 +212,13 @@ void TestImportsAreAllowlisted() {
 	CHECK(!result.ok() && result.error().detail == "env::foo");
 
 	result = withImport(
-		R"((import "wasi_snapshot_preview1" "path_open"
-			(func (param i32 i32 i32 i32 i32 i64 i64 i32 i32) (result i32))))");
+		R"((import "wasi_snapshot_preview1" "sock_connect"
+			(func (param i32 i32 i32) (result i32))))");
 	CHECK(!result.ok() && result.error().error == LoadError::ForbiddenImport);
 
 	result = withImport(
-		R"((import "wasi_snapshot_preview1" "sock_accept"
-			(func (param i32 i32 i32) (result i32))))");
+		R"((import "wasi_unstable" "fd_write"
+			(func (param i32 i32 i32 i32) (result i32))))");
 	CHECK(!result.ok() && result.error().error == LoadError::ForbiddenImport);
 
 	result = withImport(

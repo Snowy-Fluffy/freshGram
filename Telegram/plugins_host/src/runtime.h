@@ -2,6 +2,7 @@
 
 #include "cbor.h"
 #include "result.h"
+#include "vfs.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -98,7 +99,8 @@ public:
 	[[nodiscard]] Result<std::unique_ptr<Plugin>, LoadFailure> load(
 		std::span<const uint8_t> wasm,
 		Bridge &bridge,
-		const RuntimeLimits &limits = {});
+		const RuntimeLimits &limits = {},
+		std::shared_ptr<const Vfs> files = nullptr);
 
 private:
 	std::shared_ptr<RuntimeState> _state;

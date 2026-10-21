@@ -35,12 +35,22 @@ if (UNIX)
 	set_property(TARGET wasmtime PROPERTY INTERFACE_LINK_LIBRARIES pthread dl m)
 endif()
 
-add_library(fgpl_runtime STATIC src/runtime.cpp)
+add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp)
 target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
 fgpl_options(fgpl_runtime)
 
 if (FGPL_BUILD_TESTS)
 	enable_testing()
+	find_program(FGPL_CLANG clang)
+	set(fgpl_wasm_ready OFF)
+	if (FGPL_CLANG)
+		execute_process(COMMAND ${FGPL_CLANG} --print-targets
+			OUTPUT_VARIABLE fgpl_targets ERROR_QUIET)
+		if (fgpl_targets MATCHES "wasm32")
+			set(fgpl_wasm_ready ON)
+		endif()
+	endif()
+
 	foreach (name test_cbor test_vfs test_runtime)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
@@ -50,6 +60,22 @@ if (FGPL_BUILD_TESTS)
 		fgpl_options(${name})
 		add_test(NAME ${name} COMMAND ${name})
 	endforeach()
+
+	if (fgpl_wasm_ready)
+		set(probe_wasm ${CMAKE_CURRENT_BINARY_DIR}/wasi_probe.wasm)
+		add_custom_command(OUTPUT ${probe_wasm}
+			COMMAND ${FGPL_CLANG} --target=wasm32 -O2 -nostdlib -fno-builtin
+				-Wl,--no-entry -o ${probe_wasm}
+				${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/wasi_probe.c
+			DEPENDS tests/plugins/wasi_probe.c)
+		add_custom_target(wasi_probe DEPENDS ${probe_wasm})
+		add_executable(test_wasi tests/test_wasi.cpp)
+		target_link_libraries(test_wasi PRIVATE fgpl_runtime)
+		target_compile_definitions(test_wasi PRIVATE FGPL_PROBE_WASM="${probe_wasm}")
+		add_dependencies(test_wasi wasi_probe)
+		fgpl_options(test_wasi)
+		add_test(NAME test_wasi COMMAND test_wasi)
+	endif()
 endif()
 
 if (FGPL_FUZZ)
