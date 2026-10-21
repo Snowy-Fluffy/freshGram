@@ -511,6 +511,105 @@ void TestPythonPlugin() {
 	CHECK(fs::exists(lab.root / "cache"));
 }
 
+void TestUiContributions() {
+	if (!pysupport::Installed()) {
+		return;
+	}
+	auto lab = Lab("fgpl-manager-ui");
+	auto pages = std::vector<std::pair<std::string, cbor::Value>>();
+	auto pagesMutex = std::mutex();
+	auto config = lab.config();
+	config.services.settingsPage = [&](const std::string &id, const std::string &account, const cbor::Value &page) {
+		const auto lock = std::scoped_lock(pagesMutex);
+		pages.emplace_back(id + "/" + account, page);
+	};
+	auto manager = PluginManager(config);
+	auto document = Document("com.example.uidemo", "1.0.0", {
+		{ "ui.menu", {} }, { "ui.command", {} }, { "ui.settings_page", {} }, { "storage.private", {} },
+	});
+	Set(document, "runtime.kind", Text("python"));
+	Remove(document, "runtime.module");
+	Set(document, "runtime.entry", Text("main.py"));
+	Remove(document, "contributes.events");
+	Set(document, "contributes.menus", cbor::Value::FromArray({
+		cbor::Value::FromMap({
+			{ "surface", Text("message") }, { "id", Text("translate") },
+			{ "title", cbor::Value::FromMap({ { "default", Text("Translate") }, { "ru", Text("Перевести") } }) },
+		}),
+	}));
+	Set(document, "contributes.commands", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "name", Text("tr") }, { "description", Text("Translate") } }),
+	}));
+	Set(document, "contributes.settingsPage", cbor::Value::FromBool(true));
+	const auto key = Seed(5);
+	const auto built = Build(document, {
+		{ "main.py", ReadFile(fs::path(FGPL_PYTHON_PLUGIN_DIR) / "ui_demo.py") },
+	}, &key);
+	const auto installed = manager.install(built.archive);
+	CHECK(installed.ok());
+	if (!installed.ok()) {
+		for (const auto &line : installed.error().details) {
+			std::fprintf(stderr, "install: %s\n", line.c_str());
+		}
+		return;
+	}
+	const auto id = std::string("com.example.uidemo");
+	CHECK(manager.setEnabled(id, true));
+
+	CHECK(manager.contributions("A", "default").empty());
+	CHECK(manager.grant(id, "A", { { "ui.menu", "ui.command", "ui.settings_page", "storage.private" }, std::nullopt }));
+	const auto contributions = manager.contributions("A", "ru");
+	CHECK(contributions.size() == 1);
+	if (!contributions.empty()) {
+		CHECK(contributions[0].menus.size() == 1 && contributions[0].menus[0].title == "Перевести");
+		CHECK(contributions[0].commands.size() == 1 && contributions[0].commands[0].name == "tr");
+		CHECK(contributions[0].settingsPage);
+	}
+	CHECK(manager.contributions("B", "ru").empty());
+
+	const auto click = [](const char *surface, const char *menuId) {
+		return cbor::Value::FromMap({
+			{ "type", Text("menu.click") }, { "surface", Text(surface) }, { "id", Text(menuId) },
+			{ "chat", Int(1) }, { "message", Int(5) }, { "text", Text("hello") },
+		});
+	};
+	CHECK(manager.send(id, "A", click("message", "translate")));
+	CHECK(!manager.send(id, "A", click("message", "unknown")));
+	CHECK(!manager.send(id, "A", click("chat", "translate")));
+	CHECK(!manager.send(id, "B", click("message", "translate")));
+	CHECK(!manager.send("com.example.none", "A", click("message", "translate")));
+	CHECK(!manager.send(id, "A", cbor::Value::FromMap({ { "type", Text("message.new") }, { "chat", Int(1) } })));
+	CHECK(manager.send(id, "A", cbor::Value::FromMap({
+		{ "type", Text("command") }, { "name", Text("tr") }, { "args", Text("bonjour") },
+	})));
+	CHECK(!manager.send(id, "A", cbor::Value::FromMap({ { "type", Text("command") }, { "name", Text("other") } })));
+	CHECK(manager.send(id, "A", cbor::Value::FromMap({
+		{ "type", Text("settings.change") }, { "id", Text("loud") }, { "value", cbor::Value::FromBool(true) },
+	})));
+	CHECK(manager.drain(120000));
+
+	const auto menu = lab.stored(id, "A", "menu");
+	CHECK(menu && menu->find("chat")->asInt() == 1 && menu->find("message")->asInt() == 5);
+	CHECK(menu && menu->find("text")->isNull());
+	const auto command = lab.stored(id, "A", "command");
+	CHECK(command && *command->asText() == "bonjour");
+	const auto setting = lab.stored(id, "A", "setting");
+	CHECK(setting && setting->asArray()->size() == 3 && *(*setting->asArray())[1].asText() == "loud");
+	{
+		const auto lock = std::scoped_lock(pagesMutex);
+		CHECK(!pages.empty());
+		if (!pages.empty()) {
+			CHECK(pages[0].first == id + "/A");
+			CHECK(*pages[0].second.find("title")->asText() == "Demo");
+			CHECK(pages[0].second.find("items")->asArray()->size() == 2);
+		}
+	}
+
+	CHECK(manager.setEnabled(id, false));
+	CHECK(manager.contributions("A", "ru").empty());
+	CHECK(!manager.send(id, "A", click("message", "translate")));
+	manager.shutdown();
+}
 
 [[nodiscard]] std::string SlowModule(int64_t iterations) {
 	return wat::Module("", "(local $i i32) (loop $l (local.set $i (i32.add (local.get $i) (i32.const 1))) (br_if $l (i32.lt_u (local.get $i) (i32.const "
@@ -759,6 +858,7 @@ int main(int argc, char **argv) {
 	run("lock", TestLockHiddenAndLogout);
 	run("damage", TestUninstallAndDamage);
 	run("python", TestPythonPlugin);
+	run("ui", TestUiContributions);
 	run("order", TestDispatchDoesNotBlockAndKeepsOrder);
 	run("fair", TestSlowPluginDoesNotDelayOthers);
 	run("overflow", TestQueueOverflowDropsTheOldest);

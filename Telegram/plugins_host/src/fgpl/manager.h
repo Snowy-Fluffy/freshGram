@@ -37,6 +37,10 @@ struct PythonRuntime {
 };
 
 struct ManagerServices {
+	std::function<void(
+		const std::string &id,
+		const std::string &account,
+		const cbor::Value &page)> settingsPage;
 	DataProvider *data = nullptr;
 	std::function<DataProvider*(const std::string &account)> dataFor;
 	Transport *transport = nullptr;
@@ -120,6 +124,25 @@ struct PluginInfo {
 	PluginStats stats;
 };
 
+struct ContributedMenu {
+	std::string surface;
+	std::string id;
+	std::string title;
+};
+
+struct ContributedCommand {
+	std::string name;
+	std::string description;
+};
+
+struct Contribution {
+	std::string id;
+	std::string name;
+	std::vector<ContributedMenu> menus;
+	std::vector<ContributedCommand> commands;
+	bool settingsPage = false;
+};
+
 struct DispatchReport {
 	int queued = 0;
 	int skipped = 0;
@@ -149,6 +172,15 @@ public:
 		const std::string &account) const;
 
 	[[nodiscard]] std::vector<PluginInfo> list() const;
+	[[nodiscard]] std::shared_ptr<const Manifest> manifest(
+		const std::string &id) const;
+	[[nodiscard]] std::vector<Contribution> contributions(
+		const std::string &account,
+		const std::string &language) const;
+	bool send(
+		const std::string &id,
+		const std::string &account,
+		const cbor::Value &event);
 	[[nodiscard]] std::vector<std::string> log(const std::string &id) const;
 
 	void onLock();
@@ -201,6 +233,12 @@ private:
 		std::shared_ptr<LogRing> log = std::make_shared<LogRing>();
 	};
 
+	struct Declared {
+		std::set<std::string> menus;
+		std::set<std::string> commands;
+		bool settingsPage = false;
+	};
+
 	struct StartPlan {
 		HostConfig host;
 		LoadRequest request;
@@ -216,6 +254,7 @@ private:
 		std::unique_ptr<Broker> broker;
 		std::unique_ptr<HostClient> client;
 		StartPlan plan;
+		Declared declared;
 		std::thread thread;
 		std::mutex mutex;
 		std::condition_variable wake;
@@ -280,6 +319,7 @@ private:
 	[[nodiscard]] bool loadPython();
 
 	ManagerConfig _config;
+	mutable std::map<std::string, std::pair<std::string, std::shared_ptr<const Manifest>>> _manifests;
 	std::map<std::string, Record> _records;
 	std::map<Key, std::unique_ptr<Instance>> _instances;
 	std::map<Key, int64_t> _notBefore;

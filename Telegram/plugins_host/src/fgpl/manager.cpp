@@ -632,6 +632,135 @@ std::vector<PluginInfo> PluginManager::list() const {
 	return result;
 }
 
+std::shared_ptr<const Manifest> PluginManager::manifest(const std::string &id) const {
+	const auto found = _records.find(id);
+	if (found == _records.end()) {
+		return nullptr;
+	}
+	const auto &record = found->second;
+	const auto key = record.current + "/" + record.archiveHash;
+	if (const auto cached = _manifests.find(id);
+		cached != _manifests.end() && cached->second.first == key) {
+		return cached->second.second;
+	}
+	const auto opened = openInstalled(record, record.current, record.archiveHash);
+	if (!opened.ok()) {
+		_manifests.erase(id);
+		return nullptr;
+	}
+	auto result = std::make_shared<const Manifest>(opened.value().manifest);
+	_manifests[id] = { key, result };
+	return result;
+}
+
+std::vector<Contribution> PluginManager::contributions(
+		const std::string &account,
+		const std::string &language) const {
+	auto result = std::vector<Contribution>();
+	if (_hidden || _locked) {
+		return result;
+	}
+	for (const auto &item : _records) {
+		const auto &record = item.second;
+		const auto grant = record.grants.find(account);
+		if (!record.enabled || grant == record.grants.end()) {
+			continue;
+		}
+		const auto parsed = manifest(record.id);
+		if (!parsed || !CheckCompatibility(*parsed, _config.environment).empty()) {
+			continue;
+		}
+		const auto has = [&](const char *name) {
+			return grant->second.granted.contains(name);
+		};
+		auto entry = Contribution();
+		entry.id = record.id;
+		entry.name = parsed->name.get(language);
+		if (has("ui.menu")) {
+			for (const auto &menu : parsed->menus) {
+				entry.menus.push_back({ menu.surface, menu.id, menu.title.get(language) });
+			}
+		}
+		if (has("ui.command")) {
+			for (const auto &command : parsed->commands) {
+				entry.commands.push_back({ command.name, command.description.get(language) });
+			}
+		}
+		entry.settingsPage = parsed->settingsPage && has("ui.settings_page");
+		if (!entry.menus.empty() || !entry.commands.empty() || entry.settingsPage) {
+			result.push_back(std::move(entry));
+		}
+	}
+	return result;
+}
+
+bool PluginManager::send(
+		const std::string &id,
+		const std::string &account,
+		const cbor::Value &event) {
+	if (!ValidAccount(account) || !mayRun() || !event.asMap()) {
+		return false;
+	}
+	const auto found = _records.find(id);
+	if (found == _records.end()) {
+		return false;
+	}
+	auto &record = found->second;
+	const auto grant = record.grants.find(account);
+	const auto typeField = event.find("type");
+	const auto type = typeField ? typeField->asText() : nullptr;
+	if (!record.enabled || grant == record.grants.end() || !type) {
+		return false;
+	}
+	pump();
+	auto *instance = ensure(record, account);
+	if (!instance) {
+		++record.stats.dropped;
+		return false;
+	}
+	const auto has = [&](const char *name) {
+		return grant->second.granted.contains(name);
+	};
+	const auto text = [&](const char *name) -> std::string {
+		const auto field = event.find(name);
+		return field && field->asText() ? *field->asText() : std::string();
+	};
+	if (*type == "menu.click") {
+		if (!has("ui.menu") || !instance->declared.menus.contains(text("surface") + "/" + text("id"))) {
+			return false;
+		}
+	} else if (*type == "command") {
+		if (!has("ui.command") || !instance->declared.commands.contains(text("name"))) {
+			return false;
+		}
+	} else if (*type == "settings.change" || *type == "settings.click") {
+		if (!has("ui.settings_page") || !instance->declared.settingsPage) {
+			return false;
+		}
+	} else {
+		return false;
+	}
+	const auto filtered = instance->broker->filterTargeted(event);
+	const auto size = EncodedSize(filtered);
+	{
+		const auto lock = std::scoped_lock(instance->mutex);
+		if (instance->closing || instance->finished) {
+			return false;
+		}
+		while (!instance->queue.empty()
+			&& (instance->queue.size() >= _config.maxQueuedEvents
+				|| instance->queuedBytes + size > _config.maxQueuedBytes)) {
+			instance->queuedBytes -= instance->queue.front().second;
+			instance->queue.pop_front();
+			++record.stats.dropped;
+		}
+		instance->queue.emplace_back(filtered, size);
+		instance->queuedBytes += size;
+	}
+	instance->wake.notify_one();
+	return true;
+}
+
 bool PluginManager::loadPython() {
 	if (_pythonLoaded) {
 		return _pythonAvailable;
@@ -733,6 +862,24 @@ Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	services.log = [ring, maxLines](std::string_view line) {
 		AppendLog(*ring, maxLines, line);
 	};
+	for (const auto &menu : package.manifest.menus) {
+		instance->declared.menus.insert(menu.surface + "/" + menu.id);
+	}
+	for (const auto &command : package.manifest.commands) {
+		instance->declared.commands.insert(command.name);
+	}
+	instance->declared.settingsPage = package.manifest.settingsPage;
+	if (package.manifest.settingsPage && _config.services.settingsPage) {
+		const auto callback = _config.services.settingsPage;
+		const auto pluginId = record.id;
+		services.ui = [callback, pluginId, account](std::string_view kind, const cbor::Value &payload) {
+			if (kind != "settings") {
+				return false;
+			}
+			callback(pluginId, account, payload);
+			return true;
+		};
+	}
 	instance->broker = std::make_unique<Broker>(
 		MakeGrants(package.manifest, { grant->second.granted, grant->second.chats }),
 		std::move(services));

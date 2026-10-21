@@ -136,6 +136,13 @@ class _Ui:
     def toast(self, text):
         _request("ui.toast", text=text)
 
+    def settings_page(self, title, items):
+        """Describe the plugin's settings page; the app draws it.
+
+        Items are dicts: text, divider, toggle, input, select and button.
+        """
+        _request("ui.settings.set", page={"title": title, "items": items})
+
 
 class _Chats:
     def list(self, limit=100):
@@ -192,6 +199,36 @@ def on_init(function):
 def on(pattern):
     def register(function):
         _event_handlers.append((pattern, function))
+        return function
+    return register
+
+
+def on_menu(menu_id, surface=None):
+    def register(function):
+        def wrapper(event):
+            if event.get("id") == menu_id and (surface is None or event.get("surface") == surface):
+                function(event)
+        _event_handlers.append(("menu.click", wrapper))
+        return function
+    return register
+
+
+def on_command(name):
+    def register(function):
+        def wrapper(event):
+            if event.get("name") == name:
+                function(event)
+        _event_handlers.append(("command", wrapper))
+        return function
+    return register
+
+
+def on_setting(item_id=None):
+    def register(function):
+        def wrapper(event):
+            if item_id is None or event.get("id") == item_id:
+                function(event)
+        _event_handlers.append(("settings.*", wrapper))
         return function
     return register
 
