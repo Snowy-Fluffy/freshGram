@@ -70,6 +70,7 @@ struct Outcome {
 
 	auto request = LoadRequest();
 	request.limits.callTimeoutMs = 100;
+	request.limits.startTimeoutMs = 100;
 	const auto loaded = client->load(request);
 	if (!loaded.ok()) {
 		outcome.stage = Stage::Load;

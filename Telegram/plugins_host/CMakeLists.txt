@@ -11,6 +11,9 @@ option(FGPL_FUZZ "Build the libFuzzer targets (needs clang)" OFF)
 set(FGPL_WASMTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wasmtime-v50.0.0-x86_64-linux-c-api"
 	CACHE PATH "Unpacked Wasmtime C API release")
 
+find_package(ZLIB REQUIRED)
+find_package(OpenSSL REQUIRED)
+
 function(fgpl_warnings target)
 	if (MSVC)
 		target_compile_options(${target} PRIVATE /W4 /permissive-)
@@ -27,8 +30,11 @@ function(fgpl_options target)
 	endif()
 endfunction()
 
-add_library(fgpl_core STATIC src/cbor.cpp src/vfs.cpp src/sha256.cpp src/module_cache.cpp)
+add_library(fgpl_core STATIC src/cbor.cpp src/vfs.cpp src/sha256.cpp src/module_cache.cpp
+	src/base64.cpp src/json.cpp src/semver.cpp src/zip_reader.cpp src/signature.cpp src/net_policy.cpp src/manifest.cpp
+	src/wasm_scan.cpp src/package.cpp src/zip_writer.cpp)
 target_include_directories(fgpl_core PUBLIC src)
+target_link_libraries(fgpl_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto)
 fgpl_options(fgpl_core)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -54,7 +60,11 @@ if (UNIX)
 	set_property(TARGET wasmtime PROPERTY INTERFACE_LINK_LIBRARIES pthread dl m)
 endif()
 
-add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp src/broker.cpp src/net_policy.cpp)
+add_executable(fgpl_tool src/tool_main.cpp)
+target_link_libraries(fgpl_tool PRIVATE fgpl_runtime)
+fgpl_options(fgpl_tool)
+
+add_library(fgpl_runtime STATIC src/runtime.cpp src/wasi_host.cpp src/broker.cpp src/permissions.cpp)
 target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
 fgpl_options(fgpl_runtime)
 
@@ -76,10 +86,11 @@ if (FGPL_BUILD_TESTS)
 		endif()
 	endif()
 
-	foreach (name test_cbor test_vfs test_cache test_runtime test_broker)
+	foreach (name test_cbor test_vfs test_cache test_formats test_zip test_manifest test_package test_runtime test_broker)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
-		if (name STREQUAL "test_runtime" OR name STREQUAL "test_broker")
+		if (name STREQUAL "test_runtime" OR name STREQUAL "test_broker"
+			OR name STREQUAL "test_manifest" OR name STREQUAL "test_package")
 			target_link_libraries(${name} PRIVATE fgpl_runtime)
 		endif()
 		fgpl_options(${name})
@@ -143,6 +154,28 @@ if (FGPL_BUILD_TESTS)
 		fgpl_warnings(test_sdk)
 		add_test(NAME test_sdk COMMAND test_sdk)
 
+		add_executable(test_tool tests/test_tool.cpp)
+		target_link_libraries(test_tool PRIVATE fgpl_runtime)
+		target_compile_definitions(test_tool PRIVATE FGPL_TOOL="$<TARGET_FILE:fgpl_tool>")
+		add_dependencies(test_tool fgpl_tool)
+		fgpl_warnings(test_tool)
+		add_test(NAME test_tool COMMAND test_tool)
+
+		add_executable(test_install tests/test_install.cpp)
+		target_link_libraries(test_install PRIVATE fgpl_client fgpl_runtime)
+		target_compile_definitions(test_install PRIVATE
+			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
+			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
+			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python"
+			FGPL_PYTHON_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
+		if (fgpl_wasm_ready)
+			add_dependencies(test_install counter_wasm_target)
+			target_compile_definitions(test_install PRIVATE FGPL_COUNTER_WASM="${counter_wasm}")
+		endif()
+		add_dependencies(test_install fgpl_plugin_host)
+		fgpl_warnings(test_install)
+		add_test(NAME test_install COMMAND test_install)
+
 		add_executable(test_compile tests/test_compile.cpp)
 		target_link_libraries(test_compile PRIVATE fgpl_client wasmtime)
 		target_compile_definitions(test_compile PRIVATE
@@ -200,11 +233,13 @@ if (FGPL_BUILD_TESTS)
 endif()
 
 if (FGPL_FUZZ)
-	foreach (name fuzz_cbor fuzz_vfs fuzz_frame fuzz_wasi)
+	foreach (name fuzz_cbor fuzz_vfs fuzz_frame fuzz_wasi fuzz_package)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
 		if (name STREQUAL "fuzz_frame")
 			target_link_libraries(${name} PRIVATE fgpl_ipc)
+		elseif (name STREQUAL "fuzz_package")
+			target_link_libraries(${name} PRIVATE fgpl_runtime)
 		elseif (name STREQUAL "fuzz_wasi")
 			target_link_libraries(${name} PRIVATE fgpl_runtime)
 		endif()

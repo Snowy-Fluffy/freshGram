@@ -84,6 +84,10 @@ void Fatal(int fd, const std::string &detail) {
 	if (timeout > 0) {
 		result.callTimeoutMs = uint32_t(timeout);
 	}
+	const auto start = proto::IntField(*limits, "start", 0);
+	if (start > 0) {
+		result.startTimeoutMs = uint32_t(start);
+	}
 	const auto message_bytes = proto::IntField(*limits, "message", 0);
 	if (message_bytes > 0) {
 		result.maxMessageBytes = size_t(message_bytes);
