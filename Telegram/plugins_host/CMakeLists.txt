@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(FGPL_BUILD_TESTS "Build the unit tests" ON)
 option(FGPL_SANITIZE "Build with address and undefined behavior sanitizers" OFF)
 option(FGPL_FUZZ "Build the libFuzzer targets (needs clang)" OFF)
+set(FGPL_WASMTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wasmtime-v50.0.0-x86_64-linux-c-api"
+	CACHE PATH "Unpacked Wasmtime C API release")
 
 function(fgpl_options target)
 	if (MSVC)
@@ -25,11 +27,26 @@ add_library(fgpl_core STATIC src/cbor.cpp src/vfs.cpp)
 target_include_directories(fgpl_core PUBLIC src)
 fgpl_options(fgpl_core)
 
+add_library(wasmtime STATIC IMPORTED)
+set_target_properties(wasmtime PROPERTIES
+	IMPORTED_LOCATION "${FGPL_WASMTIME_DIR}/lib/libwasmtime.a"
+	INTERFACE_INCLUDE_DIRECTORIES "${FGPL_WASMTIME_DIR}/include")
+if (UNIX)
+	set_property(TARGET wasmtime PROPERTY INTERFACE_LINK_LIBRARIES pthread dl m)
+endif()
+
+add_library(fgpl_runtime STATIC src/runtime.cpp)
+target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
+fgpl_options(fgpl_runtime)
+
 if (FGPL_BUILD_TESTS)
 	enable_testing()
-	foreach (name test_cbor test_vfs)
+	foreach (name test_cbor test_vfs test_runtime)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
+		if (name STREQUAL "test_runtime")
+			target_link_libraries(${name} PRIVATE fgpl_runtime)
+		endif()
 		fgpl_options(${name})
 		add_test(NAME ${name} COMMAND ${name})
 	endforeach()
