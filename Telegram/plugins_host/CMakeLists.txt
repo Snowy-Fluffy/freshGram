@@ -38,7 +38,7 @@ endfunction()
 add_library(fgpl_core STATIC src/fgpl/cbor.cpp src/fgpl/vfs.cpp src/fgpl/sha256.cpp src/fgpl/module_cache.cpp
 	src/fgpl/base64.cpp src/fgpl/json.cpp src/fgpl/semver.cpp src/fgpl/zip_reader.cpp src/fgpl/signature.cpp src/fgpl/net_policy.cpp src/fgpl/manifest.cpp
 	src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/broker.cpp
-	src/fgpl/permissions.cpp src/fgpl/file_storage.cpp)
+	src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/runtime_bundle.cpp)
 target_include_directories(fgpl_core PUBLIC src)
 target_link_libraries(fgpl_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto)
 fgpl_options(fgpl_core)
@@ -93,7 +93,7 @@ if (FGPL_BUILD_TESTS)
 		endif()
 	endif()
 
-	foreach (name test_cbor test_vfs test_cache test_formats test_zip test_manifest test_package test_runtime test_broker)
+	foreach (name test_cbor test_vfs test_cache test_formats test_zip test_manifest test_package test_runtime test_broker test_runtime_bundle)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
 		if (name STREQUAL "test_runtime" OR name STREQUAL "test_broker"
