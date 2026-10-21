@@ -3,6 +3,9 @@
 
 #include "ayu/ayu_settings.h"
 #include "ayu/data/ayu_vault.h"
+#include "ayu/features/plugins/plugins_data.h"
+#include "data/data_session.h"
+#include "history/history_item.h"
 #include "base/flat_set.h"
 #include "base/timer.h"
 #include "core/application.h"
@@ -35,6 +38,7 @@ constexpr auto kPumpEach = crl::time(50);
 struct Watched {
 	std::string id;
 	rpl::lifetime lifetime;
+	rpl::lifetime events;
 };
 
 struct Service {
@@ -77,6 +81,7 @@ struct Service {
 	config.root = StorePath().toStdString();
 	config.host.path = HostBinary().toStdString();
 	config.host.requireLandlock = false;
+	config.services.dataFor = &DataFor;
 
 	const auto runtime = RuntimePath().toStdString();
 	config.python.wasm = runtime + "/python/python.wasm";
@@ -123,8 +128,10 @@ void Refresh() {
 	const auto wanted = Compute();
 	if (wanted != State::Ready) {
 		if (service.manager) {
+			CloseData();
 			service.manager->shutdown();
 			service.manager = nullptr;
+			ReleaseData();
 			service.pump.cancel();
 		}
 	} else if (!service.manager) {
@@ -165,6 +172,7 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 		if (i == end(service.watched)) {
 			return;
 		}
+		i->second.events.destroy();
 		if (!session) {
 			const auto id = std::exchange(i->second.id, std::string());
 			if (service.manager && !id.empty()) {
@@ -172,10 +180,23 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 			}
 			return;
 		}
-		i->second.id = AccountId(session).toStdString();
+		const auto id = AccountId(session).toStdString();
+		i->second.id = id;
 		if (service.manager) {
-			service.manager->startEnabled(i->second.id);
+			service.manager->startEnabled(id);
 		}
+		session->data().newItemAdded(
+		) | rpl::on_next([=](not_null<HistoryItem*> item) {
+			if (WantsEvents()) {
+				SendMessageEvent("message.new", item, id);
+			}
+		}, i->second.events);
+		session->data().itemRemoved(
+		) | rpl::on_next([=](not_null<const HistoryItem*> item) {
+			if (WantsEvents()) {
+				SendMessageEvent("message.deleted", item, id);
+			}
+		}, i->second.events);
 	}, entry.lifetime);
 }
 
@@ -252,8 +273,10 @@ void Stop() {
 	service.pump.cancel();
 	service.watched.clear();
 	if (service.manager) {
+		CloseData();
 		service.manager->shutdown();
 		service.manager = nullptr;
+		ReleaseData();
 	}
 	service.state = State::Disabled;
 	service.started = false;

@@ -723,7 +723,9 @@ Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		_config.root / record.id / "data" / account / "store.cbor");
 	auto services = BrokerServices();
 	services.storage = instance->storage.get();
-	services.data = _config.services.data;
+	services.data = _config.services.dataFor
+		? _config.services.dataFor(account)
+		: _config.services.data;
 	services.transport = _config.services.transport;
 	services.clockMs = _config.services.clockMs;
 	const auto ring = record.log;
