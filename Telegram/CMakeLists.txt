@@ -138,6 +138,8 @@ set(ayugram_files
         ayu/utils/builtin_lang.h
         ayu/utils/crash_trace.cpp
         ayu/features/fake_passcode/fake_passcode.cpp
+        ayu/features/plugins/plugins_service.cpp
+        ayu/features/plugins/plugins_service.h
         ayu/features/compose_stash/compose_stash.h
         ayu/features/compose_stash/compose_stash_hint.cpp
         ayu/features/compose_stash/compose_stash_hint.h

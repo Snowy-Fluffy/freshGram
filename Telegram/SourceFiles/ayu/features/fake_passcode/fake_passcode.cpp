@@ -455,6 +455,10 @@ void WipeSecretChatFiles() {
 	RemoveFiles({ u"ayu_secret*"_q }, true);
 }
 
+void WipePluginFiles() {
+	QDir(BasePath() + u"plugins/store"_q).removeRecursively();
+}
+
 void WipeSessionFiles() {
 	const auto hex = u"[0-9A-F]"_q.repeated(16);
 	RemoveFiles({
@@ -471,6 +475,7 @@ void WipeSessionFiles() {
 	WipeMessageDatabaseFiles();
 	WipeSavedMediaFiles();
 	WipeSecretChatFiles();
+	WipePluginFiles();
 }
 
 void ClearProxies() {
