@@ -108,6 +108,7 @@ jobs:
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           mkdir -p "$CCACHE_DIR"
           docker run --rm \
@@ -129,7 +130,8 @@ jobs:
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
             -D TDESKTOP_API_ID="$API_ID" \
-            -D TDESKTOP_API_HASH="$API_HASH" 2>&1 | tee build.log || true
+            -D TDESKTOP_API_HASH="$API_HASH" \
+            -D FRESHGRAM_RUNTIME_KEY="$RUNTIME_KEY" 2>&1 | tee build.log || true
 
       - name: Save compiler cache, part 1
         if: always() && steps.ccache.outcome == 'success'
@@ -142,6 +144,7 @@ jobs:
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           mkdir -p "$CCACHE_DIR"
           docker run --rm \
@@ -163,7 +166,8 @@ jobs:
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
             -D TDESKTOP_API_ID="$API_ID" \
-            -D TDESKTOP_API_HASH="$API_HASH" 2>&1 | tee -a build.log || true
+            -D TDESKTOP_API_HASH="$API_HASH" \
+            -D FRESHGRAM_RUNTIME_KEY="$RUNTIME_KEY" 2>&1 | tee -a build.log || true
 
       - name: Save compiler cache, part 2
         if: always() && steps.ccache.outcome == 'success'
@@ -176,6 +180,7 @@ jobs:
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           mkdir -p "$CCACHE_DIR"
           docker run --rm \
@@ -197,7 +202,8 @@ jobs:
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
             -D TDESKTOP_API_ID="$API_ID" \
-            -D TDESKTOP_API_HASH="$API_HASH" 2>&1 | tee -a build.log || true
+            -D TDESKTOP_API_HASH="$API_HASH" \
+            -D FRESHGRAM_RUNTIME_KEY="$RUNTIME_KEY" 2>&1 | tee -a build.log || true
 
       - name: Save compiler cache, part 3
         if: always() && steps.ccache.outcome == 'success'
@@ -210,6 +216,7 @@ jobs:
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           mkdir -p "$CCACHE_DIR"
           docker run --rm \
@@ -231,7 +238,8 @@ jobs:
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
             -D TDESKTOP_API_ID="$API_ID" \
-            -D TDESKTOP_API_HASH="$API_HASH" 2>&1 | tee -a build.log || true
+            -D TDESKTOP_API_HASH="$API_HASH" \
+            -D FRESHGRAM_RUNTIME_KEY="$RUNTIME_KEY" 2>&1 | tee -a build.log || true
 
       - name: Save compiler cache, part 4
         if: always() && steps.ccache.outcome == 'success'
@@ -244,6 +252,7 @@ jobs:
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           mkdir -p "$CCACHE_DIR"
           docker run --rm \
@@ -265,7 +274,8 @@ jobs:
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
             -D TDESKTOP_API_ID="$API_ID" \
-            -D TDESKTOP_API_HASH="$API_HASH" 2>&1 | tee -a build.log || true
+            -D TDESKTOP_API_HASH="$API_HASH" \
+            -D FRESHGRAM_RUNTIME_KEY="$RUNTIME_KEY" 2>&1 | tee -a build.log || true
 
       - name: Save compiler cache, part 5
         if: always() && steps.ccache.outcome == 'success'
@@ -278,6 +288,7 @@ jobs:
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           mkdir -p "$CCACHE_DIR"
           docker run --rm \
@@ -299,7 +310,8 @@ jobs:
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
             -D TDESKTOP_API_ID="$API_ID" \
-            -D TDESKTOP_API_HASH="$API_HASH" 2>&1 | tee -a build.log
+            -D TDESKTOP_API_HASH="$API_HASH" \
+            -D FRESHGRAM_RUNTIME_KEY="$RUNTIME_KEY" 2>&1 | tee -a build.log
           exit "${PIPESTATUS[0]}"
 
       - name: Show build errors
