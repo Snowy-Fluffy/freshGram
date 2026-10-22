@@ -572,6 +572,9 @@ ListWidget::ListWidget(
 	[=](const Element *view) { repaintItem(view); })
 , _touchSelectTimer([=] { onTouchSelect(); })
 , _touchScrollTimer([=] { onTouchScrollTimer(); })
+, _touchElastic(_delegate->listScrollArea(), [=](QPoint d, bool pressed) {
+	return _delegate->listScrollTo(_visibleTop - d.y(), !pressed);
+})
 , _middleClickAutoscroll(
 		[=](int d) { _delegate->listScrollTo(_visibleTop + d, false); },
 		[=](const QCursor &cursor) { setCursor(cursor); },
@@ -4307,14 +4310,22 @@ void ListWidget::onTouchScrollTimer() {
 		if (consumedHorizontal) {
 			_horizontalScrollLocked = true;
 		}
+		const auto weak = base::make_weak(this);
 		const auto hasScrolled = consumedHorizontal
 			|| (!_horizontalScrollLocked
-				&& _delegate->listScrollTo(_visibleTop - delta.y()));
+				&& _touchElastic.fling(delta));
+		if (!weak) {
+			return;
+		}
 		if (_touchSpeed.isNull() || !hasScrolled) {
 			_touchScrollState = Ui::TouchScrollState::Manual;
 			_touchScroll = false;
 			_horizontalScrollLocked = false;
 			_touchScrollTimer.cancel();
+			_touchElastic.finish();
+			if (!weak) {
+				return;
+			}
 		} else {
 			_touchTime = nowTime;
 		}
@@ -4407,8 +4418,11 @@ void ListWidget::touchEvent(QTouchEvent *e) {
 		_touchScroll = _touchSelect = false;
 		_horizontalScrollLocked = false;
 		_touchScrollState = Ui::TouchScrollState::Manual;
+		_touchScrollTimer.cancel();
+		touchResetSpeed();
 		_touchMaybeSelecting = false;
 		mouseActionCancel();
+		_touchElastic.finish(true);
 		return;
 	}
 
@@ -4453,6 +4467,7 @@ void ListWidget::touchEvent(QTouchEvent *e) {
 			_touchSelectTimer.cancel();
 			_touchMaybeSelecting = false;
 			_touchScroll = true;
+			_touchElastic.start(_touchPos - _touchStart);
 			touchUpdateSpeed();
 		}
 		if (_touchScroll) {
@@ -4487,6 +4502,10 @@ void ListWidget::touchEvent(QTouchEvent *e) {
 			}
 			_touchScroll = false;
 		} else if (_touchScroll) {
+			_touchElastic.release();
+			if (!weak) {
+				return;
+			}
 			if (_touchScrollState == Ui::TouchScrollState::Manual) {
 				_touchScrollState = Ui::TouchScrollState::Auto;
 				_touchPrevPosValid = false;
@@ -4497,6 +4516,7 @@ void ListWidget::touchEvent(QTouchEvent *e) {
 				_horizontalScrollLocked = false;
 				_touchScroll = false;
 				touchResetSpeed();
+				_touchElastic.finish();
 			} else if (_touchScrollState == Ui::TouchScrollState::Acceleration) {
 				_touchScrollState = Ui::TouchScrollState::Auto;
 				_touchWaitingAcceleration = false;
@@ -4577,10 +4597,9 @@ void ListWidget::touchScrollUpdated(const QPoint &screenPos) {
 			Qt::NoScrollPhase,
 			_touchPos)) {
 		_horizontalScrollLocked = true;
-	} else if (!_horizontalScrollLocked) {
-		_delegate->listScrollTo(
-			_visibleTop - (_touchPos - _touchPrevPos).y(),
-			false);
+	} else if (!_horizontalScrollLocked
+		&& !_touchElastic.drag(_touchPos - _touchPrevPos)) {
+		return;
 	}
 	touchUpdateSpeed();
 }
