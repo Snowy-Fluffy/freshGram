@@ -403,7 +403,6 @@ Document::Document(
 			_drawTtl = CreateTtlPaintCallback(lifetime, [=] { repaint(); });
 		} else if (!_parent->data()->out()) {
 			const auto &data = &_parent->data()->history()->owner();
-			_parent->data()->removeFromSharedMediaIndex();
 			setDocumentLinks(_data, realParent, [=] {
 				const auto &settings = AyuSettings::getInstance();
 				if (!settings.saveDeletedMessages()) {
