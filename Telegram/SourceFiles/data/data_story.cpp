@@ -29,6 +29,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 #include "ui/color_int_conversion.h"
 
+#include <cmath>
+
 namespace Data {
 namespace {
 
@@ -36,13 +38,24 @@ using UpdateFlag = StoryUpdate::Flag;
 
 [[nodiscard]] StoryArea ParseArea(const MTPMediaAreaCoordinates &area) {
 	const auto &data = area.data();
+	const auto valid = [](float64 value) {
+		return (value >= 0.) && (value <= 100.);
+	};
+	if (!valid(data.vx().v)
+		|| !valid(data.vy().v)
+		|| !valid(data.vw().v)
+		|| !valid(data.vh().v)) {
+		return {};
+	}
 	const auto center = QPointF(data.vx().v, data.vy().v);
 	const auto size = QSizeF(data.vw().v, data.vh().v);
 	const auto corner = center - QPointF(size.width(), size.height()) / 2.;
+	const auto rotation = data.vrotation().v;
+	const auto radius = data.vradius().value_or_empty();
 	return {
 		.geometry = { corner / 100., size / 100. },
-		.rotation = data.vrotation().v,
-		.radius = data.vradius().value_or_empty(),
+		.rotation = std::isfinite(rotation) ? std::fmod(rotation, 360.) : 0.,
+		.radius = valid(radius) ? radius : 0.,
 	};
 }
 
