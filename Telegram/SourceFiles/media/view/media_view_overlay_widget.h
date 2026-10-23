@@ -591,6 +591,7 @@ private:
 	void tryStartTextRecognition();
 	void startTextRecognition();
 	void closeRecognitionPicker();
+	void refreshRecognitionResult();
 
 	[[nodiscard]] bool hasCopyMediaRestriction(
 		bool skipPremiumCheck = false) const;
