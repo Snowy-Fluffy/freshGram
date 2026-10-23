@@ -1416,8 +1416,8 @@ struct Poll::Header : public Poll::Part {
 		int right,
 		int top,
 		const PaintContext &context) const;
-	void showSolution() const;
-	void solutionToggled(
+	bool showSolution() const;
+	bool solutionToggled(
 		bool solutionShown,
 		anim::type animated = anim::type::normal) const;
 	[[nodiscard]] bool canShowSolution() const;
@@ -2992,13 +2992,12 @@ void Poll::Options::checkQuizAnswered() {
 	}
 }
 
-void Poll::Header::showSolution() const {
-	if (!_owner->_poll->solution.text.isEmpty()) {
-		solutionToggled(true);
-	}
+bool Poll::Header::showSolution() const {
+	return !_owner->_poll->solution.text.isEmpty()
+		&& solutionToggled(true);
 }
 
-void Poll::Header::solutionToggled(
+bool Poll::Header::solutionToggled(
 		bool solutionShown,
 		anim::type animated) const {
 	_solutionShown = solutionShown;
@@ -3009,7 +3008,7 @@ void Poll::Header::solutionToggled(
 			_solutionButtonAnimation.stop();
 			_owner->repaint();
 		}
-		return;
+		return false;
 	}
 	_solutionButtonVisible = visible;
 	if (animated == anim::type::instant) {
@@ -3021,7 +3020,7 @@ void Poll::Header::solutionToggled(
 			visible ? 1. : 0.,
 			st::fadeWrapDuration);
 	}
-	_owner->history()->owner().requestViewResize(_owner->_parent);
+	return true;
 }
 
 void Poll::Header::updateRecentVoters() {
@@ -3549,7 +3548,12 @@ void Poll::Header::paintShowSolution(
 	}
 	if (!_showSolutionLink) {
 		_showSolutionLink = std::make_shared<LambdaClickHandler>(
-			crl::guard(_owner, [=] { _owner->_headerPart->showSolution(); }));
+			crl::guard(_owner, [=] {
+				if (_owner->_headerPart->showSolution()) {
+					_owner->history()->owner().requestViewResize(
+						_owner->_parent);
+				}
+			}));
 	}
 	const auto stm = context.messageStyle();
 	const auto &icon = stm->historyQuizExplain;
@@ -3578,9 +3582,12 @@ void Poll::Header::paintSolutionBlock(
 	}
 	if (!_closeSolutionLink) {
 		_closeSolutionLink = std::make_shared<LambdaClickHandler>(
-			crl::guard(
-				_owner,
-				[=] { _owner->_headerPart->solutionToggled(false); }));
+			crl::guard(_owner, [=] {
+				if (_owner->_headerPart->solutionToggled(false)) {
+					_owner->history()->owner().requestViewResize(
+						_owner->_parent);
+				}
+			}));
 	}
 
 	const auto &qst = st::historyPagePreview;
