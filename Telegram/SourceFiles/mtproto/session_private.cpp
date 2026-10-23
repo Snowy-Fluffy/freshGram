@@ -2674,9 +2674,13 @@ void SessionPrivate::onError(
 		LOG(("Protocol Error: -429 flood code returned!"));
 	} else if (errorCode == -444) {
 		LOG(("Protocol Error: -444 bad dc_id code returned!"));
-		InvokeQueued(_instance, [instance = _instance] {
-			instance->badConfigurationError();
-		});
+		const auto &proxy = _options->proxy;
+		if (proxy.type == ProxyData::Type::Mtproto
+			|| proxy.type == ProxyData::Type::Web) {
+			InvokeQueued(_instance, [instance = _instance, proxy] {
+				instance->badConfigurationError(proxy);
+			});
+		}
 	}
 	removeTestConnection(connection);
 
