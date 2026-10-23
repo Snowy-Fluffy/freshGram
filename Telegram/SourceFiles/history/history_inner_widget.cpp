@@ -3505,7 +3505,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					(isUponSelected > 1
 						? tr::lng_context_copy_selected_items(tr::now)
 						: tr::lng_context_copy_selected(tr::now)),
-					[=] { copySelectedText(); },
+					[=] {
+						copySelectedText();
+						if (hasSelectedItems()) {
+							clearSelected();
+						}
+					},
 					&st::menuIconCopy);
 			}
 			if (item && !Ui::SkipTranslate(selectedText.rich)) {
@@ -3673,7 +3678,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					((isUponSelected > 1)
 						? tr::lng_context_copy_selected_items(tr::now)
 						: tr::lng_context_copy_selected(tr::now)),
-					[=] { copySelectedText(); },
+					[=] {
+						copySelectedText();
+						if (hasSelectedItems()) {
+							clearSelected();
+						}
+					},
 					&st::menuIconCopy);
 			}
 			if (item && !Ui::SkipTranslate(selectedText.rich)) {
