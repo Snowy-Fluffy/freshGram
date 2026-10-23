@@ -120,7 +120,9 @@ QString FileNameUnsafe(
 		bool savingAs,
 		const QDir &dir) {
 	name = base::FileNameFromUserString(name);
-	if (Core::App().settings().askDownloadPath() || savingAs) {
+	const auto toDirectory = !savingAs && (dir.path() != u"."_q);
+	if (savingAs
+		|| (Core::App().settings().askDownloadPath() && !toDirectory)) {
 		if (!name.isEmpty() && name.at(0) == QChar::fromLatin1('.')) {
 			name = filedialogDefaultName(prefix, name);
 		} else if (dir.path() != u"."_q) {
@@ -174,16 +176,15 @@ QString FileNameUnsafe(
 			return path;
 		}
 	}();
+	if (toDirectory) {
+		path = dir.absolutePath() + '/';
+	}
 	if (path.isEmpty()) return QString();
 	if (name.isEmpty()) name = u".unknown"_q;
 	if (name.at(0) == QChar::fromLatin1('.')) {
 		if (!QDir().exists(path)) QDir().mkpath(path);
 		return filedialogDefaultName(prefix, name, path);
 	}
-	if (dir.path() != u"."_q) {
-		path = dir.absolutePath() + '/';
-	}
-
 	QString nameStart, extension;
 	int32 extPos = name.lastIndexOf('.');
 	if (extPos >= 0) {
@@ -236,8 +237,11 @@ QString DocumentFileNameForSave(
 		bool forceSavingAs,
 		const QString &already,
 		const QDir &dir) {
-	auto alreadySavingFilename = data->loadingFilePath();
-	if (!alreadySavingFilename.isEmpty()) {
+	const auto toDirectory = !forceSavingAs && (dir.path() != u"."_q);
+	const auto alreadySavingFilename = data->loadingFilePath();
+	if (!alreadySavingFilename.isEmpty()
+		&& (!toDirectory
+			|| QFileInfo(alreadySavingFilename).absoluteDir() == dir)) {
 		return alreadySavingFilename;
 	}
 
@@ -1246,12 +1250,19 @@ void DocumentData::save(
 					mediaKey(),
 					Core::FileLocation(toFile));
 			} else if (l.accessEnable()) {
+				auto copied = false;
 				const auto &alreadyName = l.name();
 				if (alreadyName != toFile) {
 					QFile(toFile).remove();
-					QFile(alreadyName).copy(toFile);
+					copied = QFile(alreadyName).copy(toFile);
 				}
 				l.accessDisable();
+				if (copied) {
+					setLocation(Core::FileLocation(toFile));
+					session().local().writeFileLocation(
+						mediaKey(),
+						Core::FileLocation(toFile));
+				}
 			}
 		}
 		return;
