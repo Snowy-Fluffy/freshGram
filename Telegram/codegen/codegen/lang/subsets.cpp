@@ -9,6 +9,7 @@
 #include "codegen/common/logging.h"
 
 #include <algorithm>
+#include <cstring>
 #include <map>
 #include <set>
 #include <vector>
@@ -29,7 +30,7 @@ constexpr int kErrorCantReadKeys    = 831;
 constexpr int kErrorCantReadSource  = 832;
 constexpr int kErrorCantWriteSubset = 833;
 
-constexpr auto kCacheVersion = quint32(1);
+constexpr auto kCacheVersion = quint32(2);
 
 const auto kKeysFile = QString("lang_auto_keys.h");
 const auto kSubsetsFolder = QString("lang_subsets");
@@ -43,6 +44,16 @@ const auto kPhraseUsage = QByteArray("phrase<");
 		|| (ch >= 'A' && ch <= 'Z')
 		|| (ch >= '0' && ch <= '9')
 		|| (ch == '_');
+}
+
+[[nodiscard]] qsizetype KeyPrefixLength(const char *data, qsizetype left) {
+	for (const auto prefix : { "lng_", "ayu_", "fresh_" }) {
+		const auto length = qsizetype(qstrlen(prefix));
+		if (left > length && !memcmp(data, prefix, length)) {
+			return length;
+		}
+	}
+	return 0;
 }
 
 struct Declarations {
@@ -193,15 +204,12 @@ void Scan(const QByteArray &content, Scanned &result) {
 	const auto data = content.constData();
 	const auto size = content.size();
 	for (auto i = qsizetype(0); i + 4 < size; ++i) {
-		const auto isKeyPrefix = (data[i] == 'l' && data[i + 1] == 'n'
-			&& data[i + 2] == 'g' && data[i + 3] == '_')
-			|| (data[i] == 'a' && data[i + 1] == 'y'
-				&& data[i + 2] == 'u' && data[i + 3] == '_');
-		if (!isKeyPrefix
+		const auto prefix = KeyPrefixLength(data + i, size - i);
+		if (!prefix
 			|| (i > 0 && IsIdentifierChar(data[i - 1]))) {
 			continue;
 		}
-		auto till = i + 4;
+		auto till = i + prefix;
 		while (till != size && IsIdentifierChar(data[till])) {
 			++till;
 		}
