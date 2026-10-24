@@ -193,18 +193,8 @@ void OfferDownload(
 		});
 		return;
 	}
-	const auto status = FreshPlugins::CurrentRuntimeStatus();
 	controller->show(Ui::MakeConfirmBox({
-		.text = tr::fresh_PluginsDownloadText(
-			tr::now,
-			lt_wasmtime,
-			status.remoteWasmtime,
-			lt_python,
-			status.remotePython,
-			lt_channel,
-			FreshPlugins::RuntimeChannel(),
-			lt_size,
-			SizeText(status.remoteSize)),
+		.text = tr::fresh_PluginsDownloadText(tr::now),
 		.confirmed = [=](Fn<void()> &&close) {
 			close();
 			FreshPlugins::DownloadRuntime([=](bool ok) {

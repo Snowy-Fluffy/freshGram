@@ -152,7 +152,7 @@
 "fresh_PluginsUpToDate" = "已是最新";
 "fresh_PluginsUpdateAvailable" = "更新：Wasmtime {wasmtime}，Python {python}（{size}）";
 "fresh_PluginsDownloadTitle" = "下载插件组件";
-"fresh_PluginsDownloadText" = "将从 Telegram 频道 @{channel} 一并下载 Wasmtime {wasmtime} 和 Python {python}，约 {size}。文件会通过签名和哈希校验。";
+"fresh_PluginsDownloadText" = "下载插件组件？";
 "fresh_PluginsDownload" = "下载";
 "fresh_PluginsDownloading" = "正在下载… {percent}";
 "fresh_PluginsInstalling" = "正在安装…";
