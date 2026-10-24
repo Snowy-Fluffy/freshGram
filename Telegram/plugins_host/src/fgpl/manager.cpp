@@ -854,6 +854,11 @@ std::vector<PluginInfo> PluginManager::list() const {
 				? parsed->testedWith->text()
 				: std::string();
 			info.outdated = Outdated(*parsed, _config.environment);
+		} else {
+			const auto opened = openInstalled(record.id, record.current, record.archiveHash);
+			info.problem = opened.ok()
+				? std::string("the manifest cannot be read")
+				: opened.error();
 		}
 		auto running = false;
 		for (const auto &instance : _instances) {

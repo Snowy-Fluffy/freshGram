@@ -159,6 +159,7 @@ struct PluginInfo {
 	bool signedPackage = false;
 	std::string publisher;
 	std::string disabledReason;
+	std::string problem;
 	PluginStatus status = PluginStatus::Stopped;
 	std::vector<PermissionRequest> requests;
 	std::vector<CompatIssue> issues;
