@@ -385,6 +385,7 @@ const std::set<std::string> &KnownPermissions() {
 		"contacts.list", "settings.read", "folders.list", "ui.menu",
 		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",
 		"ui.toast", "notifications", "net.https", "net.tcp", "net.udp", "storage.private",
+		"plugins.message",
 		"fs.user_selected", "clipboard", "background",
 	};
 	return known;
@@ -565,7 +566,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				const auto name = item.asText();
 				if (!name
 					|| (*name != "startup" && *name != "command" && *name != "event"
-						&& *name != "menu" && *name != "settings")) {
+						&& *name != "menu" && *name != "settings" && *name != "message")) {
 					reader.error("activation.on", "has an unknown trigger");
 				} else {
 					manifest.activation.insert(*name);
@@ -612,7 +613,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
-			"events", "menus", "commands", "settingsPage", "outgoing" })) {
+			"events", "menus", "commands", "settingsPage", "outgoing", "messages" })) {
 		const auto events = reader.array(*contributes, "events", "contributes", 16);
 		for (const auto &item : events ? *events : cbor::Array()) {
 			const auto name = item.asText();
@@ -664,6 +665,17 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			manifest.commands.push_back(std::move(command));
 		}
 		manifest.settingsPage = reader.boolean(*contributes, "settingsPage", "contributes").value_or(false);
+		if (const auto messages = reader.object(*contributes, "messages", "contributes", false, { "from" })) {
+			const auto from = reader.array(*messages, "from", "contributes.messages", 64);
+			for (const auto &item : from ? *from : cbor::Array()) {
+				const auto sender = item.asText();
+				if (!sender || (*sender != "*" && !ValidId(*sender))) {
+					reader.error("contributes.messages.from", "must list plugin ids or '*'");
+				} else {
+					manifest.messagesFrom.push_back(*sender);
+				}
+			}
+		}
 		if (const auto outgoing = reader.object(*contributes, "outgoing", "contributes", false, { "onFailure" })) {
 			manifest.outgoing = reader.text(*outgoing, "onFailure", "contributes.outgoing", false, 8).value_or("pass");
 			if (manifest.outgoing != "pass" && manifest.outgoing != "block") {
@@ -743,6 +755,9 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 	if (manifest.background && !hasPermission("background")) {
 		reader.error("activation.background", "needs the background permission");
+	}
+	if (!manifest.messagesFrom.empty() && !hasPermission("plugins.message")) {
+		reader.error("contributes.messages", "needs the plugins.message permission");
 	}
 	if (!manifest.outgoing.empty() && !hasPermission("messages.transform_outgoing")) {
 		reader.error("contributes.outgoing", "needs the messages.transform_outgoing permission");

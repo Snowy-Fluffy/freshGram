@@ -207,6 +207,20 @@ class _Messages:
         _request("messages.set_outgoing", text=text)
 
 
+class _Plugins:
+    def send(self, to, data=None):
+        """Send data to another plugin (plugins.message on both sides).
+
+        The other plugin must list this plugin (or "*") in
+        contributes.messages.from; it receives a plugin.message event.
+        """
+        _request("plugins.send", to=to, data=data)
+
+    def peers(self):
+        """Plugins this plugin may send messages to."""
+        return _request("plugins.peers")
+
+
 class _Contacts:
     def list(self, limit=200):
         return _request("contacts.list", limit=limit)
@@ -254,6 +268,7 @@ messages = _Messages()
 account = _Account()
 stars = _Stars()
 composer = _Composer()
+plugins = _Plugins()
 contacts = _Contacts()
 folders = _Folders()
 settings = _Settings()
@@ -300,6 +315,16 @@ def on_command(name):
             if event.get("name") == name:
                 function(event)
         _event_handlers.append(("command", wrapper))
+        return function
+    return register
+
+
+def on_plugin_message(sender=None):
+    def register(function):
+        def wrapper(event):
+            if sender is None or event.get("from") == sender:
+                function(event.get("from"), event.get("data"))
+        _event_handlers.append(("plugin.message", wrapper))
         return function
     return register
 

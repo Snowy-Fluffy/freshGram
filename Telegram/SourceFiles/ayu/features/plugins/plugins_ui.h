@@ -38,6 +38,7 @@ void ShowPluginDialog(
 	const fgpl::cbor::Value *page);
 
 [[nodiscard]] QString PermissionLabel(const std::string &id);
+[[nodiscard]] QString AcceptsFrom(const std::vector<std::string> &senders);
 void AddPermissionDanger(
 	not_null<Ui::VerticalLayout*> layout,
 	const std::string &id,

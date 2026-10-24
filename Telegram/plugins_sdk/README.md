@@ -44,6 +44,8 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `messages.set_outgoing` `{text}` | `messages.transform_outgoing` | only while handling `message.outgoing` |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
+| `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
+| `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
 | `chats.list`, `chat.info` | `chats.list`, `chat.info` | secret chats and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before}` | `messages.history` | limit up to 100; chat must be in scope |
 | `messages.send` `{chat, text}` | `messages.send` | |
@@ -77,10 +79,26 @@ this event. It has about a second; `contributes.outgoing.onFailure` says what
 happens when it fails or is late: `pass` sends the text unchanged, `block` stops
 the message and puts it back into the input field.
 
+## Messages between plugins
+
+Plugins never talk to each other directly: a message goes through the app, which
+checks both sides. The sender needs `plugins.message`; the receiver needs
+`plugins.message` too and lists who may write to it in
+`contributes.messages.from` (plugin ids, or `"*"` for anyone). The receiver gets
+`plugin.message` `{from, data}`, is started for it when `activation.on` includes
+`message` (the default), and answers, if it wants to, with its own
+`plugins.send`. Messages stay within one account.
+
+```python
+@freshgram.on_plugin_message("com.example.sender")
+def got(sender, data):
+    freshgram.plugins.send(sender, {"echo": data})
+```
+
 ## Activation and unloading
 
 `activation.on` lists what may start the plugin: `startup`, `event`, `command`,
-`menu`, `settings` (the default is all of them except `startup`). Plugins that
+`menu`, `settings`, `message` (the default is all of them except `startup`). Plugins that
 change outgoing messages or run in the background start with the app. A plugin
 calls `plugin.unload` when it has nothing to do; it is stopped after the
 current event and started again by its next activation, so it costs no memory

@@ -204,6 +204,13 @@ void FillInstallBox(
 		return;
 	}
 
+	if (!manifest.messagesFrom.empty()) {
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			AyuPlugins::AcceptsFrom(manifest.messagesFrom),
+			st::boxDividerLabel));
+	}
+
 	auto contributes = QStringList();
 	if (!manifest.menus.empty()) {
 		contributes.push_back(tr::ayu_PluginContribMenus(tr::now));
