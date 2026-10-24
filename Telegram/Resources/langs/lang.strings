@@ -8876,6 +8876,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_PluginsDescription" = "Plugins run in a separate sandboxed process and can use only what you allow them.";
 "ayu_PluginsNoRuntime" = "The plugin components are not installed yet.";
 "ayu_PluginsNoSandbox" = "Plugins need Landlock to run in their sandbox, and this system does not provide it. Use Linux 5.13 or newer with Landlock enabled.";
+"ayu_PluginPermissionsAllAccounts" = "The permissions and data of a plugin are shared by all your accounts.";
 "ayu_PermissionPluginsMessage" = "plugins.message: exchange messages with other plugins";
 "ayu_PluginAcceptsFrom" = "Accepts messages from: {list}";
 "ayu_PluginAcceptsAny" = "any plugin";

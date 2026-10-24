@@ -90,6 +90,7 @@
 "ayu_PluginsDescription" = "Plugins laufen in einem separaten, isolierten Prozess und können nur nutzen, was du ihnen erlaubst.";
 "ayu_PluginsNoRuntime" = "Die Plugin-Komponenten sind noch nicht installiert.";
 "ayu_PluginsNoSandbox" = "Plugins brauchen Landlock, um in ihrer Sandbox zu laufen, und dieses System bietet es nicht. Nutze Linux 5.13 oder neuer mit aktiviertem Landlock.";
+"ayu_PluginPermissionsAllAccounts" = "Berechtigungen und Daten eines Plugins gelten für alle deine Konten.";
 "ayu_PermissionPluginsMessage" = "plugins.message: Nachrichten mit anderen Plugins austauschen";
 "ayu_PluginAcceptsFrom" = "Nimmt Nachrichten an von: {list}";
 "ayu_PluginAcceptsAny" = "jedem Plugin";

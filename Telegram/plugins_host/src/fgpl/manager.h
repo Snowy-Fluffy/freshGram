@@ -28,6 +28,26 @@ struct LogRing {
 	std::deque<std::string> lines;
 };
 
+class SharedStorage final : public Storage {
+public:
+	explicit SharedStorage(std::filesystem::path file);
+
+	std::optional<cbor::Bytes> get(const std::string &key) override;
+	void set(const std::string &key, cbor::Bytes value) override;
+	bool remove(const std::string &key) override;
+	std::vector<std::string> keys(
+		const std::string &prefix,
+		size_t limit) override;
+	uint64_t usedBytes() override;
+	size_t count() override;
+	bool flush();
+	void discard();
+
+private:
+	std::mutex _mutex;
+	std::unique_ptr<FileStorage> _storage;
+
+};
 
 struct PythonRuntime {
 	std::filesystem::path wasm;
@@ -256,6 +276,8 @@ private:
 		std::string previousArchiveHash;
 		std::string disabledReason;
 		std::map<std::string, StoredGrant> grants;
+		std::shared_ptr<SharedStorage> store;
+		std::shared_ptr<std::mutex> serial = std::make_shared<std::mutex>();
 		PluginStats stats;
 		std::deque<int64_t> failures;
 		std::shared_ptr<LogRing> log = std::make_shared<LogRing>();
@@ -287,7 +309,8 @@ private:
 		std::string id;
 		std::string account;
 		uint64_t generation = 0;
-		std::unique_ptr<FileStorage> storage;
+		std::shared_ptr<SharedStorage> storage;
+		std::shared_ptr<std::mutex> serial;
 		std::unique_ptr<Broker> broker;
 		std::unique_ptr<HostClient> client;
 		StartPlan plan;
@@ -357,6 +380,7 @@ private:
 		const std::string &account,
 		const char *trigger = nullptr);
 	[[nodiscard]] Instance *running(const std::string &id, const std::string &account);
+	[[nodiscard]] std::shared_ptr<SharedStorage> storeOf(Record &record);
 	[[nodiscard]] bool activatedBy(const Record &record, const char *trigger) const;
 	void sampleUsage(Record &record, const Instance &instance);
 	[[nodiscard]] Result<std::unique_ptr<Instance>, std::string> prepare(

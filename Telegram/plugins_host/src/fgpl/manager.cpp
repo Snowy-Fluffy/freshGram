@@ -19,6 +19,7 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr auto kMaxMail = size_t(1024);
+constexpr auto kAllAccounts = "*";
 
 [[nodiscard]] size_t EncodedSize(const cbor::Value &event);
 
@@ -189,7 +190,7 @@ void PluginManager::rebuildRoutes() {
 		if (!parsed) {
 			continue;
 		}
-		for (const auto &[account, grant] : record.grants) {
+		for (const auto &[key, grant] : record.grants) {
 			if (!grant.granted.contains("plugins.message")) {
 				continue;
 			}
@@ -201,7 +202,7 @@ void PluginManager::rebuildRoutes() {
 					entry.from.insert(sender);
 				}
 			}
-			routes[account][id] = std::move(entry);
+			routes[key][id] = std::move(entry);
 		}
 	}
 	const auto lock = std::scoped_lock(_routesMutex);
@@ -215,7 +216,7 @@ std::string PluginManager::route(
 		cbor::Value data) {
 	{
 		const auto lock = std::scoped_lock(_routesMutex);
-		const auto plugins = _routes.find(account);
+		const auto plugins = _routes.find(kAllAccounts);
 		if (plugins == _routes.end() || !plugins->second.contains(from)) {
 			return api::error::kDenied;
 		}
@@ -241,8 +242,11 @@ std::vector<std::string> PluginManager::peers(
 		const std::string &from,
 		const std::string &account) const {
 	auto result = std::vector<std::string>();
+	if (!ValidAccount(account)) {
+		return result;
+	}
 	const auto lock = std::scoped_lock(_routesMutex);
-	const auto plugins = _routes.find(account);
+	const auto plugins = _routes.find(kAllAccounts);
 	if (plugins == _routes.end() || !plugins->second.contains(from)) {
 		return result;
 	}
@@ -370,8 +374,10 @@ void PluginManager::loadState() {
 			const auto pending = entry.value.find("pending");
 			record.pendingUpdate = pending && pending->asBool().value_or(false);
 			const auto grants = entry.value.find("grants");
+			auto merged = std::optional<StoredGrant>();
 			for (const auto &grant : (grants && grants->asMap()) ? *grants->asMap() : cbor::Map()) {
-				if (!ValidAccount(grant.key) || !grant.value.asMap()) {
+				if ((grant.key != kAllAccounts && !ValidAccount(grant.key))
+					|| !grant.value.asMap()) {
 					continue;
 				}
 				auto stored = StoredGrant();
@@ -390,7 +396,28 @@ void PluginManager::loadState() {
 						}
 					}
 				}
-				record.grants.emplace(grant.key, std::move(stored));
+				if (grant.key == kAllAccounts || !merged) {
+					merged = std::move(stored);
+					if (grant.key == kAllAccounts) {
+						break;
+					}
+					continue;
+				}
+				std::erase_if(merged->granted, [&](const std::string &id) {
+					return !stored.granted.contains(id);
+				});
+				if (stored.chats) {
+					if (!merged->chats) {
+						merged->chats = stored.chats;
+					} else {
+						std::erase_if(*merged->chats, [&](int64_t chat) {
+							return !stored.chats->contains(chat);
+						});
+					}
+				}
+			}
+			if (merged) {
+				record.grants.emplace(kAllAccounts, std::move(*merged));
 			}
 		}
 		_records.emplace(record.id, std::move(record));
@@ -689,6 +716,9 @@ bool PluginManager::uninstall(const std::string &id, bool removeData) {
 		return false;
 	}
 	stopPlugin(id);
+	if (found->second.store) {
+		found->second.store->discard();
+	}
 	auto error = std::error_code();
 	if (removeData) {
 		fs::remove_all(_config.root / id, error);
@@ -756,7 +786,8 @@ bool PluginManager::grant(
 		}
 	}
 	stored.chats = decision.chats;
-	record.grants[account] = std::move(stored);
+	record.grants.clear();
+	record.grants[kAllAccounts] = std::move(stored);
 	stop({ id, account });
 	saveState();
 	return true;
@@ -766,10 +797,10 @@ std::optional<GrantDecision> PluginManager::grants(
 		const std::string &id,
 		const std::string &account) const {
 	const auto found = _records.find(id);
-	if (found == _records.end()) {
+	if (found == _records.end() || !ValidAccount(account)) {
 		return std::nullopt;
 	}
-	const auto grant = found->second.grants.find(account);
+	const auto grant = found->second.grants.find(kAllAccounts);
 	if (grant == found->second.grants.end()) {
 		return std::nullopt;
 	}
@@ -858,12 +889,12 @@ std::vector<Contribution> PluginManager::contributions(
 		const std::string &account,
 		const std::string &language) const {
 	auto result = std::vector<Contribution>();
-	if (_hidden || _locked) {
+	if (_hidden || _locked || !ValidAccount(account)) {
 		return result;
 	}
 	for (const auto &item : _records) {
 		const auto &record = item.second;
-		const auto grant = record.grants.find(account);
+		const auto grant = record.grants.find(kAllAccounts);
 		if (!record.enabled || grant == record.grants.end()) {
 			continue;
 		}
@@ -910,7 +941,7 @@ bool PluginManager::send(
 		return false;
 	}
 	auto &record = found->second;
-	const auto grant = record.grants.find(account);
+	const auto grant = record.grants.find(kAllAccounts);
 	const auto typeField = event.find("type");
 	const auto type = typeField ? typeField->asText() : nullptr;
 	if (!record.enabled || grant == record.grants.end() || !type) {
@@ -1052,9 +1083,9 @@ Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	if (!CheckCompatibility(package.manifest, _config.environment).empty()) {
 		return std::string("the plugin is not compatible with this version");
 	}
-	const auto grant = record.grants.find(account);
+	const auto grant = record.grants.find(kAllAccounts);
 	if (grant == record.grants.end()) {
-		return std::string("no permissions were granted for this account");
+		return std::string("no permissions were granted");
 	}
 	auto request = buildRequest(package);
 	if (!request.ok()) {
@@ -1065,8 +1096,8 @@ Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	instance->id = record.id;
 	instance->account = account;
 	instance->generation = _nextGeneration++;
-	instance->storage = std::make_unique<FileStorage>(
-		_config.root / record.id / "data" / account / "store.cbor");
+	instance->storage = storeOf(record);
+	instance->serial = record.serial;
 	auto services = BrokerServices();
 	services.storage = instance->storage.get();
 	services.data = _config.services.dataFor
@@ -1207,10 +1238,14 @@ void PluginManager::run(Instance &instance) {
 				&instance.cancel);
 			if (!loaded.ok()) {
 				problem = "the module did not load: " + loaded.error().detail;
-			} else if (const auto init = instance.client->init(
+			} else {
+				const auto serial = std::scoped_lock(*instance.serial);
+				const auto init = instance.client->init(
 					instance.plan.init,
-					*instance.broker); !init.ok()) {
-				problem = "the plugin failed to start: " + init.error().detail;
+					*instance.broker);
+				if (!init.ok()) {
+					problem = "the plugin failed to start: " + init.error().detail;
+				}
 			}
 		}
 	}
@@ -1260,10 +1295,12 @@ void PluginManager::run(Instance &instance) {
 			}
 			instance.busy = true;
 		}
+		auto serial = std::unique_lock(*instance.serial);
 		if (outgoing) {
 			instance.broker->beginOutgoing();
 		}
 		const auto result = instance.client->deliver(event, *instance.broker);
+		serial.unlock();
 		if (outgoing) {
 			const auto text = instance.broker->finishOutgoing();
 			const auto lock = std::scoped_lock(outgoing->mutex);
@@ -1295,6 +1332,80 @@ void PluginManager::run(Instance &instance) {
 			: result.error().detail);
 		return;
 	}
+}
+
+SharedStorage::SharedStorage(fs::path file)
+: _storage(std::make_unique<FileStorage>(std::move(file))) {
+}
+
+std::optional<cbor::Bytes> SharedStorage::get(const std::string &key) {
+	const auto lock = std::scoped_lock(_mutex);
+	return _storage ? _storage->get(key) : std::nullopt;
+}
+
+void SharedStorage::set(const std::string &key, cbor::Bytes value) {
+	const auto lock = std::scoped_lock(_mutex);
+	if (_storage) {
+		_storage->set(key, std::move(value));
+	}
+}
+
+bool SharedStorage::remove(const std::string &key) {
+	const auto lock = std::scoped_lock(_mutex);
+	return _storage && _storage->remove(key);
+}
+
+std::vector<std::string> SharedStorage::keys(const std::string &prefix, size_t limit) {
+	const auto lock = std::scoped_lock(_mutex);
+	return _storage ? _storage->keys(prefix, limit) : std::vector<std::string>();
+}
+
+uint64_t SharedStorage::usedBytes() {
+	const auto lock = std::scoped_lock(_mutex);
+	return _storage ? _storage->usedBytes() : 0;
+}
+
+size_t SharedStorage::count() {
+	const auto lock = std::scoped_lock(_mutex);
+	return _storage ? _storage->count() : 0;
+}
+
+bool SharedStorage::flush() {
+	const auto lock = std::scoped_lock(_mutex);
+	return !_storage || _storage->flush();
+}
+
+void SharedStorage::discard() {
+	const auto lock = std::scoped_lock(_mutex);
+	_storage = nullptr;
+}
+
+std::shared_ptr<SharedStorage> PluginManager::storeOf(Record &record) {
+	if (record.store) {
+		return record.store;
+	}
+	const auto data = _config.root / record.id / "data";
+	const auto file = data / "store.cbor";
+	auto error = std::error_code();
+	if (!fs::exists(file, error)) {
+		auto newest = fs::path();
+		auto newestTime = fs::file_time_type::min();
+		for (const auto &entry : fs::directory_iterator(data, error)) {
+			const auto old = entry.path() / "store.cbor";
+			if (entry.is_directory(error) && fs::exists(old, error)) {
+				const auto time = fs::last_write_time(old, error);
+				if (!error && (newest.empty() || time > newestTime)) {
+					newest = old;
+					newestTime = time;
+				}
+			}
+		}
+		if (!newest.empty()) {
+			fs::copy_file(newest, file, error);
+		}
+	}
+	record.store = std::make_shared<SharedStorage>(file);
+	return record.store;
 }
 
 bool PluginManager::wantsEvents() const {
@@ -1350,7 +1461,7 @@ PluginManager::Instance *PluginManager::ensure(
 	}
 	if (trigger && !activatedBy(record, trigger)) {
 		return nullptr;
-	} else if (!mayRun() || !record.enabled || !record.grants.contains(account)) {
+	} else if (!mayRun() || !record.enabled || !record.grants.contains(kAllAccounts)) {
 		return nullptr;
 	} else if (const auto gate = _notBefore.find(key);
 		gate != _notBefore.end() && now() < gate->second) {
@@ -1518,7 +1629,7 @@ DispatchReport PluginManager::dispatch(
 			continue;
 		}
 		auto &record = found->second;
-		if (!record.enabled || !record.grants.contains(account)) {
+		if (!record.enabled || !record.grants.contains(kAllAccounts)) {
 			continue;
 		}
 		const auto parsed = manifest(id);
@@ -1618,7 +1729,7 @@ OutgoingResult PluginManager::transformOutgoing(
 	pump();
 	for (auto &item : _records) {
 		auto &record = item.second;
-		const auto grant = record.grants.find(account);
+		const auto grant = record.grants.find(kAllAccounts);
 		const auto parsed = manifest(record.id);
 		if (!record.enabled
 			|| grant == record.grants.end()
@@ -1701,10 +1812,6 @@ void PluginManager::onLogout(const std::string &account) {
 		}
 	}
 	stopMany(keys);
-	for (auto &item : _records) {
-		item.second.grants.erase(account);
-	}
-	saveState();
 }
 
 void PluginManager::shutdown() {

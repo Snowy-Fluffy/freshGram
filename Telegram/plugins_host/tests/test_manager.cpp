@@ -1,6 +1,9 @@
 #include "check.h"
 #include "fakes.h"
+#include "fgpl/base64.h"
+#include "fgpl/json.h"
 #include "fgpl/manager.h"
+#include "fgpl/sha256.h"
 #include "package_builder.h"
 #include "python_support.h"
 
@@ -146,7 +149,8 @@ struct Lab {
 			const std::string &id,
 			const std::string &account,
 			const std::string &name) const {
-		auto storage = FileStorage(root / "plugins" / id / "data" / account / "store.cbor");
+		(void)account;
+		auto storage = FileStorage(root / "plugins" / id / "data" / "store.cbor");
 		const auto bytes = storage.get(name);
 		if (!bytes) {
 			return std::nullopt;
@@ -398,8 +402,8 @@ void TestLockHiddenAndLogout() {
 	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	CHECK(manager.dispatchAndWait("B", Event()).delivered == 1);
 	CHECK(manager.runningCount() == 2);
-	CHECK(lab.stored(id, "A", "count")->asInt() == 1);
-	CHECK(lab.stored(id, "B", "count")->asInt() == 1);
+	CHECK(manager.grants(id, "B")->granted == manager.grants(id, "A")->granted);
+	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
 
 	manager.onLock();
 	CHECK(manager.runningCount() == 0);
@@ -408,7 +412,7 @@ void TestLockHiddenAndLogout() {
 	manager.onUnlock();
 	CHECK(manager.startEnabled("A").started == 0);
 	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
-	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
+	CHECK(lab.stored(id, "A", "count")->asInt() == 3);
 
 	manager.setHidden(true);
 	CHECK(manager.list().empty());
@@ -419,9 +423,9 @@ void TestLockHiddenAndLogout() {
 	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 
 	manager.onLogout("A");
-	CHECK(!manager.grants(id, "A").has_value());
+	CHECK(manager.runningCount() == 0);
+	CHECK(manager.grants(id, "A").has_value());
 	CHECK(manager.grants(id, "B").has_value());
-	CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 	const auto afterLogout = manager.dispatchAndWait("B", Event());
 	CHECK(afterLogout.delivered == 1);
 	if (afterLogout.delivered != 1) {
@@ -433,7 +437,7 @@ void TestLockHiddenAndLogout() {
 	CHECK(manager.grant(id, "B", { { "messages.read" }, std::nullopt }));
 	const auto restricted = manager.dispatchAndWait("B", Event());
 	CHECK(restricted.delivered == 1);
-	CHECK(lab.stored(id, "B", "count")->asInt() == 2);
+	CHECK(lab.stored(id, "B", "count")->asInt() == 5);
 	if (restricted.delivered != 1) {
 		for (const auto &line : manager.log(id)) {
 			std::fprintf(stderr, "  log: %s\n", line.c_str());
@@ -563,7 +567,7 @@ void TestUiContributions() {
 		CHECK(contributions[0].commands.size() == 1 && contributions[0].commands[0].name == "tr");
 		CHECK(contributions[0].settingsPage);
 	}
-	CHECK(manager.contributions("B", "ru").empty());
+	CHECK(manager.contributions("B", "ru").size() == 1);
 
 	const auto click = [](const char *surface, const char *menuId) {
 		return cbor::Value::FromMap({
@@ -574,7 +578,7 @@ void TestUiContributions() {
 	CHECK(manager.send(id, "A", click("message", "translate")));
 	CHECK(!manager.send(id, "A", click("message", "unknown")));
 	CHECK(!manager.send(id, "A", click("chat", "translate")));
-	CHECK(!manager.send(id, "B", click("message", "translate")));
+	CHECK(manager.send(id, "B", click("message", "translate")));
 	CHECK(!manager.send("com.example.none", "A", click("message", "translate")));
 	CHECK(!manager.send(id, "A", cbor::Value::FromMap({ { "type", Text("message.new") }, { "chat", Int(1) } })));
 	CHECK(manager.send(id, "A", cbor::Value::FromMap({
@@ -807,7 +811,7 @@ void TestManyPluginsAndAccounts() {
 	for (const auto &id : ids) {
 		for (const auto account : { "A", "B" }) {
 			const auto count = lab.stored(id, account, "count");
-			CHECK(count && count->asInt() == 25);
+			CHECK(count && count->asInt() == 50);
 			CHECK(lab.stored(id, account, "last_chat")->asInt() == 25);
 		}
 	}
@@ -979,7 +983,61 @@ void TestPluginsTalkThroughTheApp() {
 	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	CHECK(manager.drain(20000));
 	CHECK(lab.stored(receiver, "A", "count")->asInt() == 1);
-	CHECK(manager.dispatchAndWait("B", Event()).delivered == 0);
+	CHECK(manager.dispatchAndWait("B", Event()).delivered == 1);
+#endif
+}
+
+void TestOldPerAccountStateIsMerged() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-merge");
+	const auto id = std::string("com.example.merged");
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
+		Prepare(manager, id, "A");
+		manager.shutdown();
+	}
+	const auto path = lab.root / "plugins" / "state.json";
+	auto text = std::string();
+	{
+		auto stream = std::ifstream(path);
+		text.assign(std::istreambuf_iterator<char>(stream), {});
+	}
+	auto document = json::Parse(text).value();
+	std::erase_if(*document.asMap(), [](const cbor::MapEntry &entry) {
+		return entry.key == "mac";
+	});
+	for (auto &plugin : *document.asMap()->front().value.asMap()) {
+		for (auto &field : *plugin.value.asMap()) {
+			if (field.key == "grants") {
+				field.value = cbor::Value::FromMap({
+					{ "A", cbor::Value::FromMap({ { "granted", Array({ "messages.read", "storage.private" }) } }) },
+					{ "B", cbor::Value::FromMap({ { "granted", Array({ "messages.read" }) } }) },
+				});
+			}
+		}
+	}
+	const auto canonical = json::Canonical(document);
+	const auto mac = HmacSha256(lab.key, { reinterpret_cast<const uint8_t *>(canonical.data()), canonical.size() });
+	document.asMap()->push_back({ "mac", Text(Base64Encode(mac)) });
+	{
+		auto stream = std::ofstream(path, std::ios::trunc);
+		stream << json::Canonical(document);
+	}
+	{
+		auto old = FileStorage(lab.root / "plugins" / id / "data" / "A" / "store.cbor");
+		auto bytes = cbor::Bytes();
+		CHECK(cbor::Encode(Int(7), bytes, 4));
+		old.set("count", bytes);
+		CHECK(old.flush());
+	}
+	auto manager = PluginManager(lab.config());
+	CHECK(!manager.stateWasTampered());
+	const auto merged = manager.grants(id, "C");
+	CHECK(merged && merged->granted == (std::set<std::string>{ "messages.read" }));
+	CHECK(manager.grant(id, "C", Everything()));
+	CHECK(manager.dispatchAndWait("C", Event()).delivered == 1);
+	CHECK(lab.stored(id, "C", "count") && lab.stored(id, "C", "count")->asInt() == 8);
 #endif
 }
 
@@ -1024,5 +1082,6 @@ int main(int argc, char **argv) {
 	run("outgoing", TestOutgoingTransform);
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);
+	run("merge", TestOldPerAccountStateIsMerged);
 	return Failures() ? 1 : 0;
 }
