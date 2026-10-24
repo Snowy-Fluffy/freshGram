@@ -6,6 +6,8 @@
 #include "fgpl/net_policy.h"
 #endif
 
+#include "crl/crl_async.h"
+
 #include <QtCore/QDeadlineTimer>
 #include <QtCore/QUrl>
 #include <QtNetwork/QHostAddress>
@@ -16,10 +18,19 @@
 #include <QtNetwork/QUdpSocket>
 
 #include <atomic>
+#include <condition_variable>
+#include <cstring>
 #include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
+
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace FreshPlugins {
 
@@ -224,9 +235,53 @@ struct Parsed {
 	}
 }
 
+[[nodiscard]] int Remaining(const QDeadlineTimer &deadline) {
+	return int(std::max<qint64>(1, deadline.remainingTime()));
+}
+
+[[nodiscard]] int Slice(const QDeadlineTimer &deadline) {
+	return std::min(Remaining(deadline), kWaitSliceMs);
+}
+
+[[nodiscard]] fgpl::FetchError Aborted() {
+	return Error("closed", u"the connection was closed"_q);
+}
+
+[[nodiscard]] fgpl::Result<QHostInfo, fgpl::FetchError> Lookup(
+		const QString &host,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	struct State {
+		std::mutex mutex;
+		std::condition_variable done;
+		std::optional<QHostInfo> info;
+	};
+	const auto state = std::make_shared<State>();
+	crl::async([=] {
+		auto info = QHostInfo::fromName(host);
+		{
+			const auto lock = std::scoped_lock(state->mutex);
+			state->info = std::move(info);
+		}
+		state->done.notify_all();
+	});
+	auto lock = std::unique_lock(state->mutex);
+	while (!state->info) {
+		if (entry.killed.load()) {
+			return Aborted();
+		} else if (deadline.hasExpired()) {
+			return Error("timeout", u"the host lookup timed out"_q);
+		}
+		state->done.wait_for(lock, std::chrono::milliseconds(Slice(deadline)));
+	}
+	return *state->info;
+}
+
 [[nodiscard]] fgpl::Result<QHostAddress, fgpl::FetchError> Resolve(
 		const std::string &host,
-		bool ip) {
+		bool ip,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
 	if (ip) {
 		const auto address = QHostAddress(QString::fromStdString(host));
 		if (address.isNull()) {
@@ -234,16 +289,134 @@ struct Parsed {
 		}
 		return address;
 	}
-	const auto lookup = QHostInfo::fromName(QString::fromStdString(host));
-	if (lookup.error() != QHostInfo::NoError || lookup.addresses().isEmpty()) {
+	const auto lookup = Lookup(QString::fromStdString(host), entry, deadline);
+	if (!lookup.ok()) {
+		return lookup.error();
+	}
+	const auto &info = lookup.value();
+	if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
 		return Error("dns", u"the host was not found"_q);
 	}
-	for (const auto &address : lookup.addresses()) {
+	for (const auto &address : info.addresses()) {
 		if (!fgpl::net::IsPublicAddress(address.toString().toStdString())) {
 			return Error("blocked", u"the address is not public"_q);
 		}
 	}
-	return lookup.addresses().front();
+	return info.addresses().front();
+}
+
+[[nodiscard]] fgpl::Result<qintptr, fgpl::FetchError> Connect(
+		const QHostAddress &address,
+		int port,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	auto storage = sockaddr_storage();
+	auto length = socklen_t(0);
+	auto valid = false;
+	if (const auto v4 = address.toIPv4Address(&valid); valid) {
+		auto &in = reinterpret_cast<sockaddr_in&>(storage);
+		in.sin_family = AF_INET;
+		in.sin_port = htons(quint16(port));
+		in.sin_addr.s_addr = htonl(v4);
+		length = sizeof(sockaddr_in);
+	} else if (address.protocol() == QAbstractSocket::IPv6Protocol) {
+		auto &in6 = reinterpret_cast<sockaddr_in6&>(storage);
+		in6.sin6_family = AF_INET6;
+		in6.sin6_port = htons(quint16(port));
+		const auto raw = address.toIPv6Address();
+		std::memcpy(&in6.sin6_addr, &raw, sizeof(raw));
+		length = sizeof(sockaddr_in6);
+	} else {
+		return Error("invalid", u"a bad address"_q);
+	}
+	const auto fd = ::socket(storage.ss_family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	if (fd < 0) {
+		return Error("connect", QString::fromLocal8Bit(std::strerror(errno)));
+	}
+	const auto fail = [&](fgpl::FetchError error) {
+		::close(fd);
+		return error;
+	};
+	if (::connect(fd, reinterpret_cast<const sockaddr*>(&storage), length) != 0
+		&& errno != EINPROGRESS) {
+		return fail(Error("connect", QString::fromLocal8Bit(std::strerror(errno))));
+	}
+	while (true) {
+		if (entry.killed.load()) {
+			return fail(Aborted());
+		} else if (deadline.hasExpired()) {
+			return fail(Error("connect", u"the connection timed out"_q));
+		}
+		auto item = pollfd{ fd, POLLOUT, 0 };
+		const auto ready = ::poll(&item, 1, Slice(deadline));
+		if (ready < 0 && errno != EINTR) {
+			return fail(Error("connect", QString::fromLocal8Bit(std::strerror(errno))));
+		} else if (ready <= 0) {
+			continue;
+		}
+		auto error = 0;
+		auto size = socklen_t(sizeof(error));
+		if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &size) != 0) {
+			error = errno;
+		}
+		if (error) {
+			return fail(Error("connect", QString::fromLocal8Bit(std::strerror(error))));
+		}
+		return qintptr(fd);
+	}
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> Attach(
+		QTcpSocket &socket,
+		const QHostAddress &address,
+		int port,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	const auto connected = Connect(address, port, entry, deadline);
+	if (!connected.ok()) {
+		return connected.error();
+	}
+	socket.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+	if (!socket.setSocketDescriptor(connected.value(), QAbstractSocket::ConnectedState)) {
+		::close(int(connected.value()));
+		return Error("connect", socket.errorString());
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> Encrypt(
+		QSslSocket &socket,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	socket.startClientEncryption();
+	while (!socket.isEncrypted()) {
+		if (entry.killed.load()) {
+			return Aborted();
+		} else if (deadline.hasExpired()) {
+			return Error("tls", u"the handshake timed out"_q);
+		} else if (!socket.waitForEncrypted(Slice(deadline))
+			&& socket.state() != QAbstractSocket::ConnectedState) {
+			return Error("tls", socket.errorString());
+		}
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> Flush(
+		QTcpSocket &socket,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	while (socket.bytesToWrite() > 0) {
+		if (entry.killed.load()) {
+			return Aborted();
+		} else if (deadline.hasExpired()) {
+			return Error("timeout", u"the data was not sent in time"_q);
+		} else if (!socket.waitForBytesWritten(Slice(deadline))
+			&& socket.state() != QAbstractSocket::ConnectedState) {
+			return Error("closed", socket.errorString());
+		}
+	}
+	return std::nullopt;
 }
 
 class NetTransport final : public fgpl::Transport {
@@ -322,22 +495,26 @@ public:
 			const fgpl::NetOwner &owner,
 			const fgpl::SocketRequest &request) override {
 		const auto udp = (request.kind == fgpl::SocketKind::Udp);
-		const auto resolved = Resolve(request.host, request.ip);
-		if (!resolved.ok()) {
-			return resolved.error();
-		}
 		const auto host = QString::fromStdString(request.host);
+		const auto deadline = QDeadlineTimer(request.timeoutMs);
 		auto entry = Register(
 			owner,
 			udp ? u"UDP"_q : request.tls ? u"TLS"_q : u"TCP"_q,
 			host,
 			request.port);
+		const auto failWith = [&](fgpl::FetchError error) {
+			Unregister(entry->id);
+			return error;
+		};
+		const auto fail = [&](const char *code, QString message) {
+			return failWith(Error(code, message));
+		};
+		const auto resolved = Resolve(request.host, request.ip, *entry, deadline);
+		if (!resolved.ok()) {
+			return failWith(resolved.error());
+		}
 		entry->address = resolved.value();
 		entry->tls = request.tls;
-		const auto fail = [&](const char *code, QString message) {
-			Unregister(entry->id);
-			return Error(code, message);
-		};
 		if (udp) {
 			auto socket = std::make_unique<QUdpSocket>();
 			socket->setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
@@ -362,15 +539,12 @@ public:
 		} else {
 			socket = std::make_unique<QTcpSocket>();
 		}
-		socket->setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
-		socket->connectToHost(resolved.value(), quint16(request.port));
-		if (!socket->waitForConnected(request.timeoutMs)) {
-			return fail("connect", socket->errorString());
+		if (const auto error = Attach(*socket, resolved.value(), request.port, *entry, deadline)) {
+			return failWith(*error);
 		}
 		if (const auto secure = dynamic_cast<QSslSocket*>(socket.get())) {
-			secure->startClientEncryption();
-			if (!secure->waitForEncrypted(request.timeoutMs)) {
-				return fail("tls", secure->errorString());
+			if (const auto error = Encrypt(*secure, *entry, deadline)) {
+				return failWith(*error);
 			}
 		}
 		entry->stream = std::move(socket);
@@ -416,13 +590,8 @@ public:
 		if (socket->write(bytes) != bytes.size()) {
 			return Error("write", socket->errorString());
 		}
-		while (socket->bytesToWrite() > 0) {
-			if (entry->killed.load() || deadline.hasExpired()) {
-				return Error("timeout", u"the data was not sent in time"_q);
-			} else if (!socket->waitForBytesWritten(std::min(remaining(deadline), kWaitSliceMs))
-				&& socket->state() != QAbstractSocket::ConnectedState) {
-				return Error("closed", socket->errorString());
-			}
+		if (const auto error = Flush(*socket, *entry, deadline)) {
+			return *error;
 		}
 		entry->sent += uint64(bytes.size());
 		return data.size();
@@ -464,7 +633,7 @@ public:
 				} else if (deadline.hasExpired()) {
 					return result;
 				}
-				socket->waitForReadyRead(std::min(remaining(deadline), kWaitSliceMs));
+				socket->waitForReadyRead(Slice(deadline));
 			}
 		}
 		const auto socket = entry->stream.get();
@@ -474,7 +643,7 @@ public:
 			if (entry->killed.load()) {
 				return Error("closed", u"the connection was closed by the user"_q);
 			}
-			socket->waitForReadyRead(std::min(remaining(deadline), kWaitSliceMs));
+			socket->waitForReadyRead(Slice(deadline));
 		}
 		const auto chunk = socket->read(qint64(maxBytes));
 		entry->received += uint64(chunk.size());
@@ -486,6 +655,17 @@ public:
 
 	void close(int64_t id) override {
 		Unregister(id);
+	}
+
+	void abort(const fgpl::NetOwner &owner) override {
+		auto &registry = GetRegistry();
+		const auto lock = std::scoped_lock(registry.mutex);
+		for (const auto &[id, connection] : registry.connections) {
+			if (connection->owner.plugin == owner.plugin
+				&& connection->owner.account == owner.account) {
+				connection->killed.store(true);
+			}
+		}
 	}
 
 	fgpl::NetTraffic traffic(const std::string &plugin) override {
@@ -520,7 +700,7 @@ private:
 			size_t maxBytes,
 			const QDeadlineTimer &deadline) {
 		const auto host = QString::fromStdString(url.host);
-		const auto resolved = Resolve(url.host, url.ip);
+		const auto resolved = Resolve(url.host, url.ip, entry, deadline);
 		if (!resolved.ok()) {
 			return resolved.error();
 		}
@@ -531,14 +711,10 @@ private:
 		socket.setSslConfiguration(configuration);
 		socket.setPeerVerifyMode(QSslSocket::VerifyPeer);
 		socket.setPeerVerifyName(host);
-		socket.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
-		socket.connectToHost(resolved.value(), quint16(url.port));
-		if (!socket.waitForConnected(remaining(deadline))) {
-			return Error("connect", socket.errorString());
-		}
-		socket.startClientEncryption();
-		if (!socket.waitForEncrypted(remaining(deadline))) {
-			return Error("tls", socket.errorString());
+		if (const auto error = Attach(socket, resolved.value(), url.port, entry, deadline)) {
+			return *error;
+		} else if (const auto error = Encrypt(socket, entry, deadline)) {
+			return *error;
 		}
 
 		auto head = method + " " + url.target + " HTTP/1.1\r\nHost: " + url.host;
@@ -563,8 +739,8 @@ private:
 			socket.write(reinterpret_cast<const char*>(body.data()), qint64(body.size()));
 		}
 		entry.sent += head.size() + body.size();
-		if (!socket.waitForBytesWritten(remaining(deadline))) {
-			return Error("write", socket.errorString());
+		if (const auto error = Flush(socket, entry, deadline)) {
+			return *error;
 		}
 
 		auto raw = std::string();
@@ -577,7 +753,7 @@ private:
 			}
 			if (!socket.bytesAvailable()
 				&& socket.state() == QAbstractSocket::ConnectedState
-				&& !socket.waitForReadyRead(std::min(remaining(deadline), kWaitSliceMs))
+				&& !socket.waitForReadyRead(Slice(deadline))
 				&& socket.state() == QAbstractSocket::ConnectedState) {
 				if (deadline.hasExpired()) {
 					return Error("timeout", u"the request timed out"_q);
@@ -635,10 +811,6 @@ private:
 		response.headers = parsed->headers;
 		response.body.assign(payload.begin(), payload.end());
 		return std::make_pair(std::move(response), parsed->location);
-	}
-
-	[[nodiscard]] static int remaining(const QDeadlineTimer &deadline) {
-		return int(std::max<qint64>(1, deadline.remainingTime()));
 	}
 
 };

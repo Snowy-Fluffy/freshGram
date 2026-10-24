@@ -126,6 +126,7 @@ private:
 	std::mutex _reap;
 	int _timeoutMs = 500;
 	int _startMs = 10000;
+	int _hostCallMs = 60000;
 	bool _fresh = false;
 	int64_t _nextId = 1;
 	size_t _maxLogBytes = 0;

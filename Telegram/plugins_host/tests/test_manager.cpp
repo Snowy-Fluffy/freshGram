@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <mutex>
 #include <fstream>
 #include <iterator>
 #include <chrono>
@@ -1055,6 +1056,159 @@ void TestConflictsBothWays() {
 	CHECK(!second.ok() && second.error().error == InstallError::Conflict);
 }
 
+
+[[nodiscard]] cbor::Value Said(const char *text) {
+	return cbor::Value::FromMap({
+		{ "type", Text("message.new") },
+		{ "chat", Int(1) },
+		{ "text", Text(text) },
+	});
+}
+
+[[nodiscard]] cbor::Bytes AsyncPythonArchive(const std::string &id) {
+	auto document = Document(id, "1.0.0", {
+		{ "messages.read", {} },
+		{ "storage.private", {} },
+		{ "net.https", {} },
+	});
+	Set(document, "runtime.kind", Text("python"));
+	Remove(document, "runtime.module");
+	Set(document, "runtime.entry", Text("main.py"));
+	const auto key = Seed(4);
+	return Build(document, {
+		{ "main.py", ReadFile(fs::path(FGPL_PYTHON_PLUGIN_DIR) / "async_plugin.py") },
+	}, &key).archive;
+}
+
+void TestAwaitedCallsDoNotBlockThePlugin() {
+	if (!pysupport::Installed()) {
+		return;
+	}
+	auto lab = Lab("fgpl-manager-async");
+	auto transport = fakes::FakeTransport();
+	transport.delayMs = 800;
+	lab.services.transport = &transport;
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.waiter");
+	CHECK(manager.install(AsyncPythonArchive(id)).ok());
+	Prepare(manager, id);
+	CHECK(manager.dispatch("A", Said("slow")).queued == 1);
+	CHECK(manager.dispatch("A", Said("fast")).queued == 1);
+	CHECK(manager.drain(60000));
+	CHECK(lab.stored(id, "A", "slow") && lab.stored(id, "A", "slow")->asInt() == 200);
+	CHECK(lab.stored(id, "A", "fast") && lab.stored(id, "A", "fast")->asInt() == 1);
+	auto order = std::vector<std::string>();
+	for (const auto &line : manager.log(id)) {
+		if (line == "fast" || line == "slow done") {
+			order.push_back(line);
+		}
+	}
+	CHECK(order == (std::vector<std::string>{ "fast", "slow done" }));
+	CHECK(manager.list()[0].stats.failures == 0);
+	manager.shutdown();
+}
+
+void TestWaitingForTheAppIsNotTheEventsTime() {
+	if (!pysupport::Installed()) {
+		return;
+	}
+	auto lab = Lab("fgpl-manager-hosttime");
+	auto transport = fakes::FakeTransport();
+	transport.delayMs = 4500;
+	lab.services.transport = &transport;
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.patient");
+	CHECK(manager.install(AsyncPythonArchive(id)).ok());
+	Prepare(manager, id);
+	const auto report = manager.dispatchAndWait("A", Said("sync"));
+	CHECK(report.delivered == 1 && report.failed == 0);
+	CHECK(lab.stored(id, "A", "sync") && lab.stored(id, "A", "sync")->asInt() == 200);
+	manager.shutdown();
+}
+
+void TestStopDoesNotWaitForTheNetwork() {
+	if (!pysupport::Installed()) {
+		return;
+	}
+	auto lab = Lab("fgpl-manager-abort");
+	auto transport = fakes::FakeTransport();
+	transport.holdUntilAbort = true;
+	lab.services.transport = &transport;
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.stuck");
+	CHECK(manager.install(AsyncPythonArchive(id)).ok());
+	Prepare(manager, id);
+	CHECK(manager.dispatch("A", Said("sync")).queued == 1);
+	for (auto waited = 0; waited < 60000 && transport.fetching.load() == 0; waited += 20) {
+		manager.pump();
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	}
+	CHECK(transport.fetching.load() == 1);
+	const auto started = std::chrono::steady_clock::now();
+	CHECK(manager.setEnabled(id, false));
+	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(3));
+	CHECK(manager.runningCount() == 0);
+	{
+		const auto lock = std::scoped_lock(transport.mutex);
+		CHECK(transport.aborted.size() == 1 && transport.aborted[0].plugin == id);
+	}
+}
+
+void TestOutgoingAnswersWithoutWaiting() {
+	auto lab = Lab("fgpl-manager-outgoing-async");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.shout");
+	CHECK(manager.install(CustomArchive(id, CallingModule(OutgoingRequest()), {
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	}, [](cbor::Value &document) {
+		Set(document, "contributes.outgoing.onFailure", Text("block"));
+	})).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read", "messages.transform_outgoing" }, std::nullopt }));
+	const auto early = manager.transformOutgoing("A", 1, false, "hi", 5000);
+	CHECK(early.blocked && early.plugin == id);
+	CHECK(manager.drain(20000));
+	CHECK(manager.snapshot().transformsOutgoing(1, false));
+	CHECK(!manager.snapshot().transformsOutgoing(1, true));
+
+	auto answers = std::vector<OutgoingResult>();
+	manager.transformOutgoingAsync("A", 1, false, "a", 5000, [&](OutgoingResult result) {
+		answers.push_back(std::move(result));
+	});
+	manager.transformOutgoingAsync("A", 3, true, "b", 5000, [&](OutgoingResult result) {
+		answers.push_back(std::move(result));
+	});
+	CHECK(answers.size() == 1 && answers[0].text == "b");
+	for (auto waited = 0; waited < 10000 && answers.size() < 2; waited += 10) {
+		manager.pump();
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	CHECK(answers.size() == 2 && !answers[1].blocked && answers[1].text == "HELLO");
+	manager.shutdown();
+}
+
+void TestSnapshotMatchesTheManager() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-snapshot");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.counter");
+	CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
+	Prepare(manager, id);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	const auto snapshot = manager.snapshot();
+	CHECK(snapshot.plugins.size() == 1 && snapshot.plugin(id) && snapshot.plugin(id)->enabled);
+	CHECK(snapshot.manifest(id) && snapshot.manifest(id)->id == id);
+	CHECK(snapshot.grantsOf(id) && snapshot.grantsOf(id)->granted == manager.grants(id, "A")->granted);
+	CHECK(snapshot.log(id) == manager.log(id));
+	CHECK(snapshot.wantsEvents == manager.wantsEvents());
+	const auto path = lab.root / "plugins" / id / "1.0.0" / "package.fgpl";
+	fs::remove(path);
+	CHECK(manager.list().size() == 1 && !manager.list()[0].requests.empty());
+	manager.shutdown();
+#endif
+}
+
 int main(int argc, char **argv) {
 	const auto only = (argc > 1) ? std::string(argv[1]) : std::string();
 	const auto run = [&](const char *name, void (*test)()) {
@@ -1081,5 +1235,10 @@ int main(int argc, char **argv) {
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);
 	run("merge", TestOldPerAccountStateIsMerged);
+	run("async", TestAwaitedCallsDoNotBlockThePlugin);
+	run("hosttime", TestWaitingForTheAppIsNotTheEventsTime);
+	run("abort", TestStopDoesNotWaitForTheNetwork);
+	run("outgoingasync", TestOutgoingAnswersWithoutWaiting);
+	run("snapshot", TestSnapshotMatchesTheManager);
 	return Failures() ? 1 : 0;
 }

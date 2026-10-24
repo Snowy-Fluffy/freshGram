@@ -29,6 +29,7 @@ add_library(fgpl_app STATIC
 	${fgpl_src}/ipc.cpp
 	${fgpl_src}/host_client.cpp
 	${fgpl_src}/cached_load.cpp
+	${fgpl_src}/async_pool.cpp
 	${fgpl_src}/manager.cpp)
 add_library(tdesktop::fgpl_app ALIAS fgpl_app)
 init_target(fgpl_app)

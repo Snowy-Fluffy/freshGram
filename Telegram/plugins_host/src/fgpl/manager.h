@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fgpl/async_pool.h"
 #include "fgpl/broker.h"
 #include "fgpl/cached_load.h"
 #include "fgpl/file_storage.h"
@@ -9,6 +10,7 @@
 #include "fgpl/permissions.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <filesystem>
@@ -193,6 +195,29 @@ struct DispatchReport {
 	int failed = 0;
 };
 
+struct ManagerSnapshot {
+	std::vector<PluginInfo> plugins;
+	std::map<std::string, std::shared_ptr<const Manifest>> manifests;
+	std::map<std::string, GrantDecision> grants;
+	std::map<std::string, std::shared_ptr<LogRing>> logs;
+	HostEnvironment environment;
+	bool loaded = false;
+	bool wantsEvents = false;
+	bool locked = false;
+	bool hidden = false;
+
+	[[nodiscard]] const PluginInfo *plugin(const std::string &id) const;
+	[[nodiscard]] std::shared_ptr<const Manifest> manifest(
+		const std::string &id) const;
+	[[nodiscard]] std::optional<GrantDecision> grantsOf(
+		const std::string &id) const;
+	[[nodiscard]] std::vector<std::string> log(const std::string &id) const;
+	[[nodiscard]] std::vector<Contribution> contributions(
+		const std::string &account,
+		const std::string &language) const;
+	[[nodiscard]] bool transformsOutgoing(int64_t chat, bool secret) const;
+};
+
 class PluginManager {
 public:
 	explicit PluginManager(ManagerConfig config);
@@ -241,9 +266,20 @@ public:
 		bool secret,
 		const std::string &text,
 		int timeoutMs = 1000);
+	void transformOutgoingAsync(
+		const std::string &account,
+		int64_t chat,
+		bool secret,
+		const std::string &text,
+		int timeoutMs,
+		std::function<void(OutgoingResult)> done);
+
+	[[nodiscard]] ManagerSnapshot snapshot() const;
 
 	int pump();
 	bool drain(int timeoutMs = 60000);
+	void waitForWork(int timeoutMs, const std::function<bool()> &ready);
+	void wake();
 
 	void shutdown();
 
@@ -299,6 +335,8 @@ private:
 	};
 
 	struct StartPlan {
+		std::string version;
+		std::string archiveHash;
 		HostConfig host;
 		LoadRequest request;
 		CacheSettings cache;
@@ -311,7 +349,7 @@ private:
 		uint64_t generation = 0;
 		std::shared_ptr<SharedStorage> storage;
 		std::shared_ptr<std::mutex> serial;
-		std::unique_ptr<Broker> broker;
+		std::shared_ptr<Broker> broker;
 		std::unique_ptr<HostClient> client;
 		StartPlan plan;
 		Declared declared;
@@ -320,6 +358,7 @@ private:
 		std::condition_variable wake;
 		std::deque<std::pair<cbor::Value, size_t>> queue;
 		std::deque<std::shared_ptr<Outgoing>> outgoing;
+		std::deque<cbor::Value> results;
 		size_t queuedBytes = 0;
 		bool closing = false;
 		bool busy = false;
@@ -341,11 +380,25 @@ private:
 			Delivered,
 			Failed,
 			Unloaded,
+			Outgoing,
 		} kind = Kind::Started;
 		std::string detail;
 	};
 
 	using Key = std::pair<std::string, std::string>;
+
+	struct OutgoingChain {
+		std::string account;
+		int64_t chat = 0;
+		int timeoutMs = 0;
+		std::vector<std::string> plugins;
+		size_t next = 0;
+		std::shared_ptr<Outgoing> current;
+		bool blocking = false;
+		std::chrono::steady_clock::time_point deadline;
+		OutgoingResult result;
+		std::function<void(OutgoingResult)> done;
+	};
 
 	struct Route {
 		bool acceptsAny = false;
@@ -367,7 +420,7 @@ private:
 		const std::string &id,
 		const std::string &version) const;
 	[[nodiscard]] Result<Package, std::string> openInstalled(
-		const Record &record,
+		const std::string &id,
 		const std::string &version,
 		const std::string &hash) const;
 
@@ -383,7 +436,7 @@ private:
 	[[nodiscard]] std::shared_ptr<SharedStorage> storeOf(Record &record);
 	[[nodiscard]] bool activatedBy(const Record &record, const char *trigger) const;
 	void sampleUsage(Record &record, const Instance &instance);
-	[[nodiscard]] Result<std::unique_ptr<Instance>, std::string> prepare(
+	[[nodiscard]] Result<std::shared_ptr<Instance>, std::string> prepare(
 		Record &record,
 		const std::string &account);
 	void run(Instance &instance);
@@ -405,17 +458,27 @@ private:
 		const std::string &from,
 		const std::string &account) const;
 	void deliverMail();
+	void advanceOutgoing();
+	[[nodiscard]] bool advance(
+		OutgoingChain &chain,
+		std::chrono::steady_clock::time_point now);
 	bool enqueue(Instance &instance, Record &record, const cbor::Value &event);
 	[[nodiscard]] bool mayRun() const;
 
 	[[nodiscard]] Result<LoadRequest, std::string> buildRequest(
-		const Package &package);
-	[[nodiscard]] bool loadPython();
+		const Package &package,
+		const std::atomic<bool> *cancel = nullptr);
+	[[nodiscard]] Result<LoadRequest, std::string> loadRequest(
+		const std::string &id,
+		const StartPlan &plan,
+		const std::atomic<bool> *cancel);
+	[[nodiscard]] bool loadPython(const std::atomic<bool> *cancel);
 
 	ManagerConfig _config;
 	mutable std::map<std::string, std::pair<std::string, std::shared_ptr<const Manifest>>> _manifests;
 	std::map<std::string, Record> _records;
-	std::map<Key, std::unique_ptr<Instance>> _instances;
+	std::map<Key, std::shared_ptr<Instance>> _instances;
+	std::vector<std::shared_ptr<OutgoingChain>> _chains;
 	std::map<Key, int64_t> _notBefore;
 	std::map<std::string, uint64_t> _finishedCpuMs;
 	mutable std::mutex _routesMutex;
@@ -425,6 +488,7 @@ private:
 	std::map<Key, int> _streak;
 	bool _locked = false;
 	bool _hidden = false;
+	bool _closed = false;
 	bool _tampered = false;
 	bool _saveFailed = false;
 	uint64_t _nextGeneration = 1;
@@ -436,10 +500,12 @@ private:
 	int _freeSlots = 0;
 	uint64_t _deliveredTotal = 0;
 	uint64_t _failedTotal = 0;
+	std::mutex _pythonMutex;
 	bool _pythonLoaded = false;
 	bool _pythonAvailable = false;
 	cbor::Bytes _pythonWasm;
 	std::vector<std::pair<std::string, cbor::Bytes>> _pythonFiles;
+	std::unique_ptr<AsyncPool> _pool;
 
 };
 

@@ -9,6 +9,7 @@ class Session;
 
 namespace fgpl {
 class PluginManager;
+struct ManagerSnapshot;
 } // namespace fgpl
 
 namespace Api {
@@ -30,14 +31,20 @@ void Start();
 void Stop();
 
 [[nodiscard]] bool SandboxSupported();
-[[nodiscard]] bool ApplyOutgoing(Api::MessageToSend &message);
+[[nodiscard]] bool ApplyOutgoing(
+	Api::MessageToSend &message,
+	std::optional<MsgId> localMessageId);
 [[nodiscard]] State CurrentState();
 [[nodiscard]] rpl::producer<State> StateValue();
 
 [[nodiscard]] rpl::producer<> ListChanges();
 void NotifyListChanged();
 
-[[nodiscard]] fgpl::PluginManager *Manager();
+[[nodiscard]] bool Running();
+[[nodiscard]] std::shared_ptr<const fgpl::ManagerSnapshot> Snapshot();
+void Post(
+	Fn<void(not_null<fgpl::PluginManager*>)> work,
+	bool changesState = true);
 
 [[nodiscard]] QString StorePath();
 [[nodiscard]] QString RuntimeRootPath();

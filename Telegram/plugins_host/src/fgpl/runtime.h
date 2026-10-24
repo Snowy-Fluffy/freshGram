@@ -21,6 +21,7 @@ struct RuntimeLimits {
 	size_t maxModuleBytes = size_t(32) << 20;
 	size_t maxMessageBytes = size_t(1) << 20;
 	size_t maxCallsPerDispatch = 256;
+	uint32_t maxHostCallMs = 60000;
 	cbor::Limits cbor;
 };
 

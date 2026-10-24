@@ -7,69 +7,41 @@ each call is checked against the permissions the user granted.
 
 import json as _json
 import traceback as _traceback
+import types as _types
 
+from . import _aio
 from . import _channel
 from . import _cbor
+from . import _errors
 
 API_VERSION = 1
 
 _output = _channel._output
 call = _channel.raw_call
 
-
-class FreshgramError(Exception):
-    def __init__(self, code, message=""):
-        super().__init__(code + (": " + message if message else ""))
-        self.code = code
-        self.message = message
-
-
-class Denied(FreshgramError):
-    pass
-
-
-class Invalid(FreshgramError):
-    pass
-
-
-class NotFound(FreshgramError):
-    pass
-
-
-class QuotaExceeded(FreshgramError):
-    pass
-
-
-class LimitExceeded(FreshgramError):
-    pass
-
-
-class Unavailable(FreshgramError):
-    pass
-
-
-class Failed(FreshgramError):
-    pass
-
-
-_ERRORS = {
-    "denied": Denied,
-    "invalid": Invalid,
-    "not_found": NotFound,
-    "quota": QuotaExceeded,
-    "limit": LimitExceeded,
-    "unavailable": Unavailable,
-}
+from ._errors import (  # noqa: E402
+    FreshgramError,
+    Denied,
+    Invalid,
+    NotFound,
+    QuotaExceeded,
+    LimitExceeded,
+    Unavailable,
+    Failed,
+)
 
 
 def _request(operation, **arguments):
-    response = _channel.raw_call({"op": operation, "a": arguments})
-    if not isinstance(response, dict):
-        raise Failed("failed", "a malformed response")
-    if response.get("ok"):
-        return response.get("v")
-    code = response.get("e", "failed")
-    raise _ERRORS.get(code, Failed)(code, response.get("m", ""))
+    return _errors.from_response(_channel.raw_call({"op": operation, "a": arguments}))
+
+
+def _sync_call(operation, then=None, **arguments):
+    value = _request(operation, **arguments)
+    return value if then is None else then(value)
+
+
+def _async_call(operation, then=None, **arguments):
+    return _aio.request(operation, arguments, then)
 
 
 def info():
@@ -81,22 +53,30 @@ def log(text):
     _request("log", text=str(text))
 
 
-class _Storage:
+class _Namespace:
+    def __init__(self, call):
+        self._call = call
+
+
+class _Storage(_Namespace):
     def get(self, key, default=None):
-        value = _request("storage.get", key=key)
-        return default if value is None else value
+        return self._call("storage.get", lambda value: default if value is None else value, key=key)
 
     def set(self, key, value):
-        _request("storage.set", key=key, value=value)
+        return self._call("storage.set", _nothing, key=key, value=value)
 
     def delete(self, key):
-        return _request("storage.delete", key=key)
+        return self._call("storage.delete", key=key)
 
     def keys(self, prefix="", limit=100):
-        return _request("storage.list", prefix=prefix, limit=limit)
+        return self._call("storage.list", prefix=prefix, limit=limit)
 
     def usage(self):
-        return _request("storage.usage")
+        return self._call("storage.usage")
+
+
+def _nothing(value):
+    return None
 
 
 class Response:
@@ -120,22 +100,28 @@ class Socket:
     """A TCP or UDP connection opened through the app.
 
     Hosts may be names or public IP addresses; local and private
-    addresses are refused. Timeouts are in milliseconds.
+    addresses are refused. Timeouts are in milliseconds. A socket opened
+    through freshgram.aio returns awaitables from send, recv and close.
     """
 
-    def __init__(self, socket_id):
+    def __init__(self, socket_id, call=_sync_call):
         self.id = socket_id
+        self._call = call
 
     def send(self, data, timeout=10000):
-        return _request("net.socket.send", id=self.id, data=data, timeout=timeout)["sent"]
+        return self._call("net.socket.send", lambda value: value["sent"], id=self.id, data=data, timeout=timeout)
 
     def recv(self, max_bytes=65507, timeout=1000):
         """Return (data, closed); data is empty when nothing arrived in time."""
-        result = _request("net.socket.recv", id=self.id, max=max_bytes, timeout=timeout)
-        return result["data"], result["closed"]
+        return self._call(
+            "net.socket.recv",
+            lambda value: (value["data"], value["closed"]),
+            id=self.id,
+            max=max_bytes,
+            timeout=timeout)
 
     def close(self):
-        _request("net.socket.close", id=self.id)
+        return self._call("net.socket.close", _nothing, id=self.id)
 
     def __enter__(self):
         return self
@@ -143,15 +129,32 @@ class Socket:
     def __exit__(self, *details):
         self.close()
 
+    async def __aenter__(self):
+        return self
 
-class _Net:
+    async def __aexit__(self, *details):
+        await self.close()
+
+
+class _Net(_Namespace):
     def tcp(self, host, port, tls=False, timeout=10000):
         """Open a TCP connection (net.tcp), optionally wrapped in TLS."""
-        return Socket(_request("net.tcp.connect", host=host, port=port, tls=tls, timeout=timeout)["id"])
+        return self._call(
+            "net.tcp.connect",
+            lambda value: Socket(value["id"], self._call),
+            host=host,
+            port=port,
+            tls=tls,
+            timeout=timeout)
 
     def udp(self, host, port, timeout=10000):
         """Open a UDP socket bound to one peer (net.udp)."""
-        return Socket(_request("net.udp.connect", host=host, port=port, timeout=timeout)["id"])
+        return self._call(
+            "net.udp.connect",
+            lambda value: Socket(value["id"], self._call),
+            host=host,
+            port=port,
+            timeout=timeout)
 
     def fetch(self, url, method="GET", headers=None, body=None, timeout=10000):
         arguments = {"url": url, "method": method, "timeout": timeout}
@@ -159,7 +162,7 @@ class _Net:
             arguments["headers"] = headers
         if body is not None:
             arguments["body"] = body
-        return Response(_request("net.fetch", **arguments))
+        return self._call("net.fetch", Response, **arguments)
 
     def get(self, url, **options):
         return self.fetch(url, "GET", **options)
@@ -168,111 +171,118 @@ class _Net:
         return self.fetch(url, "POST", body=body, **options)
 
 
-class _Ui:
+class _Ui(_Namespace):
     def toast(self, text):
-        _request("ui.toast", text=text)
+        return self._call("ui.toast", _nothing, text=text)
 
     def settings_page(self, title, items):
         """Describe the plugin's settings page; the app draws it.
 
         Items are dicts: text, divider, toggle, input, select and button.
         """
-        _request("ui.settings.set", page={"title": title, "items": items})
+        return self._call("ui.settings.set", _nothing, page={"title": title, "items": items})
 
     def dialog(self, title, items):
         """Show a dialog (ui.dialog); clicks arrive as dialog.* events."""
-        _request("ui.dialog.show", page={"title": title, "items": items})
+        return self._call("ui.dialog.show", _nothing, page={"title": title, "items": items})
 
     def close_dialog(self):
-        _request("ui.dialog.close")
+        return self._call("ui.dialog.close", _nothing)
 
 
-class _Chats:
+class _Chats(_Namespace):
     def list(self, limit=100):
-        return _request("chats.list", limit=limit)
+        return self._call("chats.list", limit=limit)
 
     def info(self, chat):
-        return _request("chat.info", chat=chat)
+        return self._call("chat.info", chat=chat)
 
 
-class _Messages:
+class _Messages(_Namespace):
     def history(self, chat, limit=20, before=0):
-        return _request("messages.history", chat=chat, limit=limit, before=before)
+        return self._call("messages.history", chat=chat, limit=limit, before=before)
 
     def send(self, chat, text):
-        _request("messages.send", chat=chat, text=text)
+        return self._call("messages.send", _nothing, chat=chat, text=text)
 
+
+class _SyncMessages(_Messages):
     def set_outgoing(self, text):
         """Replace the text of the message being sent (message.outgoing only)."""
         _request("messages.set_outgoing", text=text)
 
 
-class _Plugins:
+class _Plugins(_Namespace):
     def send(self, to, data=None):
         """Send data to another plugin (plugins.message on both sides).
 
         The other plugin must list this plugin (or "*") in
         contributes.messages.from; it receives a plugin.message event.
         """
-        _request("plugins.send", to=to, data=data)
+        return self._call("plugins.send", _nothing, to=to, data=data)
 
     def peers(self):
         """Plugins this plugin may send messages to."""
-        return _request("plugins.peers")
+        return self._call("plugins.peers")
 
 
-class _Contacts:
+class _Contacts(_Namespace):
     def list(self, limit=200):
-        return _request("contacts.list", limit=limit)
+        return self._call("contacts.list", limit=limit)
 
 
-class _Folders:
+class _Folders(_Namespace):
     def list(self):
-        return _request("folders.list")
+        return self._call("folders.list")
 
 
-class _Settings:
+class _Settings(_Namespace):
     def read(self):
-        return _request("settings.read")
+        return self._call("settings.read")
 
 
-class _Media:
+class _Media(_Namespace):
     def get(self, chat, message, thumbnail=False):
         """A downloaded file of a message: kind, mime, name and data."""
-        return _request("media.get", chat=chat, message=message, thumbnail=thumbnail)
+        return self._call("media.get", chat=chat, message=message, thumbnail=thumbnail)
 
 
-class _Account:
+class _Account(_Namespace):
     def info(self):
-        return _request("account.info")
+        return self._call("account.info")
 
 
-class _Stars:
+class _Stars(_Namespace):
     def balance(self):
-        return _request("stars.balance")["balance"]
+        return self._call("stars.balance", lambda value: value["balance"])
 
 
-class _Composer:
+class _Composer(_Namespace):
     def draft(self, chat):
-        return _request("composer.draft", chat=chat)
+        return self._call("composer.draft", chat=chat)
 
     def set_draft(self, chat, text):
-        _request("composer.set_draft", chat=chat, text=text)
+        return self._call("composer.set_draft", _nothing, chat=chat, text=text)
 
 
-storage = _Storage()
-net = _Net()
-ui = _Ui()
-chats = _Chats()
-messages = _Messages()
-account = _Account()
-stars = _Stars()
-composer = _Composer()
-plugins = _Plugins()
-contacts = _Contacts()
-folders = _Folders()
-settings = _Settings()
-media = _Media()
+storage = _Storage(_sync_call)
+net = _Net(_sync_call)
+ui = _Ui(_sync_call)
+chats = _Chats(_sync_call)
+messages = _SyncMessages(_sync_call)
+account = _Account(_sync_call)
+stars = _Stars(_sync_call)
+composer = _Composer(_sync_call)
+plugins = _Plugins(_sync_call)
+contacts = _Contacts(_sync_call)
+folders = _Folders(_sync_call)
+settings = _Settings(_sync_call)
+media = _Media(_sync_call)
+
+
+def spawn(coroutine):
+    """Run a coroutine on the plugin's loop; see freshgram.aio."""
+    return _aio.spawn(coroutine)
 
 
 def unload():
@@ -288,11 +298,18 @@ _event_handlers = []
 
 
 def on_init(function):
+    """Run function(info) when the plugin starts; it may be async."""
     _init_handlers.append(function)
     return function
 
 
 def on(pattern):
+    """Run the function for events whose type matches; it may be async.
+
+    An async handler runs until its first await while the event is being
+    handled, the rest after the awaited calls are answered. Other events are
+    handled meanwhile.
+    """
     def register(function):
         _event_handlers.append((pattern, function))
         return function
@@ -303,7 +320,7 @@ def on_menu(menu_id, surface=None):
     def register(function):
         def wrapper(event):
             if event.get("id") == menu_id and (surface is None or event.get("surface") == surface):
-                function(event)
+                return function(event)
         _event_handlers.append(("menu.click", wrapper))
         return function
     return register
@@ -313,7 +330,7 @@ def on_command(name):
     def register(function):
         def wrapper(event):
             if event.get("name") == name:
-                function(event)
+                return function(event)
         _event_handlers.append(("command", wrapper))
         return function
     return register
@@ -323,7 +340,7 @@ def on_plugin_message(sender=None):
     def register(function):
         def wrapper(event):
             if sender is None or event.get("from") == sender:
-                function(event.get("from"), event.get("data"))
+                return function(event.get("from"), event.get("data"))
         _event_handlers.append(("plugin.message", wrapper))
         return function
     return register
@@ -333,7 +350,7 @@ def on_setting(item_id=None):
     def register(function):
         def wrapper(event):
             if item_id is None or event.get("id") == item_id:
-                function(event)
+                return function(event)
         _event_handlers.append(("settings.*", wrapper))
         return function
     return register
@@ -345,15 +362,23 @@ def _matches(pattern, name):
     return pattern == name
 
 
+def _start(result):
+    if isinstance(result, _types.CoroutineType):
+        _aio.spawn(result)
+
+
 def _handle(kind, value):
     if kind == "init":
         for function in _init_handlers:
-            function(value)
+            _start(function(value))
         return 0
     name = value.get("type", "") if isinstance(value, dict) else ""
+    if name == "call.result":
+        _aio.resolve(value)
+        return 0
     for pattern, function in _event_handlers:
         if _matches(pattern, name):
-            function(value)
+            _start(function(value))
     return 0
 
 
@@ -378,4 +403,5 @@ def run(handler=None):
                 except Exception:
                     pass
                 status = -1
+            _aio.run_ready()
         _channel.send({"t": "done", "status": int(status)})

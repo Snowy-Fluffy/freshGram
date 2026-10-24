@@ -3,9 +3,13 @@
 #include "fakes.h"
 #include "fgpl/net_policy.h"
 
+#include <chrono>
+#include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -800,6 +804,105 @@ void TestEvents() {
 	CHECK(scoped.filterEvent(event("message.new", 2)).has_value());
 }
 
+[[nodiscard]] cbor::Value Awaited(std::string_view op, cbor::Map args = {}) {
+	auto request = Request(op, std::move(args));
+	request.asMap()->push_back({ "async", cbor::Value::FromBool(true) });
+	return request;
+}
+
+void TestAwaitableCalls() {
+	auto fixture = Fixture({ "storage.private", "net.https", "net.tcp" });
+	auto queued = std::vector<std::function<void()>>();
+	auto delays = std::vector<int64_t>();
+	auto results = std::map<int64_t, cbor::Value>();
+	fixture.services.post = [&](std::function<void()> work) {
+		queued.push_back(std::move(work));
+	};
+	fixture.services.after = [&](int64_t delayMs, std::function<void()> work) {
+		delays.push_back(delayMs);
+		queued.push_back(std::move(work));
+	};
+	fixture.services.complete = [&](int64_t ticket, cbor::Value result) {
+		results.emplace(ticket, std::move(result));
+	};
+	const auto broker = std::make_shared<Broker>(fixture.grants, fixture.services);
+	const auto ticketOf = [](const cbor::Value &response) {
+		const auto ticket = Payload(response).find("ticket");
+		return (ticket && ticket->asInt()) ? *ticket->asInt() : int64_t(-1);
+	};
+
+	const auto set = broker->call(Awaited("storage.set", {
+		{ "key", Text("k") },
+		{ "value", Int(5) },
+	}));
+	CHECK(IsOk(set) && ticketOf(set) == 1);
+	CHECK(broker->pending() == 1 && results.empty());
+	const auto fetch = broker->call(Awaited("net.fetch", {
+		{ "url", Text("https://api.example.com/x") },
+	}));
+	CHECK(IsOk(fetch) && ticketOf(fetch) == 2);
+	for (auto &work : queued) {
+		work();
+	}
+	queued.clear();
+	CHECK(broker->pending() == 0);
+	CHECK(results.size() == 2 && IsOk(results[1]) && IsOk(results[2]));
+	CHECK(Payload(results[2]).find("status")->asInt() == 200);
+
+	const auto denied = broker->call(Awaited("chats.list"));
+	CHECK(IsOk(denied));
+	queued.front()();
+	queued.clear();
+	CHECK(Code(results[ticketOf(denied)]) == "denied");
+
+	CHECK(Code(broker->call(Request("time.sleep", { { "ms", Int(10) } }))) == "invalid");
+	const auto sleep = broker->call(Awaited("time.sleep", { { "ms", Int(250) } }));
+	CHECK(IsOk(sleep) && delays == std::vector<int64_t>{ 250 });
+	CHECK(Code(broker->call(Awaited("time.sleep", { { "ms", Int(600000) } }))) == "invalid");
+	queued.front()();
+	queued.clear();
+	CHECK(IsOk(results[ticketOf(sleep)]));
+
+	CHECK(Code(broker->call(Awaited("messages.set_outgoing", { { "text", Text("x") } }))) == "invalid");
+	CHECK(Code(broker->call(Awaited("plugin.unload"))) == "invalid");
+	broker->beginOutgoing();
+	CHECK(Code(broker->call(Awaited("storage.get", { { "key", Text("k") } }))) == "unavailable");
+	(void)broker->finishOutgoing();
+
+	for (auto i = 0; i != fixture.grants.maxPending; ++i) {
+		CHECK(IsOk(broker->call(Awaited("storage.get", { { "key", Text("k") } }))));
+		fixture.time += 10;
+	}
+	CHECK(Code(broker->call(Awaited("storage.get", { { "key", Text("k") } }))) == "limit");
+	for (auto &work : queued) {
+		work();
+	}
+	queued.clear();
+	CHECK(broker->pending() == 0);
+
+	const auto socket = broker->call(Awaited("net.tcp.connect", {
+		{ "host", Text("example.org") },
+		{ "port", Int(443) },
+	}));
+	CHECK(IsOk(socket));
+	for (auto waited = 0; waited < 5000 && broker->pending() != 0; ++waited) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	CHECK(broker->pending() == 0);
+	const auto opened = Payload(results[ticketOf(socket)]).find("id");
+	CHECK(opened && opened->asInt());
+	const auto sent = broker->call(Request("net.socket.send", {
+		{ "id", Int(opened ? opened->asInt().value_or(0) : 0) },
+		{ "data", Text("ping") },
+	}));
+	CHECK(IsOk(sent));
+	broker->releaseSockets();
+	CHECK(fixture.transport.closed.size() == 1);
+
+	auto plain = fixture.make();
+	CHECK(Code(plain.call(Awaited("storage.get", { { "key", Text("k") } }))) == "unavailable");
+}
+
 } // namespace
 
 int main() {
@@ -824,5 +927,6 @@ int main() {
 	TestMalformedRequests();
 	TestAuditTrail();
 	TestEvents();
+	TestAwaitableCalls();
 	return Failures() ? 1 : 0;
 }

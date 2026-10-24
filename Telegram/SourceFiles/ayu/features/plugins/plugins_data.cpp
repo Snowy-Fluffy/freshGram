@@ -495,21 +495,20 @@ void ReleaseData() {
 }
 
 bool WantsEvents() {
-	const auto manager = Manager();
-	return manager && manager->wantsEvents();
+	const auto snapshot = Snapshot();
+	return snapshot && snapshot->wantsEvents;
 }
 
 void SendMessageEvent(
 		const char *type,
 		not_null<const HistoryItem*> item,
 		const std::string &account) {
-	const auto manager = Manager();
-	if (!manager || item->isService()) {
+	if (!Running() || item->isService()) {
 		return;
 	}
 	const auto peer = item->history()->peer;
 	const auto message = MessageOf(item);
-	manager->dispatch(account, fgpl::cbor::Value::FromMap({
+	auto event = fgpl::cbor::Value::FromMap({
 		{ "type", fgpl::cbor::Value::FromText(type) },
 		{ "id", fgpl::cbor::Value::FromInt(message.id) },
 		{ "chat", fgpl::cbor::Value::FromInt(message.chat) },
@@ -518,7 +517,10 @@ void SendMessageEvent(
 		{ "text", fgpl::cbor::Value::FromText(message.text) },
 		{ "secret", fgpl::cbor::Value::FromBool(
 			FreshSecret::IsSecretPeerId(peer->id)) },
-	}));
+	});
+	Post([=, event = std::move(event)](not_null<fgpl::PluginManager*> manager) {
+		manager->dispatch(account, event);
+	}, false);
 }
 
 #else

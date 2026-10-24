@@ -91,15 +91,15 @@ void AddPluginRow(
 		st::settingsButtonNoIcon);
 	button->toggleOn(rpl::single(info.enabled), true);
 	button->addClickHandler([=] {
-		const auto manager = FreshPlugins::Manager();
-		if (!manager) {
+		const auto snapshot = FreshPlugins::Snapshot();
+		const auto found = snapshot ? snapshot->plugin(id) : nullptr;
+		if (!found) {
 			return;
 		}
-		const auto now = ranges::any_of(manager->list(), [&](const auto &item) {
-			return item.id == id && item.enabled;
+		FreshPlugins::Post([=, enable = !found->enabled](
+				not_null<fgpl::PluginManager*> manager) {
+			manager->setEnabled(id, enable);
 		});
-		manager->setEnabled(id, !now);
-		FreshPlugins::NotifyListChanged();
 	});
 	container->add(
 		object_ptr<Ui::FlatLabel>(
@@ -370,11 +370,11 @@ void AddPluginsSettings(
 	const auto list = container->add(object_ptr<Ui::VerticalLayout>(container));
 	const auto rebuild = [=] {
 		list->clear();
-		const auto manager = FreshPlugins::Manager();
-		if (!manager) {
+		const auto snapshot = FreshPlugins::Snapshot();
+		if (!snapshot) {
 			return;
 		}
-		const auto plugins = manager->list();
+		const auto &plugins = snapshot->plugins;
 		if (plugins.empty()) {
 			Ui::AddSkip(list);
 			list->add(
@@ -401,7 +401,7 @@ void AddPluginsSettings(
 		tr::fresh_PluginsInstallFromFile(),
 		st::settingsButtonNoIcon);
 	install->addClickHandler([=] {
-		if (FreshPlugins::Manager()) {
+		if (FreshPlugins::Running()) {
 			ChoosePluginFile(controller);
 		} else {
 			controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
