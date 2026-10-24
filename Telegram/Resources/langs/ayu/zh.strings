@@ -90,6 +90,7 @@
 "ayu_PluginsDescription" = "插件在独立的沙盒进程中运行，只能使用你授予的权限。";
 "ayu_PluginsNoRuntime" = "插件组件尚未安装。";
 "ayu_PluginsNoSandbox" = "插件需要 Landlock 才能在沙盒中运行，而此系统不提供。请使用启用了 Landlock 的 Linux 5.13 或更高版本。";
+"ayu_PluginPermissionsAllAccounts" = "插件的权限和数据在你的所有账号间共享。";
 "ayu_PermissionPluginsMessage" = "plugins.message：与其他插件交换消息";
 "ayu_PluginAcceptsFrom" = "接受以下插件的消息：{list}";
 "ayu_PluginAcceptsAny" = "任意插件";

@@ -95,6 +95,14 @@ def got(sender, data):
     freshgram.plugins.send(sender, {"echo": data})
 ```
 
+## Accounts
+
+A plugin works the same in every account: the user grants its permissions once,
+and its storage and settings are shared. Each signed-in account still gets its
+own instance, and every event, call and message belongs to the account it came
+from (`init` carries `account`). The instances of one plugin handle their events
+one at a time, so storage updates from two accounts never interleave.
+
 ## Activation and unloading
 
 `activation.on` lists what may start the plugin: `startup`, `event`, `command`,

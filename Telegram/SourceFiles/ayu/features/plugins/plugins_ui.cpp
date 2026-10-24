@@ -160,8 +160,15 @@ void Send(
 		const std::string &id,
 		const std::string &account) {
 	const auto &pages = GetPages().pages;
-	const auto i = pages.find({ id, account });
-	return (i == pages.end()) ? nullptr : &i->second;
+	if (const auto i = pages.find({ id, account }); i != pages.end()) {
+		return &i->second;
+	}
+	for (const auto &[key, page] : pages) {
+		if (key.first == id) {
+			return &page;
+		}
+	}
+	return nullptr;
 }
 
 [[nodiscard]] QString TextOf(const cbor::Value &item, const char *name) {
@@ -439,6 +446,7 @@ void FillDetailsBox(
 	const auto granted = manager->grants(plugin, account);
 	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
 	Ui::AddSubsectionTitle(box->verticalLayout(), tr::ayu_PluginPermissions());
+	label(tr::ayu_PluginPermissionsAllAccounts(tr::now), st::boxDividerLabel);
 	if (parsed->permissions.empty()) {
 		label(tr::ayu_PluginNoPermissions(tr::now), st::boxDividerLabel);
 	}

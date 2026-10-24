@@ -232,6 +232,10 @@ void FillInstallBox(
 	auto boxes = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
 	if (!manifest.permissions.empty()) {
 		Ui::AddSubsectionTitle(box->verticalLayout(), tr::ayu_PluginPermissions());
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::ayu_PluginPermissionsAllAccounts(tr::now),
+			st::boxDividerLabel));
 	}
 	for (const auto &request : manifest.permissions) {
 		requested.insert(request.id);
