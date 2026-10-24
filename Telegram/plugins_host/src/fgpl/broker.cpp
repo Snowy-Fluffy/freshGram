@@ -46,6 +46,7 @@ constexpr auto kMaxSocketWaitMs = int64_t(30000);
 constexpr auto kMaxMedia = size_t(8) << 20;
 constexpr auto kMaxContacts = size_t(1000);
 constexpr auto kMaxFolders = size_t(100);
+constexpr auto kMaxPluginMessage = size_t(64) << 10;
 
 [[nodiscard]] cbor::Value Text(std::string_view text) {
 	return cbor::Value::FromText(std::string(text));
@@ -276,6 +277,31 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		}
 		_outgoingText = *text;
 		return api::Ok();
+	} else if (op == "plugins.send" || op == "plugins.peers") {
+		if (!has("plugins.message")) {
+			return api::Fail(api::error::kDenied, "plugins.message");
+		} else if (!_services.sendToPlugin || !_services.pluginPeers) {
+			return api::Fail(api::error::kUnavailable, "plugin messages");
+		} else if (op == "plugins.peers") {
+			auto peers = cbor::Array();
+			for (const auto &peer : _services.pluginPeers()) {
+				peers.push_back(Text(peer));
+			}
+			return api::Ok(cbor::Value::FromArray(std::move(peers)));
+		}
+		const auto to = TextArg(args, "to", 64);
+		const auto data = Arg(args, "data");
+		if (!to || to->empty() || *to == _grants.pluginId) {
+			return api::Fail(api::error::kInvalid, "to");
+		}
+		const auto encoded = Encoded(data ? *data : cbor::Value());
+		if (encoded.empty()) {
+			return api::Fail(api::error::kInvalid, "data");
+		} else if (encoded.size() > kMaxPluginMessage) {
+			return api::Fail(api::error::kLimit, "the message is too large");
+		}
+		const auto refused = _services.sendToPlugin(*to, data ? *data : cbor::Value());
+		return refused.empty() ? api::Ok() : api::Fail(refused, *to);
 	} else if (op == "plugin.unload") {
 		if (_services.unload) {
 			_services.unload();

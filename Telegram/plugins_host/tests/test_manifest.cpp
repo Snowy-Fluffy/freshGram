@@ -211,6 +211,15 @@ void TestRejections() {
 			cbor::Value::FromMap({ { "id", Text("net.https") }, { "reason", Text("x") }, { "hosts", Array({ "a.example.com" }) } }),
 		}));
 	}, "unknown key");
+	ExpectError("messages without permission", [](auto &d) {
+		Set(d, "contributes.messages.from", Array({ "com.example.other" }));
+	}, "plugins.message");
+	ExpectError("bad sender", [](auto &d) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("plugins.message") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.messages.from", Array({ "Not An Id" }));
+	}, "plugin ids");
 	ExpectError("outgoing without permission", [](auto &d) {
 		Set(d, "contributes.outgoing.onFailure", Text("block"));
 	}, "messages.transform_outgoing");

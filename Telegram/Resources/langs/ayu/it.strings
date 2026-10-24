@@ -90,6 +90,9 @@
 "ayu_PluginsDescription" = "I plugin vengono eseguiti in un processo isolato separato e possono usare solo ciò che consenti loro.";
 "ayu_PluginsNoRuntime" = "I componenti dei plugin non sono ancora installati.";
 "ayu_PluginsNoSandbox" = "I plugin richiedono Landlock per funzionare nella loro sandbox, e questo sistema non lo fornisce. Usa Linux 5.13 o successivo con Landlock attivo.";
+"ayu_PermissionPluginsMessage" = "plugins.message: scambiare messaggi con altri plugin";
+"ayu_PluginAcceptsFrom" = "Accetta messaggi da: {list}";
+"ayu_PluginAcceptsAny" = "qualsiasi plugin";
 "ayu_PluginDangerLow" = "Sicuro";
 "ayu_PluginDangerMedium" = "Richiede attenzione";
 "ayu_PluginDangerHigh" = "Pericoloso";

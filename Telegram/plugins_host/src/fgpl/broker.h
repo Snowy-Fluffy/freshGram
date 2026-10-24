@@ -273,6 +273,8 @@ struct BrokerServices {
 	std::function<void(std::string_view op, std::string_view outcome)> audit;
 	std::function<bool(std::string_view kind, const cbor::Value &payload)> ui;
 	std::function<void()> unload;
+	std::function<std::string(const std::string &to, cbor::Value data)> sendToPlugin;
+	std::function<std::vector<std::string>()> pluginPeers;
 };
 
 class Broker final : public Bridge {

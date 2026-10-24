@@ -90,6 +90,9 @@
 "ayu_PluginsDescription" = "Плагины работают в отдельном изолированном процессе и могут использовать только то, что вы им разрешили.";
 "ayu_PluginsNoRuntime" = "Компоненты для плагинов ещё не установлены.";
 "ayu_PluginsNoSandbox" = "Плагинам для работы в песочнице нужен Landlock, а в этой системе его нет. Нужен Linux 5.13 или новее с включённым Landlock.";
+"ayu_PermissionPluginsMessage" = "plugins.message: обмен сообщениями с другими плагинами";
+"ayu_PluginAcceptsFrom" = "Принимает сообщения от: {list}";
+"ayu_PluginAcceptsAny" = "любого плагина";
 "ayu_PluginDangerLow" = "Безопасно";
 "ayu_PluginDangerMedium" = "Требует внимания";
 "ayu_PluginDangerHigh" = "Опасно";

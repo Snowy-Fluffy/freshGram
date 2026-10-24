@@ -24,6 +24,7 @@ enum class Risk : uint8_t {
 	Background,
 	Clipboard,
 	Files,
+	PluginMessages,
 };
 
 enum class Danger : uint8_t {

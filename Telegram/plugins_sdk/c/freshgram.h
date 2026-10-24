@@ -438,6 +438,16 @@ static int fg_socket_send(fg_i64 id, const void *data, fg_u32 length) {
 	return fg_send(&w, 0);
 }
 
+static int fg_plugin_send_text(const char *to, const char *text) {
+	fg_writer w;
+	fg_begin(&w, "plugins.send", 2);
+	fg_w_text(&w, "to");
+	fg_w_text(&w, to);
+	fg_w_text(&w, "data");
+	fg_w_text(&w, text);
+	return fg_send(&w, 0);
+}
+
 static int fg_socket_close(fg_i64 id) {
 	fg_writer w;
 	fg_begin(&w, "net.socket.close", 1);

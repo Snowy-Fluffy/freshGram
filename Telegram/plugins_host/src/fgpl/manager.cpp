@@ -18,6 +18,10 @@ namespace {
 
 namespace fs = std::filesystem;
 
+constexpr auto kMaxMail = size_t(1024);
+
+[[nodiscard]] size_t EncodedSize(const cbor::Value &event);
+
 [[nodiscard]] bool ValidAccount(const std::string &account) {
 	if (account.empty() || account.size() > 32) {
 		return false;
@@ -83,6 +87,7 @@ PluginManager::PluginManager(ManagerConfig config)
 	}
 	_freeSlots = std::max(1, _config.maxConcurrentStarts);
 	loadState();
+	rebuildRoutes();
 }
 
 PluginManager::~PluginManager() {
@@ -174,6 +179,125 @@ void PluginManager::saveState() {
 	_saveFailed = !WriteFileAtomic(
 		_config.root / "state.json",
 		{ reinterpret_cast<const uint8_t *>(out.data()), out.size() });
+	rebuildRoutes();
+}
+
+void PluginManager::rebuildRoutes() {
+	auto routes = std::map<std::string, std::map<std::string, Route>>();
+	for (const auto &[id, record] : _records) {
+		const auto parsed = record.enabled ? manifest(id) : nullptr;
+		if (!parsed) {
+			continue;
+		}
+		for (const auto &[account, grant] : record.grants) {
+			if (!grant.granted.contains("plugins.message")) {
+				continue;
+			}
+			auto entry = Route();
+			for (const auto &sender : parsed->messagesFrom) {
+				if (sender == "*") {
+					entry.acceptsAny = true;
+				} else {
+					entry.from.insert(sender);
+				}
+			}
+			routes[account][id] = std::move(entry);
+		}
+	}
+	const auto lock = std::scoped_lock(_routesMutex);
+	_routes = std::move(routes);
+}
+
+std::string PluginManager::route(
+		const std::string &from,
+		const std::string &account,
+		const std::string &to,
+		cbor::Value data) {
+	{
+		const auto lock = std::scoped_lock(_routesMutex);
+		const auto plugins = _routes.find(account);
+		if (plugins == _routes.end() || !plugins->second.contains(from)) {
+			return api::error::kDenied;
+		}
+		const auto target = plugins->second.find(to);
+		if (target == plugins->second.end()) {
+			return api::error::kNotFound;
+		} else if (!target->second.acceptsAny && !target->second.from.contains(from)) {
+			return api::error::kDenied;
+		}
+	}
+	{
+		const auto lock = std::scoped_lock(_mailMutex);
+		if (_mail.size() >= kMaxMail) {
+			return api::error::kLimit;
+		}
+		_mail.push_back({ from, to, account, std::move(data) });
+	}
+	_outboxWake.notify_all();
+	return std::string();
+}
+
+std::vector<std::string> PluginManager::peers(
+		const std::string &from,
+		const std::string &account) const {
+	auto result = std::vector<std::string>();
+	const auto lock = std::scoped_lock(_routesMutex);
+	const auto plugins = _routes.find(account);
+	if (plugins == _routes.end() || !plugins->second.contains(from)) {
+		return result;
+	}
+	for (const auto &[id, entry] : plugins->second) {
+		if (id != from && (entry.acceptsAny || entry.from.contains(from))) {
+			result.push_back(id);
+		}
+	}
+	return result;
+}
+
+bool PluginManager::enqueue(Instance &instance, Record &record, const cbor::Value &event) {
+	const auto size = EncodedSize(event);
+	{
+		const auto lock = std::scoped_lock(instance.mutex);
+		if (instance.closing || instance.finished) {
+			return false;
+		}
+		while (!instance.queue.empty()
+			&& (instance.queue.size() >= _config.maxQueuedEvents
+				|| instance.queuedBytes + size > _config.maxQueuedBytes)) {
+			instance.queuedBytes -= instance.queue.front().second;
+			instance.queue.pop_front();
+			++record.stats.dropped;
+		}
+		instance.queue.emplace_back(event, size);
+		instance.queuedBytes += size;
+	}
+	instance.wake.notify_one();
+	return true;
+}
+
+void PluginManager::deliverMail() {
+	auto batch = std::deque<Mail>();
+	{
+		const auto lock = std::scoped_lock(_mailMutex);
+		batch.swap(_mail);
+	}
+	for (auto &mail : batch) {
+		const auto found = _records.find(mail.to);
+		if (found == _records.end() || !mayRun()) {
+			continue;
+		}
+		auto &record = found->second;
+		auto *instance = ensure(record, mail.account, "message");
+		if (!instance) {
+			++record.stats.dropped;
+			continue;
+		}
+		enqueue(*instance, record, cbor::Value::FromMap({
+			{ "type", Text("plugin.message") },
+			{ "from", Text(mail.from) },
+			{ "data", std::move(mail.data) },
+		}));
+	}
 }
 
 void PluginManager::loadState() {
@@ -984,6 +1108,12 @@ Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	services.unload = [raw] {
 		raw->unload.store(true);
 	};
+	services.sendToPlugin = [this, pluginId, account](const std::string &to, cbor::Value data) {
+		return route(pluginId, account, to, std::move(data));
+	};
+	services.pluginPeers = [this, pluginId, account] {
+		return peers(pluginId, account);
+	};
 	auto grants = MakeGrants(package.manifest, { grant->second.granted, grant->second.chats });
 	grants.account = account;
 	instance->broker = std::make_unique<Broker>(std::move(grants), std::move(services));
@@ -1291,6 +1421,7 @@ void PluginManager::commitUpdate(Record &record) {
 }
 
 int PluginManager::pump() {
+	deliverMail();
 	auto batch = std::deque<Completion>();
 	{
 		const auto lock = std::scoped_lock(_outboxMutex);
@@ -1352,6 +1483,10 @@ bool PluginManager::drain(int timeoutMs) {
 		{
 			const auto lock = std::scoped_lock(_outboxMutex);
 			idle = idle && _outbox.empty();
+		}
+		{
+			const auto lock = std::scoped_lock(_mailMutex);
+			idle = idle && _mail.empty();
 		}
 		if (idle) {
 			return true;

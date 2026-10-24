@@ -84,7 +84,7 @@ struct Manifest {
 	int eventTimeoutMs = 500;
 	int storageMb = 10;
 
-	std::set<std::string> activation = { "event", "command", "menu", "settings" };
+	std::set<std::string> activation = { "event", "command", "menu", "settings", "message" };
 	bool background = false;
 
 	std::vector<PermissionRequest> permissions;
@@ -93,6 +93,7 @@ struct Manifest {
 	std::vector<Command> commands;
 	bool settingsPage = false;
 	std::string outgoing;
+	std::vector<std::string> messagesFrom;
 
 	std::vector<Dependency> dependencies;
 	std::vector<Dependency> conflicts;

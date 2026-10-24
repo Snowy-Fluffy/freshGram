@@ -519,6 +519,43 @@ void TestOutgoingAndUnload() {
 	CHECK(dialogs == (std::vector<std::string>{ "dialog", "dialog.close" }));
 }
 
+void TestPluginMessages() {
+	auto sent = std::vector<std::pair<std::string, cbor::Value>>();
+	auto fixture = Fixture({ "plugins.message" });
+	fixture.services.sendToPlugin = [&](const std::string &to, cbor::Value data) {
+		sent.emplace_back(to, std::move(data));
+		return (to == "com.example.missing") ? std::string("not_found") : std::string();
+	};
+	fixture.services.pluginPeers = [] {
+		return std::vector<std::string>{ "com.example.friend" };
+	};
+	auto broker = fixture.make();
+	const auto ok = broker.call(Request("plugins.send", {
+		{ "to", Text("com.example.friend") },
+		{ "data", cbor::Value::FromMap({ { "hello", Int(1) } }) },
+	}));
+	CHECK(IsOk(ok));
+	CHECK(sent.size() == 1 && sent[0].first == "com.example.friend");
+	CHECK(sent[0].second.find("hello")->asInt() == 1);
+	CHECK(Code(broker.call(Request("plugins.send", { { "to", Text("com.example.missing") } }))) == "not_found");
+	CHECK(Code(broker.call(Request("plugins.send", { { "to", Text("com.example.test") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("plugins.send", {}))) == "invalid");
+	CHECK(Code(broker.call(Request("plugins.send", {
+		{ "to", Text("com.example.friend") },
+		{ "data", cbor::Value::FromBytes(cbor::Bytes(70000, 1)) },
+	}))) == "limit");
+	const auto peers = broker.call(Request("plugins.peers"));
+	CHECK(IsOk(peers) && Payload(peers).asArray()->size() == 1);
+
+	auto denied = Fixture({});
+	denied.services.sendToPlugin = fixture.services.sendToPlugin;
+	denied.services.pluginPeers = fixture.services.pluginPeers;
+	auto deniedBroker = denied.make();
+	CHECK(Code(deniedBroker.call(Request("plugins.send", { { "to", Text("com.example.friend") } }))) == "denied");
+	CHECK(Code(deniedBroker.call(Request("plugins.peers"))) == "denied");
+	CHECK(sent.size() == 2);
+}
+
 void TestDataIsFilteredByTheBroker() {
 	auto fixture = Fixture({
 		"chats.list", "chat.info", "messages.history", "account.info",
@@ -778,6 +815,7 @@ int main() {
 	TestSockets();
 	TestNewDataCalls();
 	TestOutgoingAndUnload();
+	TestPluginMessages();
 	TestDataIsFilteredByTheBroker();
 	TestSettingsPage();
 	TestTargetedEvents();

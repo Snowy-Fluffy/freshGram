@@ -95,6 +95,12 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 	if (Has(granted, "fs.user_selected")) {
 		notes.push_back({ Risk::Files, "can read files you pick" });
 	}
+	if (Has(granted, "plugins.message")) {
+		notes.push_back({
+			Risk::PluginMessages,
+			"can exchange data with other plugins that accept it",
+		});
+	}
 	return notes;
 }
 

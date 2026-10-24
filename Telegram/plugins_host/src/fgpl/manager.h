@@ -28,6 +28,7 @@ struct LogRing {
 	std::deque<std::string> lines;
 };
 
+
 struct PythonRuntime {
 	std::filesystem::path wasm;
 	std::filesystem::path library;
@@ -323,6 +324,18 @@ private:
 
 	using Key = std::pair<std::string, std::string>;
 
+	struct Route {
+		bool acceptsAny = false;
+		std::set<std::string> from;
+	};
+
+	struct Mail {
+		std::string from;
+		std::string to;
+		std::string account;
+		cbor::Value data;
+	};
+
 	[[nodiscard]] int64_t now() const;
 	[[nodiscard]] std::filesystem::path versionDirectory(
 		const std::string &id,
@@ -358,6 +371,17 @@ private:
 	void noteFailure(Record &record, const std::string &account, const std::string &why);
 	void commitUpdate(Record &record);
 	void addLog(Record &record, std::string_view line);
+	void rebuildRoutes();
+	[[nodiscard]] std::string route(
+		const std::string &from,
+		const std::string &account,
+		const std::string &to,
+		cbor::Value data);
+	[[nodiscard]] std::vector<std::string> peers(
+		const std::string &from,
+		const std::string &account) const;
+	void deliverMail();
+	bool enqueue(Instance &instance, Record &record, const cbor::Value &event);
 	[[nodiscard]] bool mayRun() const;
 
 	[[nodiscard]] Result<LoadRequest, std::string> buildRequest(
@@ -370,6 +394,10 @@ private:
 	std::map<Key, std::unique_ptr<Instance>> _instances;
 	std::map<Key, int64_t> _notBefore;
 	std::map<std::string, uint64_t> _finishedCpuMs;
+	mutable std::mutex _routesMutex;
+	std::map<std::string, std::map<std::string, Route>> _routes;
+	std::mutex _mailMutex;
+	std::deque<Mail> _mail;
 	std::map<Key, int> _streak;
 	bool _locked = false;
 	bool _hidden = false;

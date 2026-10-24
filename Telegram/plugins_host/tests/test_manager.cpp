@@ -596,10 +596,13 @@ void TestUiContributions() {
 	{
 		const auto lock = std::scoped_lock(pagesMutex);
 		CHECK(!pages.empty());
-		if (!pages.empty()) {
-			CHECK(pages[0].first == id + "/A");
-			CHECK(*pages[0].second.find("title")->asText() == "Demo");
-			CHECK(pages[0].second.find("items")->asArray()->size() == 2);
+		const auto own = std::find_if(pages.begin(), pages.end(), [&](const auto &page) {
+			return page.first == id + "/A";
+		});
+		CHECK(own != pages.end());
+		if (own != pages.end()) {
+			CHECK(*own->second.find("title")->asText() == "Demo");
+			CHECK(own->second.find("items")->asArray()->size() == 2);
 		}
 	}
 
@@ -942,6 +945,44 @@ void TestOutgoingTransform() {
 	CHECK(blocked.blocked && blocked.plugin == strict);
 }
 
+void TestPluginsTalkThroughTheApp() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-messages");
+	auto manager = PluginManager(lab.config());
+	const auto sender = std::string("com.example.sender");
+	const auto receiver = std::string("com.example.receiver");
+	const auto request = std::string(
+		"\xa2\x62op\x6cplugins.send\x61" "a\xa2\x62to\x74" "com.example.receiver"
+		"\x64" "data\x62hi", 52);
+	CHECK(manager.install(CustomArchive(sender, CallingModule(request), {
+		{ "messages.read", {} },
+		{ "plugins.message", {} },
+	})).ok());
+	const auto key = Seed(1);
+	auto document = Document(receiver, "1.0.0", {
+		{ "plugins.message", {} },
+		{ "storage.private", {} },
+	});
+	Remove(document, "contributes.events");
+	Set(document, "contributes.messages.from", Array({ sender }));
+	CHECK(manager.install(Build(document, { { "plugin.wasm", ReadFile(FGPL_COUNTER_WASM) } }, &key).archive).ok());
+	for (const auto &id : { sender, receiver }) {
+		CHECK(manager.setEnabled(id, true));
+	}
+	CHECK(manager.grant(sender, "A", { { "messages.read", "plugins.message" }, std::nullopt }));
+	CHECK(manager.grant(receiver, "A", { { "plugins.message", "storage.private" }, std::nullopt }));
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 2);
+	CHECK(manager.drain(20000));
+	CHECK(lab.stored(receiver, "A", "count") && lab.stored(receiver, "A", "count")->asInt() == 1);
+
+	CHECK(manager.grant(receiver, "A", { { "storage.private" }, std::nullopt }));
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	CHECK(manager.drain(20000));
+	CHECK(lab.stored(receiver, "A", "count")->asInt() == 1);
+	CHECK(manager.dispatchAndWait("B", Event()).delivered == 0);
+#endif
+}
+
 void TestConflictsBothWays() {
 	auto lab = Lab("fgpl-manager-conflicts");
 	auto manager = PluginManager(lab.config());
@@ -982,5 +1023,6 @@ int main(int argc, char **argv) {
 	run("unload", TestSelfUnloadAndLazyStart);
 	run("outgoing", TestOutgoingTransform);
 	run("conflicts", TestConflictsBothWays);
+	run("messages", TestPluginsTalkThroughTheApp);
 	return Failures() ? 1 : 0;
 }

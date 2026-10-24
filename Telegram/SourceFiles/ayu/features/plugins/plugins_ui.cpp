@@ -408,6 +408,9 @@ void FillDetailsBox(
 	if (info.outdated) {
 		label(tr::ayu_PluginOutdated(tr::now, lt_version, Utf8(info.testedWith)), st::boxDividerLabel);
 	}
+	if (!parsed->messagesFrom.empty()) {
+		label(AcceptsFrom(parsed->messagesFrom), st::boxDividerLabel);
+	}
 	if (!info.disabledReason.empty()) {
 		label(tr::ayu_PluginStatusDisabled(tr::now, lt_reason, Utf8(info.disabledReason)), st::boxDividerLabel);
 	}
@@ -732,6 +735,16 @@ void FillNetworkBox(
 
 } // namespace
 
+QString AcceptsFrom(const std::vector<std::string> &senders) {
+	auto names = QStringList();
+	for (const auto &sender : senders) {
+		names.push_back((sender == "*")
+			? tr::ayu_PluginAcceptsAny(tr::now)
+			: QString::fromStdString(sender));
+	}
+	return tr::ayu_PluginAcceptsFrom(tr::now, lt_list, names.join(u", "_q));
+}
+
 void AddPermissionDanger(
 		not_null<Ui::VerticalLayout*> layout,
 		const std::string &id,
@@ -763,6 +776,8 @@ QString PermissionLabel(const std::string &id) {
 		return tr::ayu_PermissionNetTcp(tr::now);
 	} else if (id == "net.udp") {
 		return tr::ayu_PermissionNetUdp(tr::now);
+	} else if (id == "plugins.message") {
+		return tr::ayu_PermissionPluginsMessage(tr::now);
 	}
 	return Utf8(id);
 }
@@ -1039,6 +1054,10 @@ void ShowPluginDetails(not_null<Window::SessionController*>, const QString &) {
 
 QString PermissionLabel(const std::string &id) {
 	return QString::fromStdString(id);
+}
+
+QString AcceptsFrom(const std::vector<std::string> &) {
+	return QString();
 }
 
 void AddPermissionDanger(
