@@ -118,7 +118,7 @@
 "ayu_PluginsUpToDate" = "À jour";
 "ayu_PluginsUpdateAvailable" = "Mise à jour : Wasmtime {wasmtime}, Python {python} ({size})";
 "ayu_PluginsDownloadTitle" = "Télécharger les composants des plugins";
-"ayu_PluginsDownloadText" = "Wasmtime {wasmtime} et Python {python} seront téléchargés ensemble, environ {size}. Les fichiers sont vérifiés par signature et hachage. Le serveur verra votre adresse IP.";
+"ayu_PluginsDownloadText" = "Wasmtime {wasmtime} et Python {python} seront téléchargés ensemble depuis la chaîne Telegram @{channel}, environ {size}. Les fichiers sont vérifiés par signature et hachage.";
 "ayu_PluginsDownload" = "Télécharger";
 "ayu_PluginsDownloading" = "Téléchargement… {percent}";
 "ayu_PluginsInstalling" = "Installation…";
