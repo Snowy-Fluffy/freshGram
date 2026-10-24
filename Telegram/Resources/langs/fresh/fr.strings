@@ -19,7 +19,6 @@
 "ayu_GhostModeOptionLongTapDescription" = "Appuyez longuement sur une option pour l'empêcher de changer lors de l'activation du mode fantôme.";
 "ayu_GhostModeOptionShiftDescription" = "Cliquez avec MAJ sur une option pour l'empêcher de changer lors de l'activation du mode fantôme.";
 "ayu_MarkReadAfterAction" = "Lire lors d'une action";
-"ayu_MarkReadAfterActionDescription" = "Marque automatiquement un message comme lu lorsque vous en envoyez un nouveau ou ajoutez une réaction.";
 "fresh_DontReadOnInteract" = "Ne pas lire lors d'une interaction";
 "ayu_MarkReadAfterSend" = "Envoi";
 "ayu_MarkReadAfterReaction" = "Réaction";

@@ -19,7 +19,6 @@
 "ayu_GhostModeOptionLongTapDescription" = "长按任意选项，可使其在切换幽灵模式时保持不变。";
 "ayu_GhostModeOptionShiftDescription" = "按住 SHIFT 点击任意选项，可使其在切换幽灵模式时保持不变。";
 "ayu_MarkReadAfterAction" = "互动时标记已读";
-"ayu_MarkReadAfterActionDescription" = "当你发送新消息或点击回应时，自动将消息标记为已读。";
 "fresh_DontReadOnInteract" = "交互时不标记已读";
 "ayu_MarkReadAfterSend" = "发送";
 "ayu_MarkReadAfterReaction" = "回应";

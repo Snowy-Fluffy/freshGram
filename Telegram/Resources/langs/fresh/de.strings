@@ -19,7 +19,6 @@
 "ayu_GhostModeOptionLongTapDescription" = "Halte eine Option gedrückt, damit sie sich beim Umschalten des Geistermodus nicht ändert.";
 "ayu_GhostModeOptionShiftDescription" = "Klicke bei gedrückter SHIFT-Taste auf eine Option, damit sie sich beim Umschalten des Geistermodus nicht ändert.";
 "ayu_MarkReadAfterAction" = "Bei Aktion als gelesen markieren";
-"ayu_MarkReadAfterActionDescription" = "Markiert eine Nachricht automatisch als gelesen, wenn du eine neue sendest oder auf eine Reaktion tippst.";
 "fresh_DontReadOnInteract" = "Bei Interaktion nicht lesen";
 "ayu_MarkReadAfterSend" = "Senden";
 "ayu_MarkReadAfterReaction" = "Reaktion";

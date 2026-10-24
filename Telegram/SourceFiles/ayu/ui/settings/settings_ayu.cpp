@@ -435,6 +435,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 						ghost.setUseScheduledMessages(v);
 						if (v) {
 							ghost.setMarkReadAfterAction(false);
+							if (state->refreshCheckboxes) state->refreshCheckboxes();
 						}
 					},
 					[state] { return AyuSettings::ghost(state->selectedUserId.current()).useScheduledMessagesLocked(); },
@@ -448,6 +449,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 						ghost.setMarkReadAfterAction(!v);
 						if (!v) {
 							ghost.setUseScheduledMessages(false);
+							if (state->refreshCheckboxes) state->refreshCheckboxes();
 						}
 					},
 					[state] { return AyuSettings::ghost(state->selectedUserId.current()).markReadAfterActionLocked(); },
@@ -469,39 +471,10 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 				wctx.highlights->push_back(std::make_pair(
 					u"ayu/useScheduledMessages"_q,
 					HighlightEntry{ collapsible.widget, {} }));
-			}
-
-			const auto markReadButton = AddButtonWithIcon(
-				container,
-				tr::ayu_MarkReadAfterAction(),
-				st::settingsButtonNoIcon
-			);
-			if (wctx.highlights) {
 				wctx.highlights->push_back(std::make_pair(
 					u"ayu/markReadAfterAction"_q,
-					HighlightEntry{ markReadButton.get(), {} }));
+					HighlightEntry{ collapsible.widget, {} }));
 			}
-			markReadButton->toggleOn(
-				state->selectedUserId.value()
-				| rpl::map([](uint64 id) {
-					return AyuSettings::ghost(id).markReadAfterActionValue();
-				}) | rpl::flatten_latest()
-			)->toggledValue(
-			) | rpl::filter(
-				[=](bool enabled) {
-					return enabled != AyuSettings::ghost(state->selectedUserId.current()).markReadAfterAction();
-				}
-			) | on_next(
-				[=](bool enabled) {
-					auto &ghost = AyuSettings::ghost(state->selectedUserId.current());
-					ghost.setMarkReadAfterAction(enabled);
-					if (enabled) {
-						ghost.setUseScheduledMessages(false);
-					}
-				},
-				container->lifetime());
-			AddSkip(container);
-			AddDividerText(container, tr::ayu_MarkReadAfterActionDescription());
 
 			AddSkip(container);
 			const auto silentOptions = std::vector<QString>{
@@ -616,7 +589,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 			});
 			sctx.entries->push_back({
 				.id = u"ayu/markReadAfterAction"_q,
-				.title = tr::ayu_MarkReadAfterAction(tr::now),
+				.title = tr::fresh_DontReadOnInteract(tr::now),
 				.section = sctx.sectionId,
 			});
 			sctx.entries->push_back({

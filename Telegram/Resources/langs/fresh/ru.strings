@@ -19,7 +19,6 @@
 "ayu_GhostModeOptionLongTapDescription" = "Удерживайте любую опцию, чтобы она не менялась при переключении режима призрака.";
 "ayu_GhostModeOptionShiftDescription" = "Нажмите на любую опцию с SHIFT, чтобы она не менялась при переключении режима призрака.";
 "ayu_MarkReadAfterAction" = "Читать при действии";
-"ayu_MarkReadAfterActionDescription" = "Автоматически помечает сообщение прочитанным, когда вы отправляете новое или ставите реакцию.";
 "fresh_DontReadOnInteract" = "Не читать при взаимодействии";
 "ayu_MarkReadAfterSend" = "Отправка";
 "ayu_MarkReadAfterReaction" = "Реакция";
