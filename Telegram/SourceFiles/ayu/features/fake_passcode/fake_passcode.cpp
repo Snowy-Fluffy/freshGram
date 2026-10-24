@@ -24,7 +24,7 @@
 #include <QtCore/QProcess>
 #include <QtCore/QStandardPaths>
 
-namespace AyuFakePasscode {
+namespace FreshFakePasscode {
 namespace {
 
 using namespace Storage::details;
@@ -442,17 +442,17 @@ void WipeCacheFiles() {
 }
 
 void WipeMessageDatabaseFiles() {
-	RemoveFiles({ u"ayudata*"_q }, false);
-	RemoveFiles({ u"ayu_backups"_q }, true);
+	RemoveFiles({ u"ayudata*"_q, u"freshdata*"_q }, false);
+	RemoveFiles({ u"ayu_backups"_q, u"fresh_backups"_q }, true);
 }
 
 void WipeSavedMediaFiles() {
-	RemoveFiles({ u"ayu_media*"_q }, true);
+	RemoveFiles({ u"ayu_media*"_q, u"fresh_media*"_q }, true);
 	QDir(AyuMessages::openedMediaDirectory()).removeRecursively();
 }
 
 void WipeSecretChatFiles() {
-	RemoveFiles({ u"ayu_secret*"_q }, true);
+	RemoveFiles({ u"ayu_secret*"_q, u"fresh_secret*"_q }, true);
 }
 
 void WipePluginFiles() {
@@ -464,6 +464,7 @@ void WipeSessionFiles() {
 	RemoveFiles({
 		u"key_data*"_q,
 		u"ayu_accounts*"_q,
+		u"fresh_accounts*"_q,
 		u"lock_background*"_q,
 		u"lock_avatar*"_q,
 		FileName() + '*',
@@ -560,8 +561,8 @@ void Run(const Actions &actions) {
 	}
 	if (actions.deleteAll) {
 		AyuMessages::clearEverything();
-		AyuLockBackground::Remove();
-		AyuLockBackground::RemoveAvatar();
+		FreshLockBackground::Remove();
+		FreshLockBackground::RemoveAvatar();
 	} else {
 		for (const auto userId : userIds) {
 			if (actions.logoutDb) {
@@ -833,4 +834,4 @@ void ApplyRebuild(const RebuildTask &task) {
 	[[maybe_unused]] const auto written = ApplyRebuildTask(task);
 }
 
-} // namespace AyuFakePasscode
+} // namespace FreshFakePasscode

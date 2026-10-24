@@ -329,7 +329,7 @@ void ActivateBotButton(ClickHandlerContext context, BotButtonLookup lookup) {
 	}
 
 	using ButtonType = HistoryMessageMarkupButton::Type;
-	if (item->isAyuRestored()
+	if (item->isFreshRestored()
 		&& button->type != ButtonType::Url
 		&& button->type != ButtonType::CopyText
 		&& button->type != ButtonType::UserProfile) {

@@ -3079,8 +3079,8 @@ std::unique_ptr<Ui::DropdownMenu> MakeAttachBotsMenu(
 			ChooseAndSendLocation(controller, config, actionFactory());
 		}, &st::menuIconAddress);
 	}
-	raw->addAction(tr::ayu_StoryAdd(tr::now), [=] {
-		AyuStories::StartPosting(controller, controller->session().user());
+	raw->addAction(tr::fresh_StoryAdd(tr::now), [=] {
+		FreshStories::StartPosting(controller, controller->session().user());
 	}, &st::menuIconAdd);
 	if (Data::CanSend(peer, ChatRestriction::SendMusic, false)) {
 		++minimal;

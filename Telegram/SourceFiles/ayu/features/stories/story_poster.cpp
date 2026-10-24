@@ -17,7 +17,7 @@
 #include "storage/file_upload.h"
 #include "ui/text/text_entity.h"
 
-namespace AyuStories {
+namespace FreshStories {
 namespace {
 
 class PrepareTask final : public Task {
@@ -82,18 +82,18 @@ private:
 
 QString ErrorText(const QString &type) {
 	if (type == u"STORIES_TOO_MUCH"_q) {
-		return tr::ayu_StoryLimit(tr::now);
+		return tr::fresh_StoryLimit(tr::now);
 	} else if (type == u"PREMIUM_ACCOUNT_REQUIRED"_q) {
-		return tr::ayu_StoryErrorPremium(tr::now);
+		return tr::fresh_StoryErrorPremium(tr::now);
 	} else if (type == u"BOOSTS_REQUIRED"_q) {
-		return tr::ayu_StoryErrorBoosts(tr::now);
+		return tr::fresh_StoryErrorBoosts(tr::now);
 	} else if (type == u"STORY_PERIOD_INVALID"_q) {
-		return tr::ayu_StoryErrorPeriod(tr::now);
+		return tr::fresh_StoryErrorPeriod(tr::now);
 	} else if (type == u"CHAT_ADMIN_REQUIRED"_q
 		|| type == u"CHAT_WRITE_FORBIDDEN"_q) {
-		return tr::ayu_StoryErrorRights(tr::now);
+		return tr::fresh_StoryErrorRights(tr::now);
 	} else if (MediaFailed(type)) {
-		return tr::ayu_StoryErrorMedia(tr::now);
+		return tr::fresh_StoryErrorMedia(tr::now);
 	}
 	return type;
 }
@@ -275,7 +275,7 @@ void Poster::prepared(
 	if (_active->video) {
 		// The re-encoded video is MP4, only a too large one is left as is.
 		if (!result->videoSource && (result->filemime != u"video/mp4"_q)) {
-			fail(token, tr::ayu_StoryVideoFormat(tr::now));
+			fail(token, tr::fresh_StoryVideoFormat(tr::now));
 			return;
 		}
 		result->document.match([&](const MTPDdocument &data) {
@@ -397,4 +397,4 @@ void Poster::cancel() {
 	_active = nullptr;
 }
 
-} // namespace AyuStories
+} // namespace FreshStories

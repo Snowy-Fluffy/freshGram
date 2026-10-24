@@ -441,7 +441,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 					[state](bool v) { AyuSettings::ghost(state->selectedUserId.current()).setUseScheduledMessagesLocked(v); }
 				},
 				NestedEntry{
-					tr::ayu_DontReadOnInteract(tr::now),
+					tr::fresh_DontReadOnInteract(tr::now),
 					[state] { return !AyuSettings::ghost(state->selectedUserId.current()).markReadAfterAction(); },
 					[state](bool v) {
 						auto &ghost = AyuSettings::ghost(state->selectedUserId.current());
@@ -649,7 +649,7 @@ void BuildSpyEssentials(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/saveLocallyDeletedMessages"_q,
-		.title = tr::ayu_SaveLocallyDeletedMessages(),
+		.title = tr::fresh_SaveLocallyDeletedMessages(),
 		.getter = &AyuSettings::saveLocallyDeletedMessages,
 		.setter = &AyuSettings::setSaveLocallyDeletedMessages,
 	});
@@ -661,20 +661,20 @@ void BuildSpyEssentials(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 	ayu.addCollapsibleToggle({
 		.id = u"ayu/saveEditedContent"_q,
-		.title = tr::ayu_SaveEditedContent(),
+		.title = tr::fresh_SaveEditedContent(),
 		.checkboxes = {
 			NestedEntry{
-				tr::ayu_SaveEditedText(tr::now),
+				tr::fresh_SaveEditedText(tr::now),
 				[] { return AyuSettings::getInstance().saveEditedText(); },
 				[](bool v) { AyuSettings::getInstance().setSaveEditedText(v); }
 			},
 			NestedEntry{
-				tr::ayu_SaveEditedMedia(tr::now),
+				tr::fresh_SaveEditedMedia(tr::now),
 				[] { return AyuSettings::getInstance().saveEditedMedia(); },
 				[](bool v) { AyuSettings::getInstance().setSaveEditedMedia(v); }
 			},
 			NestedEntry{
-				tr::ayu_SaveEditedMarkup(tr::now),
+				tr::fresh_SaveEditedMarkup(tr::now),
 				[] { return AyuSettings::getInstance().saveEditedMarkup(); },
 				[](bool v) { AyuSettings::getInstance().setSaveEditedMarkup(v); }
 			},
@@ -683,25 +683,25 @@ void BuildSpyEssentials(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 	ayu.addCollapsibleToggle({
 		.id = u"ayu/saveEditedWhere"_q,
-		.title = tr::ayu_SaveEditedWhere(),
+		.title = tr::fresh_SaveEditedWhere(),
 		.checkboxes = {
 			NestedEntry{
-				tr::ayu_SaveEditedPrivate(tr::now),
+				tr::fresh_SaveEditedPrivate(tr::now),
 				[] { return AyuSettings::getInstance().saveEditedPrivate(); },
 				[](bool v) { AyuSettings::getInstance().setSaveEditedPrivate(v); }
 			},
 			NestedEntry{
-				tr::ayu_SaveEditedGroups(tr::now),
+				tr::fresh_SaveEditedGroups(tr::now),
 				[] { return AyuSettings::getInstance().saveEditedGroups(); },
 				[](bool v) { AyuSettings::getInstance().setSaveEditedGroups(v); }
 			},
 			NestedEntry{
-				tr::ayu_SaveEditedChannels(tr::now),
+				tr::fresh_SaveEditedChannels(tr::now),
 				[] { return AyuSettings::getInstance().saveEditedChannels(); },
 				[](bool v) { AyuSettings::getInstance().setSaveEditedChannels(v); }
 			},
 			NestedEntry{
-				tr::ayu_SaveEditedOwn(tr::now),
+				tr::fresh_SaveEditedOwn(tr::now),
 				[] { return AyuSettings::getInstance().saveEditedOwn(); },
 				[](bool v) { AyuSettings::getInstance().setSaveEditedOwn(v); }
 			},
@@ -720,29 +720,29 @@ void BuildSpyEssentials(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 }
 
 void BuildDeletedChats(SectionBuilder &builder, AyuSectionBuilder &ayu) {
-	builder.addSubsectionTitle(tr::ayu_DeletedChatsHeader());
+	builder.addSubsectionTitle(tr::fresh_DeletedChatsHeader());
 
 	ayu.addCollapsibleToggle({
 		.id = u"ayu/keepRemovedDialogs"_q,
-		.title = tr::ayu_KeepRemovedDialogs(),
+		.title = tr::fresh_KeepRemovedDialogs(),
 		.checkboxes = {
 			NestedEntry{
-				tr::ayu_KeepRemovedUserChats(tr::now),
+				tr::fresh_KeepRemovedUserChats(tr::now),
 				[] { return AyuSettings::getInstance().keepRemovedUserChats(); },
 				[](bool v) { AyuSettings::getInstance().setKeepRemovedUserChats(v); }
 			},
 			NestedEntry{
-				tr::ayu_KeepRemovedGroups(tr::now),
+				tr::fresh_KeepRemovedGroups(tr::now),
 				[] { return AyuSettings::getInstance().keepRemovedGroups(); },
 				[](bool v) { AyuSettings::getInstance().setKeepRemovedGroups(v); }
 			},
 			NestedEntry{
-				tr::ayu_KeepRemovedForums(tr::now),
+				tr::fresh_KeepRemovedForums(tr::now),
 				[] { return AyuSettings::getInstance().keepRemovedForums(); },
 				[](bool v) { AyuSettings::getInstance().setKeepRemovedForums(v); }
 			},
 			NestedEntry{
-				tr::ayu_KeepRemovedChannels(tr::now),
+				tr::fresh_KeepRemovedChannels(tr::now),
 				[] { return AyuSettings::getInstance().keepRemovedChannels(); },
 				[](bool v) { AyuSettings::getInstance().setKeepRemovedChannels(v); }
 			}
@@ -751,31 +751,31 @@ void BuildDeletedChats(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/keepDeletedTopics"_q,
-		.title = tr::ayu_KeepDeletedTopics(),
+		.title = tr::fresh_KeepDeletedTopics(),
 		.getter = &AyuSettings::keepDeletedTopics,
 		.setter = &AyuSettings::setKeepDeletedTopics,
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/restoreDeletedInChats"_q,
-		.title = tr::ayu_RestoreDeletedInChats(),
+		.title = tr::fresh_RestoreDeletedInChats(),
 		.getter = &AyuSettings::restoreDeletedInChats,
 		.setter = &AyuSettings::setRestoreDeletedInChats,
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/showDeletedChatIcon"_q,
-		.title = tr::ayu_ShowDeletedChatIcon(),
+		.title = tr::fresh_ShowDeletedChatIcon(),
 		.getter = &AyuSettings::showDeletedChatIcon,
 		.setter = &AyuSettings::setShowDeletedChatIcon,
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/markOldMessagesDeleted"_q,
-		.title = tr::ayu_MarkOldMessagesDeleted(),
+		.title = tr::fresh_MarkOldMessagesDeleted(),
 		.getter = &AyuSettings::markOldMessagesDeleted,
 		.setter = &AyuSettings::setMarkOldMessagesDeleted,
 	});
 
 	builder.addSkip();
-	builder.addDividerText(tr::ayu_DeletedChatsDescription());
+	builder.addDividerText(tr::fresh_DeletedChatsDescription());
 }
 
 constexpr auto kNever = std::numeric_limits<int>::max();
@@ -801,9 +801,9 @@ void AddStorageSlider(
 		},
 		.formatLabel = [=](int value) {
 			return (value == kNever)
-				? tr::ayu_StorageUnlimited(tr::now)
+				? tr::fresh_StorageUnlimited(tr::now)
 				: (value == 0)
-				? tr::ayu_StorageOff(tr::now)
+				? tr::fresh_StorageOff(tr::now)
 				: unit.isEmpty()
 				? QString::number(value)
 				: QString::number(value) + ' ' + unit;
@@ -828,10 +828,10 @@ void ShowClearAllDeleted(not_null<Window::SessionController*> controller) {
 			.confirmStyle = attention ? &st::attentionBoxButton : nullptr,
 		}));
 	};
-	const auto proceed = tr::ayu_ClearAllDeletedContinue(tr::now);
-	step(tr::ayu_ClearAllDeletedFirst(tr::now), proceed, false, [=] {
-		step(tr::ayu_ClearAllDeletedSecond(tr::now), proceed, true, [=] {
-			step(tr::ayu_ClearAllDeletedThird(tr::now), tr::ayu_ClearAllDeletedAction(tr::now), true, [] {
+	const auto proceed = tr::fresh_ClearAllDeletedContinue(tr::now);
+	step(tr::fresh_ClearAllDeletedFirst(tr::now), proceed, false, [=] {
+		step(tr::fresh_ClearAllDeletedSecond(tr::now), proceed, true, [=] {
+			step(tr::fresh_ClearAllDeletedThird(tr::now), tr::fresh_ClearAllDeletedAction(tr::now), true, [] {
 				AyuMessages::clearAllDeleted();
 				Core::Restart();
 			});
@@ -841,12 +841,12 @@ void ShowClearAllDeleted(not_null<Window::SessionController*> controller) {
 
 void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	const auto &settings = AyuSettings::getInstance();
-	builder.addSubsectionTitle(tr::ayu_StorageHeader());
+	builder.addSubsectionTitle(tr::fresh_StorageHeader());
 
 	AddStorageSlider(
 		ayu,
 		u"ayu/maxEditRevisions"_q,
-		tr::ayu_MaxEditRevisions(),
+		tr::fresh_MaxEditRevisions(),
 		{ 10, 25, 50, 100, 250, 500, kNever },
 		QString(),
 		settings.maxEditRevisions(),
@@ -856,7 +856,7 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	AddStorageSlider(
 		ayu,
 		u"ayu/deletedRestoreLimit"_q,
-		tr::ayu_DeletedRestoreLimit(),
+		tr::fresh_DeletedRestoreLimit(),
 		{ 100, 500, 1000, 3000, 10000, kNever },
 		QString(),
 		settings.deletedRestoreLimit(),
@@ -866,7 +866,7 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	AddStorageSlider(
 		ayu,
 		u"ayu/keptSnapshotLimit"_q,
-		tr::ayu_KeptSnapshotLimit(),
+		tr::fresh_KeptSnapshotLimit(),
 		{ 25, 50, 100, 250, 500, 1000, kNever },
 		QString(),
 		settings.keptSnapshotLimit(),
@@ -876,9 +876,9 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	AddStorageSlider(
 		ayu,
 		u"ayu/deletedMediaMaxSizeMb"_q,
-		tr::ayu_DeletedMediaMaxSize(),
+		tr::fresh_DeletedMediaMaxSize(),
 		{ 0, 8, 16, 32, 64, 128, 256 },
-		tr::ayu_StorageUnitMb(tr::now),
+		tr::fresh_StorageUnitMb(tr::now),
 		settings.deletedMediaMaxSizeMb(),
 		[](int value) {
 			AyuSettings::getInstance().setDeletedMediaMaxSizeMb(value);
@@ -886,23 +886,23 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	AddStorageSlider(
 		ayu,
 		u"ayu/keepDeletedDays"_q,
-		tr::ayu_KeepDeletedDays(),
+		tr::fresh_KeepDeletedDays(),
 		{ 30, 90, 180, 365, kNever },
-		tr::ayu_StorageUnitDays(tr::now),
+		tr::fresh_StorageUnitDays(tr::now),
 		settings.keepDeletedDays(),
 		[](int value) {
 			AyuSettings::getInstance().setKeepDeletedDays(value);
 		});
 	ayu.addSettingToggle({
 		.id = u"ayu/deleteSavedFiles"_q,
-		.title = tr::ayu_DeleteSavedFiles(),
+		.title = tr::fresh_DeleteSavedFiles(),
 		.getter = &AyuSettings::deleteSavedFiles,
 		.setter = &AyuSettings::setDeleteSavedFiles,
 	});
 	AddStorageSlider(
 		ayu,
 		u"ayu/backupKeepCount"_q,
-		tr::ayu_BackupKeepCount(),
+		tr::fresh_BackupKeepCount(),
 		{ 2, 5, 10, 20 },
 		QString(),
 		settings.backupKeepCount(),
@@ -912,9 +912,9 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	AddStorageSlider(
 		ayu,
 		u"ayu/backupIntervalHours"_q,
-		tr::ayu_BackupInterval(),
+		tr::fresh_BackupInterval(),
 		{ 1, 3, 6, 12, 24 },
-		tr::ayu_StorageUnitHours(tr::now),
+		tr::fresh_StorageUnitHours(tr::now),
 		settings.backupIntervalHours(),
 		[](int value) {
 			AyuSettings::getInstance().setBackupIntervalHours(value);
@@ -924,7 +924,7 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	const auto controller = builder.controller();
 	builder.addButton({
 		.id = u"ayu/clearAllDeleted"_q,
-		.title = tr::ayu_ClearAllDeleted(),
+		.title = tr::fresh_ClearAllDeleted(),
 		.st = &st::settingsAttentionButton,
 		.onClick = [=] {
 			if (controller) {
@@ -934,9 +934,9 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.keywords = { u"delete"_q, u"clear"_q, u"storage"_q },
 	});
 	builder.addSkip();
-	builder.addDividerText(tr::ayu_StorageDescription());
+	builder.addDividerText(tr::fresh_StorageDescription());
 	builder.addSkip();
-	builder.addDividerText(tr::ayu_DeleteSavedFilesAbout());
+	builder.addDividerText(tr::fresh_DeleteSavedFilesAbout());
 }
 
 void BuildOther(SectionBuilder &builder, AyuSectionBuilder &ayu) {
@@ -957,14 +957,14 @@ void BuildOther(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 }
 
 void BuildSecretChats(SectionBuilder &builder) {
-	builder.addSubsectionTitle(tr::ayu_SecretChatsHeader());
+	builder.addSubsectionTitle(tr::fresh_SecretChatsHeader());
 	builder.add([](const BuildContext &ctx) {
 		v::match(ctx, [&](const WidgetContext &wctx) {
 			const auto container = wctx.container;
-			AyuSecret::SyncPolicy();
+			FreshSecret::SyncPolicy();
 			const auto button = AddButtonWithIcon(
 				container,
-				tr::ayu_SecretChatsSwitch(),
+				tr::fresh_SecretChatsSwitch(),
 				st::settingsButtonNoIcon);
 			if (wctx.highlights) {
 				wctx.highlights->push_back(std::make_pair(
@@ -978,18 +978,18 @@ void BuildSecretChats(SectionBuilder &builder) {
 				auto &settings = AyuSettings::getInstance();
 				if (settings.secretChatsEnabled()) {
 					settings.setSecretChatsEnabled(false);
-				} else if (!AyuSecret::PasscodeSet()) {
-					Ui::Toast::Show(tr::ayu_SecretChatsNeedPasscode(tr::now));
+				} else if (!FreshSecret::PasscodeSet()) {
+					Ui::Toast::Show(tr::fresh_SecretChatsNeedPasscode(tr::now));
 				} else {
 					settings.setSecretChatsEnabled(true);
 				}
 			});
 			AddSkip(container);
-			AddDividerText(container, tr::ayu_SecretChatsSwitchDescription());
+			AddDividerText(container, tr::fresh_SecretChatsSwitchDescription());
 		}, [&](const SearchContext &sctx) {
 			sctx.entries->push_back({
 				.id = u"ayu/secretChats"_q,
-				.title = tr::ayu_SecretChatsSwitch(tr::now),
+				.title = tr::fresh_SecretChatsSwitch(tr::now),
 				.section = sctx.sectionId,
 			});
 		});
@@ -1024,7 +1024,7 @@ const auto kMeta = BuildHelper({
 } // namespace
 
 rpl::producer<QString> AyuGhost::title() {
-	return tr::ayu_ProductName();
+	return tr::fresh_ProductName();
 }
 
 AyuGhost::AyuGhost(

@@ -10,7 +10,7 @@ class AuthKey;
 using AuthKeyPtr = std::shared_ptr<AuthKey>;
 } // namespace MTP
 
-namespace AyuVault {
+namespace FreshVault {
 
 void SetKey(MTP::AuthKeyPtr key);
 [[nodiscard]] bool HasKey();
@@ -36,4 +36,4 @@ bool WriteCompressedFile(const QString &path, const unsigned char *data, qint64 
 	bool requireSealed = false);
 void SealFilesIn(const QString &directory);
 
-} // namespace AyuVault
+} // namespace FreshVault

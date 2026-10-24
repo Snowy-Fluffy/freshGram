@@ -9,7 +9,7 @@
 #include "styles/style_layers.h"
 #include "styles/style_widgets.h"
 #include "styles/palette.h"
-#include "ayu/ayu_card_segment.h"
+#include "ayu/fresh_card_segment.h"
 #include "ayu/ayu_ui_settings.h"
 
 #include <QtGui/QPainter>

@@ -15,7 +15,7 @@ public:
 	RecognitionModelsBox(
 		QWidget*,
 		not_null<Main::Session*> session,
-		AyuRecognition::ModelKind kind);
+		FreshRecognition::ModelKind kind);
 
 protected:
 	void prepare() override;
@@ -23,7 +23,7 @@ protected:
 
 private:
 	const not_null<Main::Session*> _session;
-	const AyuRecognition::ModelKind _kind;
+	const FreshRecognition::ModelKind _kind;
 	Fn<void()> _setInnerFocus;
 
 };

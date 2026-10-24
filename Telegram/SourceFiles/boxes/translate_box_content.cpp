@@ -215,7 +215,7 @@ void TranslateBoxContent(
 		auto value = result.text.value_or(
 			tr::italic(((result.error == UiError::LocalLanguagePackMissing)
 				? (Ui::TranslateProviderIsLocal()
-					? tr::ayu_TranslateLocalMissing
+					? tr::fresh_TranslateLocalMissing
 					: tr::lng_translate_box_error_language_pack_not_installed)
 				: tr::lng_translate_box_error)(tr::now)));
 		translated->entity()->setMarkedText(value, textContext);

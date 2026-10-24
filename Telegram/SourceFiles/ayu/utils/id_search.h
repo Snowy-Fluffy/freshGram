@@ -10,7 +10,7 @@ namespace Main {
 class Session;
 } // namespace Main
 
-namespace AyuIdSearch {
+namespace FreshIdSearch {
 
 enum class Type {
 	None,
@@ -40,4 +40,4 @@ struct Query {
 	not_null<Main::Session*> session,
 	const Query &query);
 
-} // namespace AyuIdSearch
+} // namespace FreshIdSearch

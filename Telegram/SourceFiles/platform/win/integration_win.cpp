@@ -192,7 +192,7 @@ bool WindowsIntegration::processEvent(
 
 	case WM_POWERBROADCAST:
 		if (wParam == PBT_APMSUSPEND) {
-			AyuLockTriggers::SystemLocked();
+			FreshLockTriggers::SystemLocked();
 		}
 		break;
 

@@ -201,12 +201,12 @@ void BuildMarks(
 			u"ayu/messageRounding"_q,
 			u"ayu/messageTail"_q,
 		},
-		.title = tr::ayu_MaterialBubbles(),
-		.boxTitle = tr::ayu_MaterialBubbles(),
+		.title = tr::fresh_MaterialBubbles(),
+		.boxTitle = tr::fresh_MaterialBubbles(),
 		.initialSelection = settings->materialBubbles() ? 1 : 0,
 		.options = {
-			tr::ayu_StyleTelegram(tr::now),
-			tr::ayu_StyleMaterialgram(tr::now),
+			tr::fresh_StyleTelegram(tr::now),
+			tr::fresh_StyleMaterialgram(tr::now),
 		},
 		.setter = [](int i) {
 			AyuSettings::getInstance().setMaterialBubbles(i == 1);
@@ -230,7 +230,7 @@ void BuildMarks(
 	ayu.addSlider({
 		.id = u"ayu/replyBackgroundOpacity"_q,
 		.altIds = { u"ayu/colorfulReplies"_q },
-		.title = tr::ayu_ReplyBackgroundOpacity(),
+		.title = tr::fresh_ReplyBackgroundOpacity(),
 		.steps = 26,
 		.current = settings->replyBackgroundOpacity() / 2,
 		.indexToValue = [](int index) { return index; },
@@ -244,7 +244,7 @@ void BuildMarks(
 	ayu.addSlider({
 		.id = u"ayu/reactionBackgroundOpacity"_q,
 		.altIds = { u"ayu/colorfulReactions"_q },
-		.title = tr::ayu_ReactionBackgroundOpacity(),
+		.title = tr::fresh_ReactionBackgroundOpacity(),
 		.steps = 26,
 		.current = settings->reactionBackgroundOpacity() / 2,
 		.indexToValue = [](int index) { return index; },
@@ -329,17 +329,17 @@ void BuildWideMessagesMultiplier(
 }
 
 void BuildGestures(SectionBuilder &builder, AyuSectionBuilder &ayu) {
-	builder.addSubsectionTitle(tr::ayu_GesturesHeader());
+	builder.addSubsectionTitle(tr::fresh_GesturesHeader());
 
 	ayu.addSettingToggle({
 		.id = u"ayu/invertSwipeGestures"_q,
-		.title = tr::ayu_InvertSwipeGestures(),
+		.title = tr::fresh_InvertSwipeGestures(),
 		.getter = &AyuSettings::invertSwipeGestures,
 		.setter = &AyuSettings::setInvertSwipeGestures,
 	});
 
 	builder.addSkip();
-	builder.addDividerText(tr::ayu_InvertSwipeGesturesDescription());
+	builder.addDividerText(tr::fresh_InvertSwipeGesturesDescription());
 	builder.addSkip();
 }
 
@@ -472,7 +472,7 @@ void BuildMessageFieldElements(SectionBuilder &builder, AyuSectionBuilder &ayu) 
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/showTranslateButtonInMessageField"_q,
-		.title = tr::ayu_MessageFieldElementTranslate(),
+		.title = tr::fresh_MessageFieldElementTranslate(),
 		.getter = &AyuSettings::showTranslateButtonInMessageField,
 		.setter = &AyuSettings::setShowTranslateButtonInMessageField,
 		.icon = { &st::messageFieldTranslateIcon },
@@ -480,7 +480,7 @@ void BuildMessageFieldElements(SectionBuilder &builder, AyuSectionBuilder &ayu) 
 	const auto controller = builder.controller();
 	builder.addButton({
 		.id = u"ayu/translateComposeTo"_q,
-		.title = tr::ayu_TranslateComposeTo(),
+		.title = tr::fresh_TranslateComposeTo(),
 		.st = &st::settingsButtonNoIcon,
 		.label = AyuSettings::getInstance().translateComposeToValue()
 			| rpl::map([](const QString &code) {
@@ -494,7 +494,7 @@ void BuildMessageFieldElements(SectionBuilder &builder, AyuSectionBuilder &ayu) 
 				AyuSettings::getInstance().translateComposeTo());
 			controller->show(Box(
 				Ui::ChooseLanguageBox,
-				tr::ayu_TranslateComposeTo(),
+				tr::fresh_TranslateComposeTo(),
 				[](std::vector<LanguageId> ids) {
 					if (!ids.empty()) {
 						AyuSettings::getInstance().setTranslateComposeTo(
@@ -510,7 +510,7 @@ void BuildMessageFieldElements(SectionBuilder &builder, AyuSectionBuilder &ayu) 
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/autoTranslateOutgoing"_q,
-		.title = tr::ayu_AutoTranslateOutgoing(),
+		.title = tr::fresh_AutoTranslateOutgoing(),
 		.getter = &AyuSettings::autoTranslateOutgoing,
 		.setter = &AyuSettings::setAutoTranslateOutgoing,
 		.keywords = { u"translate"_q, u"send"_q, u"auto"_q },
@@ -519,7 +519,7 @@ void BuildMessageFieldElements(SectionBuilder &builder, AyuSectionBuilder &ayu) 
 	ayu.addSettingToggle({
 		.id = u"ayu/showAiEditorButtonInMessageField"_q,
 		.altIds = { u"ayu/showArticleButtonInMessageField"_q },
-		.title = tr::ayu_AiAndArticlePopups(),
+		.title = tr::fresh_AiAndArticlePopups(),
 		.getter = &AyuSettings::showAiEditorButtonInMessageField,
 		.setter = &AyuSettings::setShowAiEditorButtonInMessageField,
 		.icon = { &st::messageFieldAiArticleIcon },

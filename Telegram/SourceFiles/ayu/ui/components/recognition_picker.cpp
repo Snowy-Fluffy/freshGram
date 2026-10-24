@@ -105,7 +105,7 @@ RecognitionPicker::RecognitionPicker(
 
 	_recognize = Ui::CreateChild<Ui::RoundButton>(
 		this,
-		tr::ayu_RecognizeButton(),
+		tr::fresh_RecognizeButton(),
 		st::defaultActiveButton);
 	_cancelButton = Ui::CreateChild<Ui::RoundButton>(
 		this,
@@ -332,15 +332,15 @@ void RecognitionPicker::recognize() {
 		return;
 	}
 	_state = State::Working;
-	_status = tr::ayu_Recognizing(tr::now);
+	_status = tr::fresh_Recognizing(tr::now);
 	updateControls();
 	update();
 
 	const auto generation = ++_generation;
-	_cancel = AyuRecognition::RecognizeTextAsync({
+	_cancel = FreshRecognition::RecognizeTextAsync({
 		.image = _image.copy(crop),
 		.languages = _languages,
-	}, crl::guard(this, [=](AyuRecognition::TextResult result) {
+	}, crl::guard(this, [=](FreshRecognition::TextResult result) {
 		if (generation != _generation) {
 			return;
 		}
@@ -348,12 +348,12 @@ void RecognitionPicker::recognize() {
 		if (result.cancelled) {
 			return;
 		} else if (!result.ok) {
-			showText(tr::ayu_RecognizeFailed(
+			showText(tr::fresh_RecognizeFailed(
 				tr::now,
 				lt_error,
-				AyuRecognition::RecognitionErrorText(result.error)), false);
+				FreshRecognition::RecognitionErrorText(result.error)), false);
 		} else if (result.text.isEmpty()) {
-			showText(tr::ayu_RecognizeNoText(tr::now), false);
+			showText(tr::fresh_RecognizeNoText(tr::now), false);
 		} else {
 			showText(result.text, true);
 		}
@@ -418,7 +418,7 @@ void RecognitionPicker::paintEvent(QPaintEvent *e) {
 		}
 		p.setPen(Qt::white);
 		p.setFont(st::semiboldFont);
-		const auto text = tr::ayu_RecognizeHint(tr::now);
+		const auto text = tr::fresh_RecognizeHint(tr::now);
 		const auto hint = QRect(
 			(width() - st::semiboldFont->width(text)) / 2,
 			st::recognitionHintTop,

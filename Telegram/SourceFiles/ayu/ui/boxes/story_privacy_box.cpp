@@ -49,15 +49,15 @@ private:
 
 };
 
-[[nodiscard]] QString AudienceName(AyuStories::Audience audience) {
-	using AyuStories::Audience;
+[[nodiscard]] QString AudienceName(FreshStories::Audience audience) {
+	using FreshStories::Audience;
 	switch (audience) {
-	case Audience::Everyone: return tr::ayu_StoryEveryone(tr::now);
-	case Audience::CloseFriends: return tr::ayu_StoryCloseFriends(tr::now);
-	case Audience::Selected: return tr::ayu_StorySelected(tr::now);
+	case Audience::Everyone: return tr::fresh_StoryEveryone(tr::now);
+	case Audience::CloseFriends: return tr::fresh_StoryCloseFriends(tr::now);
+	case Audience::Selected: return tr::fresh_StorySelected(tr::now);
 	case Audience::Contacts: break;
 	}
-	return tr::ayu_StoryContacts(tr::now);
+	return tr::fresh_StoryContacts(tr::now);
 }
 
 void FillStoryAudienceBox(
@@ -65,9 +65,9 @@ void FillStoryAudienceBox(
 		not_null<Window::SessionController*> controller,
 		StoryAudienceChoice current,
 		Fn<void(StoryAudienceChoice)> done) {
-	using AyuStories::Audience;
+	using FreshStories::Audience;
 
-	box->setTitle(tr::ayu_StoryAudienceTitle());
+	box->setTitle(tr::fresh_StoryAudienceTitle());
 	const auto state = box->lifetime().make_state<StoryAudienceChoice>(
 		std::move(current));
 	const auto changed = box->lifetime().make_state<rpl::event_stream<>>();
@@ -120,8 +120,8 @@ void FillStoryAudienceBox(
 			ShowStoryUsersBox(
 				controller,
 				selected
-					? tr::ayu_StorySelectedTitle()
-					: tr::ayu_StoryExceptTitle(),
+					? tr::fresh_StorySelectedTitle()
+					: tr::fresh_StoryExceptTitle(),
 				selected ? state->selected : state->excepted,
 				crl::guard(box, [=](std::vector<not_null<UserData*>> users) {
 					(selected ? state->selected : state->excepted)
@@ -138,13 +138,13 @@ void FillStoryAudienceBox(
 		}));
 		wrap->finishAnimating();
 	};
-	addUsers(tr::ayu_StoryExceptButton(), &st::menuIconRemove, false);
-	addUsers(tr::ayu_StoryChooseButton(), &st::menuIconAdd, true);
+	addUsers(tr::fresh_StoryExceptButton(), &st::menuIconRemove, false);
+	addUsers(tr::fresh_StoryChooseButton(), &st::menuIconAdd, true);
 
 	box->addButton(tr::lng_settings_save(), [=] {
 		if (state->audience == Audience::Selected
 			&& state->selected.empty()) {
-			controller->showToast(tr::ayu_StoryNoUsers(tr::now));
+			controller->showToast(tr::fresh_StoryNoUsers(tr::now));
 			return;
 		}
 		const auto callback = done;
@@ -158,16 +158,16 @@ void FillStoryAudienceBox(
 } // namespace
 
 QString StoryAudienceText(const StoryAudienceChoice &choice) {
-	using AyuStories::Audience;
+	using FreshStories::Audience;
 	const auto name = AudienceName(choice.audience);
 	if (choice.audience == Audience::Selected) {
-		return tr::ayu_StorySelectedCount(
+		return tr::fresh_StorySelectedCount(
 			tr::now,
 			lt_amount,
 			QString::number(choice.selected.size()));
 	} else if (choice.audience != Audience::CloseFriends
 		&& !choice.excepted.empty()) {
-		return tr::ayu_StoryAudienceExcept(
+		return tr::fresh_StoryAudienceExcept(
 			tr::now,
 			lt_audience,
 			name,

@@ -109,7 +109,7 @@ namespace {
 
 struct PrecomputedKeys {
 	Storage::PrecomputedPasscodeKey real;
-	std::optional<AyuFakePasscode::Match> fake;
+	std::optional<FreshFakePasscode::Match> fake;
 	Storage::PrecomputedPasscodeKey fakeReal;
 };
 
@@ -124,7 +124,7 @@ struct PrecomputedKeys {
 [[nodiscard]] PasscodeAttempt TryPasscodeWith(
 		const QString &passcode,
 		const PrecomputedKeys *keys) {
-	AyuPasscodeGuard::EnsureLoaded();
+	FreshPasscodeGuard::EnsureLoaded();
 	if (passcode.isEmpty()) {
 		return PasscodeAttempt::Empty;
 	} else if (!passcodeCanTry()) {
@@ -150,10 +150,10 @@ struct PrecomputedKeys {
 	}
 	auto correct = (check == Storage::PasscodeCheck::Correct);
 	if (!correct) {
-		const auto fake = keys ? keys->fake : AyuFakePasscode::TryMatch(utf8);
+		const auto fake = keys ? keys->fake : FreshFakePasscode::TryMatch(utf8);
 		if (fake) {
 			if (!fake->unlocks()) {
-				AyuFakePasscode::RunSilent(fake->actions);
+				FreshFakePasscode::RunSilent(fake->actions);
 			} else {
 				correct = domain.started()
 					|| (CheckOf(keys
@@ -161,13 +161,13 @@ struct PrecomputedKeys {
 						: domain.start(fake->realPasscode))
 						== Storage::PasscodeCheck::Correct);
 				if (correct) {
-					AyuFakePasscode::SetPending(fake->id);
+					FreshFakePasscode::SetPending(fake->id);
 				}
 			}
 		}
 	}
 	if (!correct) {
-		return AyuPasscodeGuard::RegisterFailure()
+		return FreshPasscodeGuard::RegisterFailure()
 			? PasscodeAttempt::Wiped
 			: PasscodeAttempt::Wrong;
 	}
@@ -183,14 +183,14 @@ PasscodeAttempt TryPasscode(const QString &passcode) {
 void TryPasscodeAsync(
 		const QString &passcode,
 		Fn<void(PasscodeAttempt)> done) {
-	AyuPasscodeGuard::EnsureLoaded();
+	FreshPasscodeGuard::EnsureLoaded();
 	if (passcode.isEmpty() || !passcodeCanTry()) {
 		done(TryPasscode(passcode));
 		return;
 	}
 	const auto utf8 = passcode.toUtf8();
 	const auto real = Core::App().domain().local().passcodeKdfInput();
-	const auto fakeInput = AyuFakePasscode::MatchKdfInput();
+	const auto fakeInput = FreshFakePasscode::MatchKdfInput();
 	crl::async([=] {
 		const auto derive = [&](const QByteArray &value) {
 			return Storage::PrecomputedPasscodeKey{
@@ -206,7 +206,7 @@ void TryPasscodeAsync(
 		if (real) {
 			keys->real = derive(utf8);
 		}
-		keys->fake = AyuFakePasscode::MatchWithKey(
+		keys->fake = FreshFakePasscode::MatchWithKey(
 			fakeInput,
 			Storage::DerivePasscodeKey(utf8, fakeInput.salt, fakeInput.kdf));
 		// WHY: the same work is done whatever passcode was entered,
@@ -292,7 +292,7 @@ PasscodeLockWidget::PasscodeLockWidget(
 , _statusTimer([=] { updateStatus(); })
 , _preview(preview) {
 	_clockFont = st::passcodeClockFont;
-	AyuPasscodeGuard::EnsureLoaded();
+	FreshPasscodeGuard::EnsureLoaded();
 	setupEye();
 	updateClock();
 	updateStatus();
@@ -363,7 +363,7 @@ void PasscodeLockWidget::setupSettings() {
 	) | rpl::on_next([=] {
 		applySettings();
 	}, lifetime());
-	AyuLockBackground::Updates() | rpl::on_next([=] {
+	FreshLockBackground::Updates() | rpl::on_next([=] {
 		update();
 	}, lifetime());
 }
@@ -565,14 +565,14 @@ void PasscodeLockWidget::updateClock() {
 }
 
 void PasscodeLockWidget::updateStatus() {
-	const auto wait = AyuPasscodeGuard::WaitLeft();
-	const auto left = AyuPasscodeGuard::AttemptsBeforeWipe();
+	const auto wait = FreshPasscodeGuard::WaitLeft();
+	const auto left = FreshPasscodeGuard::AttemptsBeforeWipe();
 	_statusTimer.cancel();
 	if (_busy) {
-		_status = tr::ayu_PasscodeChecking(tr::now);
+		_status = tr::fresh_PasscodeChecking(tr::now);
 		_statusError = false;
 	} else if (wait > 0) {
-		_status = tr::ayu_PasscodeRetryIn(
+		_status = tr::fresh_PasscodeRetryIn(
 			tr::now,
 			lt_seconds,
 			QString::number((wait + 999) / 1000));
@@ -582,14 +582,14 @@ void PasscodeLockWidget::updateStatus() {
 		_status = _error;
 		_statusError = true;
 	} else if (_capsLock) {
-		_status = tr::ayu_PasscodeCapsLock(tr::now);
+		_status = tr::fresh_PasscodeCapsLock(tr::now);
 		_statusError = false;
 	} else {
 		_status = QString();
 		_statusError = false;
 	}
 	if (!_busy && left >= 0 && cPasscodeBadTries() > 0) {
-		const auto attempts = tr::ayu_PasscodeAttemptsLeft(
+		const auto attempts = tr::fresh_PasscodeAttemptsLeft(
 			tr::now,
 			lt_attempts,
 			QString::number(left));
@@ -600,8 +600,8 @@ void PasscodeLockWidget::updateStatus() {
 }
 
 void PasscodeLockWidget::updateCapsLock() {
-	if (AyuPlatform::CapsLockQueryable()) {
-		setCapsLock(AyuPlatform::CapsLockOn());
+	if (FreshPlatform::CapsLockQueryable()) {
+		setCapsLock(FreshPlatform::CapsLockOn());
 	}
 }
 
@@ -617,13 +617,13 @@ bool PasscodeLockWidget::eventFilter(QObject *o, QEvent *e) {
 		const auto type = e->type();
 		if (type == QEvent::KeyPress || type == QEvent::KeyRelease) {
 			const auto key = static_cast<QKeyEvent*>(e);
-			if (const auto on = AyuPlatform::CapsLockFromEvent(
+			if (const auto on = FreshPlatform::CapsLockFromEvent(
 					key,
 					_capsLock)) {
 				setCapsLock(*on);
 			}
 		}
-		if (AyuPlatform::CapsLockQueryable()
+		if (FreshPlatform::CapsLockQueryable()
 			&& (type == QEvent::KeyPress
 				|| type == QEvent::KeyRelease
 				|| type == QEvent::FocusIn)) {
@@ -675,7 +675,7 @@ void PasscodeLockWidget::paintBackground(QPainter &p) {
 	const auto &settings = AyuSettings::getInstance();
 	const auto type = settings.lockScreenBackground();
 	if (type == 2) {
-		const auto image = AyuLockBackground::Prepared(
+		const auto image = FreshLockBackground::Prepared(
 			size() * style::DevicePixelRatio(),
 			settings.lockScreenBlur(),
 			settings.lockScreenDim());
@@ -782,7 +782,7 @@ void PasscodeLockWidget::paintCardContent(QPainter &p) {
 	const auto shape = ShapePath(lock, settings.lockScreenAvatarShape());
 	const auto accent = settings.lockScreenAccent();
 	const auto avatar = settings.lockScreenAvatar()
-		? AyuLockBackground::PreparedAvatar(size * style::DevicePixelRatio())
+		? FreshLockBackground::PreparedAvatar(size * style::DevicePixelRatio())
 		: QImage();
 	p.setPen(Qt::NoPen);
 	if (!avatar.isNull()) {
@@ -859,12 +859,12 @@ void PasscodeLockWidget::submit() {
 			error();
 			return;
 		case PasscodeAttempt::Wiped:
-			_error = tr::ayu_PasscodeWiped(tr::now);
+			_error = tr::fresh_PasscodeWiped(tr::now);
 			_passcode->clear();
 			updateStatus();
 			return;
 		case PasscodeAttempt::Unavailable:
-			_error = tr::ayu_PasscodeKeyUnavailable(tr::now);
+			_error = tr::fresh_PasscodeKeyUnavailable(tr::now);
 			_passcode->showError();
 			updateStatus();
 			return;

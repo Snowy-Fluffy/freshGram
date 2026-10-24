@@ -7,7 +7,7 @@
 
 #include <map>
 
-namespace AyuLang {
+namespace FreshLang {
 namespace {
 
 [[nodiscard]] QString ResourceCode(const QString &languageId) {
@@ -28,7 +28,7 @@ namespace {
 }
 
 [[nodiscard]] Strings Load(const QString &code) {
-	auto file = QFile(u":/gui/ayu_lang/%1.strings"_q.arg(code));
+	auto file = QFile(u":/gui/fresh_lang/%1.strings"_q.arg(code));
 	if (!file.open(QIODevice::ReadOnly)) {
 		return {};
 	}
@@ -62,4 +62,4 @@ const Strings &BuiltinStrings(const QString &languageId) {
 		: cache.emplace(code, Load(code)).first->second;
 }
 
-} // namespace AyuLang
+} // namespace FreshLang

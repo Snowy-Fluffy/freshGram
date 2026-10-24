@@ -20,7 +20,7 @@
 #include <mutex>
 #include <numeric>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 namespace {
 
 #ifdef FRESHGRAM_LOCAL_RECOGNITION
@@ -246,4 +246,4 @@ std::shared_ptr<std::atomic<bool>> TranscribeAsync(
 	return cancelled;
 }
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

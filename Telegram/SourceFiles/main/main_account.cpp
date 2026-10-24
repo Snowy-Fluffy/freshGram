@@ -556,7 +556,7 @@ void Account::loggedOut() {
 	_loggingOut = false;
 	Media::Player::mixer()->stopAndClear();
 	if (const auto session = maybeSession()) {
-		AyuSecret::PurgeSession(session);
+		FreshSecret::PurgeSession(session);
 	}
 	destroySession(DestroyReason::LoggedOut);
 	local().reset();

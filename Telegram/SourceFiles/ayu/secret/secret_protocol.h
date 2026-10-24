@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 enum class ActionKind {
 	None,
@@ -83,4 +83,4 @@ struct Inbound {
 	int64_t fingerprint);
 [[nodiscard]] Bytes BuildAbortKey(int64_t randomId, int64_t exchangeId);
 
-} // namespace AyuSecret
+} // namespace FreshSecret

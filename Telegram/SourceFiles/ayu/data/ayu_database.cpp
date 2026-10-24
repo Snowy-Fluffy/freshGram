@@ -7,12 +7,13 @@
 #include "ayu/data/ayu_database.h"
 
 #include "ayu/ayu_settings.h"
-#include "ayu/data/ayu_database_backup.h"
-#include "ayu/data/ayu_database_report.h"
-#include "ayu/data/ayu_encrypted_vfs.h"
-#include "ayu/data/ayu_legacy_copy.h"
-#include "ayu/data/ayu_migration_v4.h"
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_database_backup.h"
+#include "ayu/data/fresh_database_report.h"
+#include "ayu/data/fresh_encrypted_vfs.h"
+#include "ayu/data/fresh_legacy_copy.h"
+#include "ayu/data/fresh_migration_v4.h"
+#include "ayu/data/fresh_vault.h"
+#include "ayu/utils/fresh_storage_migration.h"
 #include "ayu/data/entities.h"
 #include "ayu/data/message_rows.h"
 #include "ayu/data/message_schema.h"
@@ -46,17 +47,17 @@ sqlite3 *MemoryHandle = nullptr;
 
 using namespace sqlite_orm;
 auto storage = make_storage(
-	"./tdata/ayudata.sqlite",
+	"./tdata/freshdata.sqlite",
 	make_table<SchemaVersion>(
 		"SchemaVersion",
 		make_column("id", &SchemaVersion::id, primary_key()),
 		make_column("version", &SchemaVersion::version)
 	),
-	AyuMessageSchema::DeletedKeyIndex(),
-	AyuMessageSchema::DeletedTopicIndex(),
-	AyuMessageSchema::EditedKeyIndex(),
-	AyuMessageSchema::DeletedTable(),
-	AyuMessageSchema::EditedTable(),
+	FreshMessageSchema::DeletedKeyIndex(),
+	FreshMessageSchema::DeletedTopicIndex(),
+	FreshMessageSchema::EditedKeyIndex(),
+	FreshMessageSchema::DeletedTable(),
+	FreshMessageSchema::EditedTable(),
 	make_table<DeletedDialog>(
 		"DeletedDialog",
 		make_column("fakeId", &DeletedDialog::fakeId, primary_key().autoincrement()),
@@ -276,7 +277,7 @@ constexpr auto kPurgeChunk = 2000;
 constexpr auto kPurgeEach = crl::time(6 * 60 * 60 * 1000);
 
 [[nodiscard]] QString snapshotPath() {
-	return "./tdata/ayudata.enc";
+	return "./tdata/freshdata.enc";
 }
 
 [[nodiscard]] QString legacyPath() {
@@ -346,7 +347,7 @@ void prependTo(std::vector<Value> &to, std::vector<Value> &&from) {
 // The writes that failed go back before the new ones, a few times only.
 void requeue(QueuedWrites &&batch) {
 	if (++batch.attempts >= kQueueAttempts) {
-		LOG(("[AyuGram] Database: dropped %1 deleted and %2 edited messages after %3 attempts.")
+		LOG(("[freshGram] Database: dropped %1 deleted and %2 edited messages after %3 attempts.")
 			.arg(batch.deleted.size())
 			.arg(batch.edited.size())
 			.arg(batch.attempts));
@@ -373,7 +374,7 @@ void requeue(QueuedWrites &&batch) {
 	auto result = std::vector<DeletedMessage>();
 	result.reserve(rows.size());
 	for (const auto &row : rows) {
-		result.push_back(AyuMessageRows::FromRow(row));
+		result.push_back(FreshMessageRows::FromRow(row));
 	}
 	return result;
 }
@@ -382,7 +383,7 @@ void requeue(QueuedWrites &&batch) {
 	auto result = std::vector<EditedMessage>();
 	result.reserve(rows.size());
 	for (const auto &row : rows) {
-		result.push_back(AyuMessageRows::FromRow(row));
+		result.push_back(FreshMessageRows::FromRow(row));
 	}
 	return result;
 }
@@ -398,9 +399,9 @@ Result run(const char *what, Result fallback, Callback &&callback) {
 		Result result = callback();
 		return result;
 	} catch (const std::exception &ex) {
-		LOG(("[AyuGram] Database: failed to %1: %2").arg(QString::fromUtf8(what), QString::fromUtf8(ex.what())));
+		LOG(("[freshGram] Database: failed to %1: %2").arg(QString::fromUtf8(what), QString::fromUtf8(ex.what())));
 	} catch (...) {
-		LOG(("[AyuGram] Database: failed to %1.").arg(QString::fromUtf8(what)));
+		LOG(("[freshGram] Database: failed to %1.").arg(QString::fromUtf8(what)));
 	}
 	return fallback;
 }
@@ -482,7 +483,7 @@ void drainQueuedLocked() {
 					)
 				) > 0;
 				if (!exists) {
-					auto row = AyuMessageRows::ToRow(message);
+					auto row = FreshMessageRows::ToRow(message);
 					row.fakeId = 0;
 					storage.insert(row);
 				}
@@ -525,7 +526,7 @@ void drainQueuedLocked() {
 						column<EditedMessageRow>(&EditedMessageRow::dialogId) == message.dialogId and
 						column<EditedMessageRow>(&EditedMessageRow::messageId) == message.messageId
 					));
-				auto row = AyuMessageRows::ToRow(message);
+				auto row = FreshMessageRows::ToRow(message);
 				row.fakeId = 0;
 				storage.insert(row);
 				if (edit.maxRevisions && saved >= edit.maxRevisions) {
@@ -534,10 +535,10 @@ void drainQueuedLocked() {
 			}
 		});
 	} catch (const std::exception &ex) {
-		LOG(("[AyuGram] Database: failed to save the queued messages: %1").arg(QString::fromUtf8(ex.what())));
+		LOG(("[freshGram] Database: failed to save the queued messages: %1").arg(QString::fromUtf8(ex.what())));
 		requeue(std::move(batch));
 	} catch (...) {
-		LOG(("[AyuGram] Database: failed to save the queued messages."));
+		LOG(("[freshGram] Database: failed to save the queued messages."));
 		requeue(std::move(batch));
 	}
 }
@@ -568,23 +569,23 @@ void trimRevisions(const EditedMessage &message, int maxRevisions) {
 }
 
 [[nodiscard]] QString sqlitePath() {
-	return "./tdata/ayudata.sqlite";
+	return "./tdata/freshdata.sqlite";
 }
 
 [[nodiscard]] QString dirtyPath() {
-	return "./tdata/ayudata.sqlite.dirty";
+	return "./tdata/freshdata.sqlite.dirty";
 }
 
 [[nodiscard]] QString brokenPath() {
-	return "./tdata/ayudata.sqlite.broken";
+	return "./tdata/freshdata.sqlite.broken";
 }
 
 // Only the newest copy put aside after a damage is kept.
 void pruneMovedCopies() {
 	static const auto moved = QRegularExpression(
-		u"^ayudata_\\d+\\.(sqlite|enc)$"_q);
+		u"^freshdata_\\d+\\.(sqlite|enc)$"_q);
 	auto list = QDir("./tdata").entryInfoList(
-		QStringList() << "ayudata_*",
+		QStringList() << "freshdata_*",
 		QDir::Files,
 		QDir::Time);
 	for (const auto &extension : { u"sqlite"_q, u"enc"_q }) {
@@ -611,13 +612,13 @@ void renameDatabaseFiles(const QString &suffix, bool withMainFile) {
 		}
 	}
 	if (QFile::exists(snapshotPath())) {
-		QFile::rename(snapshotPath(), QString("./tdata/ayudata_%1.enc").arg(suffix));
+		QFile::rename(snapshotPath(), QString("./tdata/freshdata_%1.enc").arg(suffix));
 	}
 	if (withMainFile) {
 		for (const auto &extension : {QString(), QString("-journal")}) {
 			const auto from = sqlitePath() + extension;
 			if (QFile::exists(from)) {
-				QFile::rename(from, QString("./tdata/ayudata_%1.sqlite%2").arg(suffix, extension));
+				QFile::rename(from, QString("./tdata/freshdata_%1.sqlite%2").arg(suffix, extension));
 			}
 		}
 		QFile::remove(dirtyPath());
@@ -627,13 +628,13 @@ void renameDatabaseFiles(const QString &suffix, bool withMainFile) {
 
 void copyDatabaseFiles(const QString &suffix) {
 	if (QFile::exists(snapshotPath())) {
-		QFile::copy(snapshotPath(), QString("./tdata/ayudata_%1.enc").arg(suffix));
+		QFile::copy(snapshotPath(), QString("./tdata/freshdata_%1.enc").arg(suffix));
 	}
 }
 
 // The copy of the snapshot before the compact tables is only needed for a while.
 void pruneMigrationBackup() {
-	const auto path = QString("./tdata/ayudata_premigration_v4.enc");
+	const auto path = QString("./tdata/freshdata_premigration_v4.enc");
 	const auto info = QFileInfo(path);
 	if (info.exists() && info.lastModified().daysTo(QDateTime::currentDateTime()) >= 14) {
 		QFile::remove(path);
@@ -696,10 +697,13 @@ struct Statement {
 
 void sealLegacyCopies(const QString &directory, const QString &pattern) {
 	for (const auto &info : QDir(directory).entryInfoList(QStringList() << pattern, QDir::Files)) {
-		if (const auto plain = AyuVault::ReadFile(info.absoluteFilePath())) {
-			auto target = info.absoluteFilePath();
-			target.chop(3);
-			if (AyuVault::WriteSealedFile(target + ".enc", *plain)) {
+		if (const auto plain = FreshVault::ReadFile(info.absoluteFilePath())) {
+			auto name = info.completeBaseName();
+			if (name.startsWith(u"ayudata_"_q)) {
+				name = u"freshdata_"_q + name.mid(8);
+			}
+			const auto target = info.dir().filePath(name + ".enc");
+			if (FreshVault::WriteSealedFile(target, *plain)) {
 				QFile::remove(info.absoluteFilePath());
 				QFile::remove(info.absoluteFilePath() + "-wal");
 				QFile::remove(info.absoluteFilePath() + "-shm");
@@ -713,7 +717,7 @@ void finishLegacyMigration() {
 		QFile::remove(legacyPath() + extension);
 	}
 	sealLegacyCopies("./tdata", "ayudata_*.db");
-	sealLegacyCopies("./tdata/ayu_backups", "ayudata_*.db");
+	sealLegacyCopies("./tdata/fresh_backups", "freshdata_*.db");
 }
 
 }
@@ -743,7 +747,7 @@ void migrateToV3(decltype(storage) &storage) {
 
 void migrateToV4(decltype(storage) &) {
 	// The compact tables are created and filled when the database file is made.
-	const auto result = AyuMigrationV4::Run(MemoryHandle);
+	const auto result = FreshMigrationV4::Run(MemoryHandle);
 	if (!result.ok) {
 		LOG(("Migration to V4 failed: %1").arg(QString::fromStdString(result.error)));
 		throw std::runtime_error(result.error);
@@ -833,7 +837,7 @@ void setupConnection(sqlite3 *db) {
 	};
 	// The page size and the reserved bytes are fixed when the file is created.
 	exec("PRAGMA page_size = 4096");
-	auto reserve = AyuEncryptedVfs::kReserveBytes;
+	auto reserve = FreshEncryptedVfs::kReserveBytes;
 	sqlite3_file_control(db, "main", SQLITE_FCNTL_RESERVE_BYTES, &reserve);
 	exec("PRAGMA auto_vacuum = INCREMENTAL");
 	exec("PRAGMA journal_mode = TRUNCATE");
@@ -848,8 +852,8 @@ void setupConnection(sqlite3 *db) {
 
 void registerEncryptedFiles() {
 	unsigned char key[32];
-	if (!AyuVault::DeriveKey("database-v2", key, sizeof(key))
-		|| !AyuEncryptedVfs::Register(key, sizeof(key), sqlitePath().toUtf8().constData())) {
+	if (!FreshVault::DeriveKey("database-v2", key, sizeof(key))
+		|| !FreshEncryptedVfs::Register(key, sizeof(key), sqlitePath().toUtf8().constData())) {
 		throw std::runtime_error("The database key is unavailable.");
 	}
 }
@@ -905,7 +909,7 @@ void execOrThrow(sqlite3 *db, const char *sql) {
 // for writing, and the read-only old snapshot refuses that.
 void copyAttached(sqlite3 *db) {
 	execOrThrow(db, "BEGIN");
-	const auto result = AyuLegacyCopy::Run(db, "legacy");
+	const auto result = FreshLegacyCopy::Run(db, "legacy");
 	if (!result.ok) {
 		sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
 		throw std::runtime_error(result.error);
@@ -919,7 +923,7 @@ void copyAttached(sqlite3 *db) {
 		sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
 		throw;
 	}
-	LOG(("[AyuGram] Database: imported %1 deleted and %2 edited messages and %3 other rows in %4 ms.")
+	LOG(("[freshGram] Database: imported %1 deleted and %2 edited messages and %3 other rows in %4 ms.")
 		.arg(result.deleted)
 		.arg(result.edited)
 		.arg(result.others)
@@ -928,7 +932,7 @@ void copyAttached(sqlite3 *db) {
 
 void importSnapshot() {
 	const auto started = std::chrono::steady_clock::now();
-	const auto plain = AyuVault::ReadFile(snapshotPath(), true);
+	const auto plain = FreshVault::ReadFile(snapshotPath(), true);
 	if (!plain || plain->isEmpty()) {
 		throwSqlite(kSqliteNotADatabase);
 	}
@@ -953,12 +957,12 @@ void importSnapshot() {
 		throw;
 	}
 	sqlite3_exec(MemoryHandle, "DETACH DATABASE legacy", nullptr, nullptr, nullptr);
-	LOG(("[AyuGram] Database: moved the snapshot, %1 MB, in %2 ms.")
+	LOG(("[freshGram] Database: moved the snapshot, %1 MB, in %2 ms.")
 		.arg(size / 1048576.0, 0, 'f', 1)
 		.arg(MsSince(started), 0, 'f', 0));
 	// The old image is kept for a while in case something is wrong with the new file.
-	QFile::remove("./tdata/ayudata_premigration_v4.enc");
-	QFile::rename(snapshotPath(), "./tdata/ayudata_premigration_v4.enc");
+	QFile::remove("./tdata/freshdata_premigration_v4.enc");
+	QFile::rename(snapshotPath(), "./tdata/freshdata_premigration_v4.enc");
 }
 
 void importLegacyFile() {
@@ -986,7 +990,7 @@ void importLegacyFile() {
 		throw;
 	}
 	sqlite3_exec(MemoryHandle, "DETACH DATABASE legacy", nullptr, nullptr, nullptr);
-	LOG(("[AyuGram] Database: imported the legacy database in %1 ms.").arg(MsSince(started), 0, 'f', 0));
+	LOG(("[freshGram] Database: imported the legacy database in %1 ms.").arg(MsSince(started), 0, 'f', 0));
 	FinishLegacyMigrationPending = true;
 }
 
@@ -1000,10 +1004,10 @@ void importOrKeepAside(Import &&import, const QString &path) {
 	} catch (const std::system_error &) {
 		throw;
 	} catch (const std::exception &ex) {
-		const auto aside = QString("./tdata/ayudata_import_failed_%1.%2")
+		const auto aside = QString("./tdata/freshdata_import_failed_%1.%2")
 			.arg(base::unixtime::now())
 			.arg(QFileInfo(path).suffix());
-		LOG(("[AyuGram] Database: failed to import %1, it is kept as %2: %3")
+		LOG(("[freshGram] Database: failed to import %1, it is kept as %2: %3")
 			.arg(path, aside, QString::fromUtf8(ex.what())));
 		if (!QFile::rename(path, aside)) {
 			throw;
@@ -1017,7 +1021,7 @@ void prepareStorage() {
 	if (!storage.is_opened()) {
 		if (QFile::exists(brokenPath())) {
 			QFile::remove(brokenPath());
-			LOG(("[AyuGram] Database: the file was marked as damaged."));
+			LOG(("[freshGram] Database: the file was marked as damaged."));
 			throwSqlite(kSqliteCorrupt);
 		}
 		checkMainFile();
@@ -1068,11 +1072,16 @@ void initialize() {
 	const auto &domain = Core::App().domain();
 	const auto key = domain.started() ? domain.local().localKey() : nullptr;
 	if (!key) {
-		LOG(("[AyuGram] Database: the local key is unavailable."));
+		LOG(("[freshGram] Database: the local key is unavailable."));
 		return;
 	}
-	AyuVault::SetKey(key);
+	FreshVault::SetKey(key);
 	if (DatabaseReady) {
+		return;
+	}
+	FreshStorage::MigrateLegacyNames();
+	if (!FreshStorage::DatabaseMigrated()) {
+		LOG(("[freshGram] Database is unavailable, messages will not be saved in this session."));
 		return;
 	}
 
@@ -1089,11 +1098,11 @@ void initialize() {
 				finishLegacyMigration();
 			}
 			crl::async([] {
-				AyuVault::SealFilesIn("./tdata/ayu_media");
+				FreshVault::SealFilesIn("./tdata/fresh_media");
 				pruneMigrationBackup();
-				[[maybe_unused]] const auto created = AyuDatabaseBackup::create();
+				[[maybe_unused]] const auto created = FreshDatabaseBackup::create();
 			});
-			AyuDatabaseBackup::startPeriodic();
+			FreshDatabaseBackup::startPeriodic();
 			if (const auto days = PurgeDays.load()) {
 				purgeOlderThan(days);
 			}
@@ -1109,7 +1118,7 @@ void initialize() {
 		} catch (const std::system_error &ex) {
 			const auto code = ex.code().value() & 0xFF;
 			const auto sqliteError = (ex.code().category() == sqlite_orm::get_sqlite_error_category());
-			LOG(("[AyuGram] Database initialization failed (%1): %2").arg(code).arg(ex.what()));
+			LOG(("[freshGram] Database initialization failed (%1): %2").arg(code).arg(ex.what()));
 			if (sqliteError && (code == kSqliteBusy || code == kSqliteLocked) && !retriedBusy) {
 				retriedBusy = true;
 				std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -1126,7 +1135,7 @@ void initialize() {
 					break;
 				}
 				moveCurrentDatabase();
-				if (AyuDatabaseBackup::restore(restoreIndex)) {
+				if (FreshDatabaseBackup::restore(restoreIndex)) {
 					continue;
 				} else if (!resetCorrupted) {
 					resetCorrupted = true;
@@ -1135,12 +1144,12 @@ void initialize() {
 			}
 			break;
 		} catch (const std::exception &ex) {
-			LOG(("[AyuGram] Database initialization failed: %1").arg(ex.what()));
+			LOG(("[freshGram] Database initialization failed: %1").arg(ex.what()));
 			break;
 		}
 	}
 
-	LOG(("[AyuGram] Database is unavailable, messages will not be saved in this session."));
+	LOG(("[freshGram] Database is unavailable, messages will not be saved in this session."));
 }
 
 void purgeOlderThan(int days) {
@@ -1214,7 +1223,7 @@ void purgeOlderThan(int days) {
 			reclaimSpace();
 		});
 		if (files && removed) {
-			AyuDatabaseBackup::purgeLater(AyuDatabaseBackup::OlderThan(cutoff));
+			FreshDatabaseBackup::purgeLater(FreshDatabaseBackup::OlderThan(cutoff));
 		}
 	});
 }
@@ -1350,7 +1359,7 @@ std::vector<DeletedMessage> getDeletedMessages(ID userId, ID dialogId, ID topicI
 			escaped += c;
 		}
 		const auto pattern = "%" + escaped + "%";
-		const auto idQuery = AyuIdSearch::Parse(
+		const auto idQuery = FreshIdSearch::Parse(
 			QString::fromStdString(searchQuery).trimmed());
 		const auto senderId = idQuery.valid() ? ID(idQuery.id) : ID(-1);
 		return toMessages(storage.get_all<DeletedMessageRow>(
@@ -1467,8 +1476,8 @@ void removeDeletedMessage(ID userId, ID dialogId, ID messageId) {
 		);
 	});
 	if (DeleteSavedFiles()) {
-		AyuDatabaseBackup::purgeLater(
-			AyuDatabaseBackup::OfMessage(userId, dialogId, messageId));
+		FreshDatabaseBackup::purgeLater(
+			FreshDatabaseBackup::OfMessage(userId, dialogId, messageId));
 	}
 }
 
@@ -1500,8 +1509,8 @@ void clearDeletedMessages(ID userId, ID dialogId, ID topicId) {
 		reclaimSpace();
 	});
 	if (DeleteSavedFiles()) {
-		AyuDatabaseBackup::purgeLater(
-			AyuDatabaseBackup::OfDialog(userId, dialogId, topicId));
+		FreshDatabaseBackup::purgeLater(
+			FreshDatabaseBackup::OfDialog(userId, dialogId, topicId));
 	}
 }
 
@@ -1531,7 +1540,7 @@ void clearAllDeleted() {
 		});
 		reclaimSpace();
 	});
-	AyuDatabaseBackup::removeAll();
+	FreshDatabaseBackup::removeAll();
 }
 
 template<typename Callback>
@@ -1567,7 +1576,7 @@ void clearUserData(ID userId) {
 		});
 		reclaimAllSpace();
 	});
-	AyuDatabaseBackup::purgeUser(userId);
+	FreshDatabaseBackup::purgeUser(userId);
 	flush();
 }
 
@@ -1581,12 +1590,12 @@ void clearEverything() {
 		});
 		reclaimAllSpace();
 	});
-	AyuDatabaseBackup::removeAll();
+	FreshDatabaseBackup::removeAll();
 	flush();
 }
 
 bool exportCompressed(const QString &path, qint64 &rows) {
-	if (!AyuVault::HasKey()) {
+	if (!FreshVault::HasKey()) {
 		return false;
 	}
 	auto data = static_cast<unsigned char*>(nullptr);
@@ -1609,7 +1618,7 @@ bool exportCompressed(const QString &path, qint64 &rows) {
 		return false;
 	}
 	// The copy is packed and sealed by blocks outside of the lock.
-	const auto ok = AyuVault::WriteCompressedFile(path, data, size);
+	const auto ok = FreshVault::WriteCompressedFile(path, data, size);
 	sqlite3_free(data);
 	return ok;
 }
@@ -1648,9 +1657,9 @@ std::string sizeReport() {
 		sqlite3_close(report);
 		return "The report database failed to load.\n";
 	}
-	auto options = AyuDatabaseReport::Options();
+	auto options = FreshDatabaseReport::Options();
 	options.measureSerialize = false;
-	auto result = AyuDatabaseReport::Build(report, options);
+	auto result = FreshDatabaseReport::Build(report, options);
 	sqlite3_close(report);
 	result += "== Snapshot ==\n";
 	result += QString("  sqlite3_serialize copy: %1 MB in %2 ms (the sealing and writing come on top)\n")
@@ -1667,7 +1676,7 @@ void saveSizeReport(std::function<void(bool)> done) {
 	}
 	crl::async([=] {
 		const auto text = sizeReport();
-		auto file = QFile("./tdata/ayu_db_report.txt");
+		auto file = QFile("./tdata/fresh_db_report.txt");
 		const auto ok = file.open(QIODevice::WriteOnly | QIODevice::Truncate)
 			&& file.write(text.data(), qint64(text.size())) == qint64(text.size());
 		crl::on_main([=] {

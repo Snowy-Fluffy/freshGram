@@ -8,7 +8,7 @@
 namespace Ayu::Translator {
 namespace {
 
-using AyuRecognition::TextSpan;
+using FreshRecognition::TextSpan;
 
 [[nodiscard]] QRegularExpression PatternFor(const QString &style) {
 	return (style == u"["_q)

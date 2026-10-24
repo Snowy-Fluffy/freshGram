@@ -5,7 +5,7 @@
 
 #include <cstring>
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 FileKey GenerateFileKey() {
 	auto result = FileKey();
@@ -70,4 +70,4 @@ bool DecryptFile(
 	return true;
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

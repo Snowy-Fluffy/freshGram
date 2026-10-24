@@ -51,7 +51,7 @@ enum class FileType {
 };
 
 [[nodiscard]] bool MayHaveGoodThumbnail(not_null<DocumentData*> owner) {
-	return !AyuSecret::IsSecretDocument(owner)
+	return !FreshSecret::IsSecretDocument(owner)
 		&& (owner->isVideoFile()
 			|| owner->isAnimation()
 			|| owner->isWallPaper()
@@ -177,7 +177,7 @@ bool VideoPreviewState::loaded() const {
 
 DocumentMedia::DocumentMedia(not_null<DocumentData*> owner)
 : _owner(owner) {
-	setBytes(AyuSecret::DocumentBytes(owner));
+	setBytes(FreshSecret::DocumentBytes(owner));
 }
 
 // NB! Right now DocumentMedia can outlive Main::Session!

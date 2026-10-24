@@ -13,7 +13,7 @@
 
 #include <QtGui/QGuiApplication>
 
-namespace AyuLockTriggers {
+namespace FreshLockTriggers {
 namespace {
 
 constexpr auto kMinimizedCheckEach = crl::time(1000);
@@ -140,4 +140,4 @@ void SystemLocked() {
 	});
 }
 
-} // namespace AyuLockTriggers
+} // namespace FreshLockTriggers

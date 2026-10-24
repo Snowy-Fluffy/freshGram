@@ -12,7 +12,7 @@ class Session;
 class PeerData;
 class UserData;
 
-namespace AyuStories {
+namespace FreshStories {
 
 enum class Audience {
 	Contacts,
@@ -86,4 +86,4 @@ private:
 
 };
 
-} // namespace AyuStories
+} // namespace FreshStories

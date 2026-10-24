@@ -13,7 +13,7 @@
 #include <array>
 #include <cstring>
 
-namespace AyuMetadata {
+namespace FreshMetadata {
 namespace {
 
 constexpr auto kCopyBlock = qint64(1 << 20);
@@ -557,4 +557,4 @@ bool StripVideo(const QString &source, const QString &target) {
 	return ok;
 }
 
-} // namespace AyuMetadata
+} // namespace FreshMetadata

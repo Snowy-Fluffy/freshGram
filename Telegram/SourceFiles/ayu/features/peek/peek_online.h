@@ -12,7 +12,7 @@ namespace Main {
 class Session;
 } // namespace Main
 
-namespace AyuPeek {
+namespace FreshPeek {
 
 enum class Kind : int {
 	Online = 0,
@@ -40,4 +40,4 @@ void restoreIfNeeded(not_null<Main::Session*> session);
 	TimeId now,
 	bool full = false);
 
-} // namespace AyuPeek
+} // namespace FreshPeek

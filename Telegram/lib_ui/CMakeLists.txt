@@ -36,8 +36,8 @@ PRIVATE
     fonts/fonts.qrc
     qt_conf/win.qrc
 
-    ayu/ayu_card_segment.cpp
-    ayu/ayu_card_segment.h
+    ayu/fresh_card_segment.cpp
+    ayu/fresh_card_segment.h
     ayu/ayu_ui_settings.cpp
     ayu/ayu_ui_settings.h
 

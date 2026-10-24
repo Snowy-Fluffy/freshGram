@@ -1029,8 +1029,8 @@ void Notification::updateNotifyDisplay() {
 				st::notifyPhotoPos.x() + st::notifyPhotoSize + st::notifyTextLeft,
 				st::notifyItemTop + st::semiboldFont->height + st::dialogsTextFont->ascent,
 				st::dialogsTextFont->elided(
-					(_item && _item->isAyuSecret())
-						? AyuSecret::NotificationText(_item).text
+					(_item && _item->isFreshSecret())
+						? FreshSecret::NotificationText(_item).text
 						: tr::lng_notification_preview(tr::now),
 					itemWidth));
 		}
@@ -1041,8 +1041,8 @@ void Notification::updateNotifyDisplay() {
 				? _topic->titleWithIcon().append(u" ("_q + name + ')')
 				: TextWithEntities{ name };
 		};
-		auto title = (_item && _item->isAyuSecret())
-			? TextWithEntities{ AyuSecret::NotificationTitle() }
+		auto title = (_item && _item->isFreshSecret())
+			? TextWithEntities{ FreshSecret::NotificationTitle() }
 			: options.hideNameAndPhoto
 			? TextWithEntities{ u"freshGram"_q }
 			: reminder

@@ -1,8 +1,8 @@
-#include "ayu/data/ayu_database_backup.h"
+#include "ayu/data/fresh_database_backup.h"
 
 #include "ayu/ayu_settings.h"
 #include "ayu/data/ayu_database.h"
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_vault.h"
 #include "ayu/libs/sqlite/sqlite3.h"
 #include "base/timer.h"
 #include "logs.h"
@@ -22,7 +22,7 @@
 #include <mutex>
 #include <vector>
 
-namespace AyuDatabaseBackup {
+namespace FreshDatabaseBackup {
 namespace {
 
 constexpr auto kHour = crl::time(60 * 60 * 1000);
@@ -50,16 +50,16 @@ struct Entry {
 
 // The database file, its change time tells whether there is a news since the last backup.
 [[nodiscard]] QString MainPath() {
-	return "./tdata/ayudata.sqlite";
+	return "./tdata/freshdata.sqlite";
 }
 
 // A restored backup is put here and the database is made from it at the start.
 [[nodiscard]] QString RestorePath() {
-	return "./tdata/ayudata.enc";
+	return "./tdata/freshdata.enc";
 }
 
 [[nodiscard]] QString Directory() {
-	return "./tdata/ayu_backups";
+	return "./tdata/fresh_backups";
 }
 
 struct Handle {
@@ -140,7 +140,7 @@ struct Handle {
 }
 
 [[nodiscard]] bool Verify(const QString &path, qint64 *rows = nullptr) {
-	const auto plain = AyuVault::ReadFile(path, true);
+	const auto plain = FreshVault::ReadFile(path, true);
 	if (!plain || plain->size() < 15 || !plain->startsWith("SQLite format 3")) {
 		return false;
 	}
@@ -169,7 +169,7 @@ struct Handle {
 
 [[nodiscard]] std::vector<Entry> List() {
 	auto names = QDir(Directory()).entryList(
-		QStringList() << "ayudata_*.enc",
+		QStringList() << "freshdata_*.enc",
 		QDir::Files,
 		QDir::Name);
 	std::reverse(names.begin(), names.end());
@@ -187,7 +187,7 @@ struct Handle {
 }
 
 void ScrubSecrets(const QString &path) {
-	const auto plain = AyuVault::ReadFile(path, true);
+	const auto plain = FreshVault::ReadFile(path, true);
 	auto handle = Handle();
 	if (!plain || !OpenMemory(handle, *plain)) {
 		return;
@@ -215,7 +215,7 @@ void ScrubSecrets(const QString &path) {
 	auto size = sqlite3_int64();
 	const auto data = sqlite3_serialize(handle.db, "main", &size, 0);
 	if (data) {
-		AyuVault::WriteCompressedFile(path, data, qint64(size));
+		FreshVault::WriteCompressedFile(path, data, qint64(size));
 		sqlite3_free(data);
 	}
 }
@@ -277,7 +277,7 @@ bool create() {
 		QFile::remove(temporary);
 		return false;
 	}
-	const auto name = QString("%1/ayudata_%2_%3.enc")
+	const auto name = QString("%1/freshdata_%2_%3.enc")
 		.arg(Directory())
 		.arg(QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss"))
 		.arg(rows);
@@ -301,7 +301,7 @@ bool restore(int &index) {
 		QFile::remove(RestorePath());
 		if (QFile::copy(list[i].path, RestorePath())) {
 			index = i + 1;
-			LOG(("[AyuGram] Database restored from '%1'.").arg(list[i].path));
+			LOG(("[freshGram] Database restored from '%1'.").arg(list[i].path));
 			return true;
 		}
 	}
@@ -312,15 +312,16 @@ bool restore(int &index) {
 void removeAll() {
 	const auto lock = std::lock_guard(BackupMutex);
 	QDir(Directory()).removeRecursively();
+	QDir("./tdata/ayu_backups").removeRecursively();
 	// Every copy put aside: old snapshots, damaged and failed imports.
 	const auto moved = QDir("./tdata").entryList(
-		QStringList() << "ayudata_*",
+		QStringList() << "ayudata_*" << "freshdata_*",
 		QDir::Files);
 	for (const auto &name : moved) {
 		QFile::remove("./tdata/" + name);
 	}
-	QFile::remove("./tdata/ayudata.sqlite.broken");
-	QFile::remove("./tdata/ayu_db_report.txt");
+	QFile::remove("./tdata/freshdata.sqlite.broken");
+	QFile::remove("./tdata/fresh_db_report.txt");
 }
 
 namespace {
@@ -330,7 +331,7 @@ namespace {
 void Rewrite(const QStringList &statements, bool removeUnreadable) {
 	const auto lock = std::lock_guard(BackupMutex);
 	for (const auto &entry : List()) {
-		const auto plain = AyuVault::ReadFile(entry.path, true);
+		const auto plain = FreshVault::ReadFile(entry.path, true);
 		auto handle = Handle();
 		if (!plain || !OpenMemory(handle, *plain)) {
 			if (removeUnreadable) {
@@ -356,7 +357,7 @@ void Rewrite(const QStringList &statements, bool removeUnreadable) {
 			}
 			continue;
 		}
-		const auto saved = AyuVault::WriteCompressedFile(
+		const auto saved = FreshVault::WriteCompressedFile(
 			entry.path,
 			data,
 			qint64(size));
@@ -512,4 +513,4 @@ void configure(int keepCount, int intervalHours) {
 	}
 }
 
-} // namespace AyuDatabaseBackup
+} // namespace FreshDatabaseBackup

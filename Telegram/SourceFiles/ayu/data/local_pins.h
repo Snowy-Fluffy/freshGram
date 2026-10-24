@@ -20,7 +20,7 @@ namespace Dialogs {
 class Key;
 } // namespace Dialogs
 
-namespace AyuLocalPins {
+namespace FreshLocalPins {
 
 constexpr auto kListLimit = 100000;
 
@@ -35,4 +35,4 @@ void forget(not_null<Data::Session*> owner, PeerId peerId);
 void reapply(not_null<Data::Session*> owner);
 void saveOrder(not_null<Data::Session*> owner);
 
-} // namespace AyuLocalPins
+} // namespace FreshLocalPins

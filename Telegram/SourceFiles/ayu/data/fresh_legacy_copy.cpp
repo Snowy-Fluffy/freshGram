@@ -1,7 +1,7 @@
 // This is the source code of freshGram.
-#include "ayu/data/ayu_legacy_copy.h"
+#include "ayu/data/fresh_legacy_copy.h"
 
-#include "ayu/data/ayu_migration_v4.h"
+#include "ayu/data/fresh_migration_v4.h"
 #include "ayu/libs/sqlite/sqlite3.h"
 
 #include <algorithm>
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace AyuLegacyCopy {
+namespace FreshLegacyCopy {
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -87,7 +87,7 @@ Result Run(sqlite3 *db, const char *schemaName) {
 	const auto started = Clock::now();
 	const auto schema = std::string(schemaName);
 	auto result = Result();
-	const auto messages = AyuMigrationV4::Run(db, schemaName);
+	const auto messages = FreshMigrationV4::Run(db, schemaName);
 	if (!messages.ok) {
 		result.error = messages.error;
 		return result;
@@ -145,4 +145,4 @@ Result Run(sqlite3 *db, const char *schemaName) {
 	return result;
 }
 
-} // namespace AyuLegacyCopy
+} // namespace FreshLegacyCopy

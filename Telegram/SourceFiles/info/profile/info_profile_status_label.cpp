@@ -139,7 +139,7 @@ void StatusLabel::refresh() {
 		using namespace Ui::Text;
 		auto currentTime = base::unixtime::now();
 		if (auto user = _peer->asUser()) {
-			const auto result = AyuPeek::augment(
+			const auto result = FreshPeek::augment(
 				user,
 				Data::OnlineTextFull(user, currentTime),
 				currentTime,

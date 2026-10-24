@@ -7,7 +7,7 @@ https://github.com/fagramdesktop/fadesktop/blob/dev/LEGAL
 */
 #include "ayu/ui/fagram/fagram_switch.h"
 
-#include "ayu/ayu_card_segment.h"
+#include "ayu/fresh_card_segment.h"
 
 #include "ui/painter.h"
 #include "ui/effects/animation_value_f.h"

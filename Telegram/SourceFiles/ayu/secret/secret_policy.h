@@ -1,10 +1,10 @@
 #pragma once
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 [[nodiscard]] bool PasscodeSet();
 [[nodiscard]] bool Enabled();
 void SyncPolicy();
 void HandlePasscodeChange();
 
-} // namespace AyuSecret
+} // namespace FreshSecret

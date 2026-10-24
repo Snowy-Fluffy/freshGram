@@ -220,7 +220,7 @@ void Action::handleKeyPress(not_null<QKeyEvent*> e) {
 
 QString SearchMediaLabel(SearchMediaFilter media) {
 	switch (media) {
-	case SearchMediaFilter::All: return tr::ayu_SearchMediaAll(tr::now);
+	case SearchMediaFilter::All: return tr::fresh_SearchMediaAll(tr::now);
 	case SearchMediaFilter::Photos: return tr::lng_media_type_photos(tr::now);
 	case SearchMediaFilter::Videos: return tr::lng_media_type_videos(tr::now);
 	case SearchMediaFilter::Files: return tr::lng_media_type_files(tr::now);
@@ -343,7 +343,7 @@ void ChatSearchIn::apply(
 		(current != _mediaIcons.end())
 			? current->second
 			: nullptr,
-		tr::ayu_SearchMediaType(
+		tr::fresh_SearchMediaType(
 			tr::now,
 			lt_type,
 			tr::semibold(SearchMediaLabel(media)),

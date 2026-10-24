@@ -245,8 +245,8 @@ void FillSourceMenu(
 	const auto peer = owner->peer(PeerId(request.id));
 	const auto &add = request.callback;
 	if (peer->isSelf()) {
-		add(tr::ayu_StoryAdd(tr::now), [=] {
-			AyuStories::StartPosting(controller, peer);
+		add(tr::fresh_StoryAdd(tr::now), [=] {
+			FreshStories::StartPosting(controller, peer);
 		}, &st::menuIconAdd);
 		add(tr::lng_stories_archive_button(tr::now), [=] {
 			controller->showSection(Info::Stories::Make(

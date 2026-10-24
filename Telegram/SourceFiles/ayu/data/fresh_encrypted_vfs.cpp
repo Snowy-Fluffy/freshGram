@@ -1,5 +1,5 @@
 // This is the source code of freshGram.
-#include "ayu/data/ayu_encrypted_vfs.h"
+#include "ayu/data/fresh_encrypted_vfs.h"
 
 #include "ayu/libs/sqlite/sqlite3.h"
 
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace AyuEncryptedVfs {
+namespace FreshEncryptedVfs {
 namespace {
 
 constexpr auto kHeaderSize = 4096;
@@ -734,7 +734,7 @@ bool Register(const unsigned char *key, size_t keySize, const char *pathPrefix) 
 		Vfs = *Base;
 		Vfs.iVersion = 2;
 		Vfs.szOsFile = int(((sizeof(File) + 7) & ~size_t(7)) + Base->szOsFile);
-		Vfs.zName = "ayuenc";
+		Vfs.zName = "freshenc";
 		Vfs.pNext = nullptr;
 		Vfs.pAppData = nullptr;
 		Vfs.xOpen = Open;
@@ -767,4 +767,4 @@ bool Register(const unsigned char *key, size_t keySize, const char *pathPrefix) 
 	return true;
 }
 
-} // namespace AyuEncryptedVfs
+} // namespace FreshEncryptedVfs

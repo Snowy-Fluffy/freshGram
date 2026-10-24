@@ -210,11 +210,11 @@ TopBarWidget::TopBarWidget(
 			ParticipantsBoxController::Role::Admins
 		);
 	});
-	_peek->setAccessibleName(tr::ayu_PeekButton(tr::now));
+	_peek->setAccessibleName(tr::fresh_PeekButton(tr::now));
 	_peek->setClickedCallback([=] {
 		if (const auto peer = _activeChat.key.peer()) {
 			if (const auto user = peer->asUser()) {
-				AyuPeek::start(user);
+				FreshPeek::start(user);
 			}
 		}
 	});
@@ -533,7 +533,7 @@ void TopBarWidget::showCallMenu() {
 }
 
 void TopBarWidget::toggleInfoSection() {
-	if (AyuSecret::IsSecretPeer(_activeChat.key.peer())) {
+	if (FreshSecret::IsSecretPeer(_activeChat.key.peer())) {
 		return;
 	}
 	const auto isThreeColumn = _controller->adaptive().isThreeColumn();
@@ -753,14 +753,14 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			nameleft += skip + st::dialogsChatTypeSkip;
 			namewidth -= skip + st::dialogsChatTypeSkip;
 		}
-		if (AyuSecret::IsSecretPeer(namePeer)) {
-			const auto &lock = st::ayuSecretChatIcon.icon;
+		if (FreshSecret::IsSecretPeer(namePeer)) {
+			const auto &lock = st::freshSecretChatIcon.icon;
 			lock.paint(p, nameleft, nametop, width());
 			nameleft += lock.width() + st::dialogsChatTypeSkip;
 			namewidth -= lock.width() + st::dialogsChatTypeSkip;
 		}
-		if (AyuKept::showsDeleted(namePeer)) {
-			const auto &trash = st::ayuDeletedChatIcon.icon;
+		if (FreshKept::showsDeleted(namePeer)) {
+			const auto &trash = st::freshDeletedChatIcon.icon;
 			trash.paint(p, nameleft, nametop, width());
 			nameleft += trash.width() + st::dialogsChatTypeSkip;
 			namewidth -= trash.width() + st::dialogsChatTypeSkip;
@@ -959,7 +959,7 @@ void TopBarWidget::infoClicked() {
 	const auto key = _activeChat.key;
 	if (!key) {
 		return;
-	} else if (const auto real = AyuSecret::RealUser(key.peer())) {
+	} else if (const auto real = FreshSecret::RealUser(key.peer())) {
 		_controller->showPeerInfo(real);
 		return;
 	} else if (const auto topic = key.topic()) {
@@ -1236,7 +1236,7 @@ void TopBarWidget::updateSearchVisibility() {
 			&& _activeChat.key.sublist());
 	_search->setVisible(searchAllowedMode
 		&& !_chooseForReportReason
-		&& !AyuSecret::IsSecretPeer(_activeChat.key.peer()));
+		&& !FreshSecret::IsSecretPeer(_activeChat.key.peer()));
 }
 
 void TopBarWidget::updateInfoButtonVisibility() {
@@ -1549,7 +1549,7 @@ void TopBarWidget::updateControlsVisibility() {
 				_activeChat.key.peer()->asChannel()))
 		: false;
 	const auto hasInfo = !_activeChat.key.folder()
-		&& !AyuSecret::IsSecretPeer(_activeChat.key.peer())
+		&& !FreshSecret::IsSecretPeer(_activeChat.key.peer())
 		&& (section == Section::History
 			? true
 			: (section == Section::Replies)
@@ -1614,7 +1614,7 @@ void TopBarWidget::updateControlsVisibility() {
 	_peekWanted = historyMode
 		&& !_chooseForReportReason
 		&& !_activeChat.key.topic()
-		&& AyuPeek::shouldOffer(_activeChat.key.peer());
+		&& FreshPeek::shouldOffer(_activeChat.key.peer());
 
 	const auto callsEnabled = [&] {
 		if (const auto peer = _activeChat.key.peer()) {
@@ -1623,7 +1623,7 @@ void TopBarWidget::updateControlsVisibility() {
 					&& !user->isBot()
 					&& !user->isInaccessible()
 					&& !peer->isServiceUser()
-					&& !AyuSecret::IsSecretPeer(peer);
+					&& !FreshSecret::IsSecretPeer(peer);
 			}
 		}
 		return false;
@@ -2136,7 +2136,7 @@ void TopBarWidget::updateOnlineDisplay() {
 			text = QString::fromUtf8("\xe2\x9a\xa0\xef\xb8\x8f check info");
 			titlePeerTextOnline = false;
 		} else {
-			text = AyuPeek::augment(
+			text = FreshPeek::augment(
 				user,
 				Data::OnlineText(user, now),
 				now);

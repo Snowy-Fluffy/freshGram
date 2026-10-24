@@ -2049,7 +2049,7 @@ SessionPrivate::HandleResult SessionPrivate::handleBindResponse(
 		_sessionData->queueNeedToResumeAndSend();
 		return HandleResult::Success;
 	case DcKeyBindState::DefinitelyDestroyed:
-		if (AyuNetworkPrivacy::StepUpTemporaryKeyExpiresIn()) {
+		if (FreshNetworkPrivacy::StepUpTemporaryKeyExpiresIn()) {
 			return HandleResult::DestroyTemporaryKey;
 		}
 		if (destroyOldEnoughPersistentKey()) {
@@ -2612,7 +2612,7 @@ DcType SessionPrivate::tryAcquireKeyCreation() {
 
 		_sessionSalt = result->temporaryServerSalt;
 		result->temporaryKey->setExpiresAt(base::unixtime::now()
-			+ AyuNetworkPrivacy::TemporaryKeyExpiresIn()
+			+ FreshNetworkPrivacy::TemporaryKeyExpiresIn()
 			+ kBindKeyAdditionalExpiresTimeout);
 		if (_realDcType != DcType::Cdn) {
 			auto key = result->persistentKey
@@ -2644,7 +2644,7 @@ DcType SessionPrivate::tryAcquireKeyCreation() {
 
 	auto request = DcKeyRequest();
 	request.persistentNeeded = (acquired == CreatingKeyType::Persistent);
-	request.temporaryExpiresIn = AyuNetworkPrivacy::TemporaryKeyExpiresIn();
+	request.temporaryExpiresIn = FreshNetworkPrivacy::TemporaryKeyExpiresIn();
 	_keyCreator = std::make_unique<BoundKeyCreator>(
 		request,
 		std::move(delegate));

@@ -1,8 +1,9 @@
 #include "ayu/secret/secret_model.h"
 
 #include "ayu/secret/secret_tl.h"
+#include "ayu/utils/fresh_storage_migration.h"
 
-namespace AyuSecret {
+namespace FreshSecret {
 namespace {
 
 constexpr uint32_t kMagic = 0x31535941U;
@@ -79,7 +80,7 @@ bool ReadMedia(Reader &r, Media &m) {
 	const auto flags = r.readInt();
 	m.round = (flags & 1) != 0;
 	m.animated = (flags & 2) != 0;
-	m.path = r.readString();
+	m.path = FreshStorage::CurrentPath(r.readString());
 	return !r.failed();
 }
 
@@ -146,4 +147,4 @@ bool ParseMeta(const Bytes &meta, MessageData &data) {
 	return !r.failed();
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

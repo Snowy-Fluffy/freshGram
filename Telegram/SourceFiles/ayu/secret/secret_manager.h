@@ -9,15 +9,15 @@
 
 class UserData;
 
-namespace AyuSecret {
+namespace FreshSecret {
 class Bridge;
-} // namespace AyuSecret
+} // namespace FreshSecret
 
 namespace Main {
 class Session;
 } // namespace Main
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 enum class ChatState : int {
 	Requested = 0,
@@ -143,4 +143,4 @@ void NoteDate(not_null<Main::Session*> session, int date);
 [[nodiscard]] Manager &Get(not_null<Main::Session*> session);
 void PurgeSession(not_null<Main::Session*> session);
 
-} // namespace AyuSecret
+} // namespace FreshSecret

@@ -4,7 +4,7 @@
 #include "ayu/data/message_rows.h"
 #include "ayu/libs/sqlite/sqlite_orm.h"
 
-namespace AyuMessageSchema {
+namespace FreshMessageSchema {
 
 // The indexes are listed before the tables in the storage, as the other ones.
 inline auto DeletedKeyIndex() {
@@ -96,4 +96,4 @@ inline auto EditedTable() {
 		make_column("extra", &Row::extra));
 }
 
-} // namespace AyuMessageSchema
+} // namespace FreshMessageSchema

@@ -8,7 +8,7 @@
 
 #include <QtCore/QString>
 
-namespace AyuDebugLogging {
+namespace FreshDebugLogging {
 
 // Reads the saved choice before the regular settings are loaded.
 void Init(const QString &workingDir);
@@ -16,4 +16,4 @@ void SetEnabled(bool enabled);
 
 [[nodiscard]] bool Enabled();
 
-} // namespace AyuDebugLogging
+} // namespace FreshDebugLogging

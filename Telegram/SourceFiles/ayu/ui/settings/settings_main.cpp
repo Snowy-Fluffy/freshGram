@@ -102,7 +102,7 @@ void BuildCategories(SectionBuilder &builder) {
 	builder.addSubsectionTitle(tr::ayu_CategoriesHeader());
 
 	builder.addSectionButton({
-		.title = tr::ayu_ProductName(),
+		.title = tr::fresh_ProductName(),
 		.targetSection = AyuGhost::Id(),
 		.icon = { &st::menuIconGroupReactions },
 	});
@@ -127,8 +127,8 @@ void BuildCategories(SectionBuilder &builder) {
 		.icon = { &st::menuIconChatBubble },
 	});
 	builder.addSectionButton({
-		.title = tr::ayu_Plugins(),
-		.targetSection = AyuPluginsSection::Id(),
+		.title = tr::fresh_Plugins(),
+		.targetSection = FreshPluginsSection::Id(),
 		.icon = { &st::menuIconCustomize },
 	});
 	builder.addSectionButton({

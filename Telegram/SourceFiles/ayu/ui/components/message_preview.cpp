@@ -76,7 +76,7 @@ MessagePreview::MessagePreview(
 
 	const auto ayugramUser = HistoryView::GenerateUser(
 		history,
-		tr::ayu_ProductName(tr::now) + u" Releases"_q);
+		tr::fresh_ProductName(tr::now) + u" Releases"_q);
 	const auto messageItem = history->addNewLocalMessage({
 		.id = history->nextNonHistoryEntryId(),
 		.flags = (MessageFlag::FakeHistoryItem

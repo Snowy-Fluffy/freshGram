@@ -3,7 +3,7 @@
 
 #include "storage/details/storage_passcode_kdf.h"
 
-namespace AyuFakePasscode {
+namespace FreshFakePasscode {
 
 constexpr auto kMaxEntries = 8;
 
@@ -101,4 +101,4 @@ void SetClearCacheOnLock(bool value);
 
 void RealPasscodeChanged(const QByteArray &passcode);
 
-} // namespace AyuFakePasscode
+} // namespace FreshFakePasscode

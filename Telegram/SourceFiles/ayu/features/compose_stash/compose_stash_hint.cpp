@@ -121,7 +121,7 @@ void StashHintManager::maybeShow() {
 		st::historyPremiumViewSet.style.font->width(button)
 		- st::historyPremiumViewSet.width);
 	_toast = Ui::Toast::Show(parent, Ui::Toast::Config{
-		.text = tr::ayu_StashHint(
+		.text = tr::fresh_StashHint(
 			tr::now,
 			lt_shortcut,
 			tr::bold(ShortcutText()),

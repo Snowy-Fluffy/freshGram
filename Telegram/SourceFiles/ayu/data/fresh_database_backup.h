@@ -3,7 +3,7 @@
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 
-namespace AyuDatabaseBackup {
+namespace FreshDatabaseBackup {
 
 [[nodiscard]] bool create();
 [[nodiscard]] bool restore(int &index);
@@ -27,4 +27,4 @@ void purgeLater(const QStringList &statements);
 	long long topicId);
 [[nodiscard]] QStringList OlderThan(int cutoff);
 
-} // namespace AyuDatabaseBackup
+} // namespace FreshDatabaseBackup

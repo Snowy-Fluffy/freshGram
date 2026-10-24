@@ -57,7 +57,7 @@
 namespace AyuUi {
 namespace {
 
-using AyuStories::Audience;
+using FreshStories::Audience;
 
 constexpr auto kPeriods = std::array<TimeId, 4>{
 	6 * 3600,
@@ -141,11 +141,11 @@ struct SavedChoice {
 
 [[nodiscard]] QString PeriodText(TimeId period) {
 	switch (period) {
-	case 6 * 3600: return tr::ayu_Story6h(tr::now);
-	case 12 * 3600: return tr::ayu_Story12h(tr::now);
-	case 48 * 3600: return tr::ayu_Story48h(tr::now);
+	case 6 * 3600: return tr::fresh_Story6h(tr::now);
+	case 12 * 3600: return tr::fresh_Story12h(tr::now);
+	case 48 * 3600: return tr::fresh_Story48h(tr::now);
 	}
-	return tr::ayu_Story24h(tr::now);
+	return tr::fresh_Story24h(tr::now);
 }
 
 [[nodiscard]] Ui::PreparedFile CloneFile(const Ui::PreparedFile &file) {
@@ -222,7 +222,7 @@ void ShowAlbumsBox(
 		std::vector<int> chosen,
 		Fn<void(std::vector<int>)> done) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
-		box->setTitle(tr::ayu_StoryAlbums());
+		box->setTitle(tr::fresh_StoryAlbums());
 		const auto state = box->lifetime().make_state<std::vector<int>>(
 			chosen);
 		Ui::AddSkip(box->verticalLayout());
@@ -258,7 +258,7 @@ void FillStoryComposeBox(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer,
 		std::shared_ptr<Ui::PreparedFile> file) {
-	box->setTitle(tr::ayu_StoryNew());
+	box->setTitle(tr::fresh_StoryNew());
 	box->setWidth(st::boxWideWidth);
 
 	struct State {
@@ -267,7 +267,7 @@ void FillStoryComposeBox(
 		, author(peer) {
 		}
 
-		AyuStories::Poster poster;
+		FreshStories::Poster poster;
 		Ui::PreparedList list;
 		uint64 fileKey = base::RandomValue<uint64>();
 		rpl::variable<not_null<PeerData*>> author;
@@ -313,7 +313,7 @@ void FillStoryComposeBox(
 	if (authors.size() > 1) {
 		const auto button = Settings::AddButtonWithLabel(
 			container,
-			tr::ayu_StoryPostAs(),
+			tr::fresh_StoryPostAs(),
 			state->author.value() | rpl::map(AuthorName),
 			st::settingsButton);
 		state->author.value(
@@ -344,13 +344,13 @@ void FillStoryComposeBox(
 					}
 					state->albums = std::vector<int>();
 					state->author = item;
-					AyuStories::CheckCanPost(
+					FreshStories::CheckCanPost(
 						session,
 						item,
 						[] {},
 						crl::guard(box, [=](QString type) {
 							controller->showToast(
-								AyuStories::ErrorText(type));
+								FreshStories::ErrorText(type));
 						}));
 				};
 				Menu::AddCheckedAction(
@@ -508,7 +508,7 @@ void FillStoryComposeBox(
 		});
 		FileDialog::GetOpenPath(
 			box.get(),
-			tr::ayu_StoryChoose(tr::now),
+			tr::fresh_StoryChoose(tr::now),
 			FileDialog::PhotoVideoFilesFilter(),
 			callback);
 	};
@@ -522,12 +522,12 @@ void FillStoryComposeBox(
 				st::popupMenuWithIcons);
 			if (CanEdit(current())) {
 				state->menu->addAction(
-					tr::ayu_StoryEdit(tr::now),
+					tr::fresh_StoryEdit(tr::now),
 					openEditor,
 					&st::menuIconDraw);
 			}
 			state->menu->addAction(
-				tr::ayu_StoryReplace(tr::now),
+				tr::fresh_StoryReplace(tr::now),
 				replaceFile,
 				&st::menuIconReplace);
 			state->menu->popup(QCursor::pos());
@@ -553,7 +553,7 @@ void FillStoryComposeBox(
 			object_ptr<Ui::VerticalLayout>(container)));
 	const auto audienceButton = Settings::AddButtonWithLabel(
 		audienceWrap->entity(),
-		tr::ayu_StoryAudience(),
+		tr::fresh_StoryAudience(),
 		state->audience.value() | rpl::map(StoryAudienceText),
 		st::settingsButton,
 		{ &st::menuIconGroups });
@@ -573,7 +573,7 @@ void FillStoryComposeBox(
 
 	const auto periodButton = Settings::AddButtonWithLabel(
 		container,
-		tr::ayu_StoryDuration(),
+		tr::fresh_StoryDuration(),
 		state->period.value() | rpl::map(PeriodText),
 		st::settingsButton,
 		{ &st::menuIconTimer });
@@ -604,11 +604,11 @@ void FillStoryComposeBox(
 			object_ptr<Ui::VerticalLayout>(container)));
 	const auto albumsButton = Settings::AddButtonWithLabel(
 		albumsWrap->entity(),
-		tr::ayu_StoryAlbums(),
+		tr::fresh_StoryAlbums(),
 		state->albums.value(
 		) | rpl::map([](const std::vector<int> &albums) {
 			return albums.empty()
-				? tr::ayu_StoryAlbumsNone(tr::now)
+				? tr::fresh_StoryAlbumsNone(tr::now)
 				: QString::number(albums.size());
 		}),
 		st::settingsButton,
@@ -662,8 +662,8 @@ void FillStoryComposeBox(
 			*value = toggled;
 		}, button->lifetime());
 	};
-	addToggle(tr::ayu_StoryKeep(), &st::menuIconPin, &state->pinned);
-	addToggle(tr::ayu_StoryProtect(), &st::menuIconLock, &state->protect);
+	addToggle(tr::fresh_StoryKeep(), &st::menuIconPin, &state->pinned);
+	addToggle(tr::fresh_StoryProtect(), &st::menuIconLock, &state->protect);
 	Ui::AddSkip(container);
 
 	// Caption.
@@ -681,7 +681,7 @@ void FillStoryComposeBox(
 		captionWrap,
 		st::defaultComposeFiles.caption,
 		Ui::InputField::Mode::MultiLine,
-		tr::ayu_StoryCaption());
+		tr::fresh_StoryCaption());
 	Ui::ResizeFitChild(captionWrap, caption);
 	caption->setMaxLength(limit);
 	caption->setSubmitSettings(Core::App().settings().sendSubmitWay());
@@ -735,7 +735,7 @@ void FillStoryComposeBox(
 			? audience.audience
 			: Audience::Everyone;
 		if (chosen == Audience::Selected && audience.selected.empty()) {
-			controller->showToast(tr::ayu_StoryNoUsers(tr::now));
+			controller->showToast(tr::fresh_StoryNoUsers(tr::now));
 			return;
 		}
 		state->busy = true;
@@ -749,7 +749,7 @@ void FillStoryComposeBox(
 		} else if (chosen != Audience::CloseFriends && author->isSelf()) {
 			users = audience.excepted;
 		}
-		auto draft = AyuStories::Draft{
+		auto draft = FreshStories::Draft{
 			.peer = author,
 			.file = std::move(list.files.front()),
 			.fileKey = state->fileKey,
@@ -767,19 +767,19 @@ void FillStoryComposeBox(
 			}),
 			.done = crl::guard(box, [=] {
 				state->posted = true;
-				controller->showToast(tr::ayu_StoryPosted(tr::now));
+				controller->showToast(tr::fresh_StoryPosted(tr::now));
 				box->closeBox();
 			}),
 			.failed = crl::guard(box, [=](QString type) {
 				// The window stays, the next try sends the same media.
 				state->busy = false;
 				setProgress(std::nullopt);
-				controller->showToast(AyuStories::ErrorText(type));
+				controller->showToast(FreshStories::ErrorText(type));
 			}),
 		});
 	};
 	caption->submits() | rpl::on_next(post, caption->lifetime());
-	box->addButton(tr::ayu_StoryPost(), post);
+	box->addButton(tr::fresh_StoryPost(), post);
 	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 }
 

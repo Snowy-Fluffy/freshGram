@@ -3,7 +3,7 @@
 #include "ayu/data/known_users.h"
 #include "data/data_user.h"
 
-namespace AyuIdSearch {
+namespace FreshIdSearch {
 namespace {
 
 [[nodiscard]] bool IsNumeric(const QString &str) {
@@ -58,7 +58,7 @@ UserData *FindUser(
 	if (!query.canBeUser() || query.id <= 0) {
 		return nullptr;
 	}
-	return AyuUsers::find(session, UserId(query.id));
+	return FreshUsers::find(session, UserId(query.id));
 }
 
-} // namespace AyuIdSearch
+} // namespace FreshIdSearch

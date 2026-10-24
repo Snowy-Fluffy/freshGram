@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 enum class MediaType : int {
 	None = 0,
@@ -120,4 +120,4 @@ struct MessageData {
 [[nodiscard]] Bytes SerializeMeta(const MessageData &data);
 [[nodiscard]] bool ParseMeta(const Bytes &meta, MessageData &data);
 
-} // namespace AyuSecret
+} // namespace FreshSecret

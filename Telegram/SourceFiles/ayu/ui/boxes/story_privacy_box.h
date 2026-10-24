@@ -19,7 +19,7 @@ void ShowStoryUsersBox(
 	Fn<void(std::vector<not_null<UserData*>>)> done);
 
 struct StoryAudienceChoice {
-	AyuStories::Audience audience = AyuStories::Audience::Contacts;
+	FreshStories::Audience audience = FreshStories::Audience::Contacts;
 	std::vector<not_null<UserData*>> excepted;
 	std::vector<not_null<UserData*>> selected;
 };

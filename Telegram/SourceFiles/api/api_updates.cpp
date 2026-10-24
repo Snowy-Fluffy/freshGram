@@ -367,8 +367,8 @@ void Updates::setState(int32 pts, int32 date, int32 qts, int32 seq) {
 	}
 	if (_updatesDate < date && !_byMinChannelTimer.isActive()) {
 		_updatesDate = date;
-		if (AyuSecret::Enabled()) {
-			AyuSecret::NoteDate(&session(), date);
+		if (FreshSecret::Enabled()) {
+			FreshSecret::NoteDate(&session(), date);
 		}
 	}
 	if (qts && _updatesQts < qts) {
@@ -486,8 +486,8 @@ void Updates::stateDone(const MTPupdates_State &state) {
 	setState(d.vpts().v, d.vdate().v, d.vqts().v, d.vseq().v);
 
 	auto secretMissed = false;
-	if (AyuSecret::Enabled()) {
-		const auto range = AyuSecret::CatchUpRange(
+	if (FreshSecret::Enabled()) {
+		const auto range = FreshSecret::CatchUpRange(
 			&session(),
 			d.vqts().v,
 			d.vdate().v);
@@ -508,7 +508,7 @@ void Updates::stateDone(const MTPupdates_State &state) {
 
 	session().api().requestDialogs();
 	updateOnline();
-	AyuPeek::restoreIfNeeded(&session());
+	FreshPeek::restoreIfNeeded(&session());
 	if (secretMissed) {
 		getDifference();
 	}
@@ -521,9 +521,9 @@ void Updates::differenceDone(const MTPupdates_Difference &result) {
 	case mtpc_updates_differenceEmpty: {
 		const auto &d = result.c_updates_differenceEmpty();
 		setState(_ptsWaiter.current(), d.vdate().v, _updatesQts, d.vseq().v);
-		if (AyuSecret::Enabled()) {
-			AyuSecret::SaveState(&session(), _updatesQts, d.vdate().v);
-			AyuSecret::CatchUpFinished(&session());
+		if (FreshSecret::Enabled()) {
+			FreshSecret::SaveState(&session(), _updatesQts, d.vdate().v);
+			FreshSecret::CatchUpFinished(&session());
 		}
 
 		_lastUpdateTime = crl::now();
@@ -536,11 +536,11 @@ void Updates::differenceDone(const MTPupdates_Difference &result) {
 		feedDifference(d.vusers(), d.vchats(), d.vnew_messages(), d.vother_updates());
 
 		const auto &s = d.vintermediate_state().c_updates_state();
-		if (AyuSecret::Enabled()) {
-			AyuSecret::Get(&session()).handleDifference(
+		if (FreshSecret::Enabled()) {
+			FreshSecret::Get(&session()).handleDifference(
 				d.vnew_encrypted_messages().v,
 				s.vqts().v);
-			AyuSecret::SaveState(&session(), s.vqts().v, s.vdate().v);
+			FreshSecret::SaveState(&session(), s.vqts().v, s.vdate().v);
 		}
 		setState(s.vpts().v, s.vdate().v, s.vqts().v, s.vseq().v);
 
@@ -555,15 +555,15 @@ void Updates::differenceDone(const MTPupdates_Difference &result) {
 		const auto &d = result.c_updates_difference();
 		feedDifference(d.vusers(), d.vchats(), d.vnew_messages(), d.vother_updates());
 
-		if (AyuSecret::Enabled()) {
-			AyuSecret::Get(&session()).handleDifference(
+		if (FreshSecret::Enabled()) {
+			FreshSecret::Get(&session()).handleDifference(
 				d.vnew_encrypted_messages().v,
 				d.vstate().c_updates_state().vqts().v);
-			AyuSecret::SaveState(
+			FreshSecret::SaveState(
 				&session(),
 				d.vstate().c_updates_state().vqts().v,
 				d.vstate().c_updates_state().vdate().v);
-			AyuSecret::CatchUpFinished(&session());
+			FreshSecret::CatchUpFinished(&session());
 		}
 		stateDone(d.vstate());
 	} break;
@@ -2252,19 +2252,19 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 	case mtpc_updateEncryptedChatTyping:
 	case mtpc_updateEncryption:
 	case mtpc_updateEncryptedMessagesRead: {
-		if (AyuSecret::Enabled()) {
-			AyuSecret::Get(&session()).handleUpdate(update);
+		if (FreshSecret::Enabled()) {
+			FreshSecret::Get(&session()).handleUpdate(update);
 			if (update.type() == mtpc_updateNewEncryptedMessage) {
 				const auto &data = update.c_updateNewEncryptedMessage();
 				const auto date = data.vmessage().match([](const auto &message) {
 					return message.vdate().v;
 				});
-				AyuSecret::SaveState(&session(), data.vqts().v, date);
+				FreshSecret::SaveState(&session(), data.vqts().v, date);
 				setState(0, 0, data.vqts().v, 0);
 			} else if (update.type() == mtpc_updateEncryption) {
-				AyuSecret::SaveState(
+				FreshSecret::SaveState(
 					&session(),
-					AyuSecret::LoadState(&session()).qts,
+					FreshSecret::LoadState(&session()).qts,
 					update.c_updateEncryption().vdate().v);
 			}
 		}

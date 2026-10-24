@@ -622,10 +622,10 @@ void PaintRow(
 				+ st::dialogsChatTypeSkip);
 		}
 	}
-	if ((from && AyuKept::showsDeleted(from))
+	if ((from && FreshKept::showsDeleted(from))
 		|| (fakeRow && item && item->isDeleted())) {
 		const auto &trash = ThreeStateIcon(
-			st::ayuDeletedChatIcon,
+			st::freshDeletedChatIcon,
 			context.active,
 			context.selected);
 		trash.paint(p, rectForName.topLeft(), context.width);
@@ -1122,9 +1122,9 @@ const style::icon *ChatTypeIcon(
 		not_null<PeerData*> peer,
 		const PaintContext &context) {
 	if (const auto user = peer->asUser()) {
-		if (AyuSecret::IsSecretPeer(user)) {
+		if (FreshSecret::IsSecretPeer(user)) {
 			return &ThreeStateIcon(
-				st::ayuSecretChatIcon,
+				st::freshSecretChatIcon,
 				context.active,
 				context.selected);
 		} else if (ShowUserBotIcon(user)) {

@@ -14,7 +14,7 @@ namespace Main {
 class Session;
 } // namespace Main
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 
 enum class RecognitionError {
 	None,
@@ -136,4 +136,4 @@ void WantModel(const Model &model);
 
 [[nodiscard]] rpl::producer<bool> ManifestFinished();
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

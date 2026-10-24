@@ -1396,8 +1396,8 @@ void SessionNavigation::showThread(
 void SessionNavigation::showPeerInfo(
 		not_null<PeerData*> peer,
 		const SectionShow &params) {
-	if (AyuSecret::IsSecretPeer(peer)) {
-		if (const auto real = AyuSecret::RealUser(peer)) {
+	if (FreshSecret::IsSecretPeer(peer)) {
+		if (const auto real = FreshSecret::RealUser(peer)) {
 			showPeerInfo(real, params);
 		}
 		return;
@@ -1594,7 +1594,7 @@ SessionController::SessionController(
 , _defaultChatTheme(std::make_shared<Ui::ChatTheme>())
 , _chatStyle(std::make_unique<Ui::ChatStyle>(session->colorIndicesValue())) {
 	init();
-	AyuSecret::WatchActiveChat(this);
+	FreshSecret::WatchActiveChat(this);
 
 	_chatStyleTheme = _defaultChatTheme;
 	_chatStyle->apply(_defaultChatTheme.get());
@@ -3434,8 +3434,8 @@ void SessionController::openPhoto(
 	if (openSharedStory(item) || openFakeItemStory(message.id, stories)) {
 		return;
 	}
-	if (item && item->isAyuSecret()) {
-		AyuSecret::BridgeFor(&session()).mediaOpened(item);
+	if (item && item->isFreshSecret()) {
+		FreshSecret::BridgeFor(&session()).mediaOpened(item);
 	}
 	const auto origin = item
 		? Data::FileOrigin(item->fullId())
@@ -3476,8 +3476,8 @@ void SessionController::openDocument(
 	if (openSharedStory(item) || openFakeItemStory(message.id, stories)) {
 		return;
 	}
-	if (item && item->isAyuSecret()) {
-		AyuSecret::BridgeFor(&session()).mediaOpened(item);
+	if (item && item->isFreshSecret()) {
+		FreshSecret::BridgeFor(&session()).mediaOpened(item);
 	}
 	if (showInMediaView) {
 		if (OptionExternalMediaViewer.value()

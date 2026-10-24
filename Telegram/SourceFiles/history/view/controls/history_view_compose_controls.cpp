@@ -4712,7 +4712,7 @@ void ComposeControls::initTranslateButton() {
 	}
 	_translate->hide();
 	_translate->setAccessibleName(
-		tr::ayu_MessageFieldElementTranslate(tr::now));
+		tr::fresh_MessageFieldElementTranslate(tr::now));
 	_translate->setAcceptBoth(true);
 	_translate->clicks(
 	) | rpl::on_next([=](Qt::MouseButton button) {

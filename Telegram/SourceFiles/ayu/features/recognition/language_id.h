@@ -5,7 +5,7 @@
 
 #include <vector>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 
 struct LanguageGuess {
 	// A two-letter code, like "ru".
@@ -21,4 +21,4 @@ struct LanguageGuess {
 	const QString &text,
 	int count = 5);
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

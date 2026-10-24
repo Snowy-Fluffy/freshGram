@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 ROOT = 'Telegram/SourceFiles'
-PATTERN = re.compile(r'\bAyu|\bayu[_A-Z]|"ayu/')
+PATTERN = re.compile(r'\bAyu|\bayu[_A-Z]|"ayu/|\bFresh[A-Z]|\bfresh[_A-Z]')
 
 
 def tracked_sources():

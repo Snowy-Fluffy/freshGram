@@ -23,7 +23,7 @@ namespace Window {
 class SessionController;
 } // namespace Window
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 void StoreSettingsPage(
 	const std::string &id,
@@ -79,4 +79,4 @@ void ShowPluginDetails(
 	not_null<Window::SessionController*> controller,
 	const QString &pluginId);
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

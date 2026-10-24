@@ -7,7 +7,7 @@ https://github.com/fagramdesktop/fadesktop/blob/dev/LEGAL
 */
 #include "ayu/ui/fagram/fagram_cards.h"
 
-#include "ayu/ayu_card_segment.h"
+#include "ayu/fresh_card_segment.h"
 #include "ui/painter.h"
 #include "ui/rp_widget.h"
 #include "ui/ui_utility.h"

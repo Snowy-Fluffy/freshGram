@@ -2,7 +2,7 @@
 
 #include "ayu/secret/secret_crypto.h"
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 struct FileKey {
 	Bytes key;
@@ -23,4 +23,4 @@ struct FileKey {
 	int64_t size,
 	Bytes &plain);
 
-} // namespace AyuSecret
+} // namespace FreshSecret

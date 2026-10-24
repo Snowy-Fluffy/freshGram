@@ -726,8 +726,8 @@ QString DateTooltipText(not_null<Element*> view) {
 			lt_date,
 			formatLongDateTime(locale, base::unixtime::parse(editedDate)));
 	}
-	if (const auto deletedAt = item->isDeleted() ? item->ayuDeletedAt() : 0) {
-		dateText += '\n' + tr::ayu_DeletedAtDate(
+	if (const auto deletedAt = item->isDeleted() ? item->freshDeletedAt() : 0) {
+		dateText += '\n' + tr::fresh_DeletedAtDate(
 			tr::now,
 			lt_date,
 			formatLongDateTime(locale, base::unixtime::parse(deletedAt)));

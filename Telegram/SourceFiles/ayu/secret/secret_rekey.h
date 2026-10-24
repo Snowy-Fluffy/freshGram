@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 // Pure decision logic of the PFS re-keying state machine, see
 // https://core.telegram.org/api/end-to-end/pfs
@@ -61,4 +61,4 @@ enum class ConcurrentDecision {
 	return overused || aged;
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

@@ -740,7 +740,7 @@ void HistoryInner::setupSwipeReplyAndBack() {
 			if ((position.y() < itemtop)
 				|| (position.y() > itembottom)
 				|| (!view->data()->isRegular()
-					&& !view->data()->isAyuSecret()
+					&& !view->data()->isFreshSecret()
 					&& (!view->data()->isEphemeral()
 						|| view->data()->out()))
 				|| view->data()->isService()) {
@@ -795,7 +795,7 @@ void HistoryInner::setupSwipeReplyAndBack() {
 			if ((data.cursorPosition.y() < itemtop)
 				|| (data.cursorPosition.y() > itembottom)
 				|| (!view->data()->isRegular()
-					&& !view->data()->isAyuSecret()
+					&& !view->data()->isFreshSecret()
 					&& (!view->data()->isEphemeral()
 						|| view->data()->out()))
 				|| view->data()->showSimilarChannels()
@@ -3035,7 +3035,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			|| (channel->canPostMessages()
 				&& item->viewsCount() >= kMinViewsCount));
 	};
-	const auto addAyuItemActions = [&](not_null<HistoryItem*> item) {
+	const auto addFreshItemActions = [&](not_null<HistoryItem*> item) {
 		AyuUi::AddHistoryAction(_menu, item);
 		AyuUi::AddHideMessageAction(_menu, item);
 		AyuUi::AddUserMessagesAction(_menu, item);
@@ -3050,8 +3050,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			|| isUponSelected == 2
 			|| isUponSelected == -2) {
 			return;
-		} else if (item->isAyuRestored()) {
-			addAyuItemActions(item);
+		} else if (item->isFreshRestored()) {
+			addFreshItemActions(item);
 			return;
 		} else if (!item->isRegular()) {
 			return;
@@ -3145,7 +3145,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				&st::menuIconStats);
 		}
 
-		addAyuItemActions(item);
+		addFreshItemActions(item);
 	};
 	const auto addPhotoActions = [&](not_null<PhotoData*> photo, HistoryItem *item) {
 		const auto media = photo->activeMediaView();
@@ -3373,7 +3373,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		if (!item
 			|| (!item->isRegular()
 				&& !CanReplyToEphemeral(item)
-				&& !item->isAyuRestored())
+				&& !item->isFreshRestored())
 			|| IsAnchoredEphemeral(item)) {
 			return;
 		}
@@ -5394,8 +5394,8 @@ MessageIdsList HistoryInner::getSelectedItems() const {
 	) | views::filter([](const auto &item) {
 		return !item->isService()
 			&& (item->isRegular()
-				|| item->isAyuSecret()
-				|| item->isAyuRestored());
+				|| item->isFreshSecret()
+				|| item->isFreshRestored());
 	}) | views::transform([](const auto &item) {
 		return item->fullId();
 	}) | to_vector;
@@ -5418,7 +5418,7 @@ MessageIdsList HistoryInner::getSelectedForwardItems() const {
 		if (!item->isService()
 			&& (item->isRegular()
 				|| item->isEphemeral()
-				|| item->isAyuSecret())) {
+				|| item->isFreshSecret())) {
 			items.push_back(item);
 		}
 	}

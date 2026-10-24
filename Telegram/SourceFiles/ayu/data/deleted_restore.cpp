@@ -24,7 +24,7 @@
 #include "main/main_session.h"
 #include "ui/text/text_utilities.h"
 
-namespace AyuRestore {
+namespace FreshRestore {
 namespace {
 
 constexpr auto kRankScanLimit = 600;
@@ -141,7 +141,7 @@ void noteDeleted(not_null<History*> history) {
 	const auto dialogId = getDialogIdFromPeer(peer);
 	NotedDialogs[userId].emplace(dialogId);
 	DialogsWithDeleted[userId].ids.emplace(dialogId);
-	history->ayuRestoreMarkStale();
+	history->freshRestoreMarkStale();
 }
 
 State::State(not_null<History*> history)
@@ -495,7 +495,7 @@ HistoryItem *State::materialize(TimeId from, TimeId till) {
 			}
 		} catch (...) {
 			row.dead = true;
-			LOG(("AyuRestore: failed to restore a saved message"));
+			LOG(("FreshRestore: failed to restore a saved message"));
 		}
 	}
 	_materializing = false;
@@ -533,9 +533,9 @@ HistoryItem *State::create(Row &row) {
 		}, PreparedServiceText{
 			.text = TextWithEntities{ QString::fromStdString(message.text) },
 		});
-		if (peer->isUser() || !_history->ayuKept()) {
+		if (peer->isUser() || !_history->freshKept()) {
 			service->setDeleted();
-			service->ayuSetDeletedAt(message.entityCreateDate);
+			service->freshSetDeletedAt(message.entityCreateDate);
 			service->markDeletedAnimated();
 		}
 		row.localId = service->id;
@@ -550,7 +550,7 @@ HistoryItem *State::create(Row &row) {
 		from = owner.chatLoaded(message.fromId);
 	}
 	if (!from && message.fromId && !peer->isUser() && !peer->isBroadcast()) {
-		from = AyuUsers::find(&peer->session(), UserId(uint64(message.fromId)));
+		from = FreshUsers::find(&peer->session(), UserId(uint64(message.fromId)));
 		if (!from) {
 			from = unknownSender(owner, message.fromId);
 		}
@@ -615,14 +615,14 @@ HistoryItem *State::create(Row &row) {
 	};
 	auto item = build(text);
 	if (item->isEmpty() && !text.entities.empty()) {
-		LOG(("AyuRestore: message %1 is empty, retrying without entities").arg(message.messageId));
+		LOG(("FreshRestore: message %1 is empty, retrying without entities").arg(message.messageId));
 		item->destroy();
 		text.entities.clear();
 		item = build(text);
 	}
 
 	if (item->isEmpty()) {
-		LOG(("AyuRestore: message %1 stays empty, text %2 bytes").arg(message.messageId).arg(message.text.size()));
+		LOG(("FreshRestore: message %1 stays empty, text %2 bytes").arg(message.messageId).arg(message.text.size()));
 		row.dead = true;
 		item->destroy();
 		return nullptr;
@@ -632,13 +632,13 @@ HistoryItem *State::create(Row &row) {
 		AyuMessages::restoreExtra(item, *row.extra);
 	}
 	if (peer->isMegagroup()) {
-		item->ayuSetFromRank(!row.rank.empty()
+		item->freshSetFromRank(!row.rank.empty()
 			? QString::fromStdString(row.rank)
 			: LiveRank(_history, from ? from->id : PeerId()));
 	}
-	if (peer->isUser() || !_history->ayuKept()) {
+	if (peer->isUser() || !_history->freshKept()) {
 		item->setDeleted();
-		item->ayuSetDeletedAt(message.entityCreateDate);
+		item->freshSetDeletedAt(message.entityCreateDate);
 		item->markDeletedAnimated();
 	}
 	row.localId = item->id;
@@ -652,4 +652,4 @@ HistoryItem *State::create(Row &row) {
 	return item;
 }
 
-} // namespace AyuRestore
+} // namespace FreshRestore

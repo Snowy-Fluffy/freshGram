@@ -12,7 +12,7 @@ namespace Window {
 class SessionController;
 } // namespace Window
 
-namespace AyuStories {
+namespace FreshStories {
 
 // Checks the limit, asks for a photo or a video and opens the window of the story.
 void StartPosting(
@@ -35,4 +35,4 @@ void AddPostStoryAction(
 	not_null<Window::SessionController*> controller,
 	const Window::PeerMenuCallback &addCallback);
 
-} // namespace AyuStories
+} // namespace FreshStories

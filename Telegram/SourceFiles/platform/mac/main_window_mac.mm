@@ -139,7 +139,7 @@ private:
 
 - (void) systemWillSleep:(NSNotification *)aNotification {
 	Core::Sandbox::Instance().customEnterFromEventLoop([&] {
-		AyuLockTriggers::SystemLocked();
+		FreshLockTriggers::SystemLocked();
 	});
 }
 

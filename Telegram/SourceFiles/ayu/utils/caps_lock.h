@@ -3,7 +3,7 @@
 
 class QKeyEvent;
 
-namespace AyuPlatform {
+namespace FreshPlatform {
 
 // Whether CapsLockOn() asks the system, otherwise the state comes from events.
 [[nodiscard]] bool CapsLockQueryable();
@@ -14,4 +14,4 @@ namespace AyuPlatform {
 	not_null<QKeyEvent*> e,
 	bool current);
 
-} // namespace AyuPlatform
+} // namespace FreshPlatform

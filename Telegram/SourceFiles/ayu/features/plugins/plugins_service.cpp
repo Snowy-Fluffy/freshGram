@@ -2,7 +2,7 @@
 #include "ayu/features/plugins/plugins_service.h"
 
 #include "ayu/ayu_settings.h"
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_vault.h"
 #include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_transport.h"
@@ -43,7 +43,7 @@
 #include <cctype>
 #include <map>
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 namespace {
 
 constexpr auto kPumpEach = crl::time(50);
@@ -83,7 +83,7 @@ struct Service {
 }
 
 [[nodiscard]] bool DeriveSecret(const char *label, std::array<uint8_t, 32> &out) {
-	return AyuVault::DeriveKey(label, out.data(), out.size());
+	return FreshVault::DeriveKey(label, out.data(), out.size());
 }
 
 [[nodiscard]] std::unique_ptr<fgpl::PluginManager> MakeManager(
@@ -152,7 +152,7 @@ struct Service {
 		return State::NoSandbox;
 	} else if (!Installed()) {
 		return State::NoRuntime;
-	} else if (!AyuVault::HasKey()) {
+	} else if (!FreshVault::HasKey()) {
 		return State::NoKey;
 	}
 	return State::Ready;
@@ -201,7 +201,7 @@ void Refresh() {
 			StartAccounts(service);
 		} else {
 			DropManager(service);
-			service.state = AyuVault::HasKey() ? State::NoRuntime : State::NoKey;
+			service.state = FreshVault::HasKey() ? State::NoRuntime : State::NoKey;
 			return;
 		}
 	}
@@ -359,7 +359,7 @@ bool ApplyOutgoing(Api::MessageToSend &message) {
 	const auto result = manager->transformOutgoing(
 		AccountId(&history->session()).toStdString(),
 		int64_t(peer->id.value),
-		AyuSecret::IsSecretPeerId(peer->id),
+		FreshSecret::IsSecretPeerId(peer->id),
 		text.toStdString(),
 		kOutgoingTimeoutMs);
 	if (result.blocked) {
@@ -381,7 +381,7 @@ bool ApplyOutgoing(Api::MessageToSend &message) {
 		history->session().changes().entryUpdated(
 			history,
 			Data::EntryUpdate::Flag::LocalDraftSet);
-		Ui::Toast::Show(tr::ayu_PluginOutgoingBlocked(
+		Ui::Toast::Show(tr::fresh_PluginOutgoingBlocked(
 			tr::now,
 			lt_plugin,
 			name,
@@ -468,4 +468,4 @@ QString AccountId(not_null<Main::Session*> session) {
 	return QString::number(session->uniqueId());
 }
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

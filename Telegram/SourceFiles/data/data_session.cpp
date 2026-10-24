@@ -375,7 +375,7 @@ Session::Session(not_null<Main::Session*> session)
 
 	setupMigrationViewer();
 	setupChannelLeavingViewer();
-	AyuKept::setup(this, _lifetime);
+	FreshKept::setup(this, _lifetime);
 	AyuFeatures::StreamerMode::spoilersActiveValue(
 	) | rpl::skip(1) | rpl::on_next([=] {
 		auto items = std::vector<not_null<const HistoryItem*>>();
@@ -388,7 +388,7 @@ Session::Session(not_null<Main::Session*> session)
 		}
 	}, _lifetime);
 	crl::on_main(_session, [=] {
-		AyuSecret::Start(_session);
+		FreshSecret::Start(_session);
 	});
 	setupPeerNameViewer();
 	setupUserIsContactViewer();
@@ -957,7 +957,7 @@ not_null<UserData*> Session::processUser(const MTPUser &data) {
 	if (flags) {
 		session().changes().peerUpdated(result, flags);
 	}
-	AyuUsers::note(result);
+	FreshUsers::note(result);
 	return result;
 }
 
@@ -1732,12 +1732,12 @@ History *Session::historyLoaded(const PeerData *peer) {
 
 void Session::deleteConversationLocally(not_null<PeerData*> peer) {
 	if (const auto kept = historyLoaded(peer)) {
-		if (AyuKept::keepOnDelete(kept)) {
+		if (FreshKept::keepOnDelete(kept)) {
 			return;
 		}
 	}
-	AyuKept::forget(peer);
-	AyuLocalPins::forget(this, peer->id);
+	FreshKept::forget(peer);
+	FreshLocalPins::forget(this, peer->id);
 	const auto markLeft = [&] {
 		if (const auto channel = peer->asMegagroup()) {
 			channel->addFlags(ChannelDataFlag::Left);
@@ -1910,17 +1910,17 @@ void Session::setupChannelLeavingViewer() {
 	}) | rpl::on_next([=](not_null<ChannelData*> channel) {
 		if (channel->amIn()) {
 			channel->clearInvitePeek();
-			AyuKept::takeUserLeaving(channel);
+			FreshKept::takeUserLeaving(channel);
 			if (const auto history = historyLoaded(channel->id)) {
-				if (history->ayuKept()) {
-					AyuKept::forget(channel);
+				if (history->freshKept()) {
+					FreshKept::forget(channel);
 				}
 			}
 		} else {
 			if (const auto history = historyLoaded(channel->id)) {
-				const auto leaving = AyuKept::takeUserLeaving(channel);
+				const auto leaving = FreshKept::takeUserLeaving(channel);
 				if (history->inChatList() && !leaving) {
-					AyuKept::markLost(history);
+					FreshKept::markLost(history);
 				}
 				history->removeJoinedMessage();
 				history->updateChatListExistence();
@@ -2832,11 +2832,11 @@ void Session::setChatPinned(
 void Session::setPinnedFromEntryList(Dialogs::Key key, bool pinned) {
 	Expects(key.entry()->folderKnown());
 
-	if (!pinned && AyuLocalPins::isLocal(key)) {
+	if (!pinned && FreshLocalPins::isLocal(key)) {
 		return;
 	}
 	if (const auto history = key.history(); history && pinned) {
-		AyuLocalPins::forget(this, history->peer->id);
+		FreshLocalPins::forget(this, history->peer->id);
 	}
 	const auto list = chatsListFor(key.entry())->pinned();
 	if (pinned) {
@@ -2870,12 +2870,12 @@ void Session::applyPinnedChats(
 	}
 	for (const auto &peer : list) {
 		peer.match([&](const MTPDdialogPeer &data) {
-			AyuLocalPins::forget(this, peerFromMTP(data.vpeer()));
+			FreshLocalPins::forget(this, peerFromMTP(data.vpeer()));
 		}, [](const auto &) {
 		});
 	}
 	chatsList(folder)->pinned()->applyList(this, list);
-	AyuLocalPins::reapply(this);
+	FreshLocalPins::reapply(this);
 	notifyPinnedDialogsOrderUpdated();
 }
 
@@ -2900,7 +2900,7 @@ void Session::applyDialogs(
 	if (requestFolder && count) {
 		requestFolder->chatsList()->setCloudListSize(*count);
 	}
-	AyuLocalPins::reapply(this);
+	FreshLocalPins::reapply(this);
 }
 
 void Session::applyDialog(
@@ -2977,7 +2977,7 @@ bool Session::pinnedCanPin(not_null<Dialogs::Entry*> entry) const {
 	} else {
 		const auto folder = entry->folder();
 		return (int(pinnedChatsOrder(folder).size())
-			- AyuLocalPins::count(this, folder)) < pinnedChatsLimit(folder);
+			- FreshLocalPins::count(this, folder)) < pinnedChatsLimit(folder);
 	}
 }
 
@@ -3020,7 +3020,7 @@ int Session::pinnedChatsLimit(not_null<Data::SavedMessages*> saved) const {
 
 rpl::producer<int> Session::maxPinnedChatsLimitValue(
 		Data::Folder*) const {
-	return rpl::single(AyuLocalPins::kListLimit);
+	return rpl::single(FreshLocalPins::kListLimit);
 }
 
 rpl::producer<int> Session::maxPinnedChatsLimitValue(
@@ -3104,8 +3104,8 @@ void Session::reorderTwoPinnedChats(
 		: chatsListFor(key1.entry());
 	list->pinned()->reorder(key1, key2);
 	notifyPinnedDialogsOrderUpdated();
-	if (AyuLocalPins::isLocal(key1) || AyuLocalPins::isLocal(key2)) {
-		AyuLocalPins::saveOrder(this);
+	if (FreshLocalPins::isLocal(key1) || FreshLocalPins::isLocal(key2)) {
+		FreshLocalPins::saveOrder(this);
 	}
 }
 
@@ -3154,7 +3154,7 @@ void Session::updateEditedMessage(const MTPMessage &data) {
 
 		AyuMessages::addEditedMessage(existing);
 		if (edit.isEditHide) {
-			existing->ayuShowEditedBadge();
+			existing->freshShowEditedBadge();
 		}
 	}
 
@@ -3488,7 +3488,7 @@ void Session::processMessagesDeleted(
 		if (!history->chatListMessageKnown()) {
 			history->requestChatListMessage();
 		}
-		AyuKept::checkWiped(history);
+		FreshKept::checkWiped(history);
 	}
 }
 
@@ -3516,7 +3516,7 @@ void Session::processNonChannelMessagesDeleted(const QVector<MTPint> &data) {
 		if (!history->chatListMessageKnown()) {
 			history->requestChatListMessage();
 		}
-		AyuKept::checkWiped(history);
+		FreshKept::checkWiped(history);
 	}
 }
 

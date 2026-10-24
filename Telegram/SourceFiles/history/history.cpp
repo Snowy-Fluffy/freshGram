@@ -594,7 +594,7 @@ void History::setComposeStash(
 		return;
 	}
 	_composeStashesChecked.emplace(key);
-	AyuComposeStash::Persist(this, key, stash.get());
+	FreshComposeStash::Persist(this, key, stash.get());
 	if (stash) {
 		_composeStashes[key] = std::move(stash);
 	} else if (!_composeStashes.remove(key)) {
@@ -614,7 +614,7 @@ std::unique_ptr<Data::ComposeStash> History::takeComposeStash(
 	}
 	auto result = std::move(i->second);
 	_composeStashes.erase(i);
-	AyuComposeStash::Persist(this, key, nullptr);
+	FreshComposeStash::Persist(this, key, nullptr);
 	session().changes().historyUpdated(
 		this,
 		Data::HistoryUpdate::Flag::ComposeStash);
@@ -624,7 +624,7 @@ std::unique_ptr<Data::ComposeStash> History::takeComposeStash(
 void History::restoreComposeStash(Data::DraftKey key) {
 	if (!key || !_composeStashesChecked.emplace(key).second) {
 		return;
-	} else if (auto restored = AyuComposeStash::Restore(this, key)) {
+	} else if (auto restored = FreshComposeStash::Restore(this, key)) {
 		_composeStashes[key] = std::move(restored);
 	}
 }
@@ -923,7 +923,7 @@ not_null<HistoryItem*> History::addNewItem(
 		sublist->applyMaybeLast(item);
 	}
 
-	AyuKept::revive(this, item);
+	FreshKept::revive(this, item);
 
 	return item;
 }
@@ -2642,8 +2642,8 @@ void History::applyPinnedUpdate(const MTPDupdateDialogPinned &data) {
 }
 
 TimeId History::adjustedChatListTimeId() const {
-	if (_ayuKeptTime) {
-		return _ayuKeptTime;
+	if (_freshKeptTime) {
+		return _freshKeptTime;
 	}
 	const auto result = chatListTimeId();
 	if (const auto channel = peer->asChannel()) {
@@ -3081,10 +3081,10 @@ bool History::isReadyFor(MsgId msgId) {
 }
 
 void History::getReadyFor(MsgId msgId) {
-	if (AyuSecret::IsSecretPeer(peer)) {
+	if (FreshSecret::IsSecretPeer(peer)) {
 		return;
 	}
-	if (_ayuKept && !isEmpty()) {
+	if (_freshKept && !isEmpty()) {
 		return;
 	}
 	if (msgId < 0 && -msgId < ServerMaxMsgId && peer->migrateFrom()) {
@@ -3307,7 +3307,7 @@ void History::requestChatListMessage() {
 		}
 		return;
 	}
-	if (!lastMessageKnown() && AyuSecret::IsSecretPeer(peer)) {
+	if (!lastMessageKnown() && FreshSecret::IsSecretPeer(peer)) {
 		setLastMessage(nullptr);
 		if (!chatListMessageKnown()) {
 			setChatListMessage(nullptr);
@@ -3473,14 +3473,14 @@ bool History::trackUnreadMessages() const {
 }
 
 bool History::shouldBeInChatList() const {
-	const auto hasLast = AyuKept::hasListableLastMessage(this);
+	const auto hasLast = FreshKept::hasListableLastMessage(this);
 	if (peer->migrateTo() || !folderKnown()) {
 		return false;
-	} else if (_ayuKept
+	} else if (_freshKept
 		&& !lastMessage()
-		&& !AyuKept::hasKeptTopics(this)) {
+		&& !FreshKept::hasKeptTopics(this)) {
 		return false;
-	} else if (AyuSecret::IsSecretPeer(peer)) {
+	} else if (FreshSecret::IsSecretPeer(peer)) {
 		return true;
 	} else if (const auto community = peer->asChannel()
 		; community && community->isCommunity()) {
@@ -3492,8 +3492,8 @@ bool History::shouldBeInChatList() const {
 	} else if (const auto channel = peer->asChannel()) {
 		if (!channel->amIn()) {
 			return isTopPromoted()
-				|| (_ayuKept
-					&& (lastMessage() || AyuKept::hasKeptTopics(this)));
+				|| (_freshKept
+					&& (lastMessage() || FreshKept::hasKeptTopics(this)));
 		}
 	} else if (const auto chat = peer->asChat()) {
 		return chat->amIn()
@@ -4273,18 +4273,18 @@ void History::insertMessageToBlocks(not_null<HistoryItem*> item) {
 }
 
 void History::checkLocalMessages() {
-	if (!_ayuRestore) {
-		_ayuRestore = std::make_unique<AyuRestore::State>(this);
+	if (!_freshRestore) {
+		_freshRestore = std::make_unique<FreshRestore::State>(this);
 	}
-	_ayuRestore->checkLoaded();
-	_ayuRestore->dropDuplicates();
+	_freshRestore->checkLoaded();
+	_freshRestore->dropDuplicates();
 	if (isEmpty()
 		&& (peer->isForum() || !loadedAtTop() || !loadedAtBottom())) {
 		if (peer->isForum()) {
-			const auto last = _ayuRestore->materialize(
+			const auto last = _freshRestore->materialize(
 				0,
 				std::numeric_limits<TimeId>::max());
-			if (_ayuKept && !lastMessage() && last) {
+			if (_freshKept && !lastMessage() && last) {
 				setLastMessage(last);
 			}
 		}
@@ -4299,7 +4299,7 @@ void History::checkLocalMessages() {
 	const auto goodDate = [&](TimeId date) {
 		return (date >= firstDate && date < lastDate);
 	};
-	const auto restored = _ayuRestore->materialize(firstDate, lastDate);
+	const auto restored = _freshRestore->materialize(firstDate, lastDate);
 	auto insertedDeleted = false;
 	for (const auto &item : _clientSideMessages) {
 		if (!item->mainView() && goodDate(item->date())) {
@@ -4309,12 +4309,12 @@ void History::checkLocalMessages() {
 			}
 		}
 	}
-	for (const auto &item : _ayuRestore->orphans(firstDate, lastDate)) {
+	for (const auto &item : _freshRestore->orphans(firstDate, lastDate)) {
 		if (!item->mainView()) {
 			insertMessageToBlocks(item);
 		}
 	}
-	if (_ayuKept && !lastMessage()) {
+	if (_freshKept && !lastMessage()) {
 		if (const auto last = lastAvailableMessage()) {
 			setLastMessage(last);
 		}
@@ -4347,75 +4347,75 @@ void History::checkLocalMessages() {
 	}
 }
 
-bool History::ayuKept() const {
-	return _ayuKept;
+bool History::freshKept() const {
+	return _freshKept;
 }
 
-void History::setAyuKept(bool kept) {
-	if (_ayuKept == kept) {
+void History::setFreshKept(bool kept) {
+	if (_freshKept == kept) {
 		return;
 	}
-	_ayuKept = kept;
+	_freshKept = kept;
 	if (!kept) {
-		_ayuKeptTime = 0;
+		_freshKeptTime = 0;
 		updateChatListSortPosition();
 	}
 	updateChatListExistence();
 	updateChatListEntryPostponed();
 }
 
-TimeId History::ayuKeptTime() const {
-	return _ayuKeptTime;
+TimeId History::freshKeptTime() const {
+	return _freshKeptTime;
 }
 
-void History::setAyuKeptTime(TimeId time) {
-	if (_ayuKeptTime == time) {
+void History::setFreshKeptTime(TimeId time) {
+	if (_freshKeptTime == time) {
 		return;
 	}
-	_ayuKeptTime = time;
+	_freshKeptTime = time;
 	updateChatListSortPosition();
 	updateChatListEntryPostponed();
 }
 
-HistoryItem *History::ayuRestored(
+HistoryItem *History::freshRestored(
 		MsgId id,
 		not_null<HistoryItem*> holder) {
-	if (!_ayuRestore) {
-		_ayuRestore = std::make_unique<AyuRestore::State>(this);
-		_ayuRestore->checkLoaded();
+	if (!_freshRestore) {
+		_freshRestore = std::make_unique<FreshRestore::State>(this);
+		_freshRestore->checkLoaded();
 	}
-	return _ayuRestore->find(id, holder);
+	return _freshRestore->find(id, holder);
 }
 
-void History::ayuRestoreThread(MsgId rootId) {
-	if (!_ayuRestore) {
-		_ayuRestore = std::make_unique<AyuRestore::State>(this);
+void History::freshRestoreThread(MsgId rootId) {
+	if (!_freshRestore) {
+		_freshRestore = std::make_unique<FreshRestore::State>(this);
 	}
-	_ayuRestore->restoreThread(rootId);
+	_freshRestore->restoreThread(rootId);
 }
 
-HistoryItem *History::ayuDeletedItem(const AyuMessageBase &message) {
-	if (!_ayuRestore) {
-		_ayuRestore = std::make_unique<AyuRestore::State>(this);
+HistoryItem *History::freshDeletedItem(const AyuMessageBase &message) {
+	if (!_freshRestore) {
+		_freshRestore = std::make_unique<FreshRestore::State>(this);
 	}
-	return _ayuRestore->itemFor(message);
+	return _freshRestore->itemFor(message);
 }
 
-HistoryItem *History::ayuRestoredByOriginalId(MsgId id) {
-	return _ayuRestore ? _ayuRestore->byOriginalId(id) : nullptr;
+HistoryItem *History::freshRestoredByOriginalId(MsgId id) {
+	return _freshRestore ? _freshRestore->byOriginalId(id) : nullptr;
 }
 
-MsgId History::ayuOriginalId(not_null<const HistoryItem*> item) const {
-	return _ayuRestore ? _ayuRestore->originalIdOf(item->id) : MsgId();
+MsgId History::freshOriginalId(not_null<const HistoryItem*> item) const {
+	return _freshRestore ? _freshRestore->originalIdOf(item->id) : MsgId();
 }
 
-void History::ayuRestoreMarkStale() {
-	if (_ayuRestore) {
-		_ayuRestore->markStale();
+void History::freshRestoreMarkStale() {
+	if (_freshRestore) {
+		_freshRestore->markStale();
 	}
 }
 
-void History::restoreAyuKept() {
+void History::restoreFreshKept() {
 	_loadedAtTop = true;
 	checkLocalMessages();
 }
@@ -4586,10 +4586,10 @@ std::vector<MsgId> History::collectMessagesFromParticipantToDelete(
 }
 
 void History::clear(ClearType type, bool markEmpty) {
-	if (type == ClearType::Unload && AyuSecret::IsSecretPeer(peer)) {
+	if (type == ClearType::Unload && FreshSecret::IsSecretPeer(peer)) {
 		return;
 	}
-	if (_ayuKept && type == ClearType::Unload && !isEmpty()) {
+	if (_freshKept && type == ClearType::Unload && !isEmpty()) {
 		return;
 	}
 	_unreadBarView = nullptr;
@@ -4618,8 +4618,8 @@ void History::clear(ClearType type, bool markEmpty) {
 		for (const auto &item : local) {
 			item->destroy();
 		}
-		if (_ayuRestore) {
-			_ayuRestore->disable();
+		if (_freshRestore) {
+			_freshRestore->disable();
 		}
 		clearNotifications();
 		owner().notifyHistoryCleared(this);

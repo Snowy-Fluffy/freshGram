@@ -8,7 +8,7 @@ import sys
 here = os.path.dirname(os.path.abspath(__file__))
 line_re = re.compile(r'^"([A-Za-z0-9_#]+)"\s*=\s*"(.*)";$')
 tag_re = re.compile(r'\{([a-z_0-9]+)\}')
-prefixes = ('ayu_', 'lng_freshgram_')
+prefixes = ('fresh_', 'ayu_', 'lng_freshgram_')
 plural_parts = ('zero', 'one', 'two', 'few', 'many', 'other')
 needed = {
     'ru': ('one', 'few', 'many', 'other'),

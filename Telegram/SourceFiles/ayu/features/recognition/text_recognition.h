@@ -11,7 +11,7 @@
 #include <atomic>
 #include <memory>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 
 struct TextRequest {
 	QImage image;
@@ -38,4 +38,4 @@ std::shared_ptr<std::atomic<bool>> RecognizeTextAsync(
 	TextRequest request,
 	Fn<void(TextResult)> done);
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

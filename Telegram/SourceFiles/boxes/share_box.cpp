@@ -1867,7 +1867,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			auto secretItems = std::vector<not_null<HistoryItem*>>(
 				items.begin(),
 				items.end());
-			if (AyuSecret::Forward(secretItems, result, options)) {
+			if (FreshSecret::Forward(secretItems, result, options)) {
 				if (show->valid()) {
 					show->hideLayer();
 				}

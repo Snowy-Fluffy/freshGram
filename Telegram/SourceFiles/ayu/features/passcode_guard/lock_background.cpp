@@ -10,7 +10,7 @@
 #include <QtGui/QImageWriter>
 #include <QtGui/QPainter>
 
-namespace AyuLockBackground {
+namespace FreshLockBackground {
 namespace {
 
 constexpr auto kMaxFileSize = qint64(30 * 1024 * 1024);
@@ -375,4 +375,4 @@ void Clear() {
 	ClearAvatar();
 }
 
-} // namespace AyuLockBackground
+} // namespace FreshLockBackground

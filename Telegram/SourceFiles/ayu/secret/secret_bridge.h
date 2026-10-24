@@ -17,7 +17,7 @@ namespace Window {
 class SessionController;
 } // namespace Window
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 class Bridge final {
 public:
@@ -91,4 +91,4 @@ private:
 void Start(not_null<Main::Session*> session);
 void WatchActiveChat(not_null<Window::SessionController*> controller);
 
-} // namespace AyuSecret
+} // namespace FreshSecret

@@ -21,7 +21,7 @@ namespace {
 
 [[nodiscard]] QString TtlText(int seconds) {
 	if (seconds <= 0) {
-		return tr::ayu_SecretTimerOff(tr::now);
+		return tr::fresh_SecretTimerOff(tr::now);
 	} else if (seconds < 60) {
 		return QString("%1 s").arg(seconds);
 	} else if (seconds < 3600) {
@@ -41,7 +41,7 @@ void FillSecretTimerBox(
 		not_null<Main::Session*> session,
 		int chatId,
 		int current) {
-	box->setTitle(tr::ayu_SecretTimer());
+	box->setTitle(tr::fresh_SecretTimer());
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	const auto group = std::make_shared<Ui::RadiobuttonGroup>(current);
 	auto options = std::vector<int>{
@@ -62,7 +62,7 @@ void FillSecretTimerBox(
 			st::boxRowPadding);
 	}
 	group->setChangedCallback([=](int value) {
-		AyuSecret::Get(session).setTtl(chatId, value);
+		FreshSecret::Get(session).setTtl(chatId, value);
 		box->closeBox();
 	});
 }
@@ -70,10 +70,10 @@ void FillSecretTimerBox(
 void ShowSecretTimer(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer) {
-	const auto chatId = AyuSecret::ChatIdOfPeer(peer);
+	const auto chatId = FreshSecret::ChatIdOfPeer(peer);
 	const auto session = &controller->session();
-	const auto info = AyuSecret::Get(session).chat(chatId);
-	if (!info || info->state != AyuSecret::ChatState::Ready) {
+	const auto info = FreshSecret::Get(session).chat(chatId);
+	if (!info || info->state != FreshSecret::ChatState::Ready) {
 		return;
 	}
 	controller->show(Box(FillSecretTimerBox, session, chatId, info->ttl));
@@ -82,8 +82,8 @@ void ShowSecretTimer(
 void ShowSecretKey(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer) {
-	const auto chatId = AyuSecret::ChatIdOfPeer(peer);
-	const auto info = AyuSecret::Get(&controller->session()).chat(chatId, true);
+	const auto chatId = FreshSecret::ChatIdOfPeer(peer);
+	const auto info = FreshSecret::Get(&controller->session()).chat(chatId, true);
 	if (!info || info->keyHash.empty()) {
 		return;
 	}
@@ -98,9 +98,9 @@ void ConfirmSecretClear(
 	const auto weak = base::make_weak(controller);
 	const auto history = peer->owner().history(peer);
 	controller->show(Ui::MakeConfirmBox({
-		.text = tr::ayu_SecretClearAsk(),
+		.text = tr::fresh_SecretClearAsk(),
 		.confirmed = [=](Fn<void()> close) {
-			AyuSecret::BridgeFor(&history->session()).historyClearedByUser(
+			FreshSecret::BridgeFor(&history->session()).historyClearedByUser(
 				history);
 			close();
 		},
@@ -110,17 +110,17 @@ void ConfirmSecretClear(
 void ConfirmSecretEnd(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer) {
-	const auto chatId = AyuSecret::ChatIdOfPeer(peer);
+	const auto chatId = FreshSecret::ChatIdOfPeer(peer);
 	const auto session = &controller->session();
-	const auto info = AyuSecret::Get(session).chat(chatId);
+	const auto info = FreshSecret::Get(session).chat(chatId);
 	const auto ended = info
-		&& (info->state == AyuSecret::ChatState::Discarded);
+		&& (info->state == FreshSecret::ChatState::Discarded);
 	controller->show(Ui::MakeConfirmBox({
 		.text = ended
-			? tr::ayu_SecretChatDeleteAsk()
-			: tr::ayu_SecretChatEndAsk(),
+			? tr::fresh_SecretChatDeleteAsk()
+			: tr::fresh_SecretChatEndAsk(),
 		.confirmed = [=](Fn<void()> close) {
-			AyuSecret::Get(session).end(chatId);
+			FreshSecret::Get(session).end(chatId);
 			close();
 		},
 	}));

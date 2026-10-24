@@ -8,7 +8,7 @@
 #include "history/view/history_view_element.h"
 #include "main/main_session.h"
 
-namespace AyuMentions {
+namespace FreshMentions {
 namespace {
 
 constexpr auto kAttempts = 20;
@@ -50,4 +50,4 @@ void GuardJump(not_null<Data::Thread*> thread, MsgId msgId) {
 	Check(&history->session(), FullMsgId(history->peer->id, msgId), 0);
 }
 
-} // namespace AyuMentions
+} // namespace FreshMentions

@@ -183,13 +183,13 @@ void Histories::clearAll() {
 }
 
 void Histories::readInbox(not_null<History*> history) {
-	if (AyuSecret::IsSecretPeer(history->peer)) {
+	if (FreshSecret::IsSecretPeer(history->peer)) {
 		for (const auto &block : history->blocks) {
 			for (const auto &view : block->messages) {
 				readClientSideMessage(view->data());
 			}
 		}
-		AyuSecret::BridgeFor(&session()).messagesRead(history);
+		FreshSecret::BridgeFor(&session()).messagesRead(history);
 		return;
 	}
 	DEBUG_LOG(("Reading: readInbox called."));
@@ -224,7 +224,7 @@ void Histories::readInbox(not_null<History*> history) {
 
 void Histories::readInboxTill(not_null<HistoryItem*> item) {
 	const auto history = item->history();
-	if (item->isAyuSecret()) {
+	if (item->isFreshSecret()) {
 		auto reached = false;
 		for (const auto &block : history->blocks) {
 			for (const auto &view : block->messages) {
@@ -239,7 +239,7 @@ void Histories::readInboxTill(not_null<HistoryItem*> item) {
 				break;
 			}
 		}
-		AyuSecret::BridgeFor(&session()).messagesRead(history);
+		FreshSecret::BridgeFor(&session()).messagesRead(history);
 		return;
 	}
 	if (!item->isRegular()) {
@@ -415,8 +415,8 @@ void Histories::requestDialogEntry(not_null<Data::Folder*> folder) {
 void Histories::requestDialogEntry(
 		not_null<History*> history,
 		Fn<void()> callback) {
-	if (AyuSecret::IsSecretPeer(history->peer)
-		|| (history->ayuKept()
+	if (FreshSecret::IsSecretPeer(history->peer)
+		|| (history->freshKept()
 			&& (history->peer->isChat() || history->peer->isChannel())
 			&& (history->peer->asChat()
 				? history->peer->asChat()->isForbidden()
@@ -740,7 +740,7 @@ void Histories::sendReadRequests() {
 
 	const auto &ghost = AyuSettings::ghost(&_owner->session());
 	if (!ghost.sendReadMessages()) {
-		DEBUG_LOG(("[AyuGram] Don't read messages"));
+		DEBUG_LOG(("[freshGram] Don't read messages"));
 		_readRequestsTimer.cancel();
 		auto histories = std::vector<not_null<History*>>();
 		histories.reserve(_states.size());
@@ -1030,7 +1030,7 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 	for (const auto &itemId : ids) {
 		if (const auto item = _owner->message(itemId)) {
 			const auto history = item->history();
-			if (item->isAyuSecret()) {
+			if (item->isFreshSecret()) {
 				secretItems.push_back(item);
 				continue;
 			}
@@ -1089,7 +1089,7 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 	}
 
 	if (!secretItems.empty()) {
-		for (const auto &gone : AyuSecret::BridgeFor(
+		for (const auto &gone : FreshSecret::BridgeFor(
 				&session()).itemsDeletedByUser(secretItems)) {
 			remove.push_back(gone);
 		}

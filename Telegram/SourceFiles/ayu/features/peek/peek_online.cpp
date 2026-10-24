@@ -24,7 +24,7 @@
 #include <algorithm>
 #include <map>
 
-namespace AyuPeek {
+namespace FreshPeek {
 namespace {
 
 using Privacy = Api::UserPrivacy;
@@ -220,7 +220,7 @@ void Restore(
 		finished();
 	}, [=] {
 		if (attempt + 1 >= kRestoreAttempts) {
-			Toast(tr::ayu_PeekRestoreFailed(tr::now));
+			Toast(tr::fresh_PeekRestoreFailed(tr::now));
 			finished();
 			return;
 		}
@@ -299,7 +299,7 @@ void Begin(not_null<UserData*> user, const Privacy::Rule &original) {
 					Store(strong, *result);
 					Toast(format(*result));
 				} else {
-					Toast(tr::ayu_PeekFailed(tr::now));
+					Toast(tr::fresh_PeekFailed(tr::now));
 				}
 			}
 		};
@@ -333,7 +333,7 @@ void Begin(not_null<UserData*> user, const Privacy::Rule &original) {
 		return;
 	}
 	AyuDatabase::savePeekRestore(ToRow(session, original));
-	Toast(tr::ayu_PeekChecking(tr::now));
+	Toast(tr::fresh_PeekChecking(tr::now));
 	session->api().userPrivacy().save(kKey, modified, [=] {
 		Fetch(user, 0, [=](std::optional<Result> result) {
 			finish(result, true);
@@ -366,10 +366,10 @@ bool shouldOffer(PeerData *peer) {
 void start(not_null<UserData*> user) {
 	const auto session = &user->session();
 	if (HasRealPremium(session)) {
-		Toast(tr::ayu_PeekPremium(tr::now));
+		Toast(tr::fresh_PeekPremium(tr::now));
 		return;
 	} else if (Running) {
-		Toast(tr::ayu_PeekBusy(tr::now));
+		Toast(tr::fresh_PeekBusy(tr::now));
 		return;
 	}
 	Running = true;
@@ -390,7 +390,7 @@ void start(not_null<UserData*> user) {
 	base::call_delayed(kRetryDelay * 15, session, [=] {
 		if (!*began) {
 			Running = false;
-			Toast(tr::ayu_PeekFailed(tr::now));
+			Toast(tr::fresh_PeekFailed(tr::now));
 		}
 	});
 }
@@ -447,7 +447,7 @@ QString augment(
 	if (!result) {
 		return telegramText;
 	}
-	return tr::ayu_PeekStatusFormat(
+	return tr::fresh_PeekStatusFormat(
 		tr::now,
 		lt_status,
 		telegramText,
@@ -455,4 +455,4 @@ QString augment(
 		ExactText(*result, now));
 }
 
-} // namespace AyuPeek
+} // namespace FreshPeek

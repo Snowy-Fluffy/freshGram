@@ -709,7 +709,7 @@ void SendExistingDocument(
 		MessageToSend &&message,
 		not_null<DocumentData*> document,
 		std::optional<MsgId> localMessageId) {
-	if (AyuSecret::SendDocument(message, document)) {
+	if (FreshSecret::SendDocument(message, document)) {
 		return;
 	}
 	if (!document->sticker()
@@ -813,7 +813,7 @@ void SendExistingPhoto(
 		MessageToSend &&message,
 		not_null<PhotoData*> photo,
 		std::optional<MsgId> localMessageId) {
-	if (AyuSecret::Reject(message.action.history->peer)) {
+	if (FreshSecret::Reject(message.action.history->peer)) {
 		return;
 	}
 	const auto clearReplyTo = prependPseudoReply(message);
@@ -987,7 +987,7 @@ bool SendDice(MessageToSend &message) {
 }
 
 void SendLocation(SendAction action, float64 lat, float64 lon) {
-	if (AyuSecret::Reject(action.history->peer)) {
+	if (FreshSecret::Reject(action.history->peer)) {
 		return;
 	}
 	SendSimpleMedia(
@@ -1001,7 +1001,7 @@ void SendLocation(SendAction action, float64 lat, float64 lon) {
 }
 
 void SendVenue(SendAction action, Data::InputVenue venue) {
-	if (AyuSecret::Reject(action.history->peer)) {
+	if (FreshSecret::Reject(action.history->peer)) {
 		return;
 	}
 	SendSimpleMedia(

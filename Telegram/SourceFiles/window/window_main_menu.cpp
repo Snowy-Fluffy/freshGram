@@ -753,10 +753,10 @@ void MainMenu::setupMenu() {
 
 		if (settings.showNewStoryInDrawer())
 		addAction(
-			tr::ayu_StoryNew(),
-			{ &st::ayuNewStoryMenuIcon }
+			tr::fresh_StoryNew(),
+			{ &st::freshNewStoryMenuIcon }
 		)->setClickedCallback([=] {
-			AyuStories::StartPosting(controller, controller->session().user());
+			FreshStories::StartPosting(controller, controller->session().user());
 		});
 
 		if (settings.showContactsInDrawer())
@@ -781,7 +781,7 @@ void MainMenu::setupMenu() {
 			controller->showPeerHistory(controller->session().user());
 		});
 
-		AyuPlugins::AddMainMenuItems(_menu, controller);
+		FreshPlugins::AddMainMenuItems(_menu, controller);
 
 		if (settings.showLReadToggleInDrawer()) {
 			addAction(

@@ -2345,13 +2345,13 @@ void OverlayWidget::fillContextMenuActions(
 	if (!hasRecognitionSelection
 		&& !_stories
 		&& !streamerHidden()
-		&& AyuRecognition::TextRecognitionAvailable()
+		&& FreshRecognition::TextRecognitionAvailable()
 		&& ((_photo && _photoMedia && _photoMedia->loaded())
 			|| (_document
 				&& _document->isImage()
 				&& !_staticContent.isNull()))) {
 		addAction(
-			tr::ayu_RecognizeText(tr::now),
+			tr::fresh_RecognizeText(tr::now),
 			[=] { startTextRecognition(); },
 			&st::mediaMenuIconFont);
 	}
@@ -6347,27 +6347,27 @@ void OverlayWidget::startTextRecognition() {
 		image = _staticContent;
 	}
 	if (image.isNull()) {
-		Ui::Toast::Show(_body, tr::ayu_RecognizeNotLoaded(tr::now));
+		Ui::Toast::Show(_body, tr::fresh_RecognizeNotLoaded(tr::now));
 		return;
 	}
 	image.setDevicePixelRatio(1.);
-	const auto languages = AyuRecognition::EnabledOcrLanguages();
-	if (languages.isEmpty() && !AyuRecognition::ModelsKnown()) {
+	const auto languages = FreshRecognition::EnabledOcrLanguages();
+	if (languages.isEmpty() && !FreshRecognition::ModelsKnown()) {
 		// WHY: without the list of models no downloaded file is found.
 		const auto weak = base::make_weak(_widget);
-		AyuRecognition::LoadModelsList(_session, [=] {
-			if (weak && AyuRecognition::ModelsKnown()) {
+		FreshRecognition::LoadModelsList(_session, [=] {
+			if (weak && FreshRecognition::ModelsKnown()) {
 				startTextRecognition();
 			} else if (weak) {
-				Ui::Toast::Show(_body, tr::ayu_RecognizeNoLanguages(tr::now));
+				Ui::Toast::Show(_body, tr::fresh_RecognizeNoLanguages(tr::now));
 			}
 		});
 		return;
 	} else if (languages.isEmpty()) {
-		Ui::Toast::Show(_body, tr::ayu_RecognizeNoLanguages(tr::now));
+		Ui::Toast::Show(_body, tr::fresh_RecognizeNoLanguages(tr::now));
 		uiShow()->showBox(Box<AyuUi::RecognitionModelsBox>(
 			_session,
-			AyuRecognition::ModelKind::Tesseract));
+			FreshRecognition::ModelKind::Tesseract));
 		return;
 	}
 	if (_rotation) {

@@ -8,7 +8,7 @@
 
 class HistoryItem;
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 
 enum class LocalTranscribeStatus {
 	Done,
@@ -34,4 +34,4 @@ void TranscribeLocally(
 	not_null<HistoryItem*> item,
 	Fn<void(LocalTranscript)> done);
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

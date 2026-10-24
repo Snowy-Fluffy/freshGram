@@ -164,10 +164,10 @@ void ComposeTranslator::start(
 		return;
 	}
 	if (text.text.trimmed().isEmpty()) {
-		show->showToast(tr::ayu_TranslateComposeEmpty(tr::now));
+		show->showToast(tr::fresh_TranslateComposeEmpty(tr::now));
 		return;
 	}
-	if (!AyuSecret::IsSecretPeerId(peer->id)
+	if (!FreshSecret::IsSecretPeerId(peer->id)
 		|| Ui::TranslateProviderIsLocal()) {
 		request(
 			std::move(show),
@@ -181,7 +181,7 @@ void ComposeTranslator::start(
 	const auto weak = base::make_weak(this);
 	const auto providerIdentity = Ui::TranslateProviderIdentity();
 	show->showBox(Ui::MakeConfirmBox({
-		.text = tr::ayu_SecretTranslateWarning(
+		.text = tr::fresh_SecretTranslateWarning(
 			tr::now,
 			lt_provider,
 			Ui::TranslateProviderName()),
@@ -217,7 +217,7 @@ void ComposeTranslator::request(
 		_providerIdentity = identity;
 	}
 	if (!_provider) {
-		show->showToast(tr::ayu_TranslateComposeFailed(tr::now));
+		show->showToast(tr::fresh_TranslateComposeFailed(tr::now));
 		done(std::nullopt);
 		return;
 	}
@@ -228,7 +228,7 @@ void ComposeTranslator::request(
 		if (const auto strong = weak.get()) {
 			strong->_progress = show->showToast(Ui::Toast::Config{
 				.text = TextWithEntities{
-					tr::ayu_TranslateComposeProgress(tr::now),
+					tr::fresh_TranslateComposeProgress(tr::now),
 				},
 				.infinite = true,
 			});
@@ -242,8 +242,8 @@ void ComposeTranslator::request(
 	}
 	const auto fail = [=] {
 		show->showToast(silent
-			? tr::ayu_AutoTranslateFailed(tr::now)
-			: tr::ayu_TranslateComposeFailed(tr::now));
+			? tr::fresh_AutoTranslateFailed(tr::now)
+			: tr::fresh_TranslateComposeFailed(tr::now));
 		done(std::nullopt);
 	};
 	_timeout.setCallback([=] {
@@ -267,7 +267,7 @@ void ComposeTranslator::request(
 			strong->finish();
 			if (result.error == Ui::TranslateProviderError::LocalLanguagePackMissing
 				&& Ui::TranslateProviderIsLocal()) {
-				show->showToast(tr::ayu_TranslateLocalMissing(tr::now));
+				show->showToast(tr::fresh_TranslateLocalMissing(tr::now));
 				done(std::nullopt);
 				return;
 			}
@@ -278,7 +278,7 @@ void ComposeTranslator::request(
 				return;
 			}
 			if (!silent) {
-				show->showToast(tr::ayu_TranslateComposeDone(tr::now));
+				show->showToast(tr::fresh_TranslateComposeDone(tr::now));
 			}
 			done(std::move(result.text));
 		});

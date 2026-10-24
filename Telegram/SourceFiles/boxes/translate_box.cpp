@@ -521,7 +521,7 @@ void ShowTranslateBox(
 		MsgId msgId,
 		TextWithEntities text,
 		bool hasCopyRestriction) {
-	if (!AyuSecret::IsSecretPeerId(peer->id)) {
+	if (!FreshSecret::IsSecretPeerId(peer->id)) {
 		controller->show(Box(
 			Ui::TranslateBox,
 			peer,
@@ -535,7 +535,7 @@ void ShowTranslateBox(
 	const auto providerName = TranslateProviderName();
 	const auto providerIdentity = TranslateProviderIdentity();
 	controller->show(Ui::MakeConfirmBox({
-		.text = tr::ayu_SecretTranslateWarning(
+		.text = tr::fresh_SecretTranslateWarning(
 			tr::now,
 			lt_provider,
 			providerName),

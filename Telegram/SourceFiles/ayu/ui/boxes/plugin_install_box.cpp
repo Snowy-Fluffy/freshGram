@@ -70,9 +70,9 @@ void Install(
 		fgpl::GrantDecision decision,
 		fgpl::InstallOptions options,
 		Fn<void()> done) {
-	const auto manager = AyuPlugins::Manager();
+	const auto manager = FreshPlugins::Manager();
 	if (!manager) {
-		controller->showToast(tr::ayu_PluginsEnableFirst(tr::now));
+		controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
 		return;
 	}
 	auto result = manager->install(BytesOf(*archive), options);
@@ -81,31 +81,31 @@ void Install(
 		if (failure.error == fgpl::InstallError::PublisherChanged
 			&& !options.acceptNewPublisher) {
 			controller->show(Ui::MakeConfirmBox({
-				.text = tr::ayu_PluginPublisherChanged(tr::now),
+				.text = tr::fresh_PluginPublisherChanged(tr::now),
 				.confirmed = [=](Fn<void()> &&close) {
 					auto again = options;
 					again.acceptNewPublisher = true;
 					close();
 					Install(controller, archive, decision, again, done);
 				},
-				.confirmText = tr::ayu_PluginInstall(),
+				.confirmText = tr::fresh_PluginInstall(),
 			}));
 			return;
 		}
-		controller->showToast(tr::ayu_PluginInstallFailed(
+		controller->showToast(tr::fresh_PluginInstallFailed(
 			tr::now,
 			lt_reason,
 			FailureReason(failure)));
 		return;
 	}
 	const auto id = result.value().id;
-	const auto account = AyuPlugins::AccountId(&controller->session())
+	const auto account = FreshPlugins::AccountId(&controller->session())
 		.toStdString();
 	manager->grant(id, account, decision);
 	manager->setEnabled(id, true);
 	manager->startEnabled(account);
-	AyuPlugins::NotifyListChanged();
-	controller->showToast(tr::ayu_PluginInstalledToast(tr::now));
+	FreshPlugins::NotifyListChanged();
+	controller->showToast(tr::fresh_PluginInstalledToast(tr::now));
 	if (done) {
 		done();
 	}
@@ -117,8 +117,8 @@ void FillInstallBox(
 		std::shared_ptr<QByteArray> archive,
 		std::shared_ptr<fgpl::Package> package) {
 	const auto &manifest = package->manifest;
-	const auto manager = AyuPlugins::Manager();
-	const auto account = AyuPlugins::AccountId(&controller->session()).toStdString();
+	const auto manager = FreshPlugins::Manager();
+	const auto account = FreshPlugins::AccountId(&controller->session()).toStdString();
 	const auto installed = [&]() -> std::optional<fgpl::PluginInfo> {
 		for (auto &info : manager ? manager->list() : std::vector<fgpl::PluginInfo>()) {
 			if (info.id == manifest.id) {
@@ -143,10 +143,10 @@ void FillInstallBox(
 		? fgpl::NewRequests(*previous, manifest)
 		: std::vector<std::string>();
 	box->setTitle((!installed || order < 0)
-		? tr::ayu_PluginInstallTitle()
+		? tr::fresh_PluginInstallTitle()
 		: (order > 0)
-		? tr::ayu_PluginUpdateTitle()
-		: tr::ayu_PluginInstalledTitle());
+		? tr::fresh_PluginUpdateTitle()
+		: tr::fresh_PluginInstalledTitle());
 	box->setWidth(st::boxWideWidth);
 
 	const auto name = Pick(manifest.name);
@@ -162,11 +162,11 @@ void FillInstallBox(
 	box->addRow(object_ptr<Ui::FlatLabel>(
 		box,
 		signedPackage
-			? tr::ayu_PluginSignedBy(
+			? tr::fresh_PluginSignedBy(
 				tr::now,
 				lt_publisher,
 				QString::fromStdString(package->publisher))
-			: tr::ayu_PluginUnsigned(tr::now),
+			: tr::fresh_PluginUnsigned(tr::now),
 		st::boxLabel));
 	auto environment = fgpl::HostEnvironment();
 	if (const auto app = fgpl::ParseVersion(AppVersionStr)) {
@@ -175,7 +175,7 @@ void FillInstallBox(
 	if (fgpl::Outdated(manifest, environment)) {
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
-			tr::ayu_PluginOutdated(
+			tr::fresh_PluginOutdated(
 				tr::now,
 				lt_version,
 				QString::fromStdString(manifest.testedWith->text())),
@@ -188,17 +188,17 @@ void FillInstallBox(
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
 			(order > 0)
-				? tr::ayu_PluginUpdateFrom(tr::now, lt_from, from, lt_to, to)
+				? tr::fresh_PluginUpdateFrom(tr::now, lt_from, from, lt_to, to)
 				: (order == 0)
-				? tr::ayu_PluginSameVersion(tr::now, lt_version, from)
-				: tr::ayu_PluginNewerInstalled(tr::now, lt_from, from, lt_to, to),
+				? tr::fresh_PluginSameVersion(tr::now, lt_version, from)
+				: tr::fresh_PluginNewerInstalled(tr::now, lt_from, from, lt_to, to),
 			(order < 0) ? st::pluginDangerHigh : st::boxDividerLabel));
 	}
 	if (installed && order == 0) {
 		const auto id = QString::fromStdString(manifest.id);
-		box->addButton(tr::ayu_PluginDetails(), [=] {
+		box->addButton(tr::fresh_PluginDetails(), [=] {
 			box->closeBox();
-			AyuPlugins::ShowPluginDetails(controller, id);
+			FreshPlugins::ShowPluginDetails(controller, id);
 		});
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 		return;
@@ -207,48 +207,48 @@ void FillInstallBox(
 	if (!manifest.messagesFrom.empty()) {
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
-			AyuPlugins::AcceptsFrom(manifest.messagesFrom),
+			FreshPlugins::AcceptsFrom(manifest.messagesFrom),
 			st::boxDividerLabel));
 	}
 
 	auto contributes = QStringList();
 	if (!manifest.menus.empty()) {
-		contributes.push_back(tr::ayu_PluginContribMenus(tr::now));
+		contributes.push_back(tr::fresh_PluginContribMenus(tr::now));
 	}
 	if (!manifest.commands.empty()) {
-		contributes.push_back(tr::ayu_PluginContribCommands(tr::now));
+		contributes.push_back(tr::fresh_PluginContribCommands(tr::now));
 	}
 	if (manifest.settingsPage) {
-		contributes.push_back(tr::ayu_PluginContribSettings(tr::now));
+		contributes.push_back(tr::fresh_PluginContribSettings(tr::now));
 	}
 	if (!contributes.isEmpty()) {
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
-			tr::ayu_PluginContributes(tr::now, lt_list, contributes.join(u", "_q)),
+			tr::fresh_PluginContributes(tr::now, lt_list, contributes.join(u", "_q)),
 			st::boxDividerLabel));
 	}
 
 	auto requested = std::set<std::string>();
 	auto boxes = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
 	if (!manifest.permissions.empty()) {
-		Ui::AddSubsectionTitle(box->verticalLayout(), tr::ayu_PluginPermissions());
+		Ui::AddSubsectionTitle(box->verticalLayout(), tr::fresh_PluginPermissions());
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
-			tr::ayu_PluginPermissionsAllAccounts(tr::now),
+			tr::fresh_PluginPermissionsAllAccounts(tr::now),
 			st::boxDividerLabel));
 	}
 	for (const auto &request : manifest.permissions) {
 		requested.insert(request.id);
-		auto label = AyuPlugins::PermissionLabel(request.id);
+		auto label = FreshPlugins::PermissionLabel(request.id);
 		if (request.required) {
-			label = tr::ayu_PluginPermissionRequired(
+			label = tr::fresh_PluginPermissionRequired(
 				tr::now,
 				lt_permission,
 				label);
 		}
 		const auto fresh = std::find(added.begin(), added.end(), request.id) != added.end();
 		if (fresh) {
-			label = tr::ayu_PluginPermissionNew(tr::now, lt_permission, label);
+			label = tr::fresh_PluginPermissionNew(tr::now, lt_permission, label);
 		}
 		const auto checked = request.required
 			|| !granted
@@ -262,7 +262,7 @@ void FillInstallBox(
 			check->setDisabled(true);
 		}
 		boxes->emplace_back(request.id, check);
-		AyuPlugins::AddPermissionDanger(
+		FreshPlugins::AddPermissionDanger(
 			box->verticalLayout(),
 			request.id,
 			request.scope,
@@ -278,10 +278,10 @@ void FillInstallBox(
 	const auto weak = base::make_weak(box);
 	const auto downgrade = installed && (order < 0);
 	box->addButton(!installed
-		? tr::ayu_PluginInstall()
+		? tr::fresh_PluginInstall()
 		: downgrade
-		? tr::ayu_PluginInstallOlder()
-		: tr::ayu_PluginUpdate(), [=] {
+		? tr::fresh_PluginInstallOlder()
+		: tr::fresh_PluginUpdate(), [=] {
 		auto decision = fgpl::GrantDecision();
 		for (const auto &[id, check] : *boxes) {
 			if (check->checked()) {
@@ -308,15 +308,15 @@ void ShowPluginInstallBox(
 		not_null<Window::SessionController*> controller,
 		QByteArray archive) {
 #ifdef FRESHGRAM_PLUGINS
-	if (!AyuPlugins::Manager()) {
-		controller->showToast(tr::ayu_PluginsEnableFirst(tr::now));
+	if (!FreshPlugins::Manager()) {
+		controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
 		return;
 	}
 	const auto bytes = std::make_shared<QByteArray>(std::move(archive));
 	auto opened = fgpl::OpenPackage(BytesOf(*bytes));
 	if (!opened.ok()) {
 		const auto failure = opened.error();
-		controller->showToast(tr::ayu_PluginInstallFailed(
+		controller->showToast(tr::fresh_PluginInstallFailed(
 			tr::now,
 			lt_reason,
 			failure.details.empty()
@@ -328,7 +328,7 @@ void ShowPluginInstallBox(
 		std::move(opened.value()));
 	controller->show(Box(FillInstallBox, controller, bytes, package));
 #else
-	controller->showToast(tr::ayu_PluginsUnavailable(tr::now));
+	controller->showToast(tr::fresh_PluginsUnavailable(tr::now));
 #endif
 }
 
@@ -336,7 +336,7 @@ void ChoosePluginFile(not_null<Window::SessionController*> controller) {
 	const auto weak = base::make_weak(controller);
 	FileDialog::GetOpenPath(
 		controller->widget().get(),
-		tr::ayu_PluginsInstallFromFile(tr::now),
+		tr::fresh_PluginsInstallFromFile(tr::now),
 		u"Plugins (*.fgpl)"_q,
 		[=](FileDialog::OpenResult &&result) {
 			const auto strong = weak.get();
@@ -345,7 +345,7 @@ void ChoosePluginFile(not_null<Window::SessionController*> controller) {
 			}
 			auto file = QFile(result.paths.front());
 			if (!file.open(QIODevice::ReadOnly) || file.size() > kMaxPackageBytes) {
-				strong->showToast(tr::ayu_PluginInstallFailed(
+				strong->showToast(tr::fresh_PluginInstallFailed(
 					tr::now,
 					lt_reason,
 					file.errorString()));

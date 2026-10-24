@@ -11,7 +11,7 @@
 // always derivable or never set are not columns, the rare ones go to extra.
 // The members are declared in each class, so that the mapping of the tables
 // can refer to them through the class that owns the table.
-#define AYU_MESSAGE_ROW_FIELDS \
+#define FRESH_MESSAGE_ROW_FIELDS \
 	ID fakeId; \
 	ID userId; \
 	ID dialogId; \
@@ -39,16 +39,16 @@
 class DeletedMessageRow
 {
 public:
-	AYU_MESSAGE_ROW_FIELDS
+	FRESH_MESSAGE_ROW_FIELDS
 };
 
 class EditedMessageRow
 {
 public:
-	AYU_MESSAGE_ROW_FIELDS
+	FRESH_MESSAGE_ROW_FIELDS
 };
 
-namespace AyuMessageRows {
+namespace FreshMessageRows {
 
 // The columns that are empty in all the rows written by the application.
 struct Extra
@@ -79,4 +79,4 @@ struct Extra
 [[nodiscard]] EditedMessageRow ToRow(const EditedMessage &message);
 [[nodiscard]] EditedMessage FromRow(const EditedMessageRow &row);
 
-} // namespace AyuMessageRows
+} // namespace FreshMessageRows

@@ -26,7 +26,7 @@
 namespace AyuUi {
 namespace {
 
-using namespace AyuFakePasscode;
+using namespace FreshFakePasscode;
 
 constexpr auto kMaxNameLength = 64;
 constexpr auto kMaxCommandLength = 256;
@@ -50,13 +50,13 @@ void EditBox(
 	const auto entry = editing ? *found : Entry();
 
 	box->setTitle(editing
-		? tr::ayu_FakePasscodeEdit()
-		: tr::ayu_FakePasscodeAdd());
+		? tr::fresh_FakePasscodeEdit()
+		: tr::fresh_FakePasscodeAdd());
 	const auto content = box->verticalLayout();
 
 	const auto name = Settings::CloudPassword::AddWrappedField(
 		content,
-		tr::ayu_FakePasscodeName(),
+		tr::fresh_FakePasscodeName(),
 		entry.name);
 	name->setMaxLength(kMaxNameLength);
 
@@ -66,11 +66,11 @@ void EditBox(
 	if (!editing) {
 		passcode = Settings::CloudPassword::AddPasswordField(
 			content,
-			tr::ayu_FakePasscodeField(),
+			tr::fresh_FakePasscodeField(),
 			QString());
 		real = Settings::CloudPassword::AddPasswordField(
 			content,
-			tr::ayu_FakePasscodeCurrent(),
+			tr::fresh_FakePasscodeCurrent(),
 			QString());
 		error = Settings::CloudPassword::AddError(content, real);
 		QObject::connect(passcode, &Ui::MaskedInputField::changed, [=] {
@@ -83,10 +83,10 @@ void EditBox(
 		Ui::AddSkip(content);
 		unlockToggle = content->add(object_ptr<Ui::SettingsButton>(
 			content,
-			tr::ayu_FakePasscodeUnlocks(),
+			tr::fresh_FakePasscodeUnlocks(),
 			st::settingsButtonNoIcon));
 		unlockToggle->toggleOn(rpl::single(true));
-		Ui::AddDividerText(content, tr::ayu_FakePasscodeUnlocksAbout());
+		Ui::AddDividerText(content, tr::fresh_FakePasscodeUnlocksAbout());
 	}
 	const auto unlocks = [=] {
 		return unlockToggle ? unlockToggle->toggled() : entry.unlocks;
@@ -98,7 +98,7 @@ void EditBox(
 	};
 
 	Ui::AddSkip(content);
-	Ui::AddSubsectionTitle(content, tr::ayu_FakePasscodeActions());
+	Ui::AddSubsectionTitle(content, tr::fresh_FakePasscodeActions());
 	const auto addToggle = [&](
 			not_null<Ui::VerticalLayout*> container,
 			rpl::producer<QString> text,
@@ -112,7 +112,7 @@ void EditBox(
 	};
 	const auto clearCache = addToggle(
 		content,
-		tr::ayu_FakePasscodeClearCache(),
+		tr::fresh_FakePasscodeClearCache(),
 		entry.actions.clearCache);
 	const auto cacheExtras = content->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -121,15 +121,15 @@ void EditBox(
 	cacheExtras->toggleOn(clearCache->toggledValue());
 	const auto clearCacheDb = addToggle(
 		cacheExtras->entity(),
-		tr::ayu_FakePasscodeClearDb(),
+		tr::fresh_FakePasscodeClearDb(),
 		entry.actions.clearCacheDb);
 	const auto clearCacheMedia = addToggle(
 		cacheExtras->entity(),
-		tr::ayu_FakePasscodeClearMedia(),
+		tr::fresh_FakePasscodeClearMedia(),
 		entry.actions.clearCacheMedia);
 	const auto clearProxies = addToggle(
 		content,
-		tr::ayu_FakePasscodeClearProxies(),
+		tr::fresh_FakePasscodeClearProxies(),
 		entry.actions.clearProxies);
 
 	const auto accountsWrap = content->add(
@@ -144,7 +144,7 @@ void EditBox(
 		}
 		logouts.emplace_back(item.index, addToggle(
 			accountsWrap->entity(),
-			rpl::single(tr::ayu_FakePasscodeLogout(
+			rpl::single(tr::fresh_FakePasscodeLogout(
 				tr::now,
 				lt_name,
 				AccountTitle(item.account.get(), item.index))),
@@ -170,11 +170,11 @@ void EditBox(
 	logoutExtras->toggleOn(anyLogout->value());
 	const auto logoutDb = addToggle(
 		logoutExtras->entity(),
-		tr::ayu_FakePasscodeLogoutDb(),
+		tr::fresh_FakePasscodeLogoutDb(),
 		entry.actions.logoutDb);
 	const auto logoutMedia = addToggle(
 		logoutExtras->entity(),
-		tr::ayu_FakePasscodeLogoutMedia(),
+		tr::fresh_FakePasscodeLogoutMedia(),
 		entry.actions.logoutMedia);
 	const auto deleteWrap = content->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -185,20 +185,20 @@ void EditBox(
 	}));
 	const auto deleteAll = addToggle(
 		deleteWrap->entity(),
-		tr::ayu_FakePasscodeDeleteAll(),
+		tr::fresh_FakePasscodeDeleteAll(),
 		entry.actions.deleteAll);
 	Ui::AddDividerText(
 		deleteWrap->entity(),
-		tr::ayu_FakePasscodeDeleteAllAbout());
-	Ui::AddDividerText(content, tr::ayu_FakePasscodeActionsAbout());
+		tr::fresh_FakePasscodeDeleteAllAbout());
+	Ui::AddDividerText(content, tr::fresh_FakePasscodeActionsAbout());
 
 	Ui::AddSkip(content);
 	const auto command = Settings::CloudPassword::AddWrappedField(
 		content,
-		tr::ayu_FakePasscodeCommand(),
+		tr::fresh_FakePasscodeCommand(),
 		entry.actions.command);
 	command->setMaxLength(kMaxCommandLength);
-	Ui::AddDividerText(content, tr::ayu_FakePasscodeCommandAbout());
+	Ui::AddDividerText(content, tr::fresh_FakePasscodeCommandAbout());
 
 	const auto collect = [=] {
 		auto result = Actions();
@@ -228,7 +228,7 @@ void EditBox(
 			? text
 			: editing
 			? entry.name
-			: tr::ayu_FakePasscodeDefaultName(
+			: tr::fresh_FakePasscodeDefaultName(
 				tr::now,
 				lt_number,
 				QString::number(Current().list.size() + 1));
@@ -255,32 +255,32 @@ void EditBox(
 			passcode->showError();
 			return;
 		case AddResult::TooShort:
-			fail(tr::ayu_FakePasscodeTooShort(tr::now), passcode);
+			fail(tr::fresh_FakePasscodeTooShort(tr::now), passcode);
 			return;
 		case AddResult::TooMany:
-			fail(tr::ayu_FakePasscodeLimit(
+			fail(tr::fresh_FakePasscodeLimit(
 				tr::now,
 				lt_limit,
 				QString::number(kMaxEntries)), passcode);
 			return;
 		case AddResult::WrongPasscode:
-			fail(tr::ayu_FakePasscodeWrong(tr::now), real);
+			fail(tr::fresh_FakePasscodeWrong(tr::now), real);
 			return;
 		case AddResult::SameAsReal:
-			fail(tr::ayu_FakePasscodeSameAsReal(tr::now), passcode);
+			fail(tr::fresh_FakePasscodeSameAsReal(tr::now), passcode);
 			return;
 		case AddResult::Duplicate:
-			fail(tr::ayu_FakePasscodeDuplicate(tr::now), passcode);
+			fail(tr::fresh_FakePasscodeDuplicate(tr::now), passcode);
 			return;
 		case AddResult::Failed:
-			fail(tr::ayu_FakePasscodeFailed(tr::now), passcode);
+			fail(tr::fresh_FakePasscodeFailed(tr::now), passcode);
 			return;
 		}
 	};
 	box->addButton(tr::lng_settings_save(), [=] {
 		if ((!editing && !unlocks()) || collect().deleteAll) {
 			box->uiShow()->showBox(Ui::MakeConfirmBox({
-				.text = tr::ayu_FakePasscodeConfirm(),
+				.text = tr::fresh_FakePasscodeConfirm(),
 				.confirmed = [=](Fn<void()> &&close) {
 					close();
 					save();
@@ -295,7 +295,7 @@ void EditBox(
 	if (editing) {
 		box->addLeftButton(tr::lng_box_delete(), [=] {
 			box->uiShow()->showBox(Ui::MakeConfirmBox({
-				.text = tr::ayu_FakePasscodeDeleteSure(),
+				.text = tr::fresh_FakePasscodeDeleteSure(),
 				.confirmed = [=](Fn<void()> &&close) {
 					Remove(id);
 					changed();
@@ -319,23 +319,23 @@ void EditBox(
 } // namespace
 
 void FakePasscodesBox(not_null<Ui::GenericBox*> box) {
-	box->setTitle(tr::ayu_FakePasscodes());
+	box->setTitle(tr::fresh_FakePasscodes());
 	const auto content = box->verticalLayout();
 
 	Ui::AddSkip(content);
 	const auto onLock = content->add(object_ptr<Ui::SettingsButton>(
 		content,
-		tr::ayu_FakePasscodeClearOnLock(),
+		tr::fresh_FakePasscodeClearOnLock(),
 		st::settingsButtonNoIcon));
 	onLock->toggleOn(rpl::single(Current().clearCacheOnLock));
 	onLock->toggledChanges(
 	) | rpl::on_next([](bool value) {
 		SetClearCacheOnLock(value);
 	}, onLock->lifetime());
-	Ui::AddDividerText(content, tr::ayu_FakePasscodeClearOnLockAbout());
+	Ui::AddDividerText(content, tr::fresh_FakePasscodeClearOnLockAbout());
 
 	Ui::AddSkip(content);
-	Ui::AddSubsectionTitle(content, tr::ayu_FakePasscodes());
+	Ui::AddSubsectionTitle(content, tr::fresh_FakePasscodes());
 	const auto list = content->add(object_ptr<Ui::VerticalLayout>(content));
 	const auto refresh = box->lifetime().make_state<Fn<void()>>();
 	*refresh = [=] {
@@ -360,14 +360,14 @@ void FakePasscodesBox(not_null<Ui::GenericBox*> box) {
 
 	const auto add = content->add(object_ptr<Ui::SettingsButton>(
 		content,
-		tr::ayu_FakePasscodeAdd(),
+		tr::fresh_FakePasscodeAdd(),
 		st::settingsButtonLightNoIcon));
 	add->setClickedCallback([=] {
 		box->uiShow()->showBox(Box([=](not_null<Ui::GenericBox*> edit) {
 			EditBox(edit, 0, *refresh);
 		}));
 	});
-	Ui::AddDividerText(content, tr::ayu_FakePasscodesAbout());
+	Ui::AddDividerText(content, tr::fresh_FakePasscodesAbout());
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }

@@ -1127,7 +1127,7 @@ Manager::DisplayOptions Manager::getNotificationOptions(
 		|| (peer->slowmodeSecondsLeft() > 0)
 		|| (peer->starsPerMessageChecked() > 0)
 		|| HideReplyButtonOption.value();
-	if (item && item->isAyuSecret()) {
+	if (item && item->isFreshSecret()) {
 		result.hideNameAndPhoto = true;
 		result.hideMessageText = true;
 		result.hideMarkAsRead = true;
@@ -1611,9 +1611,9 @@ void NativeManager::doShowNotification(NotificationFields &&fields) {
 			? (sublist->sublistPeer()->shortName() + u" ("_q + name + ')')
 			: name;
 	};
-	const auto secret = item->isAyuSecret();
+	const auto secret = item->isFreshSecret();
 	const auto title = secret
-		? AyuSecret::NotificationTitle()
+		? FreshSecret::NotificationTitle()
 		: options.hideNameAndPhoto
 		? AppName.utf16()
 		: (scheduled && peer->isSelf())
@@ -1631,7 +1631,7 @@ void NativeManager::doShowNotification(NotificationFields &&fields) {
 		? QString()
 		: item->notificationHeader();
 	const auto text = secret
-		? TextWithPermanentSpoiler(AyuSecret::NotificationText(item))
+		? TextWithPermanentSpoiler(FreshSecret::NotificationText(item))
 		: pollVote
 		? TextWithPermanentSpoiler(ComposePollVoteNotification(
 			item,

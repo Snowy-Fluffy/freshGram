@@ -6,11 +6,11 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
-namespace AyuNetworkPrivacy {
+namespace FreshNetworkPrivacy {
 
 void SetEnabled(bool enabled);
 
 [[nodiscard]] int TemporaryKeyExpiresIn();
 [[nodiscard]] bool StepUpTemporaryKeyExpiresIn();
 
-} // namespace AyuNetworkPrivacy
+} // namespace FreshNetworkPrivacy

@@ -1,5 +1,5 @@
 // This file is part of freshGram.
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_vault.h"
 
 #include "mtproto/mtproto_auth_key.h"
 #include "storage/details/storage_file_utilities.h"
@@ -16,7 +16,7 @@
 #include <cstring>
 #include <mutex>
 
-namespace AyuVault {
+namespace FreshVault {
 namespace {
 
 using namespace Storage::details;
@@ -274,4 +274,4 @@ void SealFilesIn(const QString &directory) {
 	}
 }
 
-} // namespace AyuVault
+} // namespace FreshVault

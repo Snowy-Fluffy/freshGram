@@ -31,19 +31,19 @@
 namespace AyuUi {
 namespace {
 
-[[nodiscard]] QString StateText(AyuPlugins::State state) {
+[[nodiscard]] QString StateText(FreshPlugins::State state) {
 	switch (state) {
-	case AyuPlugins::State::Unavailable:
-		return tr::ayu_PluginsUnavailable(tr::now);
-	case AyuPlugins::State::NoSandbox:
-		return tr::ayu_PluginsNoSandbox(tr::now);
-	case AyuPlugins::State::NoRuntime:
-		return tr::ayu_PluginsNoRuntime(tr::now);
-	case AyuPlugins::State::NoKey:
-		return tr::ayu_PluginsNoKey(tr::now);
-	case AyuPlugins::State::Disabled:
-	case AyuPlugins::State::Ready:
-		return tr::ayu_PluginsDescription(tr::now);
+	case FreshPlugins::State::Unavailable:
+		return tr::fresh_PluginsUnavailable(tr::now);
+	case FreshPlugins::State::NoSandbox:
+		return tr::fresh_PluginsNoSandbox(tr::now);
+	case FreshPlugins::State::NoRuntime:
+		return tr::fresh_PluginsNoRuntime(tr::now);
+	case FreshPlugins::State::NoKey:
+		return tr::fresh_PluginsNoKey(tr::now);
+	case FreshPlugins::State::Disabled:
+	case FreshPlugins::State::Ready:
+		return tr::fresh_PluginsDescription(tr::now);
 	}
 	return QString();
 }
@@ -57,24 +57,24 @@ namespace {
 	}
 	const auto status = [&] {
 		if (!info.disabledReason.empty()) {
-			return tr::ayu_PluginStatusDisabled(
+			return tr::fresh_PluginStatusDisabled(
 				tr::now,
 				lt_reason,
 				QString::fromStdString(info.disabledReason));
 		}
 		switch (info.status) {
 		case fgpl::PluginStatus::Running:
-			return tr::ayu_PluginStatusRunning(tr::now);
+			return tr::fresh_PluginStatusRunning(tr::now);
 		case fgpl::PluginStatus::Disabled:
-			return tr::ayu_PluginStatusDisabled(tr::now, lt_reason, QString());
+			return tr::fresh_PluginStatusDisabled(tr::now, lt_reason, QString());
 		case fgpl::PluginStatus::Stopped:
 			break;
 		}
-		return tr::ayu_PluginStatusStopped(tr::now);
+		return tr::fresh_PluginStatusStopped(tr::now);
 	}();
 	result += u" · "_q + status;
 	if (info.outdated) {
-		result += u" · "_q + tr::ayu_PluginOutdatedShort(tr::now);
+		result += u" · "_q + tr::fresh_PluginOutdatedShort(tr::now);
 	}
 	return result;
 }
@@ -91,7 +91,7 @@ void AddPluginRow(
 		st::settingsButtonNoIcon);
 	button->toggleOn(rpl::single(info.enabled), true);
 	button->addClickHandler([=] {
-		const auto manager = AyuPlugins::Manager();
+		const auto manager = FreshPlugins::Manager();
 		if (!manager) {
 			return;
 		}
@@ -99,7 +99,7 @@ void AddPluginRow(
 			return item.id == id && item.enabled;
 		});
 		manager->setEnabled(id, !now);
-		AyuPlugins::NotifyListChanged();
+		FreshPlugins::NotifyListChanged();
 	});
 	container->add(
 		object_ptr<Ui::FlatLabel>(
@@ -110,10 +110,10 @@ void AddPluginRow(
 
 	const auto details = Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginDetails(),
+		tr::fresh_PluginDetails(),
 		st::settingsButtonNoIcon);
 	details->addClickHandler([=] {
-		AyuPlugins::ShowPluginDetails(controller, QString::fromStdString(id));
+		FreshPlugins::ShowPluginDetails(controller, QString::fromStdString(id));
 	});
 	Ui::AddSkip(container);
 }
@@ -124,18 +124,18 @@ void AddPluginRow(
 	return QString::number(std::max<qint64>(1, bytes / (1024 * 1024))) + u" MB"_q;
 }
 
-[[nodiscard]] QString RuntimeLabel(const AyuPlugins::RuntimeStatus &status) {
-	using Stage = AyuPlugins::RuntimeStage;
+[[nodiscard]] QString RuntimeLabel(const FreshPlugins::RuntimeStatus &status) {
+	using Stage = FreshPlugins::RuntimeStage;
 	switch (status.stage) {
 	case Stage::Checking:
-		return tr::ayu_PluginsChecking(tr::now);
+		return tr::fresh_PluginsChecking(tr::now);
 	case Stage::Downloading:
-		return tr::ayu_PluginsDownloading(
+		return tr::fresh_PluginsDownloading(
 			tr::now,
 			lt_percent,
 			QString::number(int(status.progress * 100)) + '%');
 	case Stage::Installing:
-		return tr::ayu_PluginsInstalling(tr::now);
+		return tr::fresh_PluginsInstalling(tr::now);
 	case Stage::Idle:
 		break;
 	}
@@ -143,15 +143,15 @@ void AddPluginRow(
 		return status.error;
 	}
 	auto result = status.installed
-		? tr::ayu_PluginsVersions(
+		? tr::fresh_PluginsVersions(
 			tr::now,
 			lt_wasmtime,
 			status.wasmtime,
 			lt_python,
 			status.python)
-		: tr::ayu_PluginsNotInstalled(tr::now);
+		: tr::fresh_PluginsNotInstalled(tr::now);
 	if (status.updateAvailable && status.installed) {
-		result = tr::ayu_PluginsUpdateAvailable(
+		result = tr::fresh_PluginsUpdateAvailable(
 			tr::now,
 			lt_wasmtime,
 			status.remoteWasmtime,
@@ -171,15 +171,15 @@ void ReportInstall(
 	if (!strong) {
 		return;
 	} else if (ok) {
-		strong->showToast(tr::ayu_PluginsReady(tr::now));
+		strong->showToast(tr::fresh_PluginsReady(tr::now));
 		if (ready) {
 			ready();
 		}
 	} else {
-		strong->showToast(tr::ayu_PluginsDownloadFailed(
+		strong->showToast(tr::fresh_PluginsDownloadFailed(
 			tr::now,
 			lt_reason,
-			AyuPlugins::CurrentRuntimeStatus().error));
+			FreshPlugins::CurrentRuntimeStatus().error));
 	}
 }
 
@@ -187,31 +187,31 @@ void OfferDownload(
 		not_null<Window::SessionController*> controller,
 		Fn<void()> ready) {
 	const auto weak = base::make_weak(controller);
-	if (AyuPlugins::RuntimePackaged()) {
-		AyuPlugins::DownloadRuntime([=](bool ok) {
+	if (FreshPlugins::RuntimePackaged()) {
+		FreshPlugins::DownloadRuntime([=](bool ok) {
 			ReportInstall(weak, ready, ok);
 		});
 		return;
 	}
-	const auto status = AyuPlugins::CurrentRuntimeStatus();
+	const auto status = FreshPlugins::CurrentRuntimeStatus();
 	controller->show(Ui::MakeConfirmBox({
-		.text = tr::ayu_PluginsDownloadText(
+		.text = tr::fresh_PluginsDownloadText(
 			tr::now,
 			lt_wasmtime,
 			status.remoteWasmtime,
 			lt_python,
 			status.remotePython,
 			lt_channel,
-			AyuPlugins::RuntimeChannel(),
+			FreshPlugins::RuntimeChannel(),
 			lt_size,
 			SizeText(status.remoteSize)),
 		.confirmed = [=](Fn<void()> &&close) {
 			close();
-			AyuPlugins::DownloadRuntime([=](bool ok) {
+			FreshPlugins::DownloadRuntime([=](bool ok) {
 				ReportInstall(weak, ready, ok);
 			});
 		},
-		.confirmText = tr::ayu_PluginsDownload(),
+		.confirmText = tr::fresh_PluginsDownload(),
 	}));
 }
 
@@ -219,29 +219,29 @@ void CheckAndOffer(
 		not_null<Window::SessionController*> controller,
 		Fn<void()> ready) {
 	const auto weak = base::make_weak(controller);
-	AyuPlugins::CheckRuntime([=](bool ok) {
+	FreshPlugins::CheckRuntime([=](bool ok) {
 		const auto strong = weak.get();
 		if (!strong) {
 			return;
 		}
-		const auto status = AyuPlugins::CurrentRuntimeStatus();
+		const auto status = FreshPlugins::CurrentRuntimeStatus();
 		if (!ok) {
-			strong->showToast(tr::ayu_PluginsDownloadFailed(
+			strong->showToast(tr::fresh_PluginsDownloadFailed(
 				tr::now,
 				lt_reason,
 				status.error));
 		} else if (status.updateAvailable) {
 			OfferDownload(strong, ready);
 		} else if (status.installed) {
-			strong->showToast(tr::ayu_PluginsUpToDate(tr::now));
+			strong->showToast(tr::fresh_PluginsUpToDate(tr::now));
 			if (ready) {
 				ready();
 			}
 		} else {
-			strong->showToast(tr::ayu_PluginsDownloadFailed(
+			strong->showToast(tr::fresh_PluginsDownloadFailed(
 				tr::now,
 				lt_reason,
-				tr::ayu_PluginsUnavailable(tr::now)));
+				tr::fresh_PluginsUnavailable(tr::now)));
 		}
 	});
 }
@@ -250,15 +250,15 @@ void ChooseRuntimeFile(not_null<Window::SessionController*> controller) {
 	const auto weak = base::make_weak(controller);
 	FileDialog::GetOpenPath(
 		controller->widget().get(),
-		tr::ayu_PluginsInstallRuntimeFromFile(tr::now),
+		tr::fresh_PluginsInstallRuntimeFromFile(tr::now),
 		u"runtime.json (*.json)"_q,
 		[=](FileDialog::OpenResult &&result) {
 			if (result.paths.isEmpty()) {
 				return;
 			}
-			AyuPlugins::InstallRuntimeFromFile(result.paths.front(), [=](bool ok) {
+			FreshPlugins::InstallRuntimeFromFile(result.paths.front(), [=](bool ok) {
 				ReportInstall(weak, [] {
-					if (AyuPlugins::SandboxSupported()) {
+					if (FreshPlugins::SandboxSupported()) {
 						AyuSettings::getInstance().setPluginsEnabled(true);
 					}
 				}, ok);
@@ -273,7 +273,7 @@ void AddPluginsSettings(
 		not_null<Window::SessionController*> controller) {
 	const auto toggle = Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginsEnable(),
+		tr::fresh_PluginsEnable(),
 		st::settingsButtonNoIcon);
 	toggle->toggleOn(
 		AyuSettings::getInstance().pluginsEnabledValue(),
@@ -282,9 +282,9 @@ void AddPluginsSettings(
 		auto &settings = AyuSettings::getInstance();
 		if (settings.pluginsEnabled()) {
 			settings.setPluginsEnabled(false);
-		} else if (!AyuPlugins::SandboxSupported()) {
-			controller->showToast(tr::ayu_PluginsNoSandbox(tr::now));
-		} else if (AyuPlugins::CurrentRuntimeStatus().installed) {
+		} else if (!FreshPlugins::SandboxSupported()) {
+			controller->showToast(tr::fresh_PluginsNoSandbox(tr::now));
+		} else if (FreshPlugins::CurrentRuntimeStatus().installed) {
 			settings.setPluginsEnabled(true);
 		} else {
 			CheckAndOffer(controller, [] {
@@ -295,19 +295,19 @@ void AddPluginsSettings(
 
 	const auto versions = Settings::AddButtonWithLabel(
 		container,
-		tr::ayu_PluginsCheckUpdates(),
-		AyuPlugins::RuntimeStatusValue() | rpl::map(RuntimeLabel),
+		tr::fresh_PluginsCheckUpdates(),
+		FreshPlugins::RuntimeStatusValue() | rpl::map(RuntimeLabel),
 		st::settingsButtonNoIcon);
 	versions->addClickHandler([=] {
-		if (AyuPlugins::CurrentRuntimeStatus().stage
-			== AyuPlugins::RuntimeStage::Idle) {
+		if (FreshPlugins::CurrentRuntimeStatus().stage
+			== FreshPlugins::RuntimeStage::Idle) {
 			CheckAndOffer(controller, nullptr);
 		}
 	});
 
 	Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginsAutoUpdate(),
+		tr::fresh_PluginsAutoUpdate(),
 		st::settingsButtonNoIcon
 	)->toggleOn(
 		AyuSettings::getInstance().pluginsRuntimeAutoUpdateValue()
@@ -318,20 +318,20 @@ void AddPluginsSettings(
 
 	Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginsNetwork(),
+		tr::fresh_PluginsNetwork(),
 		st::settingsButtonNoIcon
 	)->addClickHandler([=] {
-		AyuPlugins::ShowNetworkPanel(controller);
+		FreshPlugins::ShowNetworkPanel(controller);
 	});
 
-	if (!AyuPlugins::RuntimePackaged()) {
+	if (!FreshPlugins::RuntimePackaged()) {
 		const auto offline = Settings::AddButtonWithIcon(
 			container,
-			tr::ayu_PluginsInstallRuntimeFromFile(),
+			tr::fresh_PluginsInstallRuntimeFromFile(),
 			st::settingsButtonNoIcon);
 		offline->addClickHandler([=] {
-			if (AyuPlugins::CurrentRuntimeStatus().stage
-				== AyuPlugins::RuntimeStage::Idle) {
+			if (FreshPlugins::CurrentRuntimeStatus().stage
+				== FreshPlugins::RuntimeStage::Idle) {
 				ChooseRuntimeFile(controller);
 			}
 		});
@@ -343,34 +343,34 @@ void AddPluginsSettings(
 			object_ptr<Ui::VerticalLayout>(container)));
 	const auto removeButton = Settings::AddButtonWithIcon(
 		removal->entity(),
-		tr::ayu_PluginsRemoveComponents(),
+		tr::fresh_PluginsRemoveComponents(),
 		st::settingsAttentionButton);
 	removeButton->addClickHandler([=] {
 		controller->show(Ui::MakeConfirmBox({
-			.text = tr::ayu_PluginsRemoveComponentsConfirmation(tr::now),
+			.text = tr::fresh_PluginsRemoveComponentsConfirmation(tr::now),
 			.confirmed = [=](Fn<void()> &&close) {
 				AyuSettings::getInstance().setPluginsEnabled(false);
-				AyuPlugins::RemoveRuntimeFiles();
+				FreshPlugins::RemoveRuntimeFiles();
 				close();
 			},
-			.confirmText = tr::ayu_PluginsRemove(),
+			.confirmText = tr::fresh_PluginsRemove(),
 		}));
 	});
 	removal->toggleOn(
-		AyuPlugins::RuntimeStatusValue() | rpl::map([](const auto &status) {
+		FreshPlugins::RuntimeStatusValue() | rpl::map([](const auto &status) {
 			return status.installed;
 		}),
 		anim::type::instant);
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
-		AyuPlugins::StateValue() | rpl::map(StateText));
+		FreshPlugins::StateValue() | rpl::map(StateText));
 
 #ifdef FRESHGRAM_PLUGINS
 	const auto list = container->add(object_ptr<Ui::VerticalLayout>(container));
 	const auto rebuild = [=] {
 		list->clear();
-		const auto manager = AyuPlugins::Manager();
+		const auto manager = FreshPlugins::Manager();
 		if (!manager) {
 			return;
 		}
@@ -380,17 +380,17 @@ void AddPluginsSettings(
 			list->add(
 				object_ptr<Ui::FlatLabel>(
 					list,
-					tr::ayu_PluginsEmpty(tr::now),
+					tr::fresh_PluginsEmpty(tr::now),
 					st::boxDividerLabel),
 				st::defaultBoxDividerLabelPadding);
 			return;
 		}
-		Ui::AddSubsectionTitle(list, tr::ayu_PluginsInstalled());
+		Ui::AddSubsectionTitle(list, tr::fresh_PluginsInstalled());
 		for (const auto &info : plugins) {
 			AddPluginRow(list, controller, info);
 		}
 	};
-	AyuPlugins::ListChanges(
+	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
 		Ui::PostponeCall(list, rebuild);
 	}, list->lifetime());
@@ -398,13 +398,13 @@ void AddPluginsSettings(
 
 	const auto install = Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginsInstallFromFile(),
+		tr::fresh_PluginsInstallFromFile(),
 		st::settingsButtonNoIcon);
 	install->addClickHandler([=] {
-		if (AyuPlugins::Manager()) {
+		if (FreshPlugins::Manager()) {
 			ChoosePluginFile(controller);
 		} else {
-			controller->showToast(tr::ayu_PluginsEnableFirst(tr::now));
+			controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
 		}
 	});
 #endif

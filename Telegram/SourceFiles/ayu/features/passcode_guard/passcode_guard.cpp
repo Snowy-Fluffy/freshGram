@@ -11,7 +11,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 
-namespace AyuPasscodeGuard {
+namespace FreshPasscodeGuard {
 namespace {
 
 using namespace Storage::details;
@@ -75,7 +75,7 @@ void Wipe() {
 	const auto action = WipeAction(
 		AyuSettings::getInstance().passcodeWipeAction());
 	LOG(("Passcode Guard: too many failed attempts, wiping."));
-	auto actions = AyuFakePasscode::Actions();
+	auto actions = FreshFakePasscode::Actions();
 	if (!Core::App().domain().started()
 		|| action == WipeAction::DeleteAll) {
 		actions.deleteAll = true;
@@ -87,7 +87,7 @@ void Wipe() {
 		}
 	}
 	const auto started = Core::App().domain().started();
-	AyuFakePasscode::RunSilent(actions);
+	FreshFakePasscode::RunSilent(actions);
 	if (!started) {
 		// WHY: the session files are gone, a restart starts from scratch.
 		crl::on_main(&Core::App(), [] { Core::Restart(); });
@@ -171,4 +171,4 @@ int AttemptsBeforeWipe() {
 	return std::max(limit - GetState().tries, 0);
 }
 
-} // namespace AyuPasscodeGuard
+} // namespace FreshPasscodeGuard

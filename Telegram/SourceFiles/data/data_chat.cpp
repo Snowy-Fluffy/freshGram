@@ -152,7 +152,7 @@ void ChatData::setFlags(ChatDataFlags which) {
 	_flags.set(which);
 	if (wasIn != amIn()) {
 		crl::on_main(&session(), [=] {
-			AyuKept::chatAmInChanged(this);
+			FreshKept::chatAmInChanged(this);
 		});
 	}
 	if (wasIn && !amIn()) {

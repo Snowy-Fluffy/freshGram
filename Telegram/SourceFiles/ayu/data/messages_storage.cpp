@@ -10,7 +10,7 @@
 
 #include "ayu/ayu_settings.h"
 #include "ayu/data/ayu_database.h"
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_vault.h"
 #include "ayu/utils/ayu_mapper.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "base/flat_set.h"
@@ -90,7 +90,7 @@ std::vector<std::unique_ptr<PhotoSaveTask>> PhotoSaveTasks;
 std::vector<std::unique_ptr<DocumentSaveTask>> DocumentSaveTasks;
 
 [[nodiscard]] QString SavedMediaDirectory() {
-	return QStringLiteral("./tdata/ayu_media");
+	return QStringLiteral("./tdata/fresh_media");
 }
 
 [[nodiscard]] QString SavedMediaPath(
@@ -132,7 +132,7 @@ bool WritePhotoBytes(
 	}
 	if (!bytes.isEmpty()) {
 		QDir().mkpath(QFileInfo(path).absolutePath());
-		return AyuVault::WriteFile(path, bytes);
+		return FreshVault::WriteFile(path, bytes);
 	}
 	return true;
 }
@@ -201,7 +201,7 @@ bool WriteDocumentBytes(
 	const auto bytes = DocumentBytes(media);
 	if (!bytes.isEmpty()) {
 		QDir().mkpath(QFileInfo(path).absolutePath());
-		return AyuVault::WriteFile(path, bytes);
+		return FreshVault::WriteFile(path, bytes);
 	}
 	return true;
 }
@@ -328,7 +328,7 @@ void map(not_null<HistoryItem*> item, AyuMessageBase &message) {
 	message.textEntities = serializedText.second;
 
 	// todo: implement mapping
-	message.documentSerialized = item->ayuSavedMedia();
+	message.documentSerialized = item->freshSavedMedia();
 	const auto media = item->media();
 	const auto mediaFile = SavedMediaPath(item);
 	message.mediaPath = ((media && (media->photo() || media->document()))
@@ -421,7 +421,7 @@ bool shouldSaveEdit(
 }
 
 void addEditedMessage(not_null<HistoryItem *> item) {
-	if (AyuSecret::IsSecretPeer(item->history()->peer)) {
+	if (FreshSecret::IsSecretPeer(item->history()->peer)) {
 		return;
 	}
 	EditedMessage message;
@@ -458,7 +458,7 @@ bool hasRevisions(not_null<const HistoryItem*> item) {
 }
 
 void cacheDeletedMedia(not_null<HistoryItem*> item) {
-	if (AyuSecret::IsSecretPeer(item->history()->peer)) {
+	if (FreshSecret::IsSecretPeer(item->history()->peer)) {
 		return;
 	}
 	const auto media = item->media();
@@ -481,7 +481,7 @@ void cacheDeletedMedia(not_null<HistoryItem*> item) {
 void PutPhotoBytesIntoCache(
 		not_null<PhotoData*> photo,
 		const QString &path) {
-	const auto read = AyuVault::ReadFile(path);
+	const auto read = FreshVault::ReadFile(path);
 	if (!read) {
 		return;
 	}
@@ -523,7 +523,7 @@ std::vector<OpenedFile> OpenedFiles;
 std::unique_ptr<base::Timer> OpenedTimer;
 
 [[nodiscard]] QString LegacyOpenedMediaDirectory() {
-	return QStringLiteral("./tdata/ayu_media_tmp");
+	return QStringLiteral("./tdata/fresh_media_tmp");
 }
 
 // Played or shown inside the app, so the bytes stay in memory only.
@@ -579,7 +579,7 @@ void CheckOpened() {
 			const OpenedFile &file) {
 		// A file that is still busy on Windows is tried again later.
 		return (now - file.created >= kOpenedFileLifetime)
-			&& AyuVault::WipeFile(file.path);
+			&& FreshVault::WipeFile(file.path);
 	}), end(OpenedFiles));
 	const auto busy = !OpenedFiles.empty() || ranges::any_of(
 		LargeDocuments,
@@ -611,7 +611,7 @@ void WipeOpenedFiles(bool wait) {
 	OpenedFiles.clear();
 	const auto wipe = [=] {
 		for (const auto &path : paths) {
-			AyuVault::WipeFile(path);
+			FreshVault::WipeFile(path);
 		}
 		QDir(LegacyOpenedMediaDirectory()).removeRecursively();
 	};
@@ -648,7 +648,7 @@ void PutDocumentBytesIntoCache(
 		}
 		return;
 	}
-	const auto read = AyuVault::ReadFile(path);
+	const auto read = FreshVault::ReadFile(path);
 	if (!read || read->isEmpty()) {
 		return;
 	}
@@ -684,10 +684,10 @@ void restoreSavedMedia(
 }
 
 void saveTtlMedia(not_null<HistoryItem*> item) {
-	if (AyuSecret::IsSecretPeer(item->history()->peer)) {
+	if (FreshSecret::IsSecretPeer(item->history()->peer)) {
 		return;
 	}
-	const auto &saved = item->ayuSavedMedia();
+	const auto &saved = item->freshSavedMedia();
 	if (saved.empty()) {
 		return;
 	}
@@ -696,10 +696,10 @@ void saveTtlMedia(not_null<HistoryItem*> item) {
 		return;
 	}
 	QDir().mkpath(QFileInfo(path).absolutePath());
-	if (AyuVault::WriteFile(path, QByteArray(saved.data(), qsizetype(saved.size())))) {
-		LOG(("Ayu: saved self-destructing media of %1").arg(item->id.bare));
+	if (FreshVault::WriteFile(path, QByteArray(saved.data(), qsizetype(saved.size())))) {
+		LOG(("freshGram: saved self-destructing media of %1").arg(item->id.bare));
 	} else {
-		LOG(("Ayu: could not save self-destructing media of %1").arg(item->id.bare));
+		LOG(("freshGram: could not save self-destructing media of %1").arg(item->id.bare));
 	}
 }
 
@@ -743,9 +743,9 @@ std::optional<MTPMessageMedia> savedTtlMedia(
 		storageUserId(history->peer),
 		getDialogIdFromPeer(history->peer),
 		id.bare));
-	const auto read = AyuVault::ReadFile(path);
+	const auto read = FreshVault::ReadFile(path);
 	if (!read) {
-		LOG(("Ayu: no saved self-destructing media for %1").arg(id.bare));
+		LOG(("freshGram: no saved self-destructing media for %1").arg(id.bare));
 		return std::nullopt;
 	}
 	const auto &bytes = *read;
@@ -815,7 +815,7 @@ std::optional<DeletedExtra> MakeExtra(
 }
 
 void addDeletedMessage(not_null<HistoryItem*> item) {
-	if (AyuSecret::IsSecretPeer(item->history()->peer)) {
+	if (FreshSecret::IsSecretPeer(item->history()->peer)) {
 		return;
 	}
 	DeletedMessage message;
@@ -868,7 +868,7 @@ void addDeletedMessage(not_null<HistoryItem*> item) {
 		});
 	}
 	PendingDeleted.push_back(std::move(message));
-	AyuRestore::noteDeleted(item->history());
+	FreshRestore::noteDeleted(item->history());
 	if (!FlushScheduled) {
 		FlushScheduled = true;
 		crl::on_main(flushPendingDeleted);
@@ -983,7 +983,7 @@ void removeSavedFiles(const std::vector<SavedFileKey> &keys) {
 			int(key.messageId));
 		for (const auto &file : { path, TtlMediaPath(path) }) {
 			if (QFile::exists(file)) {
-				AyuVault::WipeFile(file);
+				FreshVault::WipeFile(file);
 			}
 		}
 	}
@@ -1015,7 +1015,7 @@ void clearUserMedia(ID userId) {
 	for (const auto &name : dir.entryList(
 			QStringList() << (QString::number(userId) + "_*"),
 			QDir::Files)) {
-		AyuVault::WipeFile(dir.absoluteFilePath(name));
+		FreshVault::WipeFile(dir.absoluteFilePath(name));
 	}
 }
 
@@ -1054,12 +1054,12 @@ bool prepareLargeMedia(not_null<DocumentData*> document) {
 	if (!PendingDecrypts.emplace(id).second) {
 		return true;
 	}
-	Ui::Toast::Show(tr::ayu_DeletedMediaDecrypting(tr::now));
+	Ui::Toast::Show(tr::fresh_DeletedMediaDecrypting(tr::now));
 	const auto path = entry.path;
 	const auto inside = OpensInside(document);
 	const auto target = inside ? QString() : OpenedTarget(path, document);
 	crl::async([=, session = &document->session()] {
-		auto read = AyuVault::ReadFile(path);
+		auto read = FreshVault::ReadFile(path);
 		auto done = read && !read->isEmpty();
 		if (done && !inside) {
 			done = WriteOpenedFile(target, *read);
@@ -1070,11 +1070,11 @@ bool prepareLargeMedia(not_null<DocumentData*> document) {
 			const auto i = LargeDocuments.find(document);
 			if (i == LargeDocuments.end() || i->second.id != id) {
 				if (!target.isEmpty()) {
-					AyuVault::WipeFile(target);
+					FreshVault::WipeFile(target);
 				}
 				return;
 			} else if (!done) {
-				Ui::Toast::Show(tr::ayu_DeletedMediaDecryptFailed(tr::now));
+				Ui::Toast::Show(tr::fresh_DeletedMediaDecryptFailed(tr::now));
 				return;
 			}
 			auto &entry = i->second;
@@ -1099,8 +1099,8 @@ void clearEverything() {
 	flushPendingDeleted();
 	AyuDatabase::clearEverything();
 	clearSavedMedia();
-	QDir(u"./tdata/ayu_secret"_q).removeRecursively();
-	QDir(u"./tdata/ayu_secret_tmp"_q).removeRecursively();
+	QDir(u"./tdata/fresh_secret"_q).removeRecursively();
+	QDir(u"./tdata/fresh_secret_tmp"_q).removeRecursively();
 }
 
 void clearDeletedMessages(not_null<PeerData*> peer, ID topicId) {

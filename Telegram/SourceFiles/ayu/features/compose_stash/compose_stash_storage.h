@@ -15,7 +15,7 @@ namespace Data {
 struct ComposeStash;
 } // namespace Data
 
-namespace AyuComposeStash {
+namespace FreshComposeStash {
 
 void Persist(
 	not_null<History*> history,
@@ -26,4 +26,4 @@ void Persist(
 	not_null<History*> history,
 	Data::DraftKey key);
 
-} // namespace AyuComposeStash
+} // namespace FreshComposeStash

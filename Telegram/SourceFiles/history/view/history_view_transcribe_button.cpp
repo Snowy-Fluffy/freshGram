@@ -333,7 +333,7 @@ void TranscribeButton::paint(
 bool TranscribeButton::hasLock() const {
 	const auto session = &_item->history()->session();
 	if (session->premium()
-		|| (!_summarize && AyuRecognition::LocalTranscriptionEnabled())) {
+		|| (!_summarize && FreshRecognition::LocalTranscriptionEnabled())) {
 		return false;
 	}
 	const auto transcribes = &session->api().transcribes();
@@ -381,7 +381,7 @@ ClickHandlerPtr TranscribeButton::link() {
 			return;
 		}
 		if (session->premium()
-			|| (!summarize && AyuRecognition::LocalTranscriptionEnabled())) {
+			|| (!summarize && FreshRecognition::LocalTranscriptionEnabled())) {
 			auto &transcribes = session->api().transcribes();
 			return summarize
 				? transcribes.toggleSummary(item)

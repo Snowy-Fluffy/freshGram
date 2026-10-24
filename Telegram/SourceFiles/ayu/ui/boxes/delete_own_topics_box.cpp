@@ -49,7 +49,7 @@ public:
 	}
 
 	void prepare() override {
-		delegate()->peerListSetTitle(tr::ayu_DeleteOwnMessagesPickTopics());
+		delegate()->peerListSetTitle(tr::fresh_DeleteOwnMessagesPickTopics());
 		setSearchNoResultsText(tr::lng_topics_not_found(tr::now));
 		delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
 		refreshRows();

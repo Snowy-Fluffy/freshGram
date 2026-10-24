@@ -9,7 +9,7 @@
 class History;
 class HistoryItem;
 
-namespace AyuRestore {
+namespace FreshRestore {
 
 struct Row {
 	AyuMessageBase message;
@@ -66,4 +66,4 @@ private:
 
 };
 
-} // namespace AyuRestore
+} // namespace FreshRestore

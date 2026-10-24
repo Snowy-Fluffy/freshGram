@@ -11,7 +11,7 @@
 #include "ui/effects/animations.h"
 #include "ui/text/text.h"
 #include "styles/style_widgets.h"
-#include "ayu/ayu_card_segment.h"
+#include "ayu/fresh_card_segment.h"
 
 #include <cstddef>
 #include <memory>

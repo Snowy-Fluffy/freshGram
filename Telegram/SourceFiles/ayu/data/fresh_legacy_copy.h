@@ -5,7 +5,7 @@
 
 struct sqlite3;
 
-namespace AyuLegacyCopy {
+namespace FreshLegacyCopy {
 
 struct Result {
 	bool ok = false;
@@ -20,4 +20,4 @@ struct Result {
 // The tables of the main schema must exist, the caller owns the transaction.
 [[nodiscard]] Result Run(sqlite3 *db, const char *schema);
 
-} // namespace AyuLegacyCopy
+} // namespace FreshLegacyCopy

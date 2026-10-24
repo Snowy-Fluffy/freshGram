@@ -579,7 +579,7 @@ int getScheduleTime(int64 sumSize) {
 }
 
 bool isMessageSavable(const not_null<HistoryItem*> item) {
-	if (AyuSecret::IsSecretPeer(item->history()->peer)) {
+	if (FreshSecret::IsSecretPeer(item->history()->peer)) {
 		return false;
 	}
 	const auto &settings = AyuSettings::getInstance();
@@ -595,7 +595,7 @@ bool isMessageSavable(const not_null<HistoryItem*> item) {
 }
 
 void processMessageDelete(not_null<HistoryItem*> item) {
-	if (AyuSecret::IsSecretPeer(item->history()->peer)) {
+	if (FreshSecret::IsSecretPeer(item->history()->peer)) {
 		item->destroy();
 		return;
 	}
@@ -608,7 +608,7 @@ void processMessageDelete(not_null<HistoryItem*> item) {
 		item->setDeleted();
 		AyuMessages::addDeletedMessage(item);
 		AyuMessages::cacheDeletedMedia(item);
-		AyuKept::note(item->history());
+		FreshKept::note(item->history());
 	}
 }
 
@@ -811,7 +811,7 @@ void searchUserById(ID userId, Main::Session *session, const UsernameResolverCal
 		return;
 	}
 
-	if (const auto userLoaded = AyuUsers::find(session, UserId(userId))) {
+	if (const auto userLoaded = FreshUsers::find(session, UserId(userId))) {
 		callback(userLoaded->username(), userLoaded);
 		return;
 	}

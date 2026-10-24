@@ -550,7 +550,7 @@ void HistoryMessageReply::updateData(
 			peerId,
 			_fields.messageId);
 		if (!resolvedMessage && !_fields.externalPeerId) {
-			resolvedMessage = holder->history()->ayuRestored(
+			resolvedMessage = holder->history()->freshRestored(
 				_fields.messageId,
 				holder);
 		}

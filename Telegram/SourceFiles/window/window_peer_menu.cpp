@@ -427,7 +427,7 @@ bool PinnedLimitReached(
 		owner->setChatPinned(history, FilterId(), true);
 		history->session().api().savePinnedOrder(folder);
 	} else if (AyuSettings::getInstance().localPinnedChats()) {
-		AyuLocalPins::pin(history);
+		FreshLocalPins::pin(history);
 	} else if (folder) {
 		controller->show(Box(FolderPinsLimitBox, &history->session()));
 	} else {
@@ -460,7 +460,7 @@ void TogglePinnedThread(
 	const auto isPinned = !entry->isPinnedDialog(FilterId());
 	if (!isPinned) {
 		if (const auto history = entry->asHistory();
-			history && AyuLocalPins::unpin(history)) {
+			history && FreshLocalPins::unpin(history)) {
 			if (onToggled) {
 				onToggled();
 			}
@@ -940,7 +940,7 @@ void Filler::addDeleteChat() {
 	if (_topic) {
 		return;
 	} else if (!_sublist && _peer->isChannel()) {
-		if (AyuKept::isKept(_peer)) {
+		if (FreshKept::isKept(_peer)) {
 			const auto peer = _peer;
 			_addAction({
 				.text = tr::lng_box_delete(tr::now),
@@ -1220,8 +1220,8 @@ void Filler::addShareContact() {
 void Filler::addSecretChat() {
 	const auto user = _peer->asUser();
 	if (!user
-		|| !AyuSecret::Enabled()
-		|| AyuSecret::IsSecretPeer(user)
+		|| !FreshSecret::Enabled()
+		|| FreshSecret::IsSecretPeer(user)
 		|| user->isSelf()
 		|| user->isBot()
 		|| user->isInaccessible()
@@ -1230,19 +1230,19 @@ void Filler::addSecretChat() {
 	}
 	const auto controller = _controller;
 	_addAction(
-		tr::ayu_StartSecretChat(tr::now),
-		[=] { AyuSecret::Get(&controller->session()).start(user); },
+		tr::fresh_StartSecretChat(tr::now),
+		[=] { FreshSecret::Get(&controller->session()).start(user); },
 		&st::menuIconLock);
 }
 
 void Filler::addPeekLastSeen() {
 	const auto user = _peer->asUser();
-	if (!user || !AyuPeek::available(user)) {
+	if (!user || !FreshPeek::available(user)) {
 		return;
 	}
 	_addAction(
-		tr::ayu_PeekButton(tr::now),
-		[=] { AyuPeek::start(user); },
+		tr::fresh_PeekButton(tr::now),
+		[=] { FreshPeek::start(user); },
 		&st::menuIconInfo);
 }
 
@@ -1317,7 +1317,7 @@ void Filler::addDeleteContact() {
 
 void Filler::addDeleteTopic() {
 	if (!_topic
-		|| (!_topic->canDelete() && !AyuKept::isKeptDeletedTopic(_topic))) {
+		|| (!_topic->canDelete() && !FreshKept::isKeptDeletedTopic(_topic))) {
 		return;
 	}
 	const auto controller = _controller;
@@ -1802,30 +1802,30 @@ void Filler::addSendGift() {
 void Filler::fillSecretActions() {
 	const auto peer = _peer;
 	const auto controller = _controller;
-	const auto info = AyuSecret::Get(&controller->session()).chat(
-		AyuSecret::ChatIdOfPeer(peer));
-	const auto ready = info && (info->state == AyuSecret::ChatState::Ready);
+	const auto info = FreshSecret::Get(&controller->session()).chat(
+		FreshSecret::ChatIdOfPeer(peer));
+	const auto ready = info && (info->state == FreshSecret::ChatState::Ready);
 	const auto ended = info
-		&& (info->state == AyuSecret::ChatState::Discarded);
+		&& (info->state == FreshSecret::ChatState::Discarded);
 	if (ready) {
 		_addAction(
-			tr::ayu_SecretTimer(tr::now),
+			tr::fresh_SecretTimer(tr::now),
 			[=] { Ui::ShowSecretTimer(controller, peer); },
 			&st::menuIconTTL);
 		_addAction(
-			tr::ayu_SecretKey(tr::now),
+			tr::fresh_SecretKey(tr::now),
 			[=] { Ui::ShowSecretKey(controller, peer); },
 			&st::menuIconLock);
 	}
 	_addAction(
-		tr::ayu_SecretClear(tr::now),
+		tr::fresh_SecretClear(tr::now),
 		[=] { Ui::ConfirmSecretClear(controller, peer); },
 		&st::menuIconClear);
 	_addAction(PeerMenuCallback::Args{ .isSeparator = true });
 	_addAction(PeerMenuCallback::Args{
 		.text = ended
-			? tr::ayu_SecretChatDelete(tr::now)
-			: tr::ayu_SecretChatEnd(tr::now),
+			? tr::fresh_SecretChatDelete(tr::now)
+			: tr::fresh_SecretChatEnd(tr::now),
 		.handler = [=] { Ui::ConfirmSecretEnd(controller, peer); },
 		.icon = &st::menuIconDeleteAttention,
 		.isAttention = true,
@@ -1833,7 +1833,7 @@ void Filler::fillSecretActions() {
 }
 
 void Filler::fill() {
-	if (_peer && AyuSecret::IsSecretPeer(_peer)) {
+	if (_peer && FreshSecret::IsSecretPeer(_peer)) {
 		fillSecretActions();
 		return;
 	}
@@ -1859,7 +1859,7 @@ void Filler::fill() {
 			|| _request.section == Section::History
 			|| _request.section == Section::Profile
 			|| _request.section == Section::ContextMenu)) {
-		AyuPlugins::AddPeerMenuItems(
+		FreshPlugins::AddPeerMenuItems(
 			_controller,
 			_peer,
 			_request.section == Section::Profile,
@@ -2092,7 +2092,7 @@ void Filler::fillHistoryActions() {
 	AyuUi::AddOpenChannelAction(_peer, _controller, _addAction);
 	addViewAsTopics();
 	addManageChat();
-	AyuStories::AddPostStoryAction(_peer, _controller, _addAction);
+	FreshStories::AddPostStoryAction(_peer, _controller, _addAction);
 	addStoryArchive();
 	addSupportInfo();
 	addBoostChat();
@@ -2124,7 +2124,7 @@ void Filler::fillProfileActions() {
 	addNewMembers();
 	addSendGift();
 	addViewStatistics();
-	AyuStories::AddPostStoryAction(_peer, _controller, _addAction);
+	FreshStories::AddPostStoryAction(_peer, _controller, _addAction);
 	addStoryArchive();
 	addManageChat();
 	addSetPersonalChannel();
@@ -2450,7 +2450,7 @@ void PeerMenuDeleteTopic(
 		not_null<PeerData*> peer,
 		MsgId rootId) {
 	if (const auto forum = peer->forum()
-		; forum && AyuKept::purgeDeletedTopic(forum, rootId)) {
+		; forum && FreshKept::purgeDeletedTopic(forum, rootId)) {
 		return;
 	}
 	const auto api = &peer->session().api();

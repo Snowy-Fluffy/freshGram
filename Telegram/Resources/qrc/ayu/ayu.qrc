@@ -1,6 +1,6 @@
 <RCC>
     <qresource prefix="/gui">
-        <file alias="ayu/lid.176.ftz">../../ayu/lid.176.ftz</file>
+        <file alias="fresh/lid.176.ftz">../../fresh/lid.176.ftz</file>
         <file alias="art/ayu/alt/app.svg">../../art/ayu/alt/app.svg</file>
         <file alias="art/ayu/alt/app_icon.ico">../../art/ayu/alt/app_icon.ico</file>
         <file alias="art/ayu/bard/app.svg">../../art/ayu/bard/app.svg</file>
@@ -26,10 +26,10 @@
         <file alias="art/ayu/yaplus/app.svg">../../art/ayu/yaplus/app.svg</file>
         <file alias="art/ayu/yaplus/app_icon.ico">../../art/ayu/yaplus/app_icon.ico</file>
         <file alias="icons/ayu/nocover.svg">../../icons/ayu/nocover.svg</file>
-        <file alias="ayu_lang/de.strings">../../langs/ayu/de.strings</file>
-        <file alias="ayu_lang/fr.strings">../../langs/ayu/fr.strings</file>
-        <file alias="ayu_lang/it.strings">../../langs/ayu/it.strings</file>
-        <file alias="ayu_lang/ru.strings">../../langs/ayu/ru.strings</file>
-        <file alias="ayu_lang/zh.strings">../../langs/ayu/zh.strings</file>
+        <file alias="fresh_lang/de.strings">../../langs/fresh/de.strings</file>
+        <file alias="fresh_lang/fr.strings">../../langs/fresh/fr.strings</file>
+        <file alias="fresh_lang/it.strings">../../langs/fresh/it.strings</file>
+        <file alias="fresh_lang/ru.strings">../../langs/fresh/ru.strings</file>
+        <file alias="fresh_lang/zh.strings">../../langs/fresh/zh.strings</file>
     </qresource>
 </RCC>

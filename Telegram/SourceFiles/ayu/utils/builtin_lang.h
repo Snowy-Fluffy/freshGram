@@ -5,7 +5,7 @@
 
 #include <vector>
 
-namespace AyuLang {
+namespace FreshLang {
 
 using Strings = std::vector<std::pair<QByteArray, QByteArray>>;
 
@@ -13,4 +13,4 @@ using Strings = std::vector<std::pair<QByteArray, QByteArray>>;
 // Returns an empty list if there is no translation for the language.
 [[nodiscard]] const Strings &BuiltinStrings(const QString &languageId);
 
-} // namespace AyuLang
+} // namespace FreshLang

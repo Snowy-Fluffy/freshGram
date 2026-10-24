@@ -19,7 +19,7 @@
 #include <initializer_list>
 #include <mutex>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 namespace {
 
 #ifdef FRESHGRAM_LOCAL_OCR
@@ -357,4 +357,4 @@ std::shared_ptr<std::atomic<bool>> RecognizeTextAsync(
 	return cancelled;
 }
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

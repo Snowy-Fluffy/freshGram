@@ -9,7 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "boxes/peer_list_section_headers.h"
 #include "boxes/peer_list_section_index.h"
-#include "ayu/ayu_card_segment.h"
+#include "ayu/fresh_card_segment.h"
 #include "ayu/ayu_ui_settings.h"
 #include "history/history.h" // chatListNameSortKey.
 #include "main/session/session_show.h"

@@ -2,7 +2,7 @@
 #include "ayu/features/recognition/recognition_models.h"
 
 #include "ayu/ayu_settings.h"
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_vault.h"
 #include "base/unique_qptr.h"
 #include "base/weak_ptr.h"
 #include "lang/lang_keys.h"
@@ -25,7 +25,7 @@
 #include <map>
 #include <mutex>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 namespace {
 
 constexpr auto kModelsChannel = "freshgram_models"_cs;
@@ -182,12 +182,12 @@ void LoadCachedManifest() {
 	if (ModelsLoadedFromCache) {
 		return;
 	}
-	if (!AyuVault::HasKey()) {
+	if (!FreshVault::HasKey()) {
 		return;
 	}
 	ModelsLoadedFromCache = true;
 	// A manifest that is not sealed with the local key could be replaced.
-	if (const auto bytes = AyuVault::ReadFile(ManifestCachePath(), true)) {
+	if (const auto bytes = FreshVault::ReadFile(ManifestCachePath(), true)) {
 		auto parsed = ParseManifest(*bytes);
 		if (!parsed.empty()) {
 			ModelsList = std::move(parsed);
@@ -357,7 +357,7 @@ void ManifestLoader::download(int postId) {
 					file.close();
 					auto parsed = ParseManifest(bytes);
 					if (!parsed.empty()) {
-						AyuVault::WriteSealedFile(ManifestCachePath(), bytes);
+						FreshVault::WriteSealedFile(ManifestCachePath(), bytes);
 						ApplyManifest(std::move(parsed));
 					}
 				}
@@ -467,23 +467,23 @@ QString RecognitionErrorText(RecognitionError error) {
 	case RecognitionError::Failed:
 		break;
 	case RecognitionError::Unavailable:
-		return tr::ayu_RecognitionErrorUnavailable(tr::now);
+		return tr::fresh_RecognitionErrorUnavailable(tr::now);
 	case RecognitionError::NoLanguages:
-		return tr::ayu_RecognitionErrorNoLanguages(tr::now);
+		return tr::fresh_RecognitionErrorNoLanguages(tr::now);
 	case RecognitionError::UnsupportedCpu:
-		return tr::ayu_RecognitionErrorCpu(tr::now);
+		return tr::fresh_RecognitionErrorCpu(tr::now);
 	case RecognitionError::Integrity:
-		return tr::ayu_RecognitionErrorIntegrity(tr::now);
+		return tr::fresh_RecognitionErrorIntegrity(tr::now);
 	case RecognitionError::LoadFailed:
-		return tr::ayu_RecognitionErrorLoad(tr::now);
+		return tr::fresh_RecognitionErrorLoad(tr::now);
 	case RecognitionError::Decode:
-		return tr::ayu_RecognitionErrorDecode(tr::now);
+		return tr::fresh_RecognitionErrorDecode(tr::now);
 	case RecognitionError::TooLarge:
-		return tr::ayu_TranscribeTooBig(tr::now);
+		return tr::fresh_TranscribeTooBig(tr::now);
 	case RecognitionError::NoData:
-		return tr::ayu_RecognitionErrorNoData(tr::now);
+		return tr::fresh_RecognitionErrorNoData(tr::now);
 	}
-	return tr::ayu_RecognitionErrorFailed(tr::now);
+	return tr::fresh_RecognitionErrorFailed(tr::now);
 }
 
 MTP::DedicatedLoader::Location ModelLocation(const Model &model) {
@@ -732,4 +732,4 @@ rpl::producer<bool> ManifestFinished() {
 	return ManifestFinishedStream.events();
 }
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition
