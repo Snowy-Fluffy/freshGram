@@ -14,6 +14,8 @@ set(FGPL_WASMTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wasmtime-v50.0.0-
 
 find_package(ZLIB REQUIRED)
 find_package(OpenSSL REQUIRED)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 function(fgpl_warnings target)
 	if (MSVC)
@@ -40,12 +42,13 @@ add_library(fgpl_core STATIC src/fgpl/cbor.cpp src/fgpl/vfs.cpp src/fgpl/sha256.
 	src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/broker.cpp
 	src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/runtime_bundle.cpp src/fgpl/ui_tree.cpp)
 target_include_directories(fgpl_core PUBLIC src)
-target_link_libraries(fgpl_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto)
+target_link_libraries(fgpl_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto Threads::Threads)
 fgpl_options(fgpl_core)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	add_library(fgpl_sandbox STATIC src/fgpl/sandbox_linux.cpp)
 	target_include_directories(fgpl_sandbox PUBLIC src)
+	target_link_libraries(fgpl_sandbox PUBLIC Threads::Threads)
 	fgpl_warnings(fgpl_sandbox)
 endif()
 
@@ -78,7 +81,7 @@ fgpl_options(fgpl_runtime)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
 	add_executable(fgpl_plugin_host src/fgpl/host_main.cpp)
 	target_link_libraries(fgpl_plugin_host PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
-	target_link_options(fgpl_plugin_host PRIVATE -static-libstdc++ -static-libgcc)
+	target_link_options(fgpl_plugin_host PRIVATE -static-libstdc++ -static-libgcc -Wl,--as-needed)
 	fgpl_options(fgpl_plugin_host)
 endif()
 

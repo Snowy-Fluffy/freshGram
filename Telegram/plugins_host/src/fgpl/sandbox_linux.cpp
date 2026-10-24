@@ -2,7 +2,6 @@
 
 #include <linux/audit.h>
 #include <linux/filter.h>
-#include <linux/landlock.h>
 #include <linux/seccomp.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
@@ -36,6 +35,7 @@ constexpr auto kFsTruncate = uint64_t(1) << 14;
 constexpr auto kFsIoctlDev = uint64_t(1) << 15;
 constexpr auto kNetMask = uint64_t(3);
 constexpr auto kScopeMask = uint64_t(3);
+constexpr auto kCreateRulesetVersion = uint32_t(1);
 
 struct RulesetAttr {
 	uint64_t handledFs = 0;
@@ -290,7 +290,7 @@ int LandlockAbi() {
 		SYS_landlock_create_ruleset,
 		nullptr,
 		0,
-		LANDLOCK_CREATE_RULESET_VERSION);
+		kCreateRulesetVersion);
 	return (abi > 0) ? int(abi) : 0;
 }
 

@@ -5,6 +5,21 @@ the user turns plugins on. Nothing of it ships in the installer. Both the index 
 bundles come over MTProto from the public channel @freshgram_runtime (the CMake option
 `FRESHGRAM_RUNTIME_CHANNEL`), through the signed-in account and its proxy settings.
 
+## Building it locally
+
+```
+runtime/build_bundle.sh <revision> [--min-revision N] [--out DIR] [--skip-tests]
+```
+
+The script needs Docker. It downloads the pinned Wasmtime C API and CPython for WASI into
+`third_party/` when they are missing and checks their SHA-256, builds the host and the
+tests in Rocky Linux 8 (`runtime/Dockerfile`, build tree `build-bundle/`), runs the tests,
+and refuses a host that needs anything but glibc 2.28 or a library outside glibc. The
+host then runs on any glibc-based distribution from that version on. The result goes to
+`DIR/rev-<revision>/` (default `~/freshgram-runtime`), which must not exist yet:
+`runtime-linux-x86_64.zip` and `runtime.unsigned.json` with `POST_ID` in place of the post
+id. The script prints the remaining steps.
+
 ## Bundle
 
 A zip with exactly these top-level entries:
