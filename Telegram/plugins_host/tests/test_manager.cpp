@@ -113,8 +113,6 @@ struct Lab {
 		fs::create_directories(root);
 		environment.app = *ParseVersion("7.6.1");
 		environment.apiLevel = 1;
-		environment.platform = "linux";
-		environment.platformVersion = *ParseVersion("6.1.0");
 		services.data = &data;
 		services.clockMs = [this] { return time.load(); };
 		cacheSettings.directory = root / "cache";

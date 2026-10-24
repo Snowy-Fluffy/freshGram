@@ -60,6 +60,14 @@ calls while handling one event. Network connections show up in the app's Network
 panel, where the user can close any of them. Plugin traffic always goes directly;
 it never uses the proxy configured in the app.
 
+A manifest has no OS or architecture fields: a plugin is Wasm and runs the same
+everywhere. If it cannot work without some capability of the app, list it in
+`compat.requires`; an app that lacks one refuses the plugin with a clear reason.
+Capabilities are the permission ids (`net.udp`, `ui.dialog`, `plugins.message`,
+...) and the menu surfaces `menu.message`, `menu.chat`, `menu.profile`,
+`menu.composer`, `menu.main_menu` and `menu.tray` (missing where the system has
+no tray).
+
 Set `compat.testedWith` to the freshGram version you tested with: when the app's
 major or minor version is newer, the app marks the plugin as outdated.
 

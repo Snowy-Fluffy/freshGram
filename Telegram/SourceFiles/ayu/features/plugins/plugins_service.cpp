@@ -21,6 +21,7 @@
 #include "base/timer.h"
 #include "core/application.h"
 #include "core/version.h"
+#include "platform/platform_specific.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
@@ -29,7 +30,6 @@
 
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
-#include <QtCore/QSysInfo>
 
 #include <unistd.h>
 
@@ -80,18 +80,6 @@ struct Service {
 
 [[nodiscard]] std::optional<fgpl::InstalledRuntime> Installed() {
 	return TrustedRuntime();
-}
-
-[[nodiscard]] fgpl::Version KernelVersion() {
-	const auto text = QSysInfo::kernelVersion().toStdString();
-	auto length = size_t(0);
-	while (length < text.size() && (std::isdigit(uchar(text[length])) || text[length] == '.')) {
-		++length;
-	}
-	if (const auto parsed = fgpl::ParseVersion(text.substr(0, length))) {
-		return *parsed;
-	}
-	return {};
 }
 
 [[nodiscard]] bool DeriveSecret(const char *label, std::array<uint8_t, 32> &out) {
@@ -151,8 +139,9 @@ struct Service {
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
 	config.environment.apiLevel = 1;
-	config.environment.platform = "linux";
-	config.environment.platformVersion = KernelVersion();
+	if (!Platform::TrayIconSupported()) {
+		config.environment.features.erase("menu.tray");
+	}
 	return std::make_unique<fgpl::PluginManager>(std::move(config));
 }
 
