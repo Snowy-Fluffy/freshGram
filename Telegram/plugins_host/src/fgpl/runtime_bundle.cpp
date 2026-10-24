@@ -177,18 +177,18 @@ Result<RuntimeIndex, std::string> ParseRuntimeIndex(
 		return std::string("no bundles");
 	}
 	for (const auto &entry : *bundles->asMap()) {
-		const auto url = entry.value.find("url");
+		const auto post = entry.value.find("post");
 		const auto hash = entry.value.find("sha256");
 		const auto size = entry.value.find("size");
-		if (!url || !url->asText() || url->asText()->rfind("https://", 0) != 0
-			|| url->asText()->size() > 2048
+		if (!post || !post->asInt() || *post->asInt() < 1
+			|| *post->asInt() > 0x7FFFFFFF
 			|| !hash || !hash->asText() || hash->asText()->rfind("sha256-", 0) != 0
 			|| !size || !size->asInt() || *size->asInt() < 1
 			|| *size->asInt() > (int64_t(300) << 20)) {
 			return std::string("bad bundle ") + entry.key;
 		}
 		result.bundles[entry.key] = {
-			*url->asText(), *hash->asText(), uint64_t(*size->asInt()) };
+			int(*post->asInt()), *hash->asText(), uint64_t(*size->asInt()) };
 	}
 	return result;
 }

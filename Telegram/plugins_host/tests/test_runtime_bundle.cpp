@@ -46,7 +46,7 @@ namespace fs = std::filesystem;
 		const cbor::Bytes &archive,
 		int revision = 3,
 		int minRevision = 1,
-		const std::string &url = "https://example.org/runtime.zip") {
+		int64_t post = 12) {
 	return cbor::Value::FromMap({
 		{ "schema", Int(1) },
 		{ "revision", Int(revision) },
@@ -57,7 +57,7 @@ namespace fs = std::filesystem;
 		{ "revoked", cbor::Value::FromArray({}) },
 		{ "bundles", cbor::Value::FromMap({
 			{ "linux-x86_64", cbor::Value::FromMap({
-				{ "url", Text(url) },
+				{ "post", Int(post) },
 				{ "sha256", Text(HashText(archive)) },
 				{ "size", Int(int64_t(archive.size())) },
 			}) },
@@ -101,6 +101,7 @@ void TestIndex() {
 		CHECK(parsed.value().revision == 3);
 		CHECK(parsed.value().wasmtime == "50.0.0");
 		CHECK(BundleFor(parsed.value(), "linux-x86_64") != nullptr);
+		CHECK(BundleFor(parsed.value(), "linux-x86_64")->post == 12);
 		CHECK(BundleFor(parsed.value(), "windows-x86_64") == nullptr);
 		CHECK(Acceptable(parsed.value()));
 	}
@@ -112,7 +113,8 @@ void TestIndex() {
 	CHECK(!ParseRuntimeIndex(tampered, Key()).ok());
 	CHECK(!ParseRuntimeIndex(json::Canonical(IndexDocument(archive)), Key()).ok());
 	CHECK(!ParseRuntimeIndex("not json", Key()).ok());
-	CHECK(!ParseRuntimeIndex(Sign(IndexDocument(archive, 3, 1, "http://example.org/a.zip")), Key()).ok());
+	CHECK(!ParseRuntimeIndex(Sign(IndexDocument(archive, 3, 1, 0)), Key()).ok());
+	CHECK(!ParseRuntimeIndex(Sign(IndexDocument(archive, 3, 1, int64_t(1) << 31)), Key()).ok());
 
 	auto extra = IndexDocument(archive);
 	extra.asMap()->push_back({ "surprise", Int(1) });

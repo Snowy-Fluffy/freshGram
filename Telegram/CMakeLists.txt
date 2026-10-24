@@ -122,6 +122,8 @@ if (TARGET fgpl_app)
     if (FRESHGRAM_RUNTIME_KEY)
         target_compile_definitions(Telegram PRIVATE FRESHGRAM_RUNTIME_KEY="${FRESHGRAM_RUNTIME_KEY}")
     endif()
+    set(FRESHGRAM_RUNTIME_CHANNEL "freshgram_runtime" CACHE STRING "Username of the Telegram channel that hosts the plugin runtime.")
+    target_compile_definitions(Telegram PRIVATE FRESHGRAM_RUNTIME_CHANNEL="${FRESHGRAM_RUNTIME_CHANNEL}")
 endif()
 
 set(ayugram_files

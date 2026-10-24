@@ -8904,7 +8904,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_PluginsUpToDate" = "Up to date";
 "ayu_PluginsUpdateAvailable" = "Update: Wasmtime {wasmtime}, Python {python} ({size})";
 "ayu_PluginsDownloadTitle" = "Download plugin components";
-"ayu_PluginsDownloadText" = "Wasmtime {wasmtime} and Python {python} will be downloaded together, about {size}. The files are checked by signature and hash. The download server will see your IP address.";
+"ayu_PluginsDownloadText" = "Wasmtime {wasmtime} and Python {python} will be downloaded together from the @{channel} channel on Telegram, about {size}. The files are checked by signature and hash.";
 "ayu_PluginsDownload" = "Download";
 "ayu_PluginsDownloading" = "Downloading… {percent}";
 "ayu_PluginsInstalling" = "Installing…";

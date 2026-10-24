@@ -27,6 +27,7 @@ struct RuntimeStatus {
 };
 
 [[nodiscard]] bool RuntimeCanBeVerified();
+[[nodiscard]] QString RuntimeChannel();
 [[nodiscard]] RuntimeStatus CurrentRuntimeStatus();
 [[nodiscard]] rpl::producer<RuntimeStatus> RuntimeStatusValue();
 

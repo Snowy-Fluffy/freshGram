@@ -15,7 +15,7 @@
 namespace fgpl {
 
 struct RuntimeBundle {
-	std::string url;
+	int post = 0;
 	std::string hash;
 	uint64_t size = 0;
 };

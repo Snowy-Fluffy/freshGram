@@ -166,6 +166,8 @@ void OfferDownload(
 			status.remoteWasmtime,
 			lt_python,
 			status.remotePython,
+			lt_channel,
+			AyuPlugins::RuntimeChannel(),
 			lt_size,
 			SizeText(status.remoteSize)),
 		.confirmed = [=](Fn<void()> &&close) {

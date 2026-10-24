@@ -3,11 +3,11 @@
 
 #include "ayu/features/plugins/plugins_service.h"
 #include "core/application.h"
-#include "core/core_settings.h"
-#include "core/core_settings_proxy.h"
 #include "crl/crl_async.h"
 #include "crl/crl_on_main.h"
-#include "mtproto/mtproto_proxy_data.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
+#include "mtproto/dedicated_file_loader.h"
 
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/base64.h"
@@ -15,16 +15,14 @@
 #endif
 
 #include <QtCore/QDir>
-#include <QtNetwork/QNetworkAccessManager>
-#include <QtNetwork/QNetworkReply>
-#include <QtNetwork/QNetworkRequest>
+#include <QtCore/QFile>
 
 #ifndef FRESHGRAM_RUNTIME_KEY
 #define FRESHGRAM_RUNTIME_KEY ""
 #endif
 
-#ifndef FRESHGRAM_RUNTIME_INDEX_URL
-#define FRESHGRAM_RUNTIME_INDEX_URL "https://github.com/Snowy-Fluffy/freshGram/releases/download/plugins-runtime/runtime.json"
+#ifndef FRESHGRAM_RUNTIME_CHANNEL
+#define FRESHGRAM_RUNTIME_CHANNEL "freshgram_runtime"
 #endif
 
 namespace AyuPlugins {
@@ -35,14 +33,13 @@ namespace {
 
 constexpr auto kPlatform = "linux-x86_64";
 constexpr auto kMaxIndexBytes = qint64(256) << 10;
-constexpr auto kTimeoutMs = 30000;
 
 struct State {
 	RuntimeStatus status;
 	std::optional<fgpl::RuntimeIndex> index;
 	rpl::variable<RuntimeStatus> value;
-	std::unique_ptr<QNetworkAccessManager> network;
-	QPointer<QNetworkReply> reply;
+	std::unique_ptr<MTP::WeakInstance> mtp;
+	std::unique_ptr<MTP::DedicatedLoader> loader;
 	uint64 generation = 0;
 };
 
@@ -53,6 +50,14 @@ struct State {
 
 [[nodiscard]] std::filesystem::path Root() {
 	return RuntimeRootPath().toStdString();
+}
+
+[[nodiscard]] QString ChannelName() {
+	return QStringLiteral(FRESHGRAM_RUNTIME_CHANNEL);
+}
+
+[[nodiscard]] QString DownloadPath() {
+	return RuntimeRootPath() + u"/download"_q;
 }
 
 [[nodiscard]] std::optional<fgpl::PublicKey> TrustedKey() {
@@ -93,27 +98,6 @@ void Publish(State &state) {
 	state.value = state.status;
 }
 
-[[nodiscard]] QNetworkAccessManager &Network(State &state) {
-	if (!state.network) {
-		state.network = std::make_unique<QNetworkAccessManager>();
-	}
-	auto proxy = QNetworkProxy(QNetworkProxy::DefaultProxy);
-	const auto &settings = Core::App().settings().proxy();
-	if (!settings.isSystem() && settings.isEnabled()) {
-		const auto selected = settings.selected();
-		if (selected.type == MTP::ProxyData::Type::Socks5
-			|| selected.type == MTP::ProxyData::Type::Http) {
-			proxy = MTP::ToNetworkProxy(selected);
-		} else {
-			proxy = QNetworkProxy(QNetworkProxy::NoProxy);
-		}
-	} else if (!settings.isSystem()) {
-		proxy = QNetworkProxy(QNetworkProxy::NoProxy);
-	}
-	state.network->setProxy(proxy);
-	return *state.network;
-}
-
 void Fail(State &state, const QString &error) {
 	state.status.stage = RuntimeStage::Idle;
 	state.status.error = error;
@@ -121,49 +105,134 @@ void Fail(State &state, const QString &error) {
 	Publish(state);
 }
 
-void Fetch(
+[[nodiscard]] MTP::WeakInstance *Mtp(State &state) {
+	const auto session = Core::App().activeAccount().maybeSession();
+	if (!session) {
+		state.mtp = nullptr;
+		return nullptr;
+	} else if (!state.mtp || state.mtp->session().get() != session) {
+		state.mtp = std::make_unique<MTP::WeakInstance>(
+			base::make_weak(session));
+	}
+	return state.mtp.get();
+}
+
+void Load(
 		State &state,
-		const QUrl &url,
+		int post,
+		const QString &folder,
 		qint64 maxBytes,
 		Fn<void(float64)> progress,
 		Fn<void(QByteArray, QString)> done) {
-	auto request = QNetworkRequest(url);
-	request.setAttribute(
-		QNetworkRequest::RedirectPolicyAttribute,
-		QNetworkRequest::NoLessSafeRedirectPolicy);
-	request.setTransferTimeout(kTimeoutMs);
-	request.setRawHeader("User-Agent", "freshGram-runtime");
-	const auto reply = Network(state).get(request);
-	state.reply = reply;
+	const auto mtp = Mtp(state);
+	if (!mtp) {
+		done({}, u"sign in to Telegram to download"_q);
+		return;
+	}
+	auto location = MTP::DedicatedLoader::Location();
+	location.username = ChannelName();
+	location.postId = post;
 	const auto generation = state.generation;
-	const auto buffer = std::make_shared<QByteArray>();
-	const auto tooLarge = std::make_shared<bool>(false);
-	QObject::connect(reply, &QNetworkReply::readyRead, reply, [=] {
-		buffer->append(reply->readAll());
-		if (buffer->size() > maxBytes) {
-			*tooLarge = true;
-			reply->abort();
+	const auto finished = std::make_shared<bool>(false);
+	const auto finish = [=](QByteArray bytes, QString error, bool wipe) {
+		if (*finished) {
+			return;
 		}
-	});
-	QObject::connect(reply, &QNetworkReply::downloadProgress, reply, [=](qint64 received, qint64 total) {
-		if (progress && total > 0) {
-			progress(float64(received) / float64(total));
-		}
-	});
-	QObject::connect(reply, &QNetworkReply::finished, reply, [=] {
-		reply->deleteLater();
+		*finished = true;
+		// WHY: the loader calls us from its own rpl streams, so it is
+		// destroyed and the result delivered only after they return.
+		crl::on_main([=] {
+			auto &state = GetState();
+			if (generation != state.generation) {
+				return;
+			}
+			state.loader = nullptr;
+			if (wipe) {
+				QDir(folder).removeRecursively();
+			}
+			done(bytes, error);
+		});
+	};
+	MTP::StartDedicatedLoader(mtp, location, folder, [=](
+			std::unique_ptr<MTP::DedicatedLoader> loader) {
 		auto &state = GetState();
 		if (generation != state.generation) {
 			return;
+		} else if (!loader) {
+			done({}, u"the file is not in the channel"_q);
+			return;
 		}
-		buffer->append(reply->readAll());
-		if (*tooLarge || buffer->size() > maxBytes) {
-			done({}, u"the file is too large"_q);
-		} else if (reply->error() != QNetworkReply::NoError) {
-			done({}, reply->errorString());
-		} else {
-			done(*buffer, QString());
+		const auto raw = loader.get();
+		raw->progress(
+		) | rpl::on_next([=](MTP::AbstractDedicatedLoader::Progress value) {
+			if (value.size > maxBytes) {
+				finish({}, u"the file is too large"_q, true);
+			} else if (progress && value.size > 0) {
+				progress(float64(value.already) / float64(value.size));
+			}
+		}, raw->lifetime());
+		raw->ready(
+		) | rpl::on_next([=](const QString &path) {
+			auto file = QFile(path);
+			const auto bytes = file.open(QIODevice::ReadOnly)
+				? file.read(maxBytes + 1)
+				: QByteArray();
+			file.close();
+			finish(
+				bytes,
+				bytes.isEmpty()
+					? u"cannot read the downloaded file"_q
+					: (bytes.size() > maxBytes)
+					? u"the file is too large"_q
+					: QString(),
+				true);
+		}, raw->lifetime());
+		raw->failed(
+		) | rpl::on_next([=] {
+			finish({}, u"the download failed"_q, false);
+		}, raw->lifetime());
+		state.loader = std::move(loader);
+		raw->start();
+	});
+}
+
+void ResolveIndexPost(State &state, Fn<void(int, QString)> done) {
+	const auto mtp = Mtp(state);
+	if (!mtp) {
+		done(0, u"sign in to Telegram to download"_q);
+		return;
+	}
+	const auto generation = state.generation;
+	const auto failed = [=](const QString &error) {
+		if (generation == GetState().generation) {
+			done(0, error);
 		}
+	};
+	const auto username = ChannelName();
+	MTP::ResolveChannel(mtp, username, [=](const MTPInputChannel &channel) {
+		if (generation != GetState().generation) {
+			return;
+		}
+		mtp->send(MTPchannels_GetFullChannel(channel), [=](
+				const MTPmessages_ChatFull &result) {
+			const auto pinned = result.data().vfull_chat().match([](
+					const MTPDchannelFull &data) {
+				return data.vpinned_msg_id().value_or_empty();
+			}, [](const auto &) {
+				return 0;
+			});
+			if (pinned) {
+				if (generation == GetState().generation) {
+					done(pinned, QString());
+				}
+			} else {
+				failed(u"the channel has no pinned runtime index"_q);
+			}
+		}, [=](const MTP::Error &error) {
+			failed(error.type());
+		});
+	}, [=] {
+		failed(u"cannot find the channel @"_q + username);
 	});
 }
 
@@ -171,6 +240,10 @@ void Fetch(
 
 bool RuntimeCanBeVerified() {
 	return TrustedKey().has_value();
+}
+
+QString RuntimeChannel() {
+	return ChannelName();
 }
 
 RuntimeStatus CurrentRuntimeStatus() {
@@ -203,7 +276,7 @@ void CheckRuntime(Fn<void(bool ok)> done) {
 	state.status.stage = RuntimeStage::Checking;
 	state.status.error = QString();
 	Publish(state);
-	Fetch(state, QUrl(QStringLiteral(FRESHGRAM_RUNTIME_INDEX_URL)), kMaxIndexBytes, nullptr, [=](QByteArray bytes, QString error) {
+	const auto parse = [=](QByteArray bytes, QString error) {
 		auto &state = GetState();
 		if (!error.isEmpty()) {
 			Fail(state, error);
@@ -224,6 +297,15 @@ void CheckRuntime(Fn<void(bool ok)> done) {
 		if (done) {
 			done(state.status.error.isEmpty());
 		}
+	};
+	ResolveIndexPost(state, [=](int post, QString error) {
+		if (!error.isEmpty()) {
+			parse({}, error);
+			return;
+		}
+		const auto folder = DownloadPath() + u"/index"_q;
+		QDir(folder).removeRecursively();
+		Load(GetState(), post, folder, kMaxIndexBytes, nullptr, parse);
 	});
 }
 
@@ -245,7 +327,14 @@ void DownloadRuntime(Fn<void(bool ok)> done) {
 	Publish(state);
 	const auto index = *state.index;
 	const auto copy = *bundle;
-	Fetch(state, QUrl(QString::fromStdString(copy.url)), qint64(copy.size) + 1024,
+	const auto name = u"rev-"_q + QString::number(index.revision);
+	auto downloads = QDir(DownloadPath());
+	for (const auto &other : downloads.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+		if (other != name) {
+			QDir(downloads.filePath(other)).removeRecursively();
+		}
+	}
+	Load(state, copy.post, downloads.filePath(name), qint64(copy.size),
 		[](float64 progress) {
 			auto &state = GetState();
 			state.status.progress = progress;
@@ -295,9 +384,7 @@ void DownloadRuntime(Fn<void(bool ok)> done) {
 void CancelRuntime() {
 	auto &state = GetState();
 	++state.generation;
-	if (const auto reply = state.reply.data()) {
-		reply->abort();
-	}
+	state.loader = nullptr;
 	state.status.stage = RuntimeStage::Idle;
 	state.status.progress = 0.;
 	Publish(state);
@@ -306,6 +393,7 @@ void CancelRuntime() {
 void RemoveRuntimeFiles() {
 	CancelRuntime();
 	fgpl::RemoveRuntime(Root());
+	QDir(DownloadPath()).removeRecursively();
 	auto &state = GetState();
 	state.index = std::nullopt;
 	Publish(state);
@@ -316,6 +404,10 @@ void RemoveRuntimeFiles() {
 
 bool RuntimeCanBeVerified() {
 	return false;
+}
+
+QString RuntimeChannel() {
+	return QString();
 }
 
 RuntimeStatus CurrentRuntimeStatus() {
