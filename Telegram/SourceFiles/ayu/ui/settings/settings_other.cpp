@@ -9,7 +9,6 @@
 #include "lang_auto.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ui/settings/ayu_builder.h"
-#include "ayu/ui/settings/plugins_settings.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
 #include "ayu/ui/settings/settings_main.h"
 #include "boxes/abstract_box.h"
@@ -59,20 +58,6 @@ void BuildCrashReporting(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 #endif
 }
 
-void BuildPlugins(SectionBuilder &builder) {
-	builder.add([](const BuildContext &ctx) {
-		v::match(ctx, [&](const WidgetContext &wctx) {
-			AyuUi::AddPluginsSettings(wctx.container, wctx.controller);
-		}, [&](const SearchContext &sctx) {
-			sctx.entries->push_back({
-				.id = u"ayu/plugins"_q,
-				.title = tr::ayu_Plugins(tr::now),
-				.section = sctx.sectionId,
-			});
-		});
-	});
-}
-
 void BuildOtherThings(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 
@@ -115,7 +100,6 @@ const auto kMeta = BuildHelper({
 
 	builder.addSkip();
 	BuildCrashReporting(builder, ayu);
-	BuildPlugins(builder);
 	BuildOtherThings(builder);
 });
 
