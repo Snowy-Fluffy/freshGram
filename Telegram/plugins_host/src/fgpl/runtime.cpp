@@ -23,6 +23,10 @@ struct RuntimeState {
 	explicit RuntimeState(wasmtime::Config config)
 	: engine(std::move(config))
 	, ticker([this] { tick(); }) {
+		// WHY: glibc sets up a new thread (set_robust_list, rseq) before
+		// its body runs; seccomp must not be locked in before that is done.
+		auto lock = std::unique_lock(mutex);
+		wake.wait(lock, [&] { return started; });
 	}
 
 	~RuntimeState() {
@@ -36,6 +40,8 @@ struct RuntimeState {
 
 	void tick() {
 		auto lock = std::unique_lock(mutex);
+		started = true;
+		wake.notify_all();
 		while (!stop) {
 			wake.wait_for(
 				lock,
@@ -49,6 +55,7 @@ struct RuntimeState {
 	std::mutex mutex;
 	std::condition_variable wake;
 	bool stop = false;
+	bool started = false;
 	std::thread ticker;
 
 };

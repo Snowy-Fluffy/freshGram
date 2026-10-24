@@ -4,6 +4,7 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/data/ayu_vault.h"
 #include "ayu/features/plugins/plugins_data.h"
+#include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/features/plugins/plugins_ui.h"
 #include "crl/crl_on_main.h"
@@ -23,6 +24,8 @@
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QSysInfo>
+
+#include <unistd.h>
 
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
@@ -54,6 +57,8 @@ struct Service {
 	rpl::variable<State> state = State::Disabled;
 	rpl::event_stream<> list;
 	rpl::lifetime lifetime;
+	int hostFd = -1;
+	int revision = 0;
 	bool started = false;
 };
 
@@ -67,7 +72,7 @@ struct Service {
 }
 
 [[nodiscard]] std::optional<fgpl::InstalledRuntime> Installed() {
-	return fgpl::ReadInstalledRuntime(RuntimeRootPath().toStdString());
+	return TrustedRuntime();
 }
 
 [[nodiscard]] fgpl::Version KernelVersion() {
@@ -86,7 +91,8 @@ struct Service {
 	return AyuVault::DeriveKey(label, out.data(), out.size());
 }
 
-[[nodiscard]] std::unique_ptr<fgpl::PluginManager> MakeManager() {
+[[nodiscard]] std::unique_ptr<fgpl::PluginManager> MakeManager(
+		Service &service) {
 	auto config = fgpl::ManagerConfig();
 	config.root = StorePath().toStdString();
 	config.host.path = HostBinary().toStdString();
@@ -103,9 +109,19 @@ struct Service {
 	RefreshProxy();
 
 	const auto installed = Installed();
-	if (!installed || !fgpl::VerifyInstalledRuntime(*installed)) {
+	if (!installed) {
 		return nullptr;
 	}
+	auto sealed = fgpl::SealExecutable(
+		config.host.path,
+		installed->hostHash);
+	if (!sealed.ok()) {
+		LOG(("Plugins Error: %1").arg(QString::fromStdString(sealed.error())));
+		return nullptr;
+	}
+	service.hostFd = sealed.value();
+	service.revision = installed->revision;
+	config.host.executableFd = service.hostFd;
 	const auto runtime = RuntimePath().toStdString();
 	config.python.expectedHash = installed->pythonHash;
 	config.python.wasm = runtime + "/python/python.wasm";
@@ -149,23 +165,38 @@ void StartAccounts(Service &service) {
 	}
 }
 
+void DropManager(Service &service) {
+	if (service.manager) {
+		CloseData();
+		service.manager->shutdown();
+		service.manager = nullptr;
+		ReleaseData();
+	}
+	service.pump.cancel();
+	if (service.hostFd >= 0) {
+		close(base::take(service.hostFd));
+	}
+	service.revision = 0;
+}
+
 void Refresh() {
 	auto &service = GetService();
 	const auto wanted = Compute();
 	if (wanted != State::Ready) {
-		if (service.manager) {
-			CloseData();
-			service.manager->shutdown();
-			service.manager = nullptr;
-			ReleaseData();
-			service.pump.cancel();
+		DropManager(service);
+	} else if (service.manager) {
+		const auto installed = Installed();
+		if (!installed || installed->revision != service.revision) {
+			DropManager(service);
 		}
-	} else if (!service.manager) {
-		service.manager = MakeManager();
+	}
+	if (wanted == State::Ready && !service.manager) {
+		service.manager = MakeManager(service);
 		if (service.manager) {
 			service.pump.callEach(kPumpEach);
 			StartAccounts(service);
 		} else {
+			DropManager(service);
 			service.state = AyuVault::HasKey() ? State::NoRuntime : State::NoKey;
 			return;
 		}
@@ -301,6 +332,7 @@ void Start() {
 
 	SyncAccounts();
 	Refresh();
+	StartRuntimeUpdates();
 #endif
 }
 
@@ -310,12 +342,7 @@ void Stop() {
 	service.lifetime.destroy();
 	service.pump.cancel();
 	service.watched.clear();
-	if (service.manager) {
-		CloseData();
-		service.manager->shutdown();
-		service.manager = nullptr;
-		ReleaseData();
-	}
+	DropManager(service);
 	service.state = State::Disabled;
 	service.started = false;
 #endif

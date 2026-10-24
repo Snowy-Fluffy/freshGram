@@ -19,6 +19,8 @@ namespace {
 
 namespace fs = std::filesystem;
 
+constexpr auto kSpaceReserve = uint64_t(32) << 20;
+
 constexpr auto kIndexKeys = std::to_array<std::string_view>({
 	"schema", "revision", "minRevision", "host", "wasmtime", "python",
 	"revoked", "bundles", "signature",
@@ -180,16 +182,29 @@ Result<RuntimeIndex, std::string> ParseRuntimeIndex(
 		const auto post = entry.value.find("post");
 		const auto hash = entry.value.find("sha256");
 		const auto size = entry.value.find("size");
+		const auto hostHash = entry.value.find("hostSha256");
+		const auto pythonHash = entry.value.find("pythonSha256");
+		const auto hashText = [](const cbor::Value *value) {
+			return value && value->asText()
+				&& value->asText()->rfind("sha256-", 0) == 0;
+		};
 		if (!post || !post->asInt() || *post->asInt() < 1
 			|| *post->asInt() > 0x7FFFFFFF
 			|| !hash || !hash->asText() || hash->asText()->rfind("sha256-", 0) != 0
 			|| !size || !size->asInt() || *size->asInt() < 1
-			|| *size->asInt() > (int64_t(300) << 20)) {
+			|| *size->asInt() > (int64_t(300) << 20)
+			|| !hashText(hostHash) || !hashText(pythonHash)) {
 			return std::string("bad bundle ") + entry.key;
 		}
 		result.bundles[entry.key] = {
-			int(*post->asInt()), *hash->asText(), uint64_t(*size->asInt()) };
+			int(*post->asInt()),
+			*hash->asText(),
+			uint64_t(*size->asInt()),
+			*hostHash->asText(),
+			*pythonHash->asText(),
+		};
 	}
+	result.text = std::string(text);
 	return result;
 }
 
@@ -274,10 +289,23 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 	}
 	if (host.empty() || python.empty() || !hasLibrary || !hasSdk) {
 		return std::string("the runtime archive is incomplete");
+	} else if (host != bundle.hostHash || python != bundle.pythonHash) {
+		return std::string("the runtime files do not match the signed index");
+	} else if (index.text.empty()) {
+		return std::string("the signed index is missing");
 	}
 
 	auto error = std::error_code();
 	fs::create_directories(root, error);
+	auto unpacked = uint64_t(0);
+	for (const auto &file : files.value()) {
+		unpacked += file.data.size();
+	}
+	const auto space = fs::space(root, error);
+	if (error || space.available < unpacked + kSpaceReserve) {
+		return std::string("not enough free disk space: ")
+			+ std::to_string((unpacked + kSpaceReserve) >> 20) + " MB needed";
+	}
 	const auto name = "rev-" + std::to_string(index.revision);
 	const auto staging = root / ("staging-" + std::to_string(::getpid()));
 	fs::remove_all(staging, error);
@@ -306,7 +334,8 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 		{ "hostHash", cbor::Value::FromText(host) },
 		{ "pythonHash", cbor::Value::FromText(python) },
 	}));
-	if (!WriteBytes(staging / "installed.json", { reinterpret_cast<const uint8_t*>(info.data()), info.size() })) {
+	if (!WriteBytes(staging / "installed.json", { reinterpret_cast<const uint8_t*>(info.data()), info.size() })
+		|| !WriteBytes(staging / "index.json", { reinterpret_cast<const uint8_t*>(index.text.data()), index.text.size() })) {
 		fs::remove_all(staging, error);
 		return std::string("cannot write the version file");
 	}
@@ -382,6 +411,29 @@ std::optional<InstalledRuntime> ReadInstalledRuntime(const fs::path &root) {
 			return std::nullopt;
 		}
 	}
+	return result;
+}
+
+std::optional<InstalledRuntime> ReadTrustedRuntime(
+		const fs::path &root,
+		const PublicKey &key,
+		const std::string &platform) {
+	auto result = ReadInstalledRuntime(root);
+	const auto text = result ? ReadText(result->directory / "index.json") : std::nullopt;
+	if (!text) {
+		return std::nullopt;
+	}
+	const auto index = ParseRuntimeIndex(*text, key);
+	const auto bundle = index.ok() ? BundleFor(index.value(), platform) : nullptr;
+	if (!bundle || !Acceptable(index.value())
+		|| index.value().revision != result->revision
+		|| index.value().host != result->host
+		|| index.value().wasmtime != result->wasmtime
+		|| index.value().python != result->python) {
+		return std::nullopt;
+	}
+	result->hostHash = bundle->hostHash;
+	result->pythonHash = bundle->pythonHash;
 	return result;
 }
 

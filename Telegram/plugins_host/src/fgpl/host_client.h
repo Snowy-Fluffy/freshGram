@@ -34,6 +34,7 @@ struct ClientFailure {
 
 struct HostConfig {
 	std::string path;
+	int executableFd = -1;
 	bool unsandboxedTestHost = false;
 	std::string selftest;
 	std::vector<std::string> extraArguments;
@@ -62,6 +63,10 @@ struct LoadRequest {
 	std::vector<std::string> args;
 	std::vector<std::string> env;
 };
+
+[[nodiscard]] Result<int, std::string> SealExecutable(
+	const std::string &path,
+	const std::string &hash);
 
 class HostClient {
 public:

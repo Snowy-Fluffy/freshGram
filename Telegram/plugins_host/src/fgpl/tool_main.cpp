@@ -255,7 +255,21 @@ int PackRuntime(const fs::path &directory, const std::string &output) {
 		std::fprintf(stderr, "cannot write %s\n", output.c_str());
 		return 1;
 	}
-	std::printf("wrote %s: \"sha256\": \"%s\", \"size\": %zu\n", output.c_str(), HashText(archive).c_str(), archive.size());
+	const auto hashOf = [&](const char *name) {
+		for (const auto &[path, content] : files) {
+			if (path == name) {
+				return HashText(content);
+			}
+		}
+		return std::string();
+	};
+	std::printf(
+		"wrote %s: \"sha256\": \"%s\", \"size\": %zu, \"hostSha256\": \"%s\", \"pythonSha256\": \"%s\"\n",
+		output.c_str(),
+		HashText(archive).c_str(),
+		archive.size(),
+		hashOf("fgpl_plugin_host").c_str(),
+		hashOf("python/python.wasm").c_str());
 	return 0;
 }
 

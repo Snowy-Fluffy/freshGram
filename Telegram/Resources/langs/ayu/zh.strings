@@ -115,6 +115,9 @@
 "ayu_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
 "ayu_PluginsNotInstalled" = "未安装";
 "ayu_PluginsCheckUpdates" = "检查更新";
+"ayu_PluginsAutoUpdate" = "自动更新组件";
+"ayu_PluginsInstallRuntimeFromFile" = "从文件安装组件";
+"ayu_PluginsUpdated" = "插件组件已更新：Wasmtime {wasmtime} · Python {python}";
 "ayu_PluginsChecking" = "正在检查…";
 "ayu_PluginsUpToDate" = "已是最新";
 "ayu_PluginsUpdateAvailable" = "更新：Wasmtime {wasmtime}，Python {python}（{size}）";

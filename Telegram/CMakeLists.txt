@@ -124,6 +124,10 @@ if (TARGET fgpl_app)
     endif()
     set(FRESHGRAM_RUNTIME_CHANNEL "freshgram_runtime" CACHE STRING "Username of the Telegram channel that hosts the plugin runtime.")
     target_compile_definitions(Telegram PRIVATE FRESHGRAM_RUNTIME_CHANNEL="${FRESHGRAM_RUNTIME_CHANNEL}")
+    set(FRESHGRAM_RUNTIME_DIR "" CACHE PATH "Directory with a packaged runtime.json and runtime bundle; disables downloads.")
+    if (FRESHGRAM_RUNTIME_DIR)
+        target_compile_definitions(Telegram PRIVATE FRESHGRAM_RUNTIME_DIR="${FRESHGRAM_RUNTIME_DIR}")
+    endif()
 endif()
 
 set(ayugram_files

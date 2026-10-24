@@ -8901,6 +8901,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
 "ayu_PluginsNotInstalled" = "Not installed";
 "ayu_PluginsCheckUpdates" = "Check for updates";
+"ayu_PluginsAutoUpdate" = "Update components automatically";
+"ayu_PluginsInstallRuntimeFromFile" = "Install components from file";
+"ayu_PluginsUpdated" = "Plugin components updated: Wasmtime {wasmtime} · Python {python}";
 "ayu_PluginsChecking" = "Checking…";
 "ayu_PluginsUpToDate" = "Up to date";
 "ayu_PluginsUpdateAvailable" = "Update: Wasmtime {wasmtime}, Python {python} ({size})";

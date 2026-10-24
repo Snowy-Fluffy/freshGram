@@ -466,6 +466,7 @@ public:
 	[[nodiscard]] bool improveLinkPreviews() const { return _improveLinkPreviews.current(); }
 	[[nodiscard]] bool crashReporting() const { return _crashReporting.current(); }
 	[[nodiscard]] bool pluginsEnabled() const { return _pluginsEnabled.current(); }
+	[[nodiscard]] bool pluginsRuntimeAutoUpdate() const { return _pluginsRuntimeAutoUpdate.current(); }
 	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
@@ -631,6 +632,7 @@ public:
 	void setImproveLinkPreviews(bool val);
 	void setCrashReporting(bool val);
 	void setPluginsEnabled(bool val);
+	void setPluginsRuntimeAutoUpdate(bool val);
 	void setAvatarCorners(int val);
 	void setSingleCornerRadius(bool val);
 	void setStreamerMode(bool val);
@@ -854,6 +856,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> crashReportingValue() const { return _crashReporting.value(); }
 	[[nodiscard]] rpl::producer<bool> crashReportingChanges() const { return _crashReporting.changes(); }
 	[[nodiscard]] rpl::producer<bool> pluginsEnabledValue() const { return _pluginsEnabled.value(); }
+	[[nodiscard]] rpl::producer<bool> pluginsRuntimeAutoUpdateValue() const { return _pluginsRuntimeAutoUpdate.value(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersValue() const { return _avatarCorners.value(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersChanges() const { return _avatarCorners.changes(); }
 	[[nodiscard]] rpl::producer<bool> singleCornerRadiusValue() const { return _singleCornerRadius.value(); }
@@ -1033,6 +1036,7 @@ private:
 	rpl::variable<bool> _improveLinkPreviews = false;
 	rpl::variable<bool> _crashReporting = true;
 	rpl::variable<bool> _pluginsEnabled = false;
+	rpl::variable<bool> _pluginsRuntimeAutoUpdate = true;
 	rpl::variable<int> _avatarCorners = 23;
 	rpl::variable<bool> _singleCornerRadius = false;
 	rpl::variable<bool> _streamerMode = false;

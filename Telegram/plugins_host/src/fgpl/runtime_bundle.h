@@ -18,6 +18,8 @@ struct RuntimeBundle {
 	int post = 0;
 	std::string hash;
 	uint64_t size = 0;
+	std::string hostHash;
+	std::string pythonHash;
 };
 
 struct RuntimeIndex {
@@ -28,6 +30,7 @@ struct RuntimeIndex {
 	std::string python;
 	std::vector<int> revoked;
 	std::map<std::string, RuntimeBundle> bundles;
+	std::string text;
 };
 
 struct InstalledRuntime {
@@ -62,6 +65,11 @@ void SaveRuntimePolicy(
 
 [[nodiscard]] std::optional<InstalledRuntime> ReadInstalledRuntime(
 	const std::filesystem::path &root);
+
+[[nodiscard]] std::optional<InstalledRuntime> ReadTrustedRuntime(
+	const std::filesystem::path &root,
+	const PublicKey &key,
+	const std::string &platform);
 
 [[nodiscard]] bool VerifyInstalledRuntime(const InstalledRuntime &runtime);
 

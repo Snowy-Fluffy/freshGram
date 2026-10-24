@@ -3,6 +3,10 @@
 
 #include "base/basic_types.h"
 
+namespace fgpl {
+struct InstalledRuntime;
+} // namespace fgpl
+
 namespace AyuPlugins {
 
 enum class RuntimeStage {
@@ -28,12 +32,16 @@ struct RuntimeStatus {
 
 [[nodiscard]] bool RuntimeCanBeVerified();
 [[nodiscard]] QString RuntimeChannel();
+[[nodiscard]] std::optional<fgpl::InstalledRuntime> TrustedRuntime();
 [[nodiscard]] RuntimeStatus CurrentRuntimeStatus();
 [[nodiscard]] rpl::producer<RuntimeStatus> RuntimeStatusValue();
 
 void CheckRuntime(Fn<void(bool ok)> done = nullptr);
 void DownloadRuntime(Fn<void(bool ok)> done = nullptr);
+void InstallRuntimeFromFile(const QString &index, Fn<void(bool ok)> done);
+[[nodiscard]] bool RuntimePackaged();
 void CancelRuntime();
+void StartRuntimeUpdates();
 void RemoveRuntimeFiles();
 
 } // namespace AyuPlugins

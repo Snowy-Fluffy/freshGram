@@ -4,6 +4,7 @@
 #include "fgpl/manifest.h"
 #include "fgpl/package.h"
 #include "fgpl/runtime_bundle.h"
+#include "fgpl/zip_reader.h"
 #include "fgpl/zip_writer.h"
 
 #include <filesystem>
@@ -42,11 +43,24 @@ namespace fs = std::filesystem;
 	});
 }
 
+[[nodiscard]] std::string FileHash(const cbor::Bytes &archive, const std::string &name) {
+	const auto files = ReadZip(archive);
+	if (files.ok()) {
+		for (const auto &file : files.value()) {
+			if (file.name == name) {
+				return HashText(file.data);
+			}
+		}
+	}
+	return HashText(cbor::Bytes());
+}
+
 [[nodiscard]] cbor::Value IndexDocument(
 		const cbor::Bytes &archive,
 		int revision = 3,
 		int minRevision = 1,
-		int64_t post = 12) {
+		int64_t post = 12,
+		const std::string &hostHash = {}) {
 	return cbor::Value::FromMap({
 		{ "schema", Int(1) },
 		{ "revision", Int(revision) },
@@ -60,6 +74,10 @@ namespace fs = std::filesystem;
 				{ "post", Int(post) },
 				{ "sha256", Text(HashText(archive)) },
 				{ "size", Int(int64_t(archive.size())) },
+				{ "hostSha256", Text(hostHash.empty()
+					? FileHash(archive, "fgpl_plugin_host")
+					: hostHash) },
+				{ "pythonSha256", Text(FileHash(archive, "python/python.wasm")) },
 			}) },
 		}) },
 	});
@@ -156,6 +174,42 @@ void TestInstall() {
 	CHECK(!ReadInstalledRuntime(lab.root));
 }
 
+void TestTrustedRead() {
+	auto lab = Lab();
+	const auto archive = ValidArchive();
+	const auto index = Parsed(archive);
+	CHECK(InstallRuntime(archive, index, *BundleFor(index, "linux-x86_64"), lab.root).ok());
+
+	const auto trusted = ReadTrustedRuntime(lab.root, Key(), "linux-x86_64");
+	CHECK(trusted && trusted->hostHash == HashText(Bytes("host-binary")));
+	CHECK(trusted && trusted->pythonHash == HashText(Bytes("wasm-python")));
+	CHECK(!ReadTrustedRuntime(lab.root, Key(2), "linux-x86_64"));
+	CHECK(!ReadTrustedRuntime(lab.root, Key(), "linux-aarch64"));
+
+	const auto info = lab.root / "current" / "installed.json";
+	auto text = std::string();
+	{
+		auto stream = std::ifstream(info);
+		text.assign(std::istreambuf_iterator<char>(stream), {});
+	}
+	{
+		auto forged = text;
+		forged.replace(forged.find("\"hostHash\":\"") + 12, 10, "sha256-AAA");
+		auto stream = std::ofstream(info, std::ios::trunc);
+		stream << forged;
+	}
+	const auto forged = ReadTrustedRuntime(lab.root, Key(), "linux-x86_64");
+	CHECK(forged && forged->hostHash == HashText(Bytes("host-binary")));
+	{
+		auto stream = std::ofstream(info, std::ios::trunc);
+		stream << text;
+	}
+
+	fs::remove(lab.root / "current" / "index.json");
+	CHECK(ReadInstalledRuntime(lab.root));
+	CHECK(!ReadTrustedRuntime(lab.root, Key(), "linux-x86_64"));
+}
+
 void TestRefusals() {
 	auto lab = Lab();
 	const auto archive = ValidArchive();
@@ -168,6 +222,14 @@ void TestRefusals() {
 	cut.pop_back();
 	CHECK(!InstallRuntime(cut, index, bundle, lab.root).ok());
 	CHECK(!fs::exists(lab.root / "current"));
+
+	const auto mismatched = ParseRuntimeIndex(
+		Sign(IndexDocument(archive, 3, 1, 12, HashText(Bytes("other")))),
+		Key()).value();
+	CHECK(!InstallRuntime(archive, mismatched, *BundleFor(mismatched, "linux-x86_64"), lab.root).ok());
+	auto unsignedIndex = index;
+	unsignedIndex.text.clear();
+	CHECK(!InstallRuntime(archive, unsignedIndex, bundle, lab.root).ok());
 
 	const auto incomplete = WriteZip({ { "fgpl_plugin_host", Bytes("x") } });
 	const auto incompleteIndex = Parsed(incomplete);
@@ -224,6 +286,7 @@ void TestPolicyAndUpgrades() {
 int main() {
 	TestIndex();
 	TestInstall();
+	TestTrustedRead();
 	TestRefusals();
 	TestPolicyAndUpgrades();
 	return Failures() ? 1 : 0;
