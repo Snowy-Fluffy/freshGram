@@ -297,7 +297,7 @@ Application::~Application() {
 	closeAdditionalWindows();
 
 	_private->proxyRotation = nullptr;
-	AyuPlugins::Stop();
+	FreshPlugins::Stop();
 	AyuMessages::flushPending();
 	_domain->finish();
 	AyuDatabase::finish();
@@ -332,11 +332,11 @@ void Application::run() {
 	startLocalStorage();
 
 	const auto traceDirectory = cWorkingDir() + u"tdata"_q;
-	if (AyuDebugLogging::Enabled()) {
-		AyuCrashTrace::Install(traceDirectory);
+	if (FreshDebugLogging::Enabled()) {
+		FreshCrashTrace::Install(traceDirectory);
 	} else {
 		Logs::removeFiles();
-		AyuCrashTrace::Remove(traceDirectory);
+		FreshCrashTrace::Remove(traceDirectory);
 	}
 
 	// WHY: the design style picks the base font, so it is needed before the fonts start.
@@ -467,8 +467,8 @@ void Application::run() {
 
 	startDomain();
 	startTray();
-	AyuLockTriggers::Init();
-	AyuPlugins::Start();
+	FreshLockTriggers::Init();
+	FreshPlugins::Start();
 
 	_lastActivePrimaryWindow->firstShow();
 
@@ -1018,7 +1018,7 @@ void Application::startEmojiImageLoader() {
 void Application::setScreenIsLocked(bool locked) {
 	_screenIsLocked = locked;
 	if (locked) {
-		AyuLockTriggers::SystemLocked();
+		FreshLockTriggers::SystemLocked();
 	}
 }
 
@@ -1365,7 +1365,7 @@ void Application::updateWindowTitles() {
 }
 
 void Application::lockByPasscode() {
-	AyuFakePasscode::OnLock();
+	FreshFakePasscode::OnLock();
 	AyuMessages::releaseOpenedMedia();
 	_passcodeLock = true;
 	enumerateWindows([&](not_null<Window::Controller*> w) {
@@ -1388,12 +1388,12 @@ void Application::unlockPasscode() {
 	enumerateWindows([&](not_null<Window::Controller*> w) {
 		w->clearPasscodeLock();
 	});
-	AyuFakePasscode::RunPending();
-	AyuLockBackground::Clear();
+	FreshFakePasscode::RunPending();
+	FreshLockBackground::Clear();
 }
 
 void Application::clearPasscodeLock() {
-	AyuPasscodeGuard::RegisterSuccess();
+	FreshPasscodeGuard::RegisterSuccess();
 	_passcodeLock = false;
 }
 
@@ -1487,7 +1487,7 @@ void Application::checkAutoLockIn(crl::time time) {
 }
 
 void Application::localPasscodeChanged() {
-	AyuSecret::HandlePasscodeChange();
+	FreshSecret::HandlePasscodeChange();
 	_shouldLockAt = 0;
 	_autoLockTimer.cancel();
 	checkAutoLock(crl::now());

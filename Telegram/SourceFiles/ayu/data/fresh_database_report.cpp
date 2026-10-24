@@ -1,5 +1,5 @@
 // This is the source code of freshGram.
-#include "ayu/data/ayu_database_report.h"
+#include "ayu/data/fresh_database_report.h"
 
 #include "ayu/libs/sqlite/sqlite3.h"
 
@@ -16,10 +16,10 @@
 #if __has_include(<openssl/evp.h>)
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-#define AYU_REPORT_HAS_OPENSSL 1
+#define FRESH_REPORT_HAS_OPENSSL 1
 #endif
 
-namespace AyuDatabaseReport {
+namespace FreshDatabaseReport {
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -497,7 +497,7 @@ void AddSerialize(std::string &out, sqlite3 *db) {
 } // namespace
 
 std::string MeasureCrypto() {
-#ifdef AYU_REPORT_HAS_OPENSSL
+#ifdef FRESH_REPORT_HAS_OPENSSL
 	constexpr auto kPages = 20000;
 	constexpr auto kNonce = 12;
 	constexpr auto kTag = 16;
@@ -555,7 +555,7 @@ std::string MeasureCrypto() {
 }
 
 std::string Build(sqlite3 *db, const Options &options) {
-	auto out = std::string("AyuGram database report\n\n");
+	auto out = std::string("freshGram database report\n\n");
 	if (!db) {
 		return out + "no database\n";
 	}
@@ -574,4 +574,4 @@ std::string Build(sqlite3 *db, const Options &options) {
 	return out;
 }
 
-} // namespace AyuDatabaseReport
+} // namespace FreshDatabaseReport

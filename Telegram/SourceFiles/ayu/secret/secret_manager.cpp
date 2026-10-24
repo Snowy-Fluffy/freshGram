@@ -44,7 +44,7 @@
 #include <limits>
 #include <set>
 
-namespace AyuSecret {
+namespace FreshSecret {
 namespace {
 
 constexpr auto kExtrasMagic = 0x31435941U;
@@ -515,15 +515,15 @@ enum class RowState {
 [[nodiscard]] int EntityTypeFromText(::EntityType type) {
 	switch (type) {
 	case ::EntityType::Bold:
-	case ::EntityType::Semibold: return int(AyuSecret::EntityType::Bold);
-	case ::EntityType::Italic: return int(AyuSecret::EntityType::Italic);
-	case ::EntityType::Code: return int(AyuSecret::EntityType::Code);
-	case ::EntityType::Pre: return int(AyuSecret::EntityType::Pre);
-	case ::EntityType::CustomUrl: return int(AyuSecret::EntityType::TextUrl);
-	case ::EntityType::Underline: return int(AyuSecret::EntityType::Underline);
-	case ::EntityType::StrikeOut: return int(AyuSecret::EntityType::Strike);
-	case ::EntityType::Blockquote: return int(AyuSecret::EntityType::Blockquote);
-	case ::EntityType::Spoiler: return int(AyuSecret::EntityType::Spoiler);
+	case ::EntityType::Semibold: return int(FreshSecret::EntityType::Bold);
+	case ::EntityType::Italic: return int(FreshSecret::EntityType::Italic);
+	case ::EntityType::Code: return int(FreshSecret::EntityType::Code);
+	case ::EntityType::Pre: return int(FreshSecret::EntityType::Pre);
+	case ::EntityType::CustomUrl: return int(FreshSecret::EntityType::TextUrl);
+	case ::EntityType::Underline: return int(FreshSecret::EntityType::Underline);
+	case ::EntityType::StrikeOut: return int(FreshSecret::EntityType::Strike);
+	case ::EntityType::Blockquote: return int(FreshSecret::EntityType::Blockquote);
+	case ::EntityType::Spoiler: return int(FreshSecret::EntityType::Spoiler);
 	default: return -1;
 	}
 }
@@ -533,22 +533,22 @@ enum class RowState {
 		return Qs(data.text);
 	}
 	switch (data.media.type) {
-	case MediaType::Photo: return tr::ayu_SecretMediaPhoto(tr::now);
-	case MediaType::Video: return tr::ayu_SecretMediaVideo(tr::now);
-	case MediaType::Voice: return tr::ayu_SecretMediaVoice(tr::now);
-	case MediaType::Audio: return tr::ayu_SecretMediaAudio(tr::now);
+	case MediaType::Photo: return tr::fresh_SecretMediaPhoto(tr::now);
+	case MediaType::Video: return tr::fresh_SecretMediaVideo(tr::now);
+	case MediaType::Voice: return tr::fresh_SecretMediaVoice(tr::now);
+	case MediaType::Audio: return tr::fresh_SecretMediaAudio(tr::now);
 	case MediaType::Sticker:
 		return Qs(data.media.emoji)
 			+ QChar(u' ')
-			+ tr::ayu_SecretMediaSticker(tr::now);
+			+ tr::fresh_SecretMediaSticker(tr::now);
 	case MediaType::Animation: return "GIF";
 	case MediaType::Location:
-	case MediaType::Venue: return tr::ayu_SecretMediaLocation(tr::now);
-	case MediaType::Contact: return tr::ayu_SecretMediaContact(tr::now);
+	case MediaType::Venue: return tr::fresh_SecretMediaLocation(tr::now);
+	case MediaType::Contact: return tr::fresh_SecretMediaContact(tr::now);
 	case MediaType::Document:
 	case MediaType::External:
 		return data.media.fileName.empty()
-			? tr::ayu_SecretMediaFile(tr::now)
+			? tr::fresh_SecretMediaFile(tr::now)
 			: Qs(data.media.fileName);
 	default: break;
 	}
@@ -557,17 +557,17 @@ enum class RowState {
 
 [[nodiscard]] QString TtlText(int seconds) {
 	if (seconds <= 0) {
-		return tr::ayu_SecretTtlOff(tr::now);
+		return tr::fresh_SecretTtlOff(tr::now);
 	} else if (seconds < 60) {
-		return tr::ayu_SecretTtlSeconds(tr::now, lt_count, seconds);
+		return tr::fresh_SecretTtlSeconds(tr::now, lt_count, seconds);
 	} else if (seconds < 3600) {
-		return tr::ayu_SecretTtlMinutes(tr::now, lt_count, seconds / 60);
+		return tr::fresh_SecretTtlMinutes(tr::now, lt_count, seconds / 60);
 	} else if (seconds < 86400) {
-		return tr::ayu_SecretTtlHours(tr::now, lt_count, seconds / 3600);
+		return tr::fresh_SecretTtlHours(tr::now, lt_count, seconds / 3600);
 	} else if (seconds < 7 * 86400) {
-		return tr::ayu_SecretTtlDays(tr::now, lt_count, seconds / 86400);
+		return tr::fresh_SecretTtlDays(tr::now, lt_count, seconds / 86400);
 	}
-	return tr::ayu_SecretTtlWeeks(
+	return tr::fresh_SecretTtlWeeks(
 		tr::now,
 		lt_count,
 		seconds / (7 * 86400));
@@ -703,7 +703,7 @@ struct Manager::Impl {
 				UserId(uint64(chat.row.peerUserId)))) {
 			return user->name();
 		}
-		return tr::ayu_SecretUserFallback(
+		return tr::fresh_SecretUserFallback(
 			tr::now,
 			lt_id,
 			QString::number(chat.row.peerUserId));
@@ -943,7 +943,7 @@ void Manager::Impl::onRequested(const MTPDencryptedChatRequested &data) {
 	const auto inserted = chats.emplace(id, std::move(chat)).first;
 	addNote(
 		inserted->second,
-		tr::ayu_SecretNoteRequested(tr::now),
+		tr::fresh_SecretNoteRequested(tr::now),
 		date,
 		kSpecialRequest);
 	notify();
@@ -965,7 +965,7 @@ void Manager::Impl::onChat(const MTPDencryptedChat &data) {
 		chat->row.state = int(ChatState::Discarded);
 		chat->row.keyData.clear();
 		saveChat(*chat);
-		toast(tr::ayu_SecretToastAcceptedElsewhere(tr::now));
+		toast(tr::fresh_SecretToastAcceptedElsewhere(tr::now));
 		notify();
 	}
 }
@@ -1004,7 +1004,7 @@ void Manager::Impl::onDiscarded(int chatId, bool historyDeleted) {
 	saveChat(*chat);
 	addNote(
 		*chat,
-		tr::ayu_SecretNoteEnded(tr::now),
+		tr::fresh_SecretNoteEnded(tr::now),
 		base::unixtime::now(),
 		kSpecialEnded);
 	notify(chatId);
@@ -1056,12 +1056,12 @@ void Manager::Impl::finishCreator(
 			Span(secret),
 			Span(config.p));
 		if (raw.empty()) {
-			toast(tr::ayu_SecretToastKeyFailed(tr::now));
+			toast(tr::fresh_SecretToastKeyFailed(tr::now));
 			return;
 		}
 		const auto key = PadKey(FromBytesVector(raw));
 		if (KeyFingerprint(key) != fingerprint) {
-			toast(tr::ayu_SecretToastFingerprint(tr::now));
+			toast(tr::fresh_SecretToastFingerprint(tr::now));
 			discard(chatId);
 			return;
 		}
@@ -1090,7 +1090,7 @@ void Manager::Impl::accept(int chatId) {
 		const auto prime = openssl::BigNum(Span(config.p));
 		if (!MTP::IsGoodModExpFirst(openssl::BigNum(Span(gA)), prime)) {
 			chat->working = false;
-			toast(tr::ayu_SecretToastInvalidRequest(tr::now));
+			toast(tr::fresh_SecretToastInvalidRequest(tr::now));
 			discard(chatId);
 			return;
 		}
@@ -1104,7 +1104,7 @@ void Manager::Impl::accept(int chatId) {
 			Span(config.p));
 		if (raw.empty()) {
 			chat->working = false;
-			toast(tr::ayu_SecretToastKeyFailed(tr::now));
+			toast(tr::fresh_SecretToastKeyFailed(tr::now));
 			return;
 		}
 		const auto key = PadKey(FromBytesVector(raw));
@@ -1121,7 +1121,7 @@ void Manager::Impl::accept(int chatId) {
 			chat->working = false;
 			result.match([&](const MTPDencryptedChat &data) {
 				if (data.vkey_fingerprint().v != fingerprint) {
-					toast(tr::ayu_SecretToastFingerprint(tr::now));
+					toast(tr::fresh_SecretToastFingerprint(tr::now));
 					return;
 				}
 				chat->row.accessHash = data.vaccess_hash().v;
@@ -1140,7 +1140,7 @@ void Manager::Impl::accept(int chatId) {
 				|| type == u"CHAT_ID_INVALID"_q) {
 				onDiscarded(chatId, false);
 			}
-			toast(tr::ayu_SecretToastAcceptFailed(
+			toast(tr::fresh_SecretToastAcceptFailed(
 				tr::now,
 				lt_reason,
 				type));
@@ -1149,7 +1149,7 @@ void Manager::Impl::accept(int chatId) {
 		if (const auto chat = find(chatId)) {
 			chat->working = false;
 		}
-		toast(tr::ayu_SecretToastNoDhConfig(tr::now));
+		toast(tr::fresh_SecretToastNoDhConfig(tr::now));
 	});
 }
 
@@ -1183,7 +1183,7 @@ void Manager::Impl::start(not_null<UserData*> user) {
 		if (uint64(chat.row.peerUserId) == peerId
 			&& creator(chat)
 			&& chat.row.state == int(ChatState::Waiting)) {
-			toast(tr::ayu_SecretToastWaitingAccept(tr::now));
+			toast(tr::fresh_SecretToastWaitingAccept(tr::now));
 			return;
 		}
 	}
@@ -1224,7 +1224,7 @@ void Manager::Impl::start(not_null<UserData*> user) {
 				chat.loaded = true;
 				saveChat(chat);
 				chats[chat.row.chatId] = std::move(chat);
-				toast(tr::ayu_SecretToastRequestSent(tr::now));
+				toast(tr::fresh_SecretToastRequestSent(tr::now));
 				notify();
 				if (started) {
 					started(data.vid().v);
@@ -1232,13 +1232,13 @@ void Manager::Impl::start(not_null<UserData*> user) {
 			}, [&](const auto &) {
 			});
 		}).fail([=](const MTP::Error &error) {
-			toast(tr::ayu_SecretToastStartFailed(
+			toast(tr::fresh_SecretToastStartFailed(
 				tr::now,
 				lt_reason,
 				error.type()));
 		}).send();
 	}, [=] {
-		toast(tr::ayu_SecretToastNoDhConfig(tr::now));
+		toast(tr::fresh_SecretToastNoDhConfig(tr::now));
 	});
 }
 
@@ -1586,7 +1586,7 @@ void Manager::Impl::processService(
 		chat.ttl = std::max(0, inbound.actionValue);
 		addNote(
 			chat,
-			tr::ayu_SecretNoteTtlSet(
+			tr::fresh_SecretNoteTtlSet(
 				tr::now,
 				lt_name,
 				title(chat),
@@ -1597,7 +1597,7 @@ void Manager::Impl::processService(
 	case ActionKind::ScreenshotMessages:
 		addNote(
 			chat,
-			tr::ayu_SecretNoteScreenshot(tr::now, lt_name, title(chat)),
+			tr::fresh_SecretNoteScreenshot(tr::now, lt_name, title(chat)),
 			date);
 		break;
 	case ActionKind::RequestKey:
@@ -2380,7 +2380,7 @@ void Manager::Impl::sendText(
 }
 
 QString Manager::Impl::mediaDir(int chatId) const {
-	return QString("./tdata/ayu_secret/%1").arg(chatId);
+	return QString("./tdata/fresh_secret/%1").arg(chatId);
 }
 
 QString Manager::Impl::storeFile(
@@ -2395,7 +2395,7 @@ QString Manager::Impl::storeFile(
 }
 
 QString Manager::Impl::tempDir() const {
-	return QString("./tdata/ayu_secret_tmp");
+	return QString("./tdata/fresh_secret_tmp");
 }
 
 void Manager::Impl::sendFile(int chatId, OutgoingFile outgoing) {
@@ -2408,14 +2408,14 @@ void Manager::Impl::sendFile(int chatId, OutgoingFile outgoing) {
 	if (!outgoing.path.isEmpty()) {
 		auto file = QFile(outgoing.path);
 		if (!file.open(QIODevice::ReadOnly)) {
-			toast(tr::ayu_SecretToastReadFailed(tr::now));
+			toast(tr::fresh_SecretToastReadFailed(tr::now));
 			return;
 		}
 		if (file.size() <= 0) {
-			toast(tr::ayu_SecretToastReadFailed(tr::now));
+			toast(tr::fresh_SecretToastReadFailed(tr::now));
 			return;
 		} else if (file.size() > kMaxFileSize) {
-			toast(tr::ayu_SecretToastTooBig(tr::now));
+			toast(tr::fresh_SecretToastTooBig(tr::now));
 			return;
 		}
 		plain = FromArray(file.readAll());
@@ -2425,10 +2425,10 @@ void Manager::Impl::sendFile(int chatId, OutgoingFile outgoing) {
 		}
 	} else {
 		if (outgoing.bytes.isEmpty()) {
-			toast(tr::ayu_SecretToastReadFailed(tr::now));
+			toast(tr::fresh_SecretToastReadFailed(tr::now));
 			return;
 		} else if (outgoing.bytes.size() > kMaxFileSize) {
-			toast(tr::ayu_SecretToastTooBig(tr::now));
+			toast(tr::fresh_SecretToastTooBig(tr::now));
 			return;
 		}
 		plain = FromArray(outgoing.bytes);
@@ -2515,7 +2515,7 @@ void Manager::Impl::sendFile(int chatId, OutgoingFile outgoing) {
 	data.media = media;
 	const auto stored = storeFile(chatId, data.randomId, plain);
 	if (stored.isEmpty()) {
-		toast(tr::ayu_SecretToastStoreFailed(tr::now));
+		toast(tr::fresh_SecretToastStoreFailed(tr::now));
 		return;
 	}
 	data.media.path = stored.toStdString();
@@ -2577,7 +2577,7 @@ void Manager::Impl::uploadParts(
 			message->state = DeliveryState::Failed;
 			updateMessage(*chat, *message);
 		}
-		toast(tr::ayu_SecretToastUploadFailed(tr::now));
+		toast(tr::fresh_SecretToastUploadFailed(tr::now));
 	};
 	if (file.big) {
 		session->api().request(MTPupload_SaveBigFilePart(
@@ -2613,7 +2613,7 @@ void Manager::Impl::downloadMedia(int chatId, int64 randomId) {
 	if (message->media.size > kMaxFileSize) {
 		++chat->revision;
 		notify(chatId);
-		toast(tr::ayu_SecretToastTooBig(tr::now));
+		toast(tr::fresh_SecretToastTooBig(tr::now));
 		return;
 	}
 	chat->transfers[randomId] = Transfer();
@@ -2657,8 +2657,8 @@ void Manager::Impl::downloadChunk(
 			notify(chatId);
 		}
 		toast(reason.isEmpty()
-			? tr::ayu_SecretToastDownloadFailed(tr::now)
-			: tr::ayu_SecretToastDownloadFailedReason(
+			? tr::fresh_SecretToastDownloadFailed(tr::now)
+			: tr::fresh_SecretToastDownloadFailedReason(
 				tr::now,
 				lt_reason,
 				reason));
@@ -2728,7 +2728,7 @@ void Manager::Impl::finishDownload(
 			message->media.iv,
 			message->media.size,
 			plain)) {
-		toast(tr::ayu_SecretToastDecryptFailed(tr::now));
+		toast(tr::fresh_SecretToastDecryptFailed(tr::now));
 		notify(chatId);
 		return;
 	}
@@ -2748,7 +2748,7 @@ void Manager::Impl::finishDownload(
 	}
 	const auto path = storeFile(chatId, randomId, plain);
 	if (path.isEmpty()) {
-		toast(tr::ayu_SecretToastSaveFailed(tr::now));
+		toast(tr::fresh_SecretToastSaveFailed(tr::now));
 		notify(chatId);
 		return;
 	}
@@ -2792,7 +2792,7 @@ void Manager::Impl::setTtl(int chatId, int seconds) {
 	sendService(*chat, BuildSetTtl(RandomId(), chat->ttl));
 	addNote(
 		*chat,
-		tr::ayu_SecretNoteTtlSetByYou(
+		tr::fresh_SecretNoteTtlSetByYou(
 			tr::now,
 			lt_time,
 			TtlText(chat->ttl)),
@@ -3144,7 +3144,7 @@ void Manager::end(int chatId) {
 		_impl->discard(chatId);
 		_impl->addNote(
 			*chat,
-			tr::ayu_SecretNoteEndedByYou(tr::now),
+			tr::fresh_SecretNoteEndedByYou(tr::now),
 			base::unixtime::now());
 		_impl->notify(chatId);
 		return;
@@ -3379,4 +3379,4 @@ Manager &Get(not_null<Main::Session*> session) {
 	return *result;
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

@@ -210,7 +210,7 @@ void Forum::requestTopics() {
 }
 
 void Forum::applyTopicDeleted(MsgId rootId) {
-	if (AyuKept::keepDeletedTopic(this, rootId)) {
+	if (FreshKept::keepDeletedTopic(this, rootId)) {
 		return;
 	}
 	_topicsDeleted.emplace(rootId);

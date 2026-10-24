@@ -551,7 +551,7 @@ HistoryItem::HistoryItem(
 			applyTTL(data);
 			_deleted = true;
 			_deletedAnimated = true;
-			_ayuExpired = true;
+			_freshExpired = true;
 		} else {
 			createServiceFromMtp(data);
 			setReactions(data.vreactions());
@@ -2965,7 +2965,7 @@ void HistoryItem::clearMediaAsExpired() {
 	if (settings.saveDeletedMessages()) {
 		if (!_deleted) {
 			RemoveComponents(HistoryServiceSelfDestruct::Bit());
-			_ayuExpired = true;
+			_freshExpired = true;
 			setDeleted();
 		}
 		return;
@@ -3295,7 +3295,7 @@ bool HistoryItem::allowsReschedule() const {
 
 bool HistoryItem::allowsForward() const {
 	return !isService()
-		&& (isRegular() || isEphemeral() || isAyuSecret() || isAyuRestored())
+		&& (isRegular() || isEphemeral() || isFreshSecret() || isFreshRestored())
 		&& !forbidsForward()
 		&& history()->peer->allowsForwarding()
 		&& (!_media || _media->allowsForward());
@@ -3478,8 +3478,8 @@ bool HistoryItem::canDeleteForEveryone(TimeId now) const {
 bool HistoryItem::canBeSelected() const {
 	return (isRegular()
 			|| isEphemeral()
-			|| isAyuSecret()
-			|| isAyuRestored())
+			|| isFreshSecret()
+			|| isFreshRestored())
 		&& !isService()
 		&& !IsAnchoredEphemeral(this);
 }
@@ -4055,7 +4055,7 @@ QString HistoryItem::originalPostAuthor() const {
 	return QString();
 }
 
-void HistoryItem::ayuSetFromRank(const QString &rank) {
+void HistoryItem::freshSetFromRank(const QString &rank) {
 	if (rank.isEmpty()) {
 		return;
 	}
@@ -4213,23 +4213,23 @@ void HistoryItem::setPostAuthor(const QString &postAuthor) {
 bool HistoryItem::hideEditedBadge() const {
 	if (!(_flags & MessageFlag::HideEdited)) {
 		return false;
-	} else if (_ayuEditedBadge < 0) {
-		_ayuEditedBadge = (Has<HistoryMessageEdited>()
+	} else if (_freshEditedBadge < 0) {
+		_freshEditedBadge = (Has<HistoryMessageEdited>()
 			&& AyuMessages::isBotMessage(this)
 			&& AyuMessages::hasRevisions(this)) ? 1 : 0;
 	}
-	return !_ayuEditedBadge;
+	return !_freshEditedBadge;
 }
 
-void HistoryItem::ayuShowEditedBadge() {
-	_ayuEditedBadge = 1;
+void HistoryItem::freshShowEditedBadge() {
+	_freshEditedBadge = 1;
 }
 
 void HistoryItem::setDeleted() {
 	_deleted = true;
 	_deletedAnimated = true;
-	if (!_ayuDeletedAt) {
-		_ayuDeletedAt = base::unixtime::now();
+	if (!_freshDeletedAt) {
+		_freshDeletedAt = base::unixtime::now();
 	}
 	history()->session().changes().messageUpdated(
 		this,
@@ -4259,7 +4259,7 @@ bool HistoryItem::isDeleted() const {
 }
 
 bool HistoryItem::isBurnt() const {
-	return _ayuExpired
+	return _freshExpired
 		|| (((media() && media()->ttlSeconds()) || unsupportedTTL()) && !hasUnreadMediaFlag());
 }
 
@@ -4316,7 +4316,7 @@ void HistoryItem::setAyuHint(const QString &hint) {
 		history()->owner().requestItemViewRefresh(this);
 		history()->owner().requestItemResize(this);
 	} catch (...) {
-		DEBUG_LOG(("AyuGram: crash in setting hint"));
+		DEBUG_LOG(("freshGram: crash in setting hint"));
 	}
 }
 
@@ -4648,21 +4648,21 @@ bool HistoryItem::unread(not_null<Data::Thread*> thread) const {
 		return true;
 	}
 
-	if (out() && isAyuSecret()) {
-		return !_ayuSecretRead;
+	if (out() && isFreshSecret()) {
+		return !_freshSecretRead;
 	}
 	return out() || (_flags & MessageFlag::ClientSideUnread);
 }
 
-bool HistoryItem::isAyuSecret() const {
-	return AyuSecret::IsSecretPeer(_history->peer);
+bool HistoryItem::isFreshSecret() const {
+	return FreshSecret::IsSecretPeer(_history->peer);
 }
 
-void HistoryItem::setAyuSecretRead() {
-	if (_ayuSecretRead) {
+void HistoryItem::setFreshSecretRead() {
+	if (_freshSecretRead) {
 		return;
 	}
-	_ayuSecretRead = true;
+	_freshSecretRead = true;
 	_history->owner().requestItemRepaint(this);
 }
 
@@ -5691,10 +5691,10 @@ void HistoryItem::refreshMedia(const MTPMessageMedia *media) {
 	}
 	_media = nullptr;
 	if (media) {
-		auto saved = std::move(_ayuSavedMedia);
+		auto saved = std::move(_freshSavedMedia);
 		setMedia(*media);
-		if (_ayuSavedMedia.empty()) {
-			_ayuSavedMedia = std::move(saved);
+		if (_freshSavedMedia.empty()) {
+			_freshSavedMedia = std::move(saved);
 		}
 	}
 	if (was || _media) {
@@ -6193,7 +6193,7 @@ void HistoryItem::createServiceFromMtp(const MTPDmessageService &message) {
 }
 
 void HistoryItem::setMedia(const MTPMessageMedia &media) {
-	_ayuSavedMedia = AyuMapper::serializeSavableMedia(media);
+	_freshSavedMedia = AyuMapper::serializeSavableMedia(media);
 	_media = CreateMedia(this, media);
 	checkStoryForwardInfo();
 	checkBuyButton();

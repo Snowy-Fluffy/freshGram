@@ -13,7 +13,7 @@
 namespace Ayu::Translator {
 namespace {
 
-using namespace AyuRecognition;
+using namespace FreshRecognition;
 
 [[nodiscard]] MarkupRole RoleOf(int type) {
 	switch (EntityType(type)) {

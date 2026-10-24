@@ -11,7 +11,7 @@ namespace Data {
 class Thread;
 } // namespace Data
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 [[nodiscard]] bool SendText(const Api::MessageToSend &message);
 [[nodiscard]] bool SendFiles(
@@ -36,4 +36,4 @@ namespace AyuSecret {
 	std::vector<not_null<Data::Thread*>> &threads,
 	const Api::SendOptions &options);
 
-} // namespace AyuSecret
+} // namespace FreshSecret

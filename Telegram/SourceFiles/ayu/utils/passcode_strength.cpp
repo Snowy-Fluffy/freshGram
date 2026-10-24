@@ -6,7 +6,7 @@
 
 #include <cmath>
 
-namespace AyuPasscode {
+namespace FreshPasscode {
 namespace {
 
 constexpr auto kMaxBits = 256;
@@ -83,17 +83,17 @@ QString StrengthText(const QString &passcode) {
 	const auto name = [&] {
 		switch (StrengthForBits(bits)) {
 		case Strength::None: return QString();
-		case Strength::Weak: return tr::ayu_PasscodeStrengthWeak(tr::now);
-		case Strength::Medium: return tr::ayu_PasscodeStrengthMedium(tr::now);
-		case Strength::Strong: return tr::ayu_PasscodeStrengthStrong(tr::now);
+		case Strength::Weak: return tr::fresh_PasscodeStrengthWeak(tr::now);
+		case Strength::Medium: return tr::fresh_PasscodeStrengthMedium(tr::now);
+		case Strength::Strong: return tr::fresh_PasscodeStrengthStrong(tr::now);
 		case Strength::VeryStrong:
-			return tr::ayu_PasscodeStrengthVeryStrong(tr::now);
+			return tr::fresh_PasscodeStrengthVeryStrong(tr::now);
 		}
 		return QString();
 	}();
 	return name.isEmpty()
 		? QString()
-		: tr::ayu_PasscodeStrengthBits(
+		: tr::fresh_PasscodeStrengthBits(
 			tr::now,
 			lt_strength,
 			name,
@@ -101,4 +101,4 @@ QString StrengthText(const QString &passcode) {
 			QString::number(bits));
 }
 
-} // namespace AyuPasscode
+} // namespace FreshPasscode

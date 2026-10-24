@@ -1,5 +1,5 @@
 // This is the source code of freshGram.
-#include "ayu/data/ayu_migration_v4.h"
+#include "ayu/data/fresh_migration_v4.h"
 
 #include "ayu/data/message_rows.h"
 #include "ayu/libs/sqlite/sqlite3.h"
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace AyuMigrationV4 {
+namespace FreshMigrationV4 {
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -208,8 +208,8 @@ constexpr auto kCommonTarget =
 }
 
 // Reads the rare columns, which start at the given index of the statement.
-[[nodiscard]] AyuMessageRows::Extra ReadExtra(sqlite3_stmt *statement, int from, long long dialogId) {
-	auto extra = AyuMessageRows::Extra();
+[[nodiscard]] FreshMessageRows::Extra ReadExtra(sqlite3_stmt *statement, int from, long long dialogId) {
+	auto extra = FreshMessageRows::Extra();
 	const auto peerId = sqlite3_column_int64(statement, from + 0);
 	const auto absolute = dialogId < 0 ? -dialogId : dialogId;
 	if (peerId != absolute) {
@@ -252,7 +252,7 @@ constexpr auto kCommonTarget =
 		const auto dialogId = sqlite3_column_int64(read.get(), 1);
 		const auto messageId = sqlite3_column_int64(read.get(), 2);
 		const auto revision = sqlite3_column_int64(read.get(), 3);
-		const auto extra = AyuMessageRows::EncodeExtra(
+		const auto extra = FreshMessageRows::EncodeExtra(
 			ReadExtra(read.get(), 4, dialogId));
 		if (extra.empty()) {
 			continue;
@@ -288,12 +288,12 @@ constexpr auto kCommonTarget =
 	// The last copy of every message and its place in the order of the key.
 	if (!Exec(
 		db,
-		"CREATE TEMP TABLE ayu_keep_deleted (userId INTEGER, dialogId INTEGER, messageId INTEGER, "
+		"CREATE TEMP TABLE fresh_keep_deleted (userId INTEGER, dialogId INTEGER, messageId INTEGER, "
 		"fid INTEGER, PRIMARY KEY (userId, dialogId, messageId)) WITHOUT ROWID",
 		error)
 		|| !Exec(
 			db,
-			"INSERT INTO ayu_keep_deleted SELECT " + c.number("userId") + ", " + c.number("dialogId")
+			"INSERT INTO fresh_keep_deleted SELECT " + c.number("userId") + ", " + c.number("dialogId")
 				+ ", " + c.number("messageId") + ", max(d.fakeId) FROM " + source
 				+ " d GROUP BY 1, 2, 3",
 			error)) {
@@ -305,7 +305,7 @@ constexpr auto kCommonTarget =
 			+ kCommonTarget + ") SELECT "
 			+ c.number("userId") + ", " + c.number("dialogId") + ", " + c.number("messageId")
 			+ ", " + CommonSelect(c)
-			+ " FROM temp.ayu_keep_deleted k JOIN " + source + " d ON d.fakeId = k.fid"
+			+ " FROM temp.fresh_keep_deleted k JOIN " + source + " d ON d.fakeId = k.fid"
 			+ " ORDER BY k.userId, k.dialogId, k.messageId",
 		error)) {
 		return false;
@@ -315,7 +315,7 @@ constexpr auto kCommonTarget =
 		const auto select = "SELECT d.userId, d.dialogId, d.messageId, 0, "
 			+ RareSelect(c)
 			+ " FROM " + source + " d WHERE " + condition
-			+ " AND d.fakeId IN (SELECT fid FROM temp.ayu_keep_deleted)";
+			+ " AND d.fakeId IN (SELECT fid FROM temp.fresh_keep_deleted)";
 		if (!WriteExtras(
 			db,
 			select,
@@ -325,9 +325,9 @@ constexpr auto kCommonTarget =
 			return false;
 		}
 	}
-	const auto expected = Scalar(db, "SELECT count(*) FROM temp.ayu_keep_deleted", error);
+	const auto expected = Scalar(db, "SELECT count(*) FROM temp.fresh_keep_deleted", error);
 	count = Scalar(db, "SELECT count(*) FROM main.DeletedMessageV2", error);
-	if (!Exec(db, "DROP TABLE temp.ayu_keep_deleted", error)) {
+	if (!Exec(db, "DROP TABLE temp.fresh_keep_deleted", error)) {
 		return false;
 	}
 	if (expected < 0 || count != expected) {
@@ -349,12 +349,12 @@ constexpr auto kCommonTarget =
 	// The revisions in the order of the message and of the old identifier.
 	if (!Exec(
 		db,
-		"CREATE TEMP TABLE ayu_keep_edited (userId INTEGER, dialogId INTEGER, messageId INTEGER, "
+		"CREATE TEMP TABLE fresh_keep_edited (userId INTEGER, dialogId INTEGER, messageId INTEGER, "
 		"fid INTEGER, PRIMARY KEY (userId, dialogId, messageId, fid)) WITHOUT ROWID",
 		error)
 		|| !Exec(
 			db,
-			"INSERT INTO ayu_keep_edited SELECT " + d.number("userId") + ", " + d.number("dialogId")
+			"INSERT INTO fresh_keep_edited SELECT " + d.number("userId") + ", " + d.number("dialogId")
 				+ ", " + d.number("messageId") + ", d.fakeId FROM " + source + " d",
 			error)) {
 		return false;
@@ -365,7 +365,7 @@ constexpr auto kCommonTarget =
 			+ kCommonTarget + ") SELECT "
 			+ d.number("userId") + ", " + d.number("dialogId") + ", " + d.number("messageId")
 			+ ", " + CommonSelect(d)
-			+ " FROM temp.ayu_keep_edited k JOIN " + source + " d ON d.fakeId = k.fid"
+			+ " FROM temp.fresh_keep_edited k JOIN " + source + " d ON d.fakeId = k.fid"
 			+ " ORDER BY k.userId, k.dialogId, k.messageId, k.fid",
 		error)) {
 		return false;
@@ -399,9 +399,9 @@ constexpr auto kCommonTarget =
 			return false;
 		}
 	}
-	const auto expected = Scalar(db, "SELECT count(*) FROM temp.ayu_keep_edited", error);
+	const auto expected = Scalar(db, "SELECT count(*) FROM temp.fresh_keep_edited", error);
 	count = Scalar(db, "SELECT count(*) FROM main.EditedMessageV2", error);
-	if (!Exec(db, "DROP TABLE temp.ayu_keep_edited", error)) {
+	if (!Exec(db, "DROP TABLE temp.fresh_keep_edited", error)) {
 		return false;
 	}
 	if (expected < 0 || count != expected) {
@@ -445,4 +445,4 @@ Result Run(sqlite3 *db, const char *schemaName) {
 	return result;
 }
 
-} // namespace AyuMigrationV4
+} // namespace FreshMigrationV4

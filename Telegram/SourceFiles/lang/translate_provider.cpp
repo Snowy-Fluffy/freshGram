@@ -41,7 +41,7 @@ base::options::option<QString> OptionTranslateUrlTemplate({
 		return TranslationProvider::Telegram;
 	}
 	if ((provider == TranslationProvider::Local)
-		&& !AyuRecognition::TextTranslationAvailable()) {
+		&& !FreshRecognition::TextTranslationAvailable()) {
 		return TranslationProvider::Telegram;
 	}
 	return provider;
@@ -107,7 +107,7 @@ bool TranslateProviderIsLocal() {
 QString TranslateProviderName() {
 	const auto urlTemplate = OptionTranslateUrlTemplate.value();
 	if (!urlTemplate.isEmpty() && urlTemplate.contains(u"%q"_q)) {
-		return tr::ayu_SecretTranslateCustomServer(tr::now);
+		return tr::fresh_SecretTranslateCustomServer(tr::now);
 	}
 	switch (ResolveTranslateProvider()) {
 	case TranslationProvider::Google:
@@ -118,9 +118,9 @@ QString TranslateProviderName() {
 		if (!Platform::IsTranslateProviderAvailable()) {
 			return u"Telegram"_q;
 		}
-		return tr::ayu_SecretTranslateSystem(tr::now);
+		return tr::fresh_SecretTranslateSystem(tr::now);
 	case TranslationProvider::Local:
-		return tr::ayu_TranslateProviderLocal(tr::now);
+		return tr::fresh_TranslateProviderLocal(tr::now);
 	case TranslationProvider::Telegram:
 		return u"Telegram"_q;
 	}

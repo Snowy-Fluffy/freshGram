@@ -10,9 +10,9 @@ class SessionController;
 
 namespace Settings {
 
-class AyuPluginsSection : public Section<AyuPluginsSection> {
+class FreshPluginsSection : public Section<FreshPluginsSection> {
 public:
-	AyuPluginsSection(
+	FreshPluginsSection(
 		QWidget *parent,
 		not_null<Window::SessionController*> controller);
 

@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 
 struct TextPart {
 	QString text;
@@ -62,4 +62,4 @@ std::shared_ptr<std::atomic<bool>> TranslateTextsAsync(
 	TranslationJob job,
 	Fn<void(TranslationResult)> done);
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

@@ -271,7 +271,7 @@ Fn<void()> DeleteMyMessagesHandler(
 			controller->show(Ui::MakeConfirmBox({
 				.text = range.empty()
 					? tr::ayu_DeleteOwnMessagesConfirmation(tr::now)
-					: tr::ayu_DeleteOwnMessagesConfirmationFiltered(tr::now),
+					: tr::fresh_DeleteOwnMessagesConfirmationFiltered(tr::now),
 				.confirmed =
 				[=](Fn<void()> &&close)
 				{
@@ -315,7 +315,7 @@ void AddAyuGramActions(PeerData *peerData,
 	const auto topicId = topic ? topic->rootId().bare : 0;
 
 	addCallback(Window::PeerMenuCallback::Args{
-		.text = tr::ayu_ProductName(tr::now),
+		.text = tr::fresh_ProductName(tr::now),
 		.handler = nullptr,
 		.icon = &st::menuIconGroupReactions,
 		.fillSubmenu = [=](not_null<Ui::PopupMenu*> menu) {
@@ -620,7 +620,7 @@ void AddMessageDetailsAction(not_null<Ui::PopupMenu*> menu, HistoryItem *item) {
 		return;
 	}
 
-	if (item->isLocal() && !item->isAyuRestored()) {
+	if (item->isLocal() && !item->isFreshRestored()) {
 		return;
 	}
 
@@ -648,8 +648,8 @@ void AddMessageDetailsAction(not_null<Ui::PopupMenu*> menu, HistoryItem *item) {
 
 	const auto isForwarded = forwarded && !forwarded->story && forwarded->psaType.isEmpty();
 
-	const auto originalId = item->isAyuRestored()
-		? item->history()->ayuOriginalId(item)
+	const auto originalId = item->isFreshRestored()
+		? item->history()->freshOriginalId(item)
 		: item->id;
 	const auto messageId = QString::number(originalId.bare);
 	const auto messageDate = base::unixtime::parse(item->date());
@@ -834,7 +834,7 @@ void AddRepeatMessageAction(not_null<Ui::PopupMenu*> menu, HistoryItem *item, Hi
 		return;
 	}
 
-	if (!item || !item->isHistoryEntry() || item->isService() || (item->isLocal() && !item->isAyuRestored()) || !item->allowsForward() || item->id <= 0) {
+	if (!item || !item->isHistoryEntry() || item->isService() || (item->isLocal() && !item->isFreshRestored()) || !item->allowsForward() || item->id <= 0) {
 		return;
 	}
 

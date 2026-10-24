@@ -10,7 +10,7 @@
 #include "storage/storage_domain.h"
 #include "ui/toast/toast.h"
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 bool PasscodeSet() {
 	return Core::App().domain().local().hasLocalPasscode();
@@ -40,8 +40,8 @@ void HandlePasscodeChange() {
 		}
 	}
 	if (purged) {
-		Ui::Toast::Show(tr::ayu_SecretToastPasscodeRemoved(tr::now));
+		Ui::Toast::Show(tr::fresh_SecretToastPasscodeRemoved(tr::now));
 	}
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

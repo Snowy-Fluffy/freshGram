@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace AyuSecret {
+namespace FreshSecret {
 namespace {
 
 struct Kdf {
@@ -199,4 +199,4 @@ bool DecryptPacket(
 	return true;
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

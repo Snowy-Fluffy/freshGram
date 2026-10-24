@@ -49,7 +49,7 @@
 
 #include <map>
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 #ifdef FRESHGRAM_PLUGINS
 
@@ -113,7 +113,7 @@ struct Pages {
 			result.push_back({
 				plugin.id,
 				menu.id,
-				tr::ayu_PluginBadge(
+				tr::fresh_PluginBadge(
 					tr::now,
 					lt_title,
 					Utf8(menu.title),
@@ -131,7 +131,7 @@ void Send(
 		cbor::Value event) {
 	const auto manager = Manager();
 	if (!manager || !manager->send(plugin, AccountOf(session), event)) {
-		::Ui::Toast::Show(tr::ayu_PluginNotRunning(tr::now));
+		::Ui::Toast::Show(tr::fresh_PluginNotRunning(tr::now));
 	}
 }
 
@@ -146,7 +146,7 @@ void Send(
 	map.push_back({ "id", cbor::Value::FromText(menuId) });
 	if (peer) {
 		map.push_back({ "chat", Number(int64_t(peer->id.value)) });
-		map.push_back({ "secret", Flag(AyuSecret::IsSecretPeerId(peer->id)) });
+		map.push_back({ "secret", Flag(FreshSecret::IsSecretPeerId(peer->id)) });
 	}
 	if (item) {
 		map.push_back({ "message", Number(item->id.bare) });
@@ -321,7 +321,7 @@ void FillSettingsBox(
 	box->setWidth(st::boxWideWidth);
 	const auto page = PageOf(plugin, account);
 	const auto title = page ? TextOf(*page, "title") : QString();
-	box->setTitle(rpl::single(tr::ayu_PluginBadge(
+	box->setTitle(rpl::single(tr::fresh_PluginBadge(
 		tr::now,
 		lt_title,
 		title,
@@ -347,7 +347,7 @@ void FillSettingsBox(
 }
 
 void FillLogBox(not_null<Ui::GenericBox*> box, std::string plugin) {
-	box->setTitle(tr::ayu_PluginLog());
+	box->setTitle(tr::fresh_PluginLog());
 	auto text = QString();
 	if (const auto manager = Manager()) {
 		for (const auto &line : manager->log(plugin)) {
@@ -356,7 +356,7 @@ void FillLogBox(not_null<Ui::GenericBox*> box, std::string plugin) {
 	}
 	box->addRow(object_ptr<Ui::FlatLabel>(
 		box,
-		text.isEmpty() ? tr::ayu_PluginLogEmpty(tr::now) : text.trimmed(),
+		text.isEmpty() ? tr::fresh_PluginLogEmpty(tr::now) : text.trimmed(),
 		st::boxLabel));
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
@@ -364,17 +364,17 @@ void FillLogBox(not_null<Ui::GenericBox*> box, std::string plugin) {
 [[nodiscard]] QString ContributionSummary(const fgpl::Contribution &entry) {
 	auto parts = QStringList();
 	if (!entry.menus.empty()) {
-		parts.push_back(tr::ayu_PluginContribMenus(tr::now));
+		parts.push_back(tr::fresh_PluginContribMenus(tr::now));
 	}
 	if (!entry.commands.empty()) {
-		parts.push_back(tr::ayu_PluginContribCommands(tr::now));
+		parts.push_back(tr::fresh_PluginContribCommands(tr::now));
 	}
 	if (entry.settingsPage) {
-		parts.push_back(tr::ayu_PluginContribSettings(tr::now));
+		parts.push_back(tr::fresh_PluginContribSettings(tr::now));
 	}
 	return parts.isEmpty()
 		? QString()
-		: tr::ayu_PluginContributes(tr::now, lt_list, parts.join(u", "_q));
+		: tr::fresh_PluginContributes(tr::now, lt_list, parts.join(u", "_q));
 }
 
 void FillDetailsBox(
@@ -407,26 +407,26 @@ void FillDetailsBox(
 	};
 	label(Utf8(parsed->description.get(Language())));
 	label(info.signedPackage
-		? tr::ayu_PluginSignedBy(tr::now, lt_publisher, Utf8(info.publisher))
-		: tr::ayu_PluginUnsigned(tr::now), st::boxDividerLabel);
+		? tr::fresh_PluginSignedBy(tr::now, lt_publisher, Utf8(info.publisher))
+		: tr::fresh_PluginUnsigned(tr::now), st::boxDividerLabel);
 	if (info.pendingUpdate) {
-		label(tr::ayu_PluginPending(tr::now, lt_version, Utf8(info.version)), st::boxDividerLabel);
+		label(tr::fresh_PluginPending(tr::now, lt_version, Utf8(info.version)), st::boxDividerLabel);
 	}
 	if (info.outdated) {
-		label(tr::ayu_PluginOutdated(tr::now, lt_version, Utf8(info.testedWith)), st::boxDividerLabel);
+		label(tr::fresh_PluginOutdated(tr::now, lt_version, Utf8(info.testedWith)), st::boxDividerLabel);
 	}
 	if (!parsed->messagesFrom.empty()) {
 		label(AcceptsFrom(parsed->messagesFrom), st::boxDividerLabel);
 	}
 	if (!info.disabledReason.empty()) {
-		label(tr::ayu_PluginStatusDisabled(tr::now, lt_reason, Utf8(info.disabledReason)), st::boxDividerLabel);
+		label(tr::fresh_PluginStatusDisabled(tr::now, lt_reason, Utf8(info.disabledReason)), st::boxDividerLabel);
 	}
 	for (const auto &entry : manager->contributions(account, Language())) {
 		if (entry.id == plugin) {
 			label(ContributionSummary(entry), st::boxDividerLabel);
 		}
 	}
-	label(tr::ayu_PluginStats(
+	label(tr::fresh_PluginStats(
 		tr::now,
 		lt_cpu,
 		QString::number(info.stats.cpuMs / 1000.,'f', 1),
@@ -437,7 +437,7 @@ void FillDetailsBox(
 		lt_sent,
 		Ui::FormatSizeText(qint64(info.stats.netSent))), st::boxDividerLabel);
 	if (info.stats.unloads) {
-		label(tr::ayu_PluginUnloads(
+		label(tr::fresh_PluginUnloads(
 			tr::now,
 			lt_times,
 			QString::number(info.stats.unloads)), st::boxDividerLabel);
@@ -445,15 +445,15 @@ void FillDetailsBox(
 
 	const auto granted = manager->grants(plugin, account);
 	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
-	Ui::AddSubsectionTitle(box->verticalLayout(), tr::ayu_PluginPermissions());
-	label(tr::ayu_PluginPermissionsAllAccounts(tr::now), st::boxDividerLabel);
+	Ui::AddSubsectionTitle(box->verticalLayout(), tr::fresh_PluginPermissions());
+	label(tr::fresh_PluginPermissionsAllAccounts(tr::now), st::boxDividerLabel);
 	if (parsed->permissions.empty()) {
-		label(tr::ayu_PluginNoPermissions(tr::now), st::boxDividerLabel);
+		label(tr::fresh_PluginNoPermissions(tr::now), st::boxDividerLabel);
 	}
 	for (const auto &request : parsed->permissions) {
 		auto text = PermissionLabel(request.id);
 		if (request.required) {
-			text = tr::ayu_PluginPermissionRequired(tr::now, lt_permission, text);
+			text = tr::fresh_PluginPermissionRequired(tr::now, lt_permission, text);
 		}
 		const auto check = box->addRow(object_ptr<Ui::Checkbox>(
 			box,
@@ -475,7 +475,7 @@ void FillDetailsBox(
 	if (parsed->settingsPage) {
 		Settings::AddButtonWithIcon(
 			container,
-			tr::ayu_PluginSettingsButton(),
+			tr::fresh_PluginSettingsButton(),
 			st::settingsButtonNoIcon
 		)->addClickHandler([=] {
 			ShowPluginSettings(controller, Utf8(plugin));
@@ -483,21 +483,21 @@ void FillDetailsBox(
 	}
 	Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginLog(),
+		tr::fresh_PluginLog(),
 		st::settingsButtonNoIcon
 	)->addClickHandler([=] {
 		controller->show(Box(FillLogBox, plugin));
 	});
 	Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginsNetwork(),
+		tr::fresh_PluginsNetwork(),
 		st::settingsButtonNoIcon
 	)->addClickHandler([=] {
 		ShowNetworkPanel(controller);
 	});
 	Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginUpdateFromFile(),
+		tr::fresh_PluginUpdateFromFile(),
 		st::settingsButtonNoIcon
 	)->addClickHandler([=] {
 		AyuUi::ChoosePluginFile(controller);
@@ -505,11 +505,11 @@ void FillDetailsBox(
 	const auto weak = base::make_weak(box);
 	Settings::AddButtonWithIcon(
 		container,
-		tr::ayu_PluginsRemove(),
+		tr::fresh_PluginsRemove(),
 		st::settingsAttentionButton
 	)->addClickHandler([=] {
 		controller->show(Ui::MakeConfirmBox({
-			.text = tr::ayu_PluginsRemoveConfirmation(
+			.text = tr::fresh_PluginsRemoveConfirmation(
 				tr::now,
 				lt_name,
 				::Ui::Text::Bold(name),
@@ -525,11 +525,11 @@ void FillDetailsBox(
 					strong->closeBox();
 				}
 			},
-			.confirmText = tr::ayu_PluginsRemove(),
+			.confirmText = tr::fresh_PluginsRemove(),
 		}));
 	});
 
-	box->addButton(tr::ayu_PluginApply(), [=] {
+	box->addButton(tr::fresh_PluginApply(), [=] {
 		const auto again = Manager();
 		if (!again) {
 			return;
@@ -546,7 +546,7 @@ void FillDetailsBox(
 		again->grant(plugin, account, decision);
 		again->startEnabled(account);
 		NotifyListChanged();
-		controller->showToast(tr::ayu_PluginPermissionsSaved(tr::now));
+		controller->showToast(tr::fresh_PluginPermissionsSaved(tr::now));
 		box->closeBox();
 	});
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
@@ -599,7 +599,7 @@ void FillDialogBox(
 		if (i == pages.end() || !session) {
 			return;
 		}
-		box->setTitle(rpl::single(tr::ayu_PluginBadge(
+		box->setTitle(rpl::single(tr::fresh_PluginBadge(
 			tr::now,
 			lt_title,
 			TextOf(i->second, "title"),
@@ -638,8 +638,8 @@ void FillDialogBox(
 [[nodiscard]] QString Age(crl::time opened) {
 	const auto seconds = std::max<crl::time>(0, (crl::now() - opened) / 1000);
 	return (seconds < 60)
-		? tr::ayu_PluginsNetworkSeconds(tr::now, lt_seconds, QString::number(seconds))
-		: tr::ayu_PluginsNetworkMinutes(tr::now, lt_minutes, QString::number(seconds / 60));
+		? tr::fresh_PluginsNetworkSeconds(tr::now, lt_seconds, QString::number(seconds))
+		: tr::fresh_PluginsNetworkMinutes(tr::now, lt_minutes, QString::number(seconds / 60));
 }
 
 [[nodiscard]] bool UsesNetwork(const fgpl::PluginInfo &info, const std::string &account) {
@@ -659,7 +659,7 @@ void FillDialogBox(
 void FillNetworkBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller) {
-	box->setTitle(tr::ayu_PluginsNetwork());
+	box->setTitle(tr::fresh_PluginsNetwork());
 	box->setWidth(st::boxWideWidth);
 	const auto account = AccountOf(&controller->session());
 	const auto content = box->addRow(
@@ -682,7 +682,7 @@ void FillNetworkBox(
 			Ui::AddSubsectionTitle(content, rpl::single(PluginName(info.id)));
 			content->add(object_ptr<Ui::FlatLabel>(
 				content,
-				tr::ayu_PluginsNetworkTotal(
+				tr::fresh_PluginsNetworkTotal(
 					tr::now,
 					lt_received,
 					Ui::FormatSizeText(qint64(info.stats.netReceived)),
@@ -692,7 +692,7 @@ void FillNetworkBox(
 			if (!own) {
 				content->add(object_ptr<Ui::FlatLabel>(
 					content,
-					tr::ayu_PluginsNetworkIdle(tr::now),
+					tr::fresh_PluginsNetworkIdle(tr::now),
 					st::boxDividerLabel), st::boxRowPadding);
 			}
 			for (const auto &view : connections) {
@@ -705,7 +705,7 @@ void FillNetworkBox(
 						: u" ("_q + view.address + ')');
 				const auto row = Settings::AddButtonWithLabel(
 					content,
-					rpl::single(tr::ayu_PluginsNetworkRow(
+					rpl::single(tr::fresh_PluginsNetworkRow(
 						tr::now,
 						lt_kind,
 						view.kind,
@@ -717,7 +717,7 @@ void FillNetworkBox(
 						Ui::FormatSizeText(qint64(view.sent)),
 						lt_age,
 						Age(view.opened))),
-					rpl::single(tr::ayu_PluginsNetworkClose(tr::now)),
+					rpl::single(tr::fresh_PluginsNetworkClose(tr::now)),
 					st::settingsButtonNoIcon);
 				const auto connection = view.id;
 				row->addClickHandler([=] {
@@ -729,7 +729,7 @@ void FillNetworkBox(
 		if (!shown) {
 			content->add(object_ptr<Ui::FlatLabel>(
 				content,
-				tr::ayu_PluginsNetworkEmpty(tr::now),
+				tr::fresh_PluginsNetworkEmpty(tr::now),
 				st::boxLabel), st::boxRowPadding);
 		}
 	};
@@ -747,10 +747,10 @@ QString AcceptsFrom(const std::vector<std::string> &senders) {
 	auto names = QStringList();
 	for (const auto &sender : senders) {
 		names.push_back((sender == "*")
-			? tr::ayu_PluginAcceptsAny(tr::now)
+			? tr::fresh_PluginAcceptsAny(tr::now)
 			: QString::fromStdString(sender));
 	}
-	return tr::ayu_PluginAcceptsFrom(tr::now, lt_list, names.join(u", "_q));
+	return tr::fresh_PluginAcceptsFrom(tr::now, lt_list, names.join(u", "_q));
 }
 
 void AddPermissionDanger(
@@ -760,10 +760,10 @@ void AddPermissionDanger(
 		const QString &reason) {
 	const auto danger = fgpl::PermissionDanger(id, scope);
 	const auto level = (danger == fgpl::Danger::High)
-		? tr::ayu_PluginDangerHigh(tr::now)
+		? tr::fresh_PluginDangerHigh(tr::now)
 		: (danger == fgpl::Danger::Medium)
-		? tr::ayu_PluginDangerMedium(tr::now)
-		: tr::ayu_PluginDangerLow(tr::now);
+		? tr::fresh_PluginDangerMedium(tr::now)
+		: tr::fresh_PluginDangerLow(tr::now);
 	const auto &style = (danger == fgpl::Danger::High)
 		? st::pluginDangerHigh
 		: (danger == fgpl::Danger::Medium)
@@ -779,13 +779,13 @@ void AddPermissionDanger(
 
 QString PermissionLabel(const std::string &id) {
 	if (id == "net.https") {
-		return tr::ayu_PermissionNetHttps(tr::now);
+		return tr::fresh_PermissionNetHttps(tr::now);
 	} else if (id == "net.tcp") {
-		return tr::ayu_PermissionNetTcp(tr::now);
+		return tr::fresh_PermissionNetTcp(tr::now);
 	} else if (id == "net.udp") {
-		return tr::ayu_PermissionNetUdp(tr::now);
+		return tr::fresh_PermissionNetUdp(tr::now);
 	} else if (id == "plugins.message") {
-		return tr::ayu_PermissionPluginsMessage(tr::now);
+		return tr::fresh_PermissionPluginsMessage(tr::now);
 	}
 	return Utf8(id);
 }
@@ -891,7 +891,7 @@ void AddMessageMenuItems(
 		not_null<Ui::PopupMenu*> menu,
 		not_null<HistoryItem*> item) {
 	const auto peer = item->history()->peer;
-	if (item->isService() || AyuSecret::IsSecretPeerId(peer->id)) {
+	if (item->isService() || FreshSecret::IsSecretPeerId(peer->id)) {
 		return;
 	}
 	const auto session = &item->history()->session();
@@ -923,7 +923,7 @@ void AddPeerMenuItems(
 		not_null<PeerData*> peer,
 		bool profile,
 		Fn<void(const QString &title, Fn<void()> handler)> add) {
-	if (AyuSecret::IsSecretPeerId(peer->id)) {
+	if (FreshSecret::IsSecretPeerId(peer->id)) {
 		return;
 	}
 	const auto surface = profile ? "profile" : "chat";
@@ -979,7 +979,7 @@ bool TryRunCommand(
 		const QString &text) {
 	const auto manager = Manager();
 	if (!manager || !text.startsWith('/')
-		|| AyuSecret::IsSecretPeerId(peer->id)
+		|| FreshSecret::IsSecretPeerId(peer->id)
 		|| (peer->isUser() && peer->asUser()->isBot())) {
 		return false;
 	}
@@ -1016,7 +1016,7 @@ void ShowPluginSettings(
 	const auto id = pluginId.toStdString();
 	const auto account = AccountOf(&controller->session());
 	if (!manager || !PageOf(id, account)) {
-		controller->showToast(tr::ayu_PluginSettingsUnavailable(tr::now));
+		controller->showToast(tr::fresh_PluginSettingsUnavailable(tr::now));
 		return;
 	}
 	const auto parsed = manager->manifest(id);
@@ -1096,4 +1096,4 @@ void ForgetSettingsPages(const std::string &) {
 
 #endif
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

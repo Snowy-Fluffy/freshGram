@@ -3,7 +3,7 @@
 #include "data/data_peer.h"
 #include "data/data_peer_id.h"
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 constexpr auto kPeerBase = (uint64(1) << 46);
 constexpr auto kPeerSpan = (uint64(1) << 33);
@@ -34,4 +34,4 @@ constexpr auto kPeerSpan = (uint64(1) << 33);
 		: 0;
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

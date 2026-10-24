@@ -23,7 +23,7 @@
 #include <QtCore/QFile>
 #include <QtGui/QImage>
 
-namespace AyuSecret {
+namespace FreshSecret {
 namespace {
 
 struct Target {
@@ -50,12 +50,12 @@ struct Target {
 
 [[nodiscard]] bool Ready(const Target &target) {
 	if (!Enabled()) {
-		Ui::Toast::Show(tr::ayu_SecretChatsNeedPasscode(tr::now));
+		Ui::Toast::Show(tr::fresh_SecretChatsNeedPasscode(tr::now));
 		return false;
 	}
 	const auto info = Get(target.session).chat(target.chatId);
 	if (!info || info->state != ChatState::Ready) {
-		Ui::Toast::Show(tr::ayu_SecretChatNotReady(tr::now));
+		Ui::Toast::Show(tr::fresh_SecretChatNotReady(tr::now));
 		return false;
 	}
 	return true;
@@ -88,7 +88,7 @@ void ObtainBytes(
 		return;
 	}
 	if (!document->saveToCache()) {
-		Ui::Toast::Show(tr::ayu_SecretNotSupported(tr::now));
+		Ui::Toast::Show(tr::fresh_SecretNotSupported(tr::now));
 		return;
 	}
 	document->save(origin, QString(), LoadFromCloudOrLocal, true);
@@ -138,7 +138,7 @@ bool Reject(not_null<PeerData*> peer) {
 	if (!IsSecretPeer(peer)) {
 		return false;
 	}
-	Ui::Toast::Show(tr::ayu_SecretNotSupported(tr::now));
+	Ui::Toast::Show(tr::fresh_SecretNotSupported(tr::now));
 	return true;
 }
 
@@ -178,7 +178,7 @@ bool SendDocument(
 			1,
 			document->duration() / 1000));
 	} else {
-		Ui::Toast::Show(tr::ayu_SecretNotSupported(tr::now));
+		Ui::Toast::Show(tr::fresh_SecretNotSupported(tr::now));
 		return true;
 	}
 	const auto chatId = target->chatId;
@@ -298,7 +298,7 @@ bool Forward(
 	}
 	auto fromSecret = false;
 	for (const auto &item : items) {
-		fromSecret = fromSecret || item->isAyuSecret();
+		fromSecret = fromSecret || item->isFreshSecret();
 	}
 	auto handled = std::vector<not_null<Data::Thread*>>();
 	for (const auto &thread : threads) {
@@ -319,7 +319,7 @@ bool Forward(
 			continue;
 		}
 		for (const auto &item : items) {
-			const auto source = item->isAyuSecret()
+			const auto source = item->isFreshSecret()
 				? BridgeFor(session).lookup(item)
 				: std::nullopt;
 			const auto &text = item->originalText();
@@ -354,7 +354,7 @@ bool Forward(
 						text,
 						0);
 				} else if (hasMedia) {
-					Ui::Toast::Show(tr::ayu_SecretNotSupported(tr::now));
+					Ui::Toast::Show(tr::fresh_SecretNotSupported(tr::now));
 				}
 			} else {
 				auto &api = session->api();
@@ -381,4 +381,4 @@ bool Forward(
 	return threads.empty();
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

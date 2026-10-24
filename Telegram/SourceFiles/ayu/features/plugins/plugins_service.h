@@ -15,7 +15,7 @@ namespace Api {
 struct MessageToSend;
 } // namespace Api
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 enum class State {
 	Unavailable,
@@ -45,4 +45,4 @@ void NotifyListChanged();
 void NotifyRuntimeChanged();
 [[nodiscard]] QString AccountId(not_null<Main::Session*> session);
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

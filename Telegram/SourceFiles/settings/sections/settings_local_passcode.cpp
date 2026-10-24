@@ -45,7 +45,7 @@ namespace {
 using namespace Builder;
 
 void DisablePasscode() {
-	AyuPasscodeGuard::RegisterSuccess();
+	FreshPasscodeGuard::RegisterSuccess();
 	// WHY: an empty passcode always uses the cheap key, it cannot fail.
 	[[maybe_unused]] const auto ok = Core::App().domain().local().setPasscode(
 		QByteArray());
@@ -205,7 +205,7 @@ void LocalPasscodeEnter::setupContent() {
 		}
 		if (value) {
 			error->show();
-			error->setText(tr::ayu_PasscodeKdfApplying(tr::now));
+			error->setText(tr::fresh_PasscodeKdfApplying(tr::now));
 		}
 	};
 	const auto failed = [=](
@@ -222,7 +222,7 @@ void LocalPasscodeEnter::setupContent() {
 		AyuUi::SetPasscodeAsync(newText.toUtf8(), crl::guard(this, [=](
 				bool ok) {
 			if (!ok) {
-				failed(newPasscode, tr::ayu_PasscodeKdfFailed(tr::now));
+				failed(newPasscode, tr::fresh_PasscodeKdfFailed(tr::now));
 				return;
 			}
 			setBusy(false);
@@ -288,13 +288,13 @@ void LocalPasscodeEnter::setupContent() {
 				case Storage::PasscodeCheck::Correct:
 					setBusy(false);
 					error->hide();
-					AyuPasscodeGuard::RegisterSuccess();
+					FreshPasscodeGuard::RegisterSuccess();
 					_showOther.fire(LocalPasscodeManageId());
 					return;
 				case Storage::PasscodeCheck::Failed:
 					failed(
 						newPasscode,
-						tr::ayu_PasscodeKeyUnavailable(tr::now));
+						tr::fresh_PasscodeKeyUnavailable(tr::now));
 					return;
 				case Storage::PasscodeCheck::Wrong:
 					break;
@@ -482,7 +482,7 @@ void BuildManageContent(SectionBuilder &builder) {
 
 	builder.addButton({
 		.id = u"passcode/fake"_q,
-		.title = tr::ayu_FakePasscodes(),
+		.title = tr::fresh_FakePasscodes(),
 		.icon = { &st::menuIconLock },
 		.onClick = [=] {
 			controller->show(Box(AyuUi::FakePasscodesBox));

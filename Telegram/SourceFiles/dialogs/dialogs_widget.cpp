@@ -1084,8 +1084,8 @@ void Widget::chosenRow(const ChosenRow &chosen) {
 	auto row = chosen;
 	if (const auto restored = row.key.history()
 		? session().data().message(row.message.fullId)
-		: nullptr; restored && restored->isAyuRestored()) {
-		if (const auto original = restored->history()->ayuOriginalId(restored)) {
+		: nullptr; restored && restored->isFreshRestored()) {
+		if (const auto original = restored->history()->freshOriginalId(restored)) {
 			row.message.fullId = FullMsgId(row.message.fullId.peer, original);
 		}
 	}
@@ -1893,7 +1893,7 @@ void Widget::setupStories() {
 
 	_stories->clicks(
 	) | rpl::on_next([=](uint64 id) {
-		if (AyuStories::HandleStoriesClick(controller(), id)) {
+		if (FreshStories::HandleStoriesClick(controller(), id)) {
 			return;
 		}
 		controller()->openPeerStories(PeerId(int64(id)), currentSource());
@@ -1901,7 +1901,7 @@ void Widget::setupStories() {
 
 	_stories->fileDrops(
 	) | rpl::on_next([=](const QList<QUrl> &urls) {
-		AyuStories::StartPostingFromUrls(controller(), urls);
+		FreshStories::StartPostingFromUrls(controller(), urls);
 	}, lifetime());
 
 	_stories->showMenuRequests(
@@ -3425,7 +3425,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 	}
 
 	const auto isGlobalSearch = !inPeer;
-	const auto idQuery = AyuIdSearch::Parse(query);
+	const auto idQuery = FreshIdSearch::Parse(query);
 	const auto shouldIdSearch = isGlobalSearch && idQuery.valid();
 
 	if (!isGlobalSearch || _idSearchQuery != query) {
@@ -4060,7 +4060,7 @@ void Widget::searchDeleted() {
 					continue;
 				}
 				const auto history = session().data().history(target);
-				if (const auto item = history->ayuDeletedItem(row);
+				if (const auto item = history->freshDeletedItem(row);
 					item && (!typed || item->sharedMediaTypes().test(*typed))) {
 					items.push_back(item);
 				}

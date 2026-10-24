@@ -1991,9 +1991,9 @@ void InnerWidget::paintPeerSearchResult(
 			+ chatTypeIcon->width()
 			+ st::dialogsChatTypeSkip);
 	}
-	if (AyuKept::showsDeleted(peer)) {
+	if (FreshKept::showsDeleted(peer)) {
 		const auto &trash = ThreeStateIcon(
-			st::ayuDeletedChatIcon,
+			st::freshDeletedChatIcon,
 			context.active,
 			context.selected);
 		trash.paint(p, rectForName.topLeft(), context.width);
@@ -4521,7 +4521,7 @@ void InnerWidget::addDeletedChatsToFilter(const QStringList &words) {
 		return;
 	}
 	const auto filter = _filter;
-	AyuRestore::withDeletedDialogs(
+	FreshRestore::withDeletedDialogs(
 		AyuMessages::storageUserId(session().user()),
 		crl::guard(this, [=](const base::flat_set<ID> &ids) {
 			if (_filter != filter || _state != WidgetState::Filtered) {
@@ -5555,14 +5555,14 @@ void InnerWidget::updateSearchIn() {
 			mediaIcons.emplace(media, Ui::MakeIconThumbnail(icon));
 		};
 		add(SearchMediaFilter::All, st::menuIconShowAll);
-		add(SearchMediaFilter::Photos, st::ayuSearchMediaPhoto);
-		add(SearchMediaFilter::Videos, st::ayuSearchMediaVideo);
-		add(SearchMediaFilter::Files, st::ayuSearchMediaFile);
-		add(SearchMediaFilter::Music, st::ayuSearchMediaMusic);
-		add(SearchMediaFilter::Voice, st::ayuSearchMediaVoice);
-		add(SearchMediaFilter::RoundVideo, st::ayuSearchMediaRound);
-		add(SearchMediaFilter::Links, st::ayuSearchMediaLink);
-		add(SearchMediaFilter::Gifs, st::ayuSearchMediaGif);
+		add(SearchMediaFilter::Photos, st::freshSearchMediaPhoto);
+		add(SearchMediaFilter::Videos, st::freshSearchMediaVideo);
+		add(SearchMediaFilter::Files, st::freshSearchMediaFile);
+		add(SearchMediaFilter::Music, st::freshSearchMediaMusic);
+		add(SearchMediaFilter::Voice, st::freshSearchMediaVoice);
+		add(SearchMediaFilter::RoundVideo, st::freshSearchMediaRound);
+		add(SearchMediaFilter::Links, st::freshSearchMediaLink);
+		add(SearchMediaFilter::Gifs, st::freshSearchMediaGif);
 	}
 	_searchIn->apply({
 		{ ChatSearchTab::ThisTopic, topicIcon },

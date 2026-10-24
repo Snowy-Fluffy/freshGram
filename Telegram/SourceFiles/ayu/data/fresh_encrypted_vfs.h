@@ -3,7 +3,7 @@
 
 #include <cstddef>
 
-namespace AyuEncryptedVfs {
+namespace FreshEncryptedVfs {
 
 constexpr auto kPageSize = 4096;
 // The bytes at the end of every page of the database file: nonce and tag.
@@ -19,4 +19,4 @@ constexpr auto kReserveBytes = 32;
 	size_t keySize,
 	const char *pathPrefix);
 
-} // namespace AyuEncryptedVfs
+} // namespace FreshEncryptedVfs

@@ -20,8 +20,8 @@ void hide(PeerId peerId, MsgId messageId) {
 namespace {
 
 [[nodiscard]] MsgId ServerId(not_null<HistoryItem*> item) {
-	const auto original = item->isAyuRestored()
-		? item->history()->ayuOriginalId(item)
+	const auto original = item->isFreshRestored()
+		? item->history()->freshOriginalId(item)
 		: MsgId();
 	return original ? original : item->id;
 }

@@ -23,7 +23,7 @@
 #include <ctime>
 #include <thread>
 
-namespace AyuCrashTrace {
+namespace FreshCrashTrace {
 namespace {
 
 constexpr auto kFreezeSeconds = 20;
@@ -160,7 +160,7 @@ void Remove(const QString &directory) {
 	QFile::remove(directory + QStringLiteral("/crash_trace.txt"));
 }
 
-} // namespace AyuCrashTrace
+} // namespace FreshCrashTrace
 
 #elif defined Q_OS_WIN
 
@@ -182,7 +182,7 @@ void Remove(const QString &directory) {
 #include <exception>
 #include <thread>
 
-namespace AyuCrashTrace {
+namespace FreshCrashTrace {
 namespace {
 
 constexpr auto kFreezeSeconds = 20;
@@ -506,11 +506,11 @@ void Remove(const QString &directory) {
 	QFile::remove(directory + QStringLiteral("/crash_trace.txt"));
 }
 
-} // namespace AyuCrashTrace
+} // namespace FreshCrashTrace
 
 #else // Q_OS_LINUX || Q_OS_WIN
 
-namespace AyuCrashTrace {
+namespace FreshCrashTrace {
 
 void Install(const QString &directory) {
 }
@@ -518,6 +518,6 @@ void Install(const QString &directory) {
 void Remove(const QString &directory) {
 }
 
-} // namespace AyuCrashTrace
+} // namespace FreshCrashTrace
 
 #endif // Q_OS_LINUX || Q_OS_WIN

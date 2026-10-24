@@ -1415,7 +1415,7 @@ void AddMessageActions(
 		AyuUi::AddUserMessagesAction(menu, request.item);
 		AyuUi::AddRepeatMessageAction(menu, request.item, context);
 		AyuUi::AddMessageDetailsAction(menu, request.item);
-		AyuPlugins::AddMessageMenuItems(menu, request.item);
+		FreshPlugins::AddMessageMenuItems(menu, request.item);
 	}
 
 	AddPostLinkAction(menu, request);

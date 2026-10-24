@@ -1,13 +1,15 @@
 // This is the source code of freshGram.
 #include "ayu/data/message_rows.h"
 
+#include "ayu/utils/fresh_storage_migration.h"
+
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
 #include <utility>
 
-namespace AyuMessageRows {
+namespace FreshMessageRows {
 namespace {
 
 constexpr auto kExtraVersion = char(1);
@@ -215,7 +217,7 @@ void FillMessage(const Row &row, AyuMessageBase &message) {
 	message.entityCreateDate = row.entityCreateDate;
 	message.text = row.text;
 	message.textEntities = row.textEntities;
-	message.mediaPath = row.mediaPath;
+	message.mediaPath = FreshStorage::CurrentPath(row.mediaPath);
 	message.documentType = row.documentType;
 	message.documentSerialized = row.documentSerialized;
 	message.postAuthor = row.postAuthor;
@@ -345,4 +347,4 @@ EditedMessage FromRow(const EditedMessageRow &row) {
 	return message;
 }
 
-} // namespace AyuMessageRows
+} // namespace FreshMessageRows

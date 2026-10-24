@@ -21,7 +21,7 @@
 #include <memory>
 #include <mutex>
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 #ifdef FRESHGRAM_PLUGINS
 
@@ -696,4 +696,4 @@ void CloseConnection(int64 id) {
 
 #endif
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

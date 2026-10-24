@@ -1,7 +1,7 @@
 // This is the source code of freshGram.
 #pragma once
 
-namespace AyuPasscodeGuard {
+namespace FreshPasscodeGuard {
 
 enum class WipeAction : uchar {
 	Logout = 0,
@@ -19,4 +19,4 @@ void RegisterSuccess();
 // -1 when the wipe after failed attempts is off.
 [[nodiscard]] int AttemptsBeforeWipe();
 
-} // namespace AyuPasscodeGuard
+} // namespace FreshPasscodeGuard

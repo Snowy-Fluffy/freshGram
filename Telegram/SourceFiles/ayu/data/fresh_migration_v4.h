@@ -5,7 +5,7 @@
 
 struct sqlite3;
 
-namespace AyuMigrationV4 {
+namespace FreshMigrationV4 {
 
 struct Result {
 	bool ok = false;
@@ -22,4 +22,4 @@ struct Result {
 // The compact tables must exist already, the caller owns the transaction.
 [[nodiscard]] Result Run(sqlite3 *db, const char *schema = "main");
 
-} // namespace AyuMigrationV4
+} // namespace FreshMigrationV4

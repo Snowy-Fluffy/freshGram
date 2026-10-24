@@ -36,7 +36,7 @@
 
 #include <cstring>
 
-namespace AyuSecret {
+namespace FreshSecret {
 namespace {
 
 constexpr auto kHistoryLimit = 150;
@@ -132,7 +132,7 @@ struct DocumentRef {
 		.arg(media.longitude, 0, 'f', 6);
 	switch (media.type) {
 	case MediaType::Location:
-		append(tr::ayu_SecretMediaLocation(tr::now), geo);
+		append(tr::fresh_SecretMediaLocation(tr::now), geo);
 		append(
 			QString("%1, %2")
 				.arg(media.latitude, 0, 'f', 5)
@@ -153,7 +153,7 @@ struct DocumentRef {
 		append(Qs(media.url), Qs(media.url));
 		break;
 	case MediaType::Unsupported:
-		append(tr::ayu_SecretMediaUnsupported(tr::now), QString());
+		append(tr::fresh_SecretMediaUnsupported(tr::now), QString());
 		break;
 	default:
 		break;
@@ -516,7 +516,7 @@ void Bridge::promptRequest(int chatId) {
 	i->second.asked = true;
 	const auto session = _session;
 	auto box = Ui::MakeConfirmBox({
-		.text = tr::ayu_SecretChatRequestAsk(
+		.text = tr::fresh_SecretChatRequestAsk(
 			tr::now,
 			lt_name,
 			info->title),
@@ -528,8 +528,8 @@ void Bridge::promptRequest(int chatId) {
 			Get(session).end(chatId);
 			close();
 		},
-		.confirmText = tr::ayu_SecretChatAccept(),
-		.cancelText = tr::ayu_SecretChatDecline(),
+		.confirmText = tr::fresh_SecretChatAccept(),
+		.cancelText = tr::fresh_SecretChatDecline(),
 		.strictCancel = true,
 	});
 	box->boxClosing(
@@ -596,7 +596,7 @@ void Bridge::syncMessages(Binding &binding, const ChatInfo &info) {
 			continue;
 		}
 		if (message.outgoing && message.state == DeliveryState::Read) {
-			item->setAyuSecretRead();
+			item->setFreshSecretRead();
 		}
 		if (message.deleted && !item->isDeleted()) {
 			item->setDeleted();
@@ -688,7 +688,7 @@ HistoryItem *Bridge::createItem(
 		if (bytes.isEmpty()) {
 			result = history->addNewLocalMessage(
 				std::move(fields),
-				TextWithEntities{ tr::ayu_SecretMediaPhotoFailed(tr::now) },
+				TextWithEntities{ tr::fresh_SecretMediaPhotoFailed(tr::now) },
 				MTP_messageMediaEmpty());
 		} else {
 			auto width = message.media.width;
@@ -783,7 +783,7 @@ HistoryItem *Bridge::createItem(
 		&& NeedsFile(message)) {
 		result = history->addNewLocalMessage(
 			std::move(fields),
-			TextWithEntities{ tr::ayu_SecretMediaUnavailable(tr::now) },
+			TextWithEntities{ tr::fresh_SecretMediaUnavailable(tr::now) },
 			MTP_messageMediaEmpty());
 	} else if (message.media.type == MediaType::Location
 		|| message.media.type == MediaType::Venue) {
@@ -806,7 +806,7 @@ HistoryItem *Bridge::createItem(
 		binding.items[message.randomId] = result->id;
 		_byMsg[result->id] = { info.id, message.randomId };
 		if (message.outgoing && message.state == DeliveryState::Read) {
-			result->setAyuSecretRead();
+			result->setFreshSecretRead();
 		}
 		if (message.deleted) {
 			result->setDeleted();
@@ -1022,13 +1022,13 @@ QByteArray DocumentBytes(const DocumentData *document) {
 }
 
 QString NotificationTitle() {
-	return tr::ayu_SecretChatNotifyTitle(tr::now);
+	return tr::fresh_SecretChatNotifyTitle(tr::now);
 }
 
 TextWithEntities NotificationText(not_null<HistoryItem*> item) {
 	return item->isService()
 		? item->notificationText({})
-		: TextWithEntities{ tr::ayu_SecretChatNewMessage(tr::now) };
+		: TextWithEntities{ tr::fresh_SecretChatNewMessage(tr::now) };
 }
 
 UserData *RealUser(const PeerData *peer) {
@@ -1047,4 +1047,4 @@ void Start(not_null<Main::Session*> session) {
 	}, session->lifetime());
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

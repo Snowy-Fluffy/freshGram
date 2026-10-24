@@ -4,8 +4,8 @@ namespace Data {
 class Thread;
 } // namespace Data
 
-namespace AyuMentions {
+namespace FreshMentions {
 
 void GuardJump(not_null<Data::Thread*> thread, MsgId msgId);
 
-} // namespace AyuMentions
+} // namespace FreshMentions

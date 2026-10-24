@@ -9,7 +9,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #endif // Q_OS_WIN || Q_OS_MAC
 
-namespace AyuPlatform {
+namespace FreshPlatform {
 namespace {
 
 #if !defined Q_OS_WIN && !defined Q_OS_MAC
@@ -56,4 +56,4 @@ std::optional<bool> CapsLockFromEvent(
 #endif // Q_OS_WIN || Q_OS_MAC
 }
 
-} // namespace AyuPlatform
+} // namespace FreshPlatform

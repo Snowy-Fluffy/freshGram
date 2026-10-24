@@ -1347,7 +1347,7 @@ HistoryWidget::HistoryWidget(
 	}, lifetime());
 
 	setupScheduledToggle();
-	AyuPlugins::ListChanges(
+	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
 		refreshPluginsToggle();
 		updateControlsVisibility();
@@ -4221,14 +4221,14 @@ void HistoryWidget::refreshScheduledToggle() {
 void HistoryWidget::refreshPluginsToggle() {
 	const auto has = _history
 		&& _canSendMessages
-		&& AyuPlugins::HasComposerItems(&session());
+		&& FreshPlugins::HasComposerItems(&session());
 	if (!_pluginsToggle && has) {
 		_pluginsToggle.create(this, st::historyPluginsToggle);
-		_pluginsToggle->setAccessibleName(tr::ayu_Plugins(tr::now));
+		_pluginsToggle->setAccessibleName(tr::fresh_Plugins(tr::now));
 		_pluginsToggle->show();
 		_pluginsToggle->addClickHandler([=] {
 			if (_history) {
-				AyuPlugins::ShowComposerMenu(
+				FreshPlugins::ShowComposerMenu(
 					controller(),
 					_history->peer,
 					_pluginsToggle.data());
@@ -5012,7 +5012,7 @@ void HistoryWidget::messagesFailed(const MTP::Error &error, int requestId) {
 	} else if (error.type() == u"CHANNEL_PRIVATE"_q
 		|| error.type() == u"CHANNEL_PUBLIC_GROUP_NA"_q
 		|| error.type() == u"USER_BANNED_IN_CHANNEL"_q) {
-		if (_history && _history->ayuKept()) {
+		if (_history && _history->freshKept()) {
 			if (_preloadRequest == requestId) {
 				_preloadRequest = 0;
 			} else if (_preloadDownRequest == requestId) {
@@ -5046,8 +5046,8 @@ void HistoryWidget::messagesFailed(const MTP::Error &error, int requestId) {
 		_preloadDownRequest = 0;
 	} else if (_firstLoadRequest == requestId) {
 		_firstLoadRequest = 0;
-		if (!_history->ayuKept()
-			&& !AyuSecret::IsSecretPeer(_history->peer)) {
+		if (!_history->freshKept()
+			&& !FreshSecret::IsSecretPeer(_history->peer)) {
 			closeCurrent();
 		}
 	} else if (_delayedShowAtRequest == requestId) {
@@ -5238,7 +5238,7 @@ void HistoryWidget::checkActivation() {
 }
 
 void HistoryWidget::firstLoadMessages() {
-	if (_history && AyuSecret::IsSecretPeer(_history->peer)) {
+	if (_history && FreshSecret::IsSecretPeer(_history->peer)) {
 		return;
 	}
 	if (!_history || _firstLoadRequest) {
@@ -5312,7 +5312,7 @@ void HistoryWidget::firstLoadMessages() {
 }
 
 void HistoryWidget::loadMessages() {
-	if (_history && AyuSecret::IsSecretPeer(_history->peer)) {
+	if (_history && FreshSecret::IsSecretPeer(_history->peer)) {
 		return;
 	}
 	if (!_history || _preloadRequest) {
@@ -5407,7 +5407,7 @@ bool HistoryWidget::historyLoadedAtBottom() const {
 }
 
 void HistoryWidget::loadMessagesDown() {
-	if (_history && AyuSecret::IsSecretPeer(_history->peer)) {
+	if (_history && FreshSecret::IsSecretPeer(_history->peer)) {
 		return;
 	}
 	if (!_history || _preloadDownRequest) {
@@ -5478,7 +5478,7 @@ void HistoryWidget::loadMessagesDown() {
 void HistoryWidget::delayedShowAt(
 		MsgId showAtMsgId,
 		const Window::SectionShow &params) {
-	if (!_history || AyuSecret::IsSecretPeer(_history->peer)) {
+	if (!_history || FreshSecret::IsSecretPeer(_history->peer)) {
 		return;
 	}
 	_delayedShowAtMsgParams = params;
@@ -6090,7 +6090,7 @@ void HistoryWidget::send(Api::SendOptions options) {
 		sendRichDraft(page, options);
 		return;
 	} else if (!options.scheduled
-		&& AyuPlugins::TryRunCommand(
+		&& FreshPlugins::TryRunCommand(
 			controller(),
 			_history->peer,
 			_field->getTextWithAppliedMarkdown().text)) {
@@ -7780,7 +7780,7 @@ void HistoryWidget::updateExpandButtonGeometry() {
 void HistoryWidget::initTranslateButton() {
 	_translate->hide();
 	_translate->setAccessibleName(
-		tr::ayu_MessageFieldElementTranslate(tr::now));
+		tr::fresh_MessageFieldElementTranslate(tr::now));
 	_translate->setAcceptBoth(true);
 	_translate->clicks(
 	) | rpl::on_next([=](Qt::MouseButton button) {
@@ -10842,8 +10842,8 @@ void HistoryWidget::replyToMessage(
 		return;
 	}
 	fields.messageId = item->fullId();
-	if (const auto original = item->isAyuRestored()
-			? item->history()->ayuOriginalId(item)
+	if (const auto original = item->isFreshRestored()
+			? item->history()->freshOriginalId(item)
 			: MsgId()) {
 		fields.messageId.msg = original;
 	}
@@ -10904,7 +10904,7 @@ void HistoryWidget::processReply() {
 #endif
 	} else if (!_processingReplyItem->isRegular()
 		&& !CanReplyToEphemeral(_processingReplyItem)
-		&& !_processingReplyItem->isAyuRestored()) {
+		&& !_processingReplyItem->isFreshRestored()) {
 		return processCancel();
 	} else if (const auto forum = _peer->forum()
 		; forum && _processingReplyItem->history() == _history) {
@@ -11499,7 +11499,7 @@ HistoryItem *HistoryWidget::getItemFromHistoryOrMigrated(
 	if (result || !_history || !IsServerMsgId(genericMsgId)) {
 		return result;
 	}
-	const auto restored = _history->ayuRestoredByOriginalId(genericMsgId);
+	const auto restored = _history->freshRestoredByOriginalId(genericMsgId);
 	if (restored && !restored->mainView()) {
 		_history->checkLocalMessages();
 	}

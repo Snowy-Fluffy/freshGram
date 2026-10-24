@@ -120,7 +120,7 @@ bool TranslateTracker::add(
 
 	if ((item->out() && !item->history()->peer->autoTranslation())
 		|| item->isService()
-		|| (!item->isRegular() && !item->isAyuRestored())
+		|| (!item->isRegular() && !item->isFreshRestored())
 		|| item->isOnlyEmojiAndSpaces()) {
 		return false;
 	}
@@ -305,7 +305,7 @@ void TranslateTracker::requestSome() {
 	if (_requestInProcess || _itemsToRequest.empty()) {
 		return;
 	}
-	if (AyuSecret::IsSecretPeerId(_history->peer->id)) {
+	if (FreshSecret::IsSecretPeerId(_history->peer->id)) {
 		// Never auto-translate secret chats: translation would send
 		// their text out, and there is no per-chat confirmation here.
 		// Manual per-message translation still asks via TranslateBox.

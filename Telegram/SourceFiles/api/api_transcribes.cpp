@@ -200,9 +200,9 @@ void Transcribes::loadLocal(not_null<HistoryItem*> item) {
 			}
 		}
 	}
-	AyuRecognition::TranscribeLocally(item, [=](
-			AyuRecognition::LocalTranscript transcript) {
-		using Status = AyuRecognition::LocalTranscribeStatus;
+	FreshRecognition::TranscribeLocally(item, [=](
+			FreshRecognition::LocalTranscript transcript) {
+		using Status = FreshRecognition::LocalTranscribeStatus;
 		const auto i = _map.find(id);
 		if (i == _map.end()) {
 			return;
@@ -211,23 +211,23 @@ void Transcribes::loadLocal(not_null<HistoryItem*> item) {
 		entry.pending = false;
 		if (transcript.status == Status::Done) {
 			entry.result = transcript.text.isEmpty()
-				? tr::ayu_TranscribeNoSpeech(tr::now)
+				? tr::fresh_TranscribeNoSpeech(tr::now)
 				: transcript.text;
 		} else if (transcript.status == Status::NoModel) {
 			_map.erase(i);
-			Ui::Toast::Show(tr::ayu_TranscribeNoModel(tr::now));
+			Ui::Toast::Show(tr::fresh_TranscribeNoModel(tr::now));
 		} else {
-			using Error = AyuRecognition::RecognitionError;
+			using Error = FreshRecognition::RecognitionError;
 			entry.failed = true;
 			entry.toolong = (transcript.error == Error::TooLarge);
 			LOG(("Transcribe Error: %1 %2"
 				).arg(int(transcript.error)
 				).arg(transcript.details));
 			if (transcript.status == Status::Failed && !entry.toolong) {
-				Ui::Toast::Show(tr::ayu_TranscribeFailed(
+				Ui::Toast::Show(tr::fresh_TranscribeFailed(
 					tr::now,
 					lt_error,
-					AyuRecognition::RecognitionErrorText(transcript.error)));
+					FreshRecognition::RecognitionErrorText(transcript.error)));
 			}
 		}
 		if (const auto item = _session->data().message(id)) {
@@ -247,7 +247,7 @@ void Transcribes::load(not_null<HistoryItem*> item) {
 	if (!item->isHistoryEntry() || item->isLocal()) {
 		return;
 	}
-	if (AyuRecognition::LocalTranscriptionEnabled()) {
+	if (FreshRecognition::LocalTranscriptionEnabled()) {
 		loadLocal(item);
 		return;
 	}

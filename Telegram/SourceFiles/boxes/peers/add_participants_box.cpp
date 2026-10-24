@@ -1775,8 +1775,8 @@ void AddSpecialBoxSearchController::searchQuery(const QString &query) {
 }
 
 void AddSpecialBoxSearchController::addUserById() {
-	const auto query = AyuIdSearch::Parse(_query.trimmed());
-	if (const auto user = AyuIdSearch::FindUser(&_peer->session(), query)) {
+	const auto query = FreshIdSearch::Parse(_query.trimmed());
+	if (const auto user = FreshIdSearch::FindUser(&_peer->session(), query)) {
 		delegate()->peerListSearchAddRow(user);
 		delegate()->peerListSearchRefreshRows();
 	}

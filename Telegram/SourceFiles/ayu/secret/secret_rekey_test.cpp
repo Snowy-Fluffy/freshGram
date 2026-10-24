@@ -27,11 +27,11 @@ void Check(bool condition, const char *name) {
 	}
 }
 
-using AyuSecret::ConcurrentDecision;
-using AyuSecret::DecideConcurrent;
-using AyuSecret::ReleaseIncomingExchange;
-using AyuSecret::ShouldRekey;
-using AyuSecret::SupportsRekey;
+using FreshSecret::ConcurrentDecision;
+using FreshSecret::DecideConcurrent;
+using FreshSecret::ReleaseIncomingExchange;
+using FreshSecret::ShouldRekey;
+using FreshSecret::SupportsRekey;
 
 constexpr auto kUses = 100;
 constexpr auto kUsesIn = 120;

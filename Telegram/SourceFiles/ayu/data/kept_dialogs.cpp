@@ -34,7 +34,7 @@
 #include <set>
 #include <tuple>
 
-namespace AyuKept {
+namespace FreshKept {
 namespace {
 
 enum class Kind : int {
@@ -57,7 +57,7 @@ std::set<std::pair<ID, ID>> Noted;
 std::set<PeerData*> Leaving;
 
 [[nodiscard]] bool Supported(not_null<PeerData*> peer) {
-	if (AyuSecret::IsSecretPeer(peer)) {
+	if (FreshSecret::IsSecretPeer(peer)) {
 		return false;
 	}
 	if (peer->isMonoforum() || peer->migrateTo()) {
@@ -118,8 +118,8 @@ std::set<PeerData*> Leaving;
 		row.accessHash = ID(channel->accessHash());
 	}
 	row.folderId = history->folder() ? history->folder()->id() : 0;
-	row.lastMessageDate = history->ayuKeptTime()
-		? history->ayuKeptTime()
+	row.lastMessageDate = history->freshKeptTime()
+		? history->freshKeptTime()
 		: history->chatListTimeId();
 	row.lost = lost ? 1 : 0;
 	return row;
@@ -329,7 +329,7 @@ void SaveSnapshot(not_null<History*> history) {
 			}
 			if (mark) {
 				item->setDeleted();
-				item->ayuSetDeletedAt(now);
+				item->freshSetDeletedAt(now);
 			}
 			AyuMessages::addDeletedMessage(item);
 			++saved;
@@ -417,7 +417,7 @@ void Restore(
 		return;
 	}
 	if (const auto existing = owner.historyLoaded(peerId)) {
-		if (existing->ayuKept()) {
+		if (existing->freshKept()) {
 			return;
 		} else if (existing->inChatList()) {
 			if (row.lost) {
@@ -435,7 +435,7 @@ void Restore(
 	} else if (const auto chat = peer->asChat(); chat && chat->amIn()) {
 		return;
 	}
-	LOG(("AyuKept: restoring dialog %1 (lost %2)").arg(row.dialogId).arg(row.lost));
+	LOG(("FreshKept: restoring dialog %1 (lost %2)").arg(row.dialogId).arg(row.lost));
 	const auto history = owner.history(peer);
 	if (peer->isForum()) {
 		const auto i = state->topics.find(row.dialogId);
@@ -443,12 +443,12 @@ void Restore(
 			RestoreTopics(peer, i->second);
 		}
 	}
-	history->setAyuKeptTime(row.lastMessageDate);
-	history->setAyuKept(true);
+	history->setFreshKeptTime(row.lastMessageDate);
+	history->setFreshKept(true);
 	if (!history->folderKnown()) {
 		history->clearFolder();
 	}
-	history->restoreAyuKept();
+	history->restoreFreshKept();
 }
 
 [[nodiscard]] bool Ready(
@@ -522,7 +522,7 @@ void RecordList(
 		const auto history = row->history();
 		if (history
 			&& history->folderKnown()
-			&& !history->ayuKept()
+			&& !history->freshKept()
 			&& Allowed(history->peer)) {
 			rows.push_back(MakeRow(history, false));
 			WatchTopics(history);
@@ -555,30 +555,30 @@ void markLost(not_null<History*> history) {
 	const auto peer = history->peer;
 	if (!AyuSettings::getInstance().saveDeletedMessages()
 		|| !Allowed(peer)
-		|| history->ayuKept()
+		|| history->freshKept()
 		|| !history->inChatList()
 		|| (!history->lastMessage() && !hasKeptTopics(history))) {
 		return;
 	}
 	// The chat stays in the list where it was when it was lost.
-	history->setAyuKeptTime(base::unixtime::now());
-	history->setAyuKept(true);
+	history->setFreshKeptTime(base::unixtime::now());
+	history->setFreshKept(true);
 	SaveSnapshot(history);
 	AyuDatabase::saveKeptDialog(MakeRow(history, true));
 }
 
 bool keepOnDelete(not_null<History*> history) {
-	if (history->ayuKept() || !history->inChatList()) {
+	if (history->freshKept() || !history->inChatList()) {
 		return false;
 	}
 	markLost(history);
-	return history->ayuKept();
+	return history->freshKept();
 }
 
 void note(not_null<History*> history) {
 	const auto peer = history->peer;
 	if (!Allowed(peer)
-		|| history->ayuKept()
+		|| history->freshKept()
 		|| !history->inChatList()
 		|| !history->folderKnown()) {
 		return;
@@ -621,7 +621,7 @@ bool keepDeletedTopic(not_null<Data::Forum*> forum, MsgId rootId) {
 			continue;
 		}
 		item->setDeleted();
-		item->ayuSetDeletedAt(now);
+		item->freshSetDeletedAt(now);
 		AyuMessages::addDeletedMessage(item);
 	}
 	KeptDeletedTopics.emplace(key, topic->title());
@@ -652,7 +652,7 @@ bool purgeDeletedTopic(not_null<Data::Forum*> forum, MsgId rootId) {
 	AyuMessages::clearDeletedMessages(peer, ID(rootId.bare));
 	PurgeOnce.emplace(key);
 	forum->applyTopicDeleted(rootId);
-	forum->history()->ayuRestoreMarkStale();
+	forum->history()->freshRestoreMarkStale();
 	return true;
 }
 
@@ -670,7 +670,7 @@ void releaseDeletedTopics() {
 
 void forget(not_null<PeerData*> peer) {
 	if (const auto history = peer->owner().historyLoaded(peer)) {
-		history->setAyuKept(false);
+		history->setFreshKept(false);
 	}
 	const auto userId = AyuMessages::storageUserId(peer);
 	const auto dialogId = getDialogIdFromPeer(peer);
@@ -684,16 +684,16 @@ bool showsDeleted(not_null<PeerData*> peer) {
 		return false;
 	}
 	const auto history = peer->owner().historyLoaded(peer);
-	return history && history->ayuKept();
+	return history && history->freshKept();
 }
 
 bool isKept(not_null<PeerData*> peer) {
 	const auto history = peer->owner().historyLoaded(peer);
-	return history && history->ayuKept();
+	return history && history->freshKept();
 }
 
 bool serverUnavailable(not_null<const History*> history) {
-	if (!history->ayuKept()) {
+	if (!history->freshKept()) {
 		return false;
 	}
 	const auto channel = history->peer->asChannel();
@@ -710,14 +710,14 @@ bool hasListableLastMessage(not_null<const History*> history) {
 	if (!last) {
 		return false;
 	}
-	return history->ayuKept()
+	return history->freshKept()
 		|| history->inChatList()
 		|| !last->isLocal()
 		|| !last->isDeleted();
 }
 
 void revive(not_null<History*> history, not_null<HistoryItem*> item) {
-	if (!history->ayuKept()
+	if (!history->freshKept()
 		|| !history->peer->isUser()
 		|| item->isLocal()
 		|| item->isDeleted()) {
@@ -728,7 +728,7 @@ void revive(not_null<History*> history, not_null<HistoryItem*> item) {
 
 void checkWiped(not_null<History*> history) {
 	if (!history->peer->isUser()
-		|| history->ayuKept()
+		|| history->freshKept()
 		|| !Allowed(history->peer)
 		|| !history->inChatList()
 		|| !history->loadedAtTop()
@@ -758,7 +758,7 @@ void chatAmInChanged(not_null<ChatData*> chat) {
 	const auto history = chat->owner().historyLoaded(chat);
 	if (chat->amIn()) {
 		takeUserLeaving(chat);
-		if (history && history->ayuKept()) {
+		if (history && history->freshKept()) {
 			forget(chat);
 		}
 		return;
@@ -769,4 +769,4 @@ void chatAmInChanged(not_null<ChatData*> chat) {
 	}
 }
 
-} // namespace AyuKept
+} // namespace FreshKept

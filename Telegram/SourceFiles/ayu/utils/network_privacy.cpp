@@ -10,7 +10,7 @@
 #include <atomic>
 #include <iterator>
 
-namespace AyuNetworkPrivacy {
+namespace FreshNetworkPrivacy {
 namespace {
 
 constexpr int kLadder[] = { 3600, 6 * 3600, 86400 };
@@ -41,4 +41,4 @@ bool StepUpTemporaryKeyExpiresIn() {
 	return true;
 }
 
-} // namespace AyuNetworkPrivacy
+} // namespace FreshNetworkPrivacy

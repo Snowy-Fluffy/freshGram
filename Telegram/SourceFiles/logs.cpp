@@ -305,7 +305,7 @@ LogsInMemoryList *DeletedLogsInMemory = SharedMemoryLocation<LogsInMemoryList, 0
 QString LogsBeforeSingleInstanceChecked; // LogsInMemory already dumped in LogsData, but LogsData is about to be deleted
 
 void _logsWrite(LogDataType type, const QString &msg) {
-	if (!AyuDebugLogging::Enabled()) {
+	if (!FreshDebugLogging::Enabled()) {
 		return;
 	}
 	if (LogsData && (type == LogDataMain || LogsStartIndexChosen < 0)) {
@@ -421,7 +421,7 @@ void start() {
 #endif // !Q_OS_WINRT
 
 	QDir().mkpath(cWorkingDir() + u"tdata"_q);
-	AyuDebugLogging::Init(cWorkingDir());
+	FreshDebugLogging::Init(cWorkingDir());
 
 	launcher.workingFolderReady();
 	CrashReports::StartCatching();

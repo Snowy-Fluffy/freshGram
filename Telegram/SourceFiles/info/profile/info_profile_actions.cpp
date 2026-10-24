@@ -1886,15 +1886,15 @@ Section DetailsFiller::makeInfo() {
 		}
 
 		if (!user->isSelf() && !user->isBot()) {
-			auto peekText = AyuPeek::value(
+			auto peekText = FreshPeek::value(
 				user
-			) | rpl::map([](const std::optional<AyuPeek::Result> &result) {
+			) | rpl::map([](const std::optional<FreshPeek::Result> &result) {
 				return result
-					? TextWithEntities{ AyuPeek::format(*result) }
+					? TextWithEntities{ FreshPeek::format(*result) }
 					: TextWithEntities();
 			});
 			addInfoOneLine(
-				tr::ayu_PeekLabel(),
+				tr::fresh_PeekLabel(),
 				std::move(peekText),
 				QString());
 		}
@@ -3284,14 +3284,14 @@ void ActionsFiller::addReportAction() {
 }
 
 void ActionsFiller::addPeekAction(not_null<UserData*> user) {
-	if (!AyuPeek::available(user)) {
+	if (!FreshPeek::available(user)) {
 		return;
 	}
 	AddActionButton(
 		_wrap,
-		tr::ayu_PeekButton(),
+		tr::fresh_PeekButton(),
 		rpl::single(true),
-		[=] { AyuPeek::start(user); },
+		[=] { FreshPeek::start(user); },
 		&st::infoIconInformation);
 }
 

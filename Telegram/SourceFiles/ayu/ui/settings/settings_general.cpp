@@ -66,10 +66,10 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 				}
 			}()));
 	}
-	if (AyuRecognition::TextTranslationAvailable()) {
+	if (FreshRecognition::TextTranslationAvailable()) {
 		availableOptions.push_back(std::pair(
 			TranslationProvider::Local,
-			tr::ayu_TranslateProviderLocal(tr::now)));
+			tr::fresh_TranslateProviderLocal(tr::now)));
 	}
 	auto optionLabels = std::vector<QString>();
 	optionLabels.reserve(availableOptions.size());
@@ -126,33 +126,33 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	if (button) {
 		ayu.addBetaBadge(button);
 	}
-	if (!AyuRecognition::TextTranslationAvailable()) {
+	if (!FreshRecognition::TextTranslationAvailable()) {
 		return;
 	}
 	const auto controller = builder.controller();
 	builder.addButton({
 		.id = u"ayu/translateModels"_q,
 		.altIds = { u"ayu/localTranslation"_q, u"ayu/offlineTranslation"_q },
-		.title = tr::ayu_ManageTranslateModels(),
+		.title = tr::fresh_ManageTranslateModels(),
 		.st = &st::settingsButtonNoIcon,
 		.label = rpl::single(rpl::empty)
 			| rpl::then(rpl::merge(
-				AyuRecognition::ModelsChanged(),
-				AyuRecognition::ModelDownloadFinished() | rpl::to_empty))
+				FreshRecognition::ModelsChanged(),
+				FreshRecognition::ModelDownloadFinished() | rpl::to_empty))
 			| rpl::map([] {
 				auto codes = QStringList();
 				for (const auto &model
-					: AyuRecognition::InstalledTranslateModels()) {
+					: FreshRecognition::InstalledTranslateModels()) {
 					codes.push_back(model.code);
 				}
 				return codes.isEmpty()
-					? tr::ayu_RecognitionOff(tr::now)
+					? tr::fresh_RecognitionOff(tr::now)
 					: codes.join(u", "_q);
 			}),
 		.onClick = [=] {
 			controller->show(Box<AyuUi::RecognitionModelsBox>(
 				&controller->session(),
-				AyuRecognition::ModelKind::Translate));
+				FreshRecognition::ModelKind::Translate));
 		},
 		.shown = settings->translationProviderValue()
 			| rpl::map([](TranslationProvider value) {
@@ -164,18 +164,18 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	const auto controller = builder.controller();
 	auto *settings = &AyuSettings::getInstance();
-	const auto whisper = AyuRecognition::SpeechRecognitionAvailable();
+	const auto whisper = FreshRecognition::SpeechRecognitionAvailable();
 
 	auto options = std::vector<QString>{ u"Telegram"_q };
 	if (whisper) {
-		options.push_back(tr::ayu_TranscriptionWhisper(tr::now));
+		options.push_back(tr::fresh_TranscriptionWhisper(tr::now));
 	}
 
-	builder.addSubsectionTitle(tr::ayu_TranscriptionSubtitle());
+	builder.addSubsectionTitle(tr::fresh_TranscriptionSubtitle());
 	builder.addButton({
 		.id = u"ayu/transcriptionProvider"_q,
 		.altIds = { u"ayu/whisperProvider"_q, u"ayu/voiceToText"_q },
-		.title = tr::ayu_TranscriptionProvider(),
+		.title = tr::fresh_TranscriptionProvider(),
 		.st = &st::settingsButtonNoIcon,
 		.label = settings->transcriptionProviderValue()
 			| rpl::map([=](TranscriptionProvider value) {
@@ -187,7 +187,7 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.onClick = [=] {
 			controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 				SingleChoiceBox(box, {
-					.title = tr::ayu_TranscriptionProvider(),
+					.title = tr::fresh_TranscriptionProvider(),
 					.options = options,
 					.initialSelection = std::min(
 						int(AyuSettings::getInstance().transcriptionProvider()),
@@ -206,12 +206,12 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addButton({
 		.id = u"ayu/whisperModel"_q,
 		.altIds = { u"ayu/whisperModels"_q, u"ayu/speechModel"_q },
-		.title = tr::ayu_WhisperModel(),
+		.title = tr::fresh_WhisperModel(),
 		.st = &st::settingsButtonNoIcon,
 		.label = settings->whisperModelValue()
 			| rpl::map([](QString file) {
 				if (file.isEmpty()) {
-					return tr::ayu_RecognitionOff(tr::now);
+					return tr::fresh_RecognitionOff(tr::now);
 				}
 				file.remove(QRegularExpression(u"^ggml-|-q\\d+_\\d+\\.bin$"_q));
 				return file;
@@ -219,7 +219,7 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.onClick = [=] {
 			controller->show(Box<AyuUi::RecognitionModelsBox>(
 				&controller->session(),
-				AyuRecognition::ModelKind::Whisper));
+				FreshRecognition::ModelKind::Whisper));
 		},
 		.shown = settings->transcriptionProviderValue()
 			| rpl::map([](TranscriptionProvider value) {
@@ -229,30 +229,30 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 }
 
 void BuildTextRecognition(SectionBuilder &builder) {
-	if (!AyuRecognition::TextRecognitionAvailable()) {
+	if (!FreshRecognition::TextRecognitionAvailable()) {
 		return;
 	}
 	const auto controller = builder.controller();
 	auto *settings = &AyuSettings::getInstance();
 
-	builder.addSubsectionTitle(tr::ayu_TextRecognitionSubtitle());
+	builder.addSubsectionTitle(tr::fresh_TextRecognitionSubtitle());
 	builder.addButton({
 		.id = u"ayu/ocrLanguages"_q,
 		.altIds = { u"ayu/ocr"_q, u"ayu/tesseract"_q, u"ayu/textRecognition"_q },
-		.title = tr::ayu_ManageOcrLanguages(),
+		.title = tr::fresh_ManageOcrLanguages(),
 		.st = &st::settingsButtonNoIcon,
 		.label = settings->ocrLanguagesValue()
 			| rpl::map([](QString codes) {
-				const auto languages = AyuRecognition::OcrCodes(
+				const auto languages = FreshRecognition::OcrCodes(
 					codes).join(u", "_q);
-				if (!AyuRecognition::IsAutoOcr(codes)) {
+				if (!FreshRecognition::IsAutoOcr(codes)) {
 					return languages.isEmpty()
-						? tr::ayu_RecognitionOff(tr::now)
+						? tr::fresh_RecognitionOff(tr::now)
 						: languages;
 				}
 				return languages.isEmpty()
-					? tr::ayu_OcrAutoShort(tr::now)
-					: tr::ayu_OcrAutoWith(
+					? tr::fresh_OcrAutoShort(tr::now)
+					: tr::fresh_OcrAutoWith(
 						tr::now,
 						lt_languages,
 						languages);
@@ -260,7 +260,7 @@ void BuildTextRecognition(SectionBuilder &builder) {
 		.onClick = [=] {
 			controller->show(Box<AyuUi::RecognitionModelsBox>(
 				&controller->session(),
-				AyuRecognition::ModelKind::Tesseract));
+				FreshRecognition::ModelKind::Tesseract));
 		},
 	});
 }
@@ -313,7 +313,7 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	BuildTranscription(builder, ayu);
 	ayu.addSectionDivider();
 
-	if (AyuRecognition::TextRecognitionAvailable()) {
+	if (FreshRecognition::TextRecognitionAvailable()) {
 		BuildTextRecognition(builder);
 		ayu.addSectionDivider();
 	}
@@ -323,7 +323,7 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	const auto controller = builder.controller();
 	ayu.addSettingToggle({
 		.id = u"ayu/localPinnedChats"_q,
-		.title = tr::ayu_LocalPinnedChats(),
+		.title = tr::fresh_LocalPinnedChats(),
 		.getter = &AyuSettings::localPinnedChats,
 		.setter = &AyuSettings::setLocalPinnedChats,
 	});
@@ -436,7 +436,7 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSettingToggle({
 		.id = u"ayu/showTimeZone"_q,
 		.altIds = { u"ayu/timeZoneName"_q },
-		.title = tr::ayu_SettingsShowTimeZone(),
+		.title = tr::fresh_SettingsShowTimeZone(),
 		.getter = &AyuSettings::showTimeZone,
 		.setter = &AyuSettings::setShowTimeZone,
 	});
@@ -478,41 +478,41 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSettingToggle({
 		.id = u"ayu/keepDraftsLocal"_q,
 		.altIds = { u"ayu/draftsSync"_q },
-		.title = tr::ayu_KeepDraftsLocal(),
+		.title = tr::fresh_KeepDraftsLocal(),
 		.getter = &AyuSettings::keepDraftsLocal,
 		.setter = &AyuSettings::setKeepDraftsLocal,
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/reduceNetworkTracking"_q,
 		.altIds = { u"ayu/temporaryKeyLifetime"_q },
-		.title = tr::ayu_ReduceNetworkTracking(),
+		.title = tr::fresh_ReduceNetworkTracking(),
 		.getter = &AyuSettings::reduceNetworkTracking,
 		.setter = &AyuSettings::setReduceNetworkTracking,
 	});
 
 	builder.addSkip();
-	builder.addDividerText(tr::ayu_NetworkPrivacyDescription());
+	builder.addDividerText(tr::fresh_NetworkPrivacyDescription());
 
 	ayu.addSettingToggle({
 		.id = u"ayu/enableDebugLogging"_q,
-		.title = tr::ayu_EnableDebugLogging(),
+		.title = tr::fresh_EnableDebugLogging(),
 		.getter = &AyuSettings::enableDebugLogging,
 		.setter = &AyuSettings::setEnableDebugLogging,
 	});
 
 	builder.addSkip();
-	builder.addDividerText(tr::ayu_DebugLoggingDescription());
+	builder.addDividerText(tr::fresh_DebugLoggingDescription());
 
 	builder.addButton({
 		.id = u"ayu/databaseReport"_q,
-		.title = tr::ayu_DatabaseReport(),
+		.title = tr::fresh_DatabaseReport(),
 		.icon = { &st::menuIconStats },
 		.onClick = [] {
-			Ui::Toast::Show(tr::ayu_DatabaseReportStarted(tr::now));
+			Ui::Toast::Show(tr::fresh_DatabaseReportStarted(tr::now));
 			AyuDatabase::saveSizeReport([](bool ok) {
 				Ui::Toast::Show(ok
-					? tr::ayu_DatabaseReportSaved(tr::now)
-					: tr::ayu_DatabaseReportFailed(tr::now));
+					? tr::fresh_DatabaseReportSaved(tr::now)
+					: tr::fresh_DatabaseReportFailed(tr::now));
 			});
 		},
 		.shown = AyuSettings::getInstance().enableDebugLoggingValue(),

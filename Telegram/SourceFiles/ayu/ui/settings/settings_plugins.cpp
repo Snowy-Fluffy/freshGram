@@ -21,7 +21,7 @@ void BuildPlugins(SectionBuilder &builder) {
 		}, [&](const SearchContext &sctx) {
 			sctx.entries->push_back({
 				.id = u"ayu/plugins"_q,
-				.title = tr::ayu_Plugins(tr::now),
+				.title = tr::fresh_Plugins(tr::now),
 				.section = sctx.sectionId,
 			});
 		});
@@ -29,9 +29,9 @@ void BuildPlugins(SectionBuilder &builder) {
 }
 
 const auto kMeta = BuildHelper({
-	.id = AyuPluginsSection::Id(),
+	.id = FreshPluginsSection::Id(),
 	.parentId = AyuMain::Id(),
-	.title = &tr::ayu_Plugins,
+	.title = &tr::fresh_Plugins,
 	.icon = &st::menuIconCustomize,
 }, [](SectionBuilder &builder) {
 	builder.addSkip();
@@ -40,18 +40,18 @@ const auto kMeta = BuildHelper({
 
 } // namespace
 
-rpl::producer<QString> AyuPluginsSection::title() {
-	return tr::ayu_Plugins();
+rpl::producer<QString> FreshPluginsSection::title() {
+	return tr::fresh_Plugins();
 }
 
-AyuPluginsSection::AyuPluginsSection(
+FreshPluginsSection::FreshPluginsSection(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
 : Section(parent, controller) {
 	setupContent();
 }
 
-void AyuPluginsSection::setupContent() {
+void FreshPluginsSection::setupContent() {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 	build(content, kMeta.build);
 	Ui::ResizeFitChild(this, content);

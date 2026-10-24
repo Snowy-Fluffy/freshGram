@@ -508,7 +508,7 @@ QSize Document::countOptimalSize() {
 		const auto history = _realParent->history();
 		const auto session = &history->session();
 		const auto transcribes = &session->api().transcribes();
-		const auto local = AyuRecognition::LocalTranscriptionEnabled();
+		const auto local = FreshRecognition::LocalTranscriptionEnabled();
 		const auto media = _parent->data()->media();
 		if ((media && media->ttlSeconds())
 			|| IsHostedInstantViewMedia(_parent)

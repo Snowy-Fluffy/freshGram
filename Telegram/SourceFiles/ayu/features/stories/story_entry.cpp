@@ -17,7 +17,7 @@
 #include "styles/style_boxes.h"
 #include "styles/style_menu_icons.h"
 
-namespace AyuStories {
+namespace FreshStories {
 namespace {
 
 [[nodiscard]] bool OneMedia(const Ui::PreparedList &list) {
@@ -54,7 +54,7 @@ void ChooseFile(
 	});
 	FileDialog::GetOpenPath(
 		controller->content().get(),
-		tr::ayu_StoryChoose(tr::now),
+		tr::fresh_StoryChoose(tr::now),
 		FileDialog::PhotoVideoFilesFilter(),
 		callback);
 }
@@ -99,7 +99,7 @@ void StartPostingFromUrls(
 		st::sendMediaPreviewSize,
 		controller->session().premium());
 	if (list.error != Ui::PreparedList::Error::None || !OneMedia(list)) {
-		controller->showToast(tr::ayu_StoryChoose(tr::now));
+		controller->showToast(tr::fresh_StoryChoose(tr::now));
 		return;
 	}
 	const auto file = std::make_shared<Ui::PreparedFile>(
@@ -123,9 +123,9 @@ void AddPostStoryAction(
 		return;
 	}
 	const auto strong = not_null<PeerData*>(peer);
-	addCallback(tr::ayu_StoryAdd(tr::now), [=] {
+	addCallback(tr::fresh_StoryAdd(tr::now), [=] {
 		StartPosting(controller, strong);
 	}, &st::menuIconAdd);
 }
 
-} // namespace AyuStories
+} // namespace FreshStories

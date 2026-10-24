@@ -450,7 +450,7 @@ bool UiIntegration::handleUrlClick(
 	}
 
 	if (AyuUrlHandlers::IsUnsafeExternalUrl(url)) {
-		LOG(("AyuGram: Blocked opening unsafe url: %1").arg(url));
+		LOG(("freshGram: Blocked opening unsafe url: %1").arg(url));
 		return true;
 	}
 

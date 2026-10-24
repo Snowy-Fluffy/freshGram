@@ -358,7 +358,7 @@ void WebpageProcessor::checkNow(bool force) {
 
 void WebpageProcessor::checkPreview() {
 	const auto previewRestricted = _history->peer
-		&& (AyuSecret::IsSecretPeer(_history->peer)
+		&& (FreshSecret::IsSecretPeer(_history->peer)
 			|| _history->peer->amRestricted(ChatRestriction::EmbedLinks));
 	if (_parsedLinks.empty()) {
 		_draft.removed = false;

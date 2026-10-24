@@ -212,7 +212,7 @@ rpl::producer<MessagesSlice> RepliesList::source(
 		if (_history->peer->isForum()) {
 			_history->checkLocalMessages();
 		} else {
-			_history->ayuRestoreThread(_rootId);
+			_history->freshRestoreThread(_rootId);
 		}
 
 		_instantChanges.events(
@@ -363,7 +363,7 @@ void RepliesList::injectRootDivider(
 bool RepliesList::buildFromData(not_null<Viewer*> viewer) {
 	if (_creating
 		|| (_list.empty() && _skippedBefore == 0 && _skippedAfter == 0)
-		|| (_list.empty() && AyuKept::serverUnavailable(_history))) {
+		|| (_list.empty() && FreshKept::serverUnavailable(_history))) {
 		viewer->slice.ids.clear();
 		viewer->slice.nearestToAround = FullMsgId();
 		viewer->slice.fullCount

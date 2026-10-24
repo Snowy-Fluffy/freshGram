@@ -18,7 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QBuffer>
 #include <QtCore/QDataStream>
 
-namespace AyuComposeStash {
+namespace FreshComposeStash {
 namespace {
 
 constexpr auto kVersion = qint32(1);
@@ -213,4 +213,4 @@ std::unique_ptr<Data::ComposeStash> Restore(
 	return row ? Unpack(row->payload) : nullptr;
 }
 
-} // namespace AyuComposeStash
+} // namespace FreshComposeStash

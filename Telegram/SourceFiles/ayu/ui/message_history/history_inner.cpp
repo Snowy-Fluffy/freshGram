@@ -765,7 +765,7 @@ void InnerWidget::preloadMore(Direction direction) {
 				messages = AyuMessages::loadDeletedMessages(userId, dialogId, topicId, minId, maxId, perPage, searchQuery);
 			}
 		} catch (...) {
-			LOG(("AyuMessageHistory: failed to load messages from the database"));
+			LOG(("FreshMessageHistory: failed to load messages from the database"));
 			messages.clear();
 		}
 

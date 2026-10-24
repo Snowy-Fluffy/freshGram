@@ -114,7 +114,7 @@ CornerButtons::CornerButtons(
 	_reactions.widget->setAccessibleName(tr::lng_jump_to_reaction(tr::now));
 	_pollVotes.widget->setAccessibleName(
 		tr::lng_jump_to_poll_votes(tr::now));
-	_stash.widget->setAccessibleName(tr::ayu_StashRestore(tr::now));
+	_stash.widget->setAccessibleName(tr::fresh_StashRestore(tr::now));
 
 	const auto filterScroll = [&](CornerButton &button) {
 		button.widget->installEventFilter(this);
@@ -189,7 +189,7 @@ void CornerButtons::mentionsClick() {
 		}
 	}
 	showAt(msgId);
-	AyuMentions::GuardJump(thread, msgId);
+	FreshMentions::GuardJump(thread, msgId);
 }
 
 void CornerButtons::reactionsClick() {

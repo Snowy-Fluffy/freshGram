@@ -9,7 +9,7 @@ namespace fgpl {
 class DataProvider;
 } // namespace fgpl
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 [[nodiscard]] fgpl::DataProvider *DataFor(const std::string &account);
 void CloseData();
@@ -21,4 +21,4 @@ void SendMessageEvent(
 	not_null<const HistoryItem*> item,
 	const std::string &account);
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

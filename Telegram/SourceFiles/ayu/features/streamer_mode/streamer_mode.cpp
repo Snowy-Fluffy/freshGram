@@ -28,7 +28,7 @@ namespace AyuFeatures::StreamerMode {
 
 namespace {
 
-constexpr auto kHiddenProperty = "AyuStreamerModeHidden";
+constexpr auto kHiddenProperty = "FreshStreamerModeHidden";
 
 [[nodiscard]] bool IsWindowCaptureExcluded(not_null<QWidget*> widget) {
 	return widget->property(kHiddenProperty).toBool();

@@ -794,9 +794,9 @@ bool Instance::applyBuiltin() {
 	if (_derived || isCustom()) {
 		return false;
 	}
-	auto strings = &AyuLang::BuiltinStrings(_id);
+	auto strings = &FreshLang::BuiltinStrings(_id);
 	if (strings->empty()) {
-		strings = &AyuLang::BuiltinStrings(baseId());
+		strings = &FreshLang::BuiltinStrings(baseId());
 	}
 	auto applied = false;
 	for (const auto &[key, value] : *strings) {

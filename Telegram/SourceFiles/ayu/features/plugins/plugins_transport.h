@@ -8,7 +8,7 @@ namespace fgpl {
 class Transport;
 } // namespace fgpl
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 struct ConnectionView {
 	int64 id = 0;
@@ -28,4 +28,4 @@ struct ConnectionView {
 [[nodiscard]] std::vector<ConnectionView> Connections();
 void CloseConnection(int64 id);
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

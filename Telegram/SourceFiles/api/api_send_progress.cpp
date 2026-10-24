@@ -70,10 +70,10 @@ void SendProgressManager::update(
 		SendProgressType type,
 		int progress) {
 	const auto peer = history->peer;
-	if (AyuSecret::IsSecretPeer(peer)) {
+	if (FreshSecret::IsSecretPeer(peer)) {
 		if (type == SendProgressType::Typing) {
-			AyuSecret::Get(&peer->session()).setTyping(
-				AyuSecret::ChatIdOfPeer(peer));
+			FreshSecret::Get(&peer->session()).setTyping(
+				FreshSecret::ChatIdOfPeer(peer));
 		}
 		return;
 	}
@@ -128,7 +128,7 @@ void SendProgressManager::send(const Key &key, int progress) {
 	const auto &ghost = AyuSettings::ghost(_session);
 	if (!ghost.sendUploadProgress())
 	{
-		DEBUG_LOG(("[AyuGram] Don't send upload progress"));
+		DEBUG_LOG(("[freshGram] Don't send upload progress"));
 		return;
 	}
 

@@ -7,7 +7,7 @@
 //
 // The card shapes and the switch are ported from FAgram Desktop
 // (https://github.com/fagramdesktop/fadesktop), licensed under GPLv3.
-#include "ayu/ayu_card_segment.h"
+#include "ayu/fresh_card_segment.h"
 
 #include "ui/effects/animation_value.h"
 #include "ui/effects/animation_value_f.h"

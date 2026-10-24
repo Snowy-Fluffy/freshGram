@@ -3,7 +3,7 @@
 
 #include <optional>
 
-namespace AyuMetadata {
+namespace FreshMetadata {
 
 enum class MediaKind : uchar {
 	None,
@@ -21,4 +21,4 @@ enum class MediaKind : uchar {
 
 [[nodiscard]] QString NewTempVideoPath(const QString &extension);
 
-} // namespace AyuMetadata
+} // namespace FreshMetadata

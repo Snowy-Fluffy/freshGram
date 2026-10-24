@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 using Bytes = std::vector<uint8_t>;
 
@@ -28,4 +28,4 @@ void UpdateKeyVisualHash(Bytes &hash, const Bytes &key, int layer);
 	const Bytes &packet,
 	Bytes &object);
 
-} // namespace AyuSecret
+} // namespace FreshSecret

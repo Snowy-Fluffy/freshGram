@@ -19,7 +19,7 @@
 
 #include <deque>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 namespace {
 
 constexpr auto kMaxDocumentSize = int64(200) * 1024 * 1024;
@@ -278,4 +278,4 @@ void TranscribeLocally(
 	Transcribe(item, std::move(done), true);
 }
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

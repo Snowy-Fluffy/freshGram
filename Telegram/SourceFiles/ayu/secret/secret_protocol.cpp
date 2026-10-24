@@ -2,7 +2,7 @@
 
 #include "ayu/secret/secret_tl.h"
 
-namespace AyuSecret {
+namespace FreshSecret {
 namespace {
 
 constexpr uint32_t kVector = 0x1cb5c415U;
@@ -846,4 +846,4 @@ Bytes BuildAbortKey(int64_t randomId, int64_t exchangeId) {
 	return ServiceMessage(randomId, action);
 }
 
-} // namespace AyuSecret
+} // namespace FreshSecret

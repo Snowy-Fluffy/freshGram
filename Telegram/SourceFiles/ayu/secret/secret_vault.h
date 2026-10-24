@@ -6,7 +6,7 @@
 
 #include <string>
 
-namespace AyuSecret::Vault {
+namespace FreshSecret::Vault {
 
 [[nodiscard]] bool Available();
 
@@ -28,4 +28,4 @@ namespace AyuSecret::Vault {
 	const std::string &context,
 	bool *legacy = nullptr);
 
-} // namespace AyuSecret::Vault
+} // namespace FreshSecret::Vault

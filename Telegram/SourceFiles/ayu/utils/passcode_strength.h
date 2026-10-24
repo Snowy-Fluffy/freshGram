@@ -1,7 +1,7 @@
 // This is the source code of freshGram.
 #pragma once
 
-namespace AyuPasscode {
+namespace FreshPasscode {
 
 enum class Strength : uchar {
 	None,
@@ -15,4 +15,4 @@ enum class Strength : uchar {
 [[nodiscard]] Strength StrengthForBits(int bits);
 [[nodiscard]] QString StrengthText(const QString &passcode);
 
-} // namespace AyuPasscode
+} // namespace FreshPasscode

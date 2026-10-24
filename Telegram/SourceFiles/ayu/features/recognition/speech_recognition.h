@@ -11,7 +11,7 @@
 #include <atomic>
 #include <memory>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 
 struct SpeechRequest {
 	QString audioPath;
@@ -40,4 +40,4 @@ std::shared_ptr<std::atomic<bool>> TranscribeAsync(
 	Fn<void(int percent)> progress,
 	Fn<void(SpeechResult)> done);
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

@@ -652,7 +652,7 @@ void PasscodeBox::save(bool force) {
 			cSetPasscodeBadTries(0);
 			if (_turningOff) pwd = conf = QString();
 		} else if (check == Storage::PasscodeCheck::Failed) {
-			_oldError = tr::ayu_PasscodeKeyUnavailable(tr::now);
+			_oldError = tr::fresh_PasscodeKeyUnavailable(tr::now);
 			_oldPasscode->setFocus();
 			_oldPasscode->showError();
 			update();
@@ -723,7 +723,7 @@ void PasscodeBox::save(bool force) {
 		const auto weak = base::make_weak(this);
 		cSetPasscodeBadTries(0);
 		if (!_session->domain().local().setPasscode(pwd.toUtf8())) {
-			_newError = tr::ayu_PasscodeKdfFailed(tr::now);
+			_newError = tr::fresh_PasscodeKdfFailed(tr::now);
 			update();
 			return;
 		}

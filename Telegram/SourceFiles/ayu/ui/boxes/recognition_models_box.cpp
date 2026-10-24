@@ -23,7 +23,7 @@
 namespace AyuUi {
 namespace {
 
-using namespace AyuRecognition;
+using namespace FreshRecognition;
 using namespace Storage::CloudBlob;
 
 constexpr auto kMaxQueryLength = 15;
@@ -188,7 +188,7 @@ void Inner::addRow(
 	const auto content = _content;
 	const auto id = model.id;
 	const auto title = automatic
-		? tr::ayu_OcrAuto(tr::now)
+		? tr::fresh_OcrAuto(tr::now)
 		: ModelTitle(model);
 	const auto single = (_kind == ModelKind::Whisper);
 	enabled = (enabled && ModelExists(model)) || (ModelDownload(id) != nullptr);
@@ -226,7 +226,7 @@ void Inner::addRow(
 	const auto label = Ui::CreateChild<Ui::FlatLabel>(
 		button,
 		state->state.value() | rpl::map([](const BlobState &value) {
-			return StateDescription(value, tr::ayu_ModelEnabled);
+			return StateDescription(value, tr::fresh_ModelEnabled);
 		}),
 		st::settingsUpdateState);
 	label->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -337,7 +337,7 @@ void Inner::addRow(
 			button,
 			st::popupMenuWithIcons);
 		contextMenu->get()->addAction(
-			tr::ayu_ModelRemove(tr::now),
+			tr::fresh_ModelRemove(tr::now),
 			[=] {
 				_changed = true;
 				RemoveModel(model);
@@ -433,7 +433,7 @@ void Inner::setupContent(not_null<Main::Session*> session) {
 			_content,
 			object_ptr<Ui::FlatLabel>(
 				_content,
-				tr::ayu_ModelsLoading(),
+				tr::fresh_ModelsLoading(),
 				st::defaultFlatLabel)),
 		st::boxRowPadding);
 	const auto rebuild = [=] {
@@ -445,7 +445,7 @@ void Inner::setupContent(not_null<Main::Session*> session) {
 	ManifestFinished(
 	) | rpl::on_next([=](bool loaded) {
 		if (!loaded && _builtIds.empty()) {
-			_loading->entity()->setText(tr::ayu_ModelsLoadFailed(tr::now));
+			_loading->entity()->setText(tr::fresh_ModelsLoadFailed(tr::now));
 		}
 	}, _content->lifetime());
 	RefreshManifest(session);
@@ -495,10 +495,10 @@ void RecognitionModelsBox::prepare() {
 	};
 
 	setTitle((_kind == ModelKind::Whisper)
-		? tr::ayu_ManageWhisperModels()
+		? tr::fresh_ManageWhisperModels()
 		: (_kind == ModelKind::Translate)
-		? tr::ayu_ManageTranslateModels()
-		: tr::ayu_ManageOcrLanguages());
+		? tr::fresh_ManageTranslateModels()
+		: tr::fresh_ManageOcrLanguages());
 
 	// WHY: the toggles look applied at once, so any way of closing saves.
 	const auto kind = _kind;

@@ -12,7 +12,7 @@
 
 #include <atomic>
 
-namespace AyuDebugLogging {
+namespace FreshDebugLogging {
 namespace {
 
 std::atomic<bool> Value = false;
@@ -36,4 +36,4 @@ bool Enabled() {
 	return Value;
 }
 
-} // namespace AyuDebugLogging
+} // namespace FreshDebugLogging

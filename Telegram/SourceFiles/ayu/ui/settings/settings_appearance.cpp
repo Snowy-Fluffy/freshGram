@@ -194,13 +194,13 @@ void BuildAppearance(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addChooseButton({
 		.id = u"ayu/designStyle"_q,
 		.altIds = { u"ayu/paddings"_q, u"ayu/style"_q },
-		.title = tr::ayu_DesignStyle(),
-		.boxTitle = tr::ayu_DesignStyle(),
+		.title = tr::fresh_DesignStyle(),
+		.boxTitle = tr::fresh_DesignStyle(),
 		.initialSelection = settings->designStyle(),
 		.options = {
-			tr::ayu_DesignStyleTelegram(tr::now),
-			tr::ayu_DesignStyleMaterialgram(tr::now),
-			tr::ayu_DesignStyleFagram(tr::now),
+			tr::fresh_DesignStyleTelegram(tr::now),
+			tr::fresh_DesignStyleMaterialgram(tr::now),
+			tr::fresh_DesignStyleFagram(tr::now),
 		},
 		.setter = [=](int i) {
 			auto &current = AyuSettings::getInstance();
@@ -217,13 +217,13 @@ void BuildAppearance(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 			u"ayu/materialDesign"_q,
 			u"ayu/icons"_q,
 		},
-		.title = tr::ayu_IconSet(),
-		.boxTitle = tr::ayu_IconSet(),
+		.title = tr::fresh_IconSet(),
+		.boxTitle = tr::fresh_IconSet(),
 		.initialSelection = settings->iconSet(),
 		.options = {
-			tr::ayu_StyleTelegram(tr::now),
-			tr::ayu_StyleMaterialgram(tr::now),
-			tr::ayu_StyleFagram(tr::now),
+			tr::fresh_StyleTelegram(tr::now),
+			tr::fresh_StyleMaterialgram(tr::now),
+			tr::fresh_StyleFagram(tr::now),
 		},
 		.setter = [=](int i) {
 			auto &current = AyuSettings::getInstance();
@@ -234,7 +234,7 @@ void BuildAppearance(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		},
 	});
 	builder.addSkip();
-	builder.addDividerText(tr::ayu_DesignStyleDescription());
+	builder.addDividerText(tr::fresh_DesignStyleDescription());
 	builder.addSkip();
 
 
@@ -303,7 +303,7 @@ void BuildChatFolders(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSettingToggle({
 		.id = u"ayu/hideBirthdayNotifications"_q,
 		.altIds = { u"ayu/hideBirthdays"_q },
-		.title = tr::ayu_HideBirthdayNotifications(),
+		.title = tr::fresh_HideBirthdayNotifications(),
 		.getter = &AyuSettings::hideBirthdayNotifications,
 		.setter = &AyuSettings::setHideBirthdayNotifications,
 	});
@@ -335,21 +335,21 @@ void BuildTrayElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 
 #if defined Q_OS_WIN || defined Q_OS_MAC
 void BuildStreamerMode(SectionBuilder &builder, AyuSectionBuilder &ayu) {
-	builder.addSubsectionTitle(tr::ayu_StreamerModeHeader());
+	builder.addSubsectionTitle(tr::fresh_StreamerModeHeader());
 
 	ayu.addSettingToggle({
 		.id = u"ayu/streamerHideWholeWindow"_q,
-		.title = tr::ayu_StreamerHideWholeWindow(),
+		.title = tr::fresh_StreamerHideWholeWindow(),
 		.getter = &AyuSettings::streamerHideWholeWindow,
 		.setter = &AyuSettings::setStreamerHideWholeWindow,
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/streamerSpoilers"_q,
-		.title = tr::ayu_StreamerSpoilers(),
+		.title = tr::fresh_StreamerSpoilers(),
 		.getter = &AyuSettings::streamerSpoilers,
 		.setter = &AyuSettings::setStreamerSpoilers,
 	});
-	builder.addDividerText(tr::ayu_StreamerSpoilersDescription());
+	builder.addDividerText(tr::fresh_StreamerSpoilersDescription());
 }
 #endif
 
@@ -391,10 +391,10 @@ void BuildDrawerElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/showNewStoryInDrawer"_q,
-		.title = tr::ayu_StoryNew(),
+		.title = tr::fresh_StoryNew(),
 		.getter = &AyuSettings::showNewStoryInDrawer,
 		.setter = &AyuSettings::setShowNewStoryInDrawer,
-		.icon = { &st::ayuNewStoryMenuIcon },
+		.icon = { &st::freshNewStoryMenuIcon },
 	});
 	ayu.addSettingToggle({
 		.id = u"ayu/showContactsInDrawer"_q,

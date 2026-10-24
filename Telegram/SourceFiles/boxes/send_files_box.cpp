@@ -1995,7 +1995,7 @@ void SendFilesBox::setupSendWayControls() {
 	const auto clearFirst = AyuSettings::getInstance().sendClearMetadata();
 	_clearMetadata.create(
 		this,
-		tr::ayu_ClearMetadata(tr::now),
+		tr::fresh_ClearMetadata(tr::now),
 		clearFirst,
 		_st.files.checkbox,
 		_st.files.check);
@@ -2680,19 +2680,19 @@ namespace {
 	return image && image->bytes.isEmpty() && !image->data.isNull();
 }
 
-[[nodiscard]] AyuMetadata::MediaKind MetadataKindOf(
+[[nodiscard]] FreshMetadata::MediaKind MetadataKindOf(
 		const Ui::PreparedFile &file) {
 	if (file.animationJob || !file.information) {
-		return AyuMetadata::MediaKind::None;
+		return FreshMetadata::MediaKind::None;
 	}
 	const auto image = std::get_if<Ui::PreparedFileInformation::Image>(
 		&file.information->media);
 	if (image && image->modifications) {
-		return AyuMetadata::MediaKind::None;
+		return FreshMetadata::MediaKind::None;
 	} else if (IsRawImage(file)) {
-		return AyuMetadata::MediaKind::Image;
+		return FreshMetadata::MediaKind::Image;
 	}
-	return AyuMetadata::KindOf(
+	return FreshMetadata::KindOf(
 		file.path.isEmpty() ? file.displayName : file.path,
 		file.information->filemime);
 }
@@ -2710,7 +2710,7 @@ struct CleanedFile {
 
 bool SendFilesBox::hasClearableMetadata() const {
 	return ranges::any_of(_list.files, [](const Ui::PreparedFile &file) {
-		return MetadataKindOf(file) != AyuMetadata::MediaKind::None;
+		return MetadataKindOf(file) != FreshMetadata::MediaKind::None;
 	});
 }
 
@@ -2727,7 +2727,7 @@ bool SendFilesBox::clearMetadata(
 	}
 	struct Job {
 		int index = 0;
-		AyuMetadata::MediaKind kind = AyuMetadata::MediaKind::None;
+		FreshMetadata::MediaKind kind = FreshMetadata::MediaKind::None;
 		QString path;
 		QByteArray content;
 		QString target;
@@ -2738,8 +2738,8 @@ bool SendFilesBox::clearMetadata(
 	for (auto i = 0; i != int(_list.files.size()); ++i) {
 		const auto &file = _list.files[i];
 		const auto kind = MetadataKindOf(file);
-		if (kind == AyuMetadata::MediaKind::None
-			|| (kind == AyuMetadata::MediaKind::Video
+		if (kind == FreshMetadata::MediaKind::None
+			|| (kind == FreshMetadata::MediaKind::Video
 				&& file.path.startsWith(QDir::tempPath() + u"/tdclean/"_q))) {
 			continue;
 		}
@@ -2749,8 +2749,8 @@ bool SendFilesBox::clearMetadata(
 			.kind = kind,
 			.path = file.path,
 			.content = file.content,
-			.target = (kind == AyuMetadata::MediaKind::Video)
-				? AyuMetadata::NewTempVideoPath(
+			.target = (kind == FreshMetadata::MediaKind::Video)
+				? FreshMetadata::NewTempVideoPath(
 					QFileInfo(file.path).suffix().toLower())
 				: QString(),
 			.name = file.displayName,
@@ -2771,10 +2771,10 @@ bool SendFilesBox::clearMetadata(
 			auto result = CleanedFile{ .index = job.index };
 			if (!job.image.isNull()) {
 				result.raw = true;
-				result.image = AyuMetadata::StripImageText(job.image);
-			} else if (job.kind == AyuMetadata::MediaKind::Video) {
+				result.image = FreshMetadata::StripImageText(job.image);
+			} else if (job.kind == FreshMetadata::MediaKind::Video) {
 				result.ok = !job.target.isEmpty()
-					&& AyuMetadata::StripVideo(job.path, job.target);
+					&& FreshMetadata::StripVideo(job.path, job.target);
 				result.path = job.target;
 			} else {
 				auto bytes = job.content;
@@ -2786,7 +2786,7 @@ bool SendFilesBox::clearMetadata(
 				}
 				const auto stripped = bytes.isEmpty()
 					? std::nullopt
-					: AyuMetadata::StripImage(bytes);
+					: FreshMetadata::StripImage(bytes);
 				result.ok = stripped.has_value();
 				if (result.ok) {
 					result.bytes = *stripped;
@@ -2802,7 +2802,7 @@ bool SendFilesBox::clearMetadata(
 				}
 				auto &file = _list.files[result.index];
 				if (!result.ok) {
-					showToast(tr::ayu_ClearMetadataFailed(
+					showToast(tr::fresh_ClearMetadataFailed(
 						tr::now,
 						lt_name,
 						file.displayName));
@@ -3057,7 +3057,7 @@ void SendFilesBox::stash() {
 
 	if ((int(_list.files.size()) > kStashFilesLimit)
 		|| (_list.memoryUsage() > kStashFilesMemoryLimit)) {
-		showToast(tr::ayu_StashFilesLimit(tr::now));
+		showToast(tr::fresh_StashFilesLimit(tr::now));
 		return;
 	}
 	const auto way = _sendWay.current();

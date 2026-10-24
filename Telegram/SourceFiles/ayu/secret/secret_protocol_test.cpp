@@ -41,33 +41,33 @@ void Check(bool condition, const char *name) {
 	}
 }
 
-uint32_t ReadTag(const AyuSecret::Bytes &bytes, size_t offset) {
+uint32_t ReadTag(const FreshSecret::Bytes &bytes, size_t offset) {
 	uint32_t tag = 0;
 	std::memcpy(&tag, bytes.data() + offset, sizeof(tag));
 	return tag;
 }
 
-AyuSecret::Bytes Filled(size_t size, uint8_t byte) {
-	return AyuSecret::Bytes(size, byte);
+FreshSecret::Bytes Filled(size_t size, uint8_t byte) {
+	return FreshSecret::Bytes(size, byte);
 }
 
-bool ParseService(const AyuSecret::Bytes &bytes, AyuSecret::Inbound &out) {
-	const auto layer = AyuSecret::BuildLayerObject(bytes, 0, 0);
-	return AyuSecret::ParseLayerObject(layer, out);
+bool ParseService(const FreshSecret::Bytes &bytes, FreshSecret::Inbound &out) {
+	const auto layer = FreshSecret::BuildLayerObject(bytes, 0, 0);
+	return FreshSecret::ParseLayerObject(layer, out);
 }
 
 void TestRequestKey() {
 	const int64_t randomId = 0x1122334455667788LL;
 	const int64_t exchangeId = -0x123456789ABCDEFLL; // ids are signed longs
 	const auto gA = Filled(256, 0xA5);
-	const auto bytes = AyuSecret::BuildRequestKey(randomId, exchangeId, gA);
+	const auto bytes = FreshSecret::BuildRequestKey(randomId, exchangeId, gA);
 	Check(ReadTag(bytes, 12) == 0xf3c9611bU, "request tag matches spec");
-	auto inbound = AyuSecret::Inbound();
+	auto inbound = FreshSecret::Inbound();
 	Check(ParseService(bytes, inbound), "request parses");
 	Check(inbound.service, "request is a service message");
 	Check(inbound.randomId == randomId, "request random id round-trips");
 	Check(
-		inbound.action == AyuSecret::ActionKind::RequestKey,
+		inbound.action == FreshSecret::ActionKind::RequestKey,
 		"request action kind");
 	Check(inbound.exchangeId == exchangeId, "request exchange id round-trips");
 	Check(inbound.value == gA, "request g_a round-trips");
@@ -78,16 +78,16 @@ void TestAcceptKey() {
 	const int64_t exchangeId = 0x7FFFFFFFFFFFFFFFLL;
 	const auto gB = Filled(256, 0x3C);
 	const int64_t fingerprint = -0x77AA55CC33EE11LL;
-	const auto bytes = AyuSecret::BuildAcceptKey(
+	const auto bytes = FreshSecret::BuildAcceptKey(
 		randomId,
 		exchangeId,
 		gB,
 		fingerprint);
 	Check(ReadTag(bytes, 12) == 0x6fe1735bU, "accept tag matches spec");
-	auto inbound = AyuSecret::Inbound();
+	auto inbound = FreshSecret::Inbound();
 	Check(ParseService(bytes, inbound), "accept parses");
 	Check(
-		inbound.action == AyuSecret::ActionKind::AcceptKey,
+		inbound.action == FreshSecret::ActionKind::AcceptKey,
 		"accept action kind");
 	Check(inbound.exchangeId == exchangeId, "accept exchange id round-trips");
 	Check(inbound.value == gB, "accept g_b round-trips");
@@ -97,12 +97,12 @@ void TestAcceptKey() {
 void TestCommitKey() {
 	const int64_t exchangeId = 7;
 	const int64_t fingerprint = -1;
-	const auto bytes = AyuSecret::BuildCommitKey(99, exchangeId, fingerprint);
+	const auto bytes = FreshSecret::BuildCommitKey(99, exchangeId, fingerprint);
 	Check(ReadTag(bytes, 12) == 0xec2e0b9bU, "commit tag matches spec");
-	auto inbound = AyuSecret::Inbound();
+	auto inbound = FreshSecret::Inbound();
 	Check(ParseService(bytes, inbound), "commit parses");
 	Check(
-		inbound.action == AyuSecret::ActionKind::CommitKey,
+		inbound.action == FreshSecret::ActionKind::CommitKey,
 		"commit action kind");
 	Check(inbound.exchangeId == exchangeId, "commit exchange id round-trips");
 	Check(inbound.fingerprint == fingerprint, "commit fingerprint round-trips");
@@ -111,22 +111,22 @@ void TestCommitKey() {
 
 void TestAbortKey() {
 	const int64_t exchangeId = 0x0102030405060708LL;
-	const auto bytes = AyuSecret::BuildAbortKey(1000, exchangeId);
+	const auto bytes = FreshSecret::BuildAbortKey(1000, exchangeId);
 	Check(ReadTag(bytes, 12) == 0xdd05ec6bU, "abort tag matches spec");
-	auto inbound = AyuSecret::Inbound();
+	auto inbound = FreshSecret::Inbound();
 	Check(ParseService(bytes, inbound), "abort parses");
 	Check(
-		inbound.action == AyuSecret::ActionKind::AbortKey,
+		inbound.action == FreshSecret::ActionKind::AbortKey,
 		"abort action kind");
 	Check(inbound.exchangeId == exchangeId, "abort exchange id round-trips");
 }
 
 void TestTruncated() {
 	const auto gA = Filled(256, 0xA5);
-	const auto full = AyuSecret::BuildRequestKey(1, 2, gA);
+	const auto full = FreshSecret::BuildRequestKey(1, 2, gA);
 	for (const auto cut : { size_t(1), size_t(11), size_t(13) }) {
-		auto inbound = AyuSecret::Inbound();
-		const auto chopped = AyuSecret::Bytes(
+		auto inbound = FreshSecret::Inbound();
+		const auto chopped = FreshSecret::Bytes(
 			full.begin(),
 			full.end() - cut);
 		Check(
@@ -135,31 +135,31 @@ void TestTruncated() {
 	}
 	{
 		// A truncated transport envelope is rejected as well.
-		const auto layer = AyuSecret::BuildLayerObject(full, 0, 0);
-		auto inbound = AyuSecret::Inbound();
-		const auto chopped = AyuSecret::Bytes(
+		const auto layer = FreshSecret::BuildLayerObject(full, 0, 0);
+		auto inbound = FreshSecret::Inbound();
+		const auto chopped = FreshSecret::Bytes(
 			layer.begin(),
 			layer.end() - 1);
 		Check(
-			!AyuSecret::ParseLayerObject(chopped, inbound),
+			!FreshSecret::ParseLayerObject(chopped, inbound),
 			"truncated layer is rejected");
 	}
 	{
-		auto inbound = AyuSecret::Inbound();
-		const auto empty = AyuSecret::Bytes();
+		auto inbound = FreshSecret::Inbound();
+		const auto empty = FreshSecret::Bytes();
 		Check(
-			!AyuSecret::ParseLayerObject(empty, inbound),
+			!FreshSecret::ParseLayerObject(empty, inbound),
 			"empty input is rejected");
 	}
 	{
 		// Unknown action constructor must not be mistaken for a key action.
-		auto noop = AyuSecret::BuildNoop(5);
+		auto noop = FreshSecret::BuildNoop(5);
 		const uint32_t bogus = 0xFFFFFFFFU;
 		std::memcpy(noop.data() + 12, &bogus, sizeof(bogus));
-		auto inbound = AyuSecret::Inbound();
+		auto inbound = FreshSecret::Inbound();
 		Check(
 			ParseService(noop, inbound)
-				&& inbound.action == AyuSecret::ActionKind::Other,
+				&& inbound.action == FreshSecret::ActionKind::Other,
 			"unknown action decodes as Other, not as a key action");
 	}
 }

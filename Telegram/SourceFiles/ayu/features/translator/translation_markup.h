@@ -32,7 +32,7 @@ enum class MarkupRole {
 struct MarkupMasked {
 	QString text;
 	QString style;
-	std::vector<AyuRecognition::TextSpan> spans;
+	std::vector<FreshRecognition::TextSpan> spans;
 	std::vector<MarkupSpan> styles;
 	std::vector<MarkupSpan> kept;
 };
@@ -51,6 +51,6 @@ struct MarkupRestored {
 	const MarkupMasked &masked,
 	const QString &original,
 	const QString &translated,
-	const std::vector<AyuRecognition::TextSpan> &mapped);
+	const std::vector<FreshRecognition::TextSpan> &mapped);
 
 } // namespace Ayu::Translator

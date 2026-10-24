@@ -17,7 +17,7 @@
 #include <QtCore/QtMath>
 
 #include "ayu/ayu_ui_settings.h"
-#include "ayu/ayu_card_segment.h"
+#include "ayu/fresh_card_segment.h"
 #include "ui/style/style_core_scale.h"
 
 namespace Ui {

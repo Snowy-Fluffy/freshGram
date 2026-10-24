@@ -27,9 +27,9 @@ class HistoryMainElementDelegateMixin;
 class HistoryStreamedDrafts;
 struct LanguageId;
 
-namespace AyuRestore {
+namespace FreshRestore {
 class State;
-} // namespace AyuRestore
+} // namespace FreshRestore
 
 namespace Data {
 struct Draft;
@@ -110,18 +110,18 @@ public:
 
 	[[nodiscard]] HistoryItem *joinedMessageInstance() const;
 	void checkLocalMessages();
-	[[nodiscard]] bool ayuKept() const;
-	void setAyuKept(bool kept);
+	[[nodiscard]] bool freshKept() const;
+	void setFreshKept(bool kept);
 	// The place in the chats list of a kept chat, zero follows the last message.
-	[[nodiscard]] TimeId ayuKeptTime() const;
-	void setAyuKeptTime(TimeId time);
-	void restoreAyuKept();
-	void ayuRestoreMarkStale();
-	void ayuRestoreThread(MsgId rootId);
-	[[nodiscard]] HistoryItem *ayuDeletedItem(const AyuMessageBase &message);
-	[[nodiscard]] HistoryItem *ayuRestoredByOriginalId(MsgId id);
-	[[nodiscard]] MsgId ayuOriginalId(not_null<const HistoryItem*> item) const;
-	[[nodiscard]] HistoryItem *ayuRestored(
+	[[nodiscard]] TimeId freshKeptTime() const;
+	void setFreshKeptTime(TimeId time);
+	void restoreFreshKept();
+	void freshRestoreMarkStale();
+	void freshRestoreThread(MsgId rootId);
+	[[nodiscard]] HistoryItem *freshDeletedItem(const AyuMessageBase &message);
+	[[nodiscard]] HistoryItem *freshRestoredByOriginalId(MsgId id);
+	[[nodiscard]] MsgId freshOriginalId(not_null<const HistoryItem*> item) const;
+	[[nodiscard]] HistoryItem *freshRestored(
 		MsgId id,
 		not_null<HistoryItem*> holder);
 	void removeJoinedMessage();
@@ -703,8 +703,8 @@ private:
 	HistoryItem *_newPeerPhotoChange = nullptr;
 	bool _loadedAtTop = false;
 	bool _loadedAtBottom = true;
-	bool _ayuKept = false;
-	TimeId _ayuKeptTime = 0;
+	bool _freshKept = false;
+	TimeId _freshKeptTime = 0;
 
 	std::optional<Data::Folder*> _folder;
 	Data::CommunityInfo *_communityInfo = nullptr;
@@ -717,7 +717,7 @@ private:
 	std::optional<HistoryItem*> _lastMessage;
 	std::optional<HistoryItem*> _lastServerMessage;
 	base::flat_set<not_null<HistoryItem*>> _clientSideMessages;
-	std::unique_ptr<AyuRestore::State> _ayuRestore;
+	std::unique_ptr<FreshRestore::State> _freshRestore;
 	std::unordered_set<std::unique_ptr<HistoryItem>> _items;
 
 	std::unique_ptr<Data::HistoryMessages> _messages;

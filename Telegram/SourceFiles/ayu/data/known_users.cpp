@@ -14,7 +14,7 @@
 #include <map>
 #include <memory>
 
-namespace AyuUsers {
+namespace FreshUsers {
 namespace {
 
 std::map<std::pair<ID, ID>, QString> Saved;
@@ -48,7 +48,7 @@ void note(not_null<UserData*> user) {
 		|| user->isInaccessible()
 		|| user->isSelf()
 		|| user->isServiceUser()
-		|| AyuSecret::IsSecretPeer(user)
+		|| FreshSecret::IsSecretPeer(user)
 		|| !user->accessHash()) {
 		return;
 	}
@@ -98,4 +98,4 @@ UserData *find(not_null<Main::Session*> session, UserId id) {
 	return user;
 }
 
-} // namespace AyuUsers
+} // namespace FreshUsers

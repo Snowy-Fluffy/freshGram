@@ -47,7 +47,7 @@
 #include <map>
 #include <mutex>
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 #ifdef FRESHGRAM_PLUGINS
 
@@ -161,7 +161,7 @@ template <typename T>
 	result.type = KindOf(peer);
 	result.unread = history->unreadCount();
 	result.pinned = history->isPinnedDialog(FilterId());
-	result.secret = AyuSecret::IsSecretPeerId(peer->id);
+	result.secret = FreshSecret::IsSecretPeerId(peer->id);
 	return result;
 }
 
@@ -223,7 +223,7 @@ public:
 		return OnMain<std::vector<fgpl::Message>>([=] {
 			auto result = std::vector<fgpl::Message>();
 			const auto history = historyOf(chat);
-			if (!history || AyuSecret::IsSecretPeerId(history->peer->id)) {
+			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
 				return result;
 			}
 			const auto cap = std::min(limit, kMaxHistory);
@@ -270,7 +270,7 @@ public:
 	std::string draft(int64_t chat) override {
 		return OnMain<std::string>([=] {
 			const auto history = historyOf(chat);
-			if (!history || AyuSecret::IsSecretPeerId(history->peer->id)) {
+			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
 				return std::string();
 			}
 			const auto draft = history->localDraft({}, {});
@@ -281,7 +281,7 @@ public:
 	bool setDraft(int64_t chat, const std::string &text) override {
 		return OnMain<bool>([=] {
 			const auto history = historyOf(chat);
-			if (!history || AyuSecret::IsSecretPeerId(history->peer->id)) {
+			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
 				return false;
 			}
 			const auto textWithTags = TextWithTags{ QString::fromStdString(text) };
@@ -309,7 +309,7 @@ public:
 			const auto session = FindSession(_account);
 			const auto history = historyOf(chat);
 			if (!session || !history
-				|| AyuSecret::IsSecretPeerId(history->peer->id)) {
+				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
 				return false;
 			}
 			auto message = Api::MessageToSend(Api::SendAction(history));
@@ -369,7 +369,7 @@ public:
 				folder.title = Utf8(filter.title().text.text);
 				for (const auto &row : *filters.chatsList(filter.id())->indexed()) {
 					const auto history = row->history();
-					if (history && !AyuSecret::IsSecretPeerId(history->peer->id)) {
+					if (history && !FreshSecret::IsSecretPeerId(history->peer->id)) {
 						folder.chats.push_back(ChatId(history->peer));
 					}
 				}
@@ -397,7 +397,7 @@ public:
 		return OnMain<std::optional<fgpl::Media>>([=]() -> std::optional<fgpl::Media> {
 			const auto session = FindSession(_account);
 			const auto peerId = PeerId(uint64(chat));
-			if (!session || AyuSecret::IsSecretPeerId(peerId)) {
+			if (!session || FreshSecret::IsSecretPeerId(peerId)) {
 				return std::nullopt;
 			}
 			const auto item = session->data().message(peerId, MsgId(message));
@@ -517,7 +517,7 @@ void SendMessageEvent(
 		{ "date", fgpl::cbor::Value::FromInt(message.date) },
 		{ "text", fgpl::cbor::Value::FromText(message.text) },
 		{ "secret", fgpl::cbor::Value::FromBool(
-			AyuSecret::IsSecretPeerId(peer->id)) },
+			FreshSecret::IsSecretPeerId(peer->id)) },
 	}));
 }
 
@@ -545,4 +545,4 @@ void SendMessageEvent(
 
 #endif
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

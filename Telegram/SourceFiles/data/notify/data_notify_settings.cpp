@@ -93,7 +93,7 @@ NotifySettings::NotifySettings(not_null<Session*> owner)
 
 void NotifySettings::request(not_null<PeerData*> peer) {
 	if (peer->notify().settingsUnknown()
-		&& !AyuSecret::IsSecretPeer(peer)) {
+		&& !FreshSecret::IsSecretPeer(peer)) {
 		const auto channel = peer->asChannel();
 		peer->session().api().requestNotifySettings(
 			(channel && channel->isCommunity())

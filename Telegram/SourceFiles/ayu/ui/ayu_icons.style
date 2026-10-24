@@ -12,25 +12,25 @@ using "ui/chat/chat.style";
 using "ui/widgets/widgets.style";
 using "dialogs/dialogs.style";
 
-ayuSearchMediaPhoto: icon {{ "info/info_media_photo", menuIconColor }};
-ayuSearchMediaVideo: icon {{ "info/info_media_video", menuIconColor }};
-ayuSearchMediaFile: icon {{ "info/info_media_file", menuIconColor }};
-ayuSearchMediaMusic: icon {{ "info/info_media_audio", menuIconColor }};
-ayuSearchMediaVoice: icon {{ "info/info_media_voice", menuIconColor }};
-ayuSearchMediaRound: icon {{ "info/info_media_round", menuIconColor }};
-ayuSearchMediaLink: icon {{ "info/info_media_link", menuIconColor }};
-ayuSearchMediaGif: icon {{ "info/info_media_gif", menuIconColor }};
+freshSearchMediaPhoto: icon {{ "info/info_media_photo", menuIconColor }};
+freshSearchMediaVideo: icon {{ "info/info_media_video", menuIconColor }};
+freshSearchMediaFile: icon {{ "info/info_media_file", menuIconColor }};
+freshSearchMediaMusic: icon {{ "info/info_media_audio", menuIconColor }};
+freshSearchMediaVoice: icon {{ "info/info_media_voice", menuIconColor }};
+freshSearchMediaRound: icon {{ "info/info_media_round", menuIconColor }};
+freshSearchMediaLink: icon {{ "info/info_media_link", menuIconColor }};
+freshSearchMediaGif: icon {{ "info/info_media_gif", menuIconColor }};
 
-ayuSecretChatIcon: ThreeStateIcon {
-	icon: icon {{ "ayu/secret_lock", dialogsChatIconFg, point(2px, 4px) }};
-	over: icon {{ "ayu/secret_lock", dialogsChatIconFgOver, point(2px, 4px) }};
-	active: icon {{ "ayu/secret_lock", dialogsChatIconFgActive, point(2px, 4px) }};
+freshSecretChatIcon: ThreeStateIcon {
+	icon: icon {{ "fresh/secret_lock", dialogsChatIconFg, point(2px, 4px) }};
+	over: icon {{ "fresh/secret_lock", dialogsChatIconFgOver, point(2px, 4px) }};
+	active: icon {{ "fresh/secret_lock", dialogsChatIconFgActive, point(2px, 4px) }};
 }
 
-ayuDeletedChatIcon: ThreeStateIcon {
-	icon: icon {{ "ayu/deleted_chat", dialogsChatIconFg, point(1px, 4px) }};
-	over: icon {{ "ayu/deleted_chat", dialogsChatIconFgOver, point(1px, 4px) }};
-	active: icon {{ "ayu/deleted_chat", dialogsChatIconFgActive, point(1px, 4px) }};
+freshDeletedChatIcon: ThreeStateIcon {
+	icon: icon {{ "fresh/deleted_chat", dialogsChatIconFg, point(1px, 4px) }};
+	over: icon {{ "fresh/deleted_chat", dialogsChatIconFgOver, point(1px, 4px) }};
+	active: icon {{ "fresh/deleted_chat", dialogsChatIconFgActive, point(1px, 4px) }};
 }
 
 ayuGhostIcon: icon {{ "ayu/ghost", menuIconColor }};
@@ -49,7 +49,7 @@ messageFieldCommandsIcon: icon {{ "ayu/message_field/commands", menuIconColor }}
 messageFieldEmojiIcon: icon {{ "ayu/message_field/emoji", menuIconColor }};
 messageFieldVoiceIcon: icon {{ "ayu/message_field/voice", menuIconColor }};
 messageFieldTTLIcon: icon {{ "ayu/message_field/ttl", menuIconColor }};
-ayuNewStoryMenuIcon: icon {{ "ayu/new_story-24x24", menuIconColor }};
+freshNewStoryMenuIcon: icon {{ "fresh/new_story-24x24", menuIconColor }};
 messageFieldTranslateIcon: icon {{ "menu/translate", menuIconColor }};
 messageFieldCocoonAiIcon: icon{
 	{ size(24px, 24px), transparent },

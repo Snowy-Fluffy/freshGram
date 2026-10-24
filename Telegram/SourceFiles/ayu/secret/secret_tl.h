@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace AyuSecret {
+namespace FreshSecret {
 
 constexpr auto kLayer = 73;
 
@@ -176,4 +176,4 @@ private:
 
 };
 
-} // namespace AyuSecret
+} // namespace FreshSecret

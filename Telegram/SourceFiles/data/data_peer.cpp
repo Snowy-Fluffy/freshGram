@@ -435,7 +435,7 @@ void PeerData::paintUserpic(
 		}
 		broadcast->paintUserpic(p, view, context);
 		return;
-	} else if (const auto real = AyuSecret::RealUser(this)) {
+	} else if (const auto real = FreshSecret::RealUser(this)) {
 		real->paintUserpic(p, view, context);
 		return;
 	}
@@ -482,7 +482,7 @@ bool PeerData::useEmptyUserpic(Ui::PeerUserpicView &view) const {
 InMemoryKey PeerData::userpicUniqueKey(Ui::PeerUserpicView &view) const {
 	if (const auto broadcast = monoforumBroadcast()) {
 		return broadcast->userpicUniqueKey(view);
-	} else if (const auto real = AyuSecret::RealUser(this)) {
+	} else if (const auto real = FreshSecret::RealUser(this)) {
 		return real->userpicUniqueKey(view);
 	}
 	return useEmptyUserpic(view)
@@ -1138,7 +1138,7 @@ void PeerData::fillNames() {
 PeerData::~PeerData() = default;
 
 void PeerData::updateFull() {
-	if (AyuSecret::IsSecretPeer(this)) {
+	if (FreshSecret::IsSecretPeer(this)) {
 		return;
 	}
 	if (!_lastFullUpdate
@@ -1148,7 +1148,7 @@ void PeerData::updateFull() {
 }
 
 void PeerData::updateFullForced() {
-	if (AyuSecret::IsSecretPeer(this)) {
+	if (FreshSecret::IsSecretPeer(this)) {
 		return;
 	}
 	session().api().requestFullPeer(this);
@@ -1293,7 +1293,7 @@ not_null<const PeerData*> PeerData::migrateToOrMe() const {
 not_null<PeerData*> PeerData::userpicPaintingPeer() {
 	if (const auto broadcast = monoforumBroadcast()) {
 		return broadcast;
-	} else if (const auto real = AyuSecret::RealUser(this)) {
+	} else if (const auto real = FreshSecret::RealUser(this)) {
 		return real;
 	}
 	return this;

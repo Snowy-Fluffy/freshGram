@@ -7,7 +7,7 @@ namespace fgpl {
 struct InstalledRuntime;
 } // namespace fgpl
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 enum class RuntimeStage {
 	Idle,
@@ -44,4 +44,4 @@ void CancelRuntime();
 void StartRuntimeUpdates();
 void RemoveRuntimeFiles();
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

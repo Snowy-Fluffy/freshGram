@@ -80,7 +80,7 @@ void Tray::create() {
 		[=] { rebuildMenu(); },
 		_tray.lifetime());
 
-	AyuPlugins::ListChanges(
+	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
 		rebuildMenu();
 	}, _tray.lifetime());
@@ -133,16 +133,16 @@ void Tray::rebuildMenu() {
 			std::move(notificationsText),
 			[=] { toggleSoundNotifications(); });
 
-		if (AyuLockTriggers::CanLock()) {
+		if (FreshLockTriggers::CanLock()) {
 			auto lockText = _textUpdates.events(
 			) | rpl::map([] {
-				return tr::ayu_PasscodeLockNow(tr::now);
+				return tr::fresh_PasscodeLockNow(tr::now);
 			});
 			_tray.addAction(std::move(lockText), [] {
-				AyuLockTriggers::Lock();
+				FreshLockTriggers::Lock();
 			});
 		}
-		AyuPlugins::AddTrayItems([&](const QString &text, Fn<void()> handler) {
+		FreshPlugins::AddTrayItems([&](const QString &text, Fn<void()> handler) {
 			_tray.addAction(rpl::single(text), std::move(handler));
 		});
 	}

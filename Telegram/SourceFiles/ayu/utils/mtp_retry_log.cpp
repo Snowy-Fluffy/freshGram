@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace AyuMtp {
+namespace FreshMtp {
 namespace {
 
 constexpr auto kPeriod = crl::time(60 * 1000);
@@ -67,4 +67,4 @@ void NoteDropped() {
 	++state.dropped;
 }
 
-} // namespace AyuMtp
+} // namespace FreshMtp

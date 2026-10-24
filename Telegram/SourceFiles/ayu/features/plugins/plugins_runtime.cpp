@@ -36,7 +36,7 @@
 #define FRESHGRAM_RUNTIME_DIR ""
 #endif
 
-namespace AyuPlugins {
+namespace FreshPlugins {
 
 #ifdef FRESHGRAM_PLUGINS
 
@@ -513,7 +513,7 @@ void UpdateAutomatically() {
 				return;
 			}
 			const auto status = CurrentRuntimeStatus();
-			window->showToast(tr::ayu_PluginsUpdated(
+			window->showToast(tr::fresh_PluginsUpdated(
 				tr::now,
 				lt_wasmtime,
 				status.wasmtime,
@@ -604,4 +604,4 @@ void RemoveRuntimeFiles() {
 
 #endif
 
-} // namespace AyuPlugins
+} // namespace FreshPlugins

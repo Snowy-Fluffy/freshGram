@@ -1743,7 +1743,7 @@ bool DocumentData::isNull() const {
 		&& _url.isEmpty()
 		&& !uploading()
 		&& _location.isEmpty()
-		&& !AyuSecret::IsSecretDocument(this);
+		&& !FreshSecret::IsSecretDocument(this);
 }
 
 MTPInputDocument DocumentData::mtpInput() const {

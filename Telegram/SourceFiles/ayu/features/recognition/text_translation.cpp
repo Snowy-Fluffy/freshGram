@@ -21,7 +21,7 @@
 #include <map>
 #include <mutex>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 namespace {
 
 constexpr auto kSoftSentence = 200;
@@ -956,4 +956,4 @@ std::shared_ptr<std::atomic<bool>> TranslateTextsAsync(
 	return cancelled;
 }
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

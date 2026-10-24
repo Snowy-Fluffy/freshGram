@@ -50,7 +50,7 @@ constexpr auto kCountLimit = 9999;
 	const auto input = Ui::CreateChild<Ui::NumberInput>(
 		wrap,
 		st::defaultInputField,
-		tr::ayu_DeleteOwnMessagesNumber(),
+		tr::fresh_DeleteOwnMessagesNumber(),
 		value,
 		limit);
 	input->setMaximumWidth(st::deleteOwnFieldWidth);
@@ -90,7 +90,7 @@ void FillDeleteOwnMessagesBox(
 				box,
 				scope,
 				0,
-				tr::ayu_DeleteOwnMessagesScopeAll(tr::now),
+				tr::fresh_DeleteOwnMessagesScopeAll(tr::now),
 				st::defaultCheckbox),
 			st::deleteOwnRowPadding);
 		box->addRow(
@@ -98,7 +98,7 @@ void FillDeleteOwnMessagesBox(
 				box,
 				scope,
 				1,
-				tr::ayu_DeleteOwnMessagesScopeTopics(tr::now),
+				tr::fresh_DeleteOwnMessagesScopeTopics(tr::now),
 				st::defaultCheckbox),
 			st::deleteOwnRowPadding);
 		const auto topicsWrap = box->addRow(
@@ -109,7 +109,7 @@ void FillDeleteOwnMessagesBox(
 		const auto pickButton = topicsWrap->entity()->add(
 			object_ptr<Ui::LinkButton>(
 				topicsWrap,
-				tr::ayu_DeleteOwnMessagesPickTopics(tr::now)),
+				tr::fresh_DeleteOwnMessagesPickTopics(tr::now)),
 			st::deleteOwnRowPadding);
 		pickButton->setClickedCallback([=] {
 			ShowDeleteOwnTopicsBox(
@@ -119,8 +119,8 @@ void FillDeleteOwnMessagesBox(
 				[=](std::vector<MsgId> result) {
 					*topics = std::move(result);
 					pickButton->setText(topics->empty()
-						? tr::ayu_DeleteOwnMessagesPickTopics(tr::now)
-						: tr::ayu_DeleteOwnMessagesTopicsCount(
+						? tr::fresh_DeleteOwnMessagesPickTopics(tr::now)
+						: tr::fresh_DeleteOwnMessagesTopicsCount(
 							tr::now,
 							lt_amount,
 							QString::number(topics->size())));
@@ -150,9 +150,9 @@ void FillDeleteOwnMessagesBox(
 			st::deleteOwnRowPadding);
 	};
 
-	addMode(Mode::All, tr::ayu_DeleteOwnMessagesAll(tr::now));
+	addMode(Mode::All, tr::fresh_DeleteOwnMessagesAll(tr::now));
 
-	addMode(Mode::Period, tr::ayu_DeleteOwnMessagesPeriod(tr::now));
+	addMode(Mode::Period, tr::fresh_DeleteOwnMessagesPeriod(tr::now));
 	const auto periodWrap = box->addRow(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			box,
@@ -163,10 +163,10 @@ void FillDeleteOwnMessagesBox(
 		u"24"_q,
 		kPeriodLimit);
 	const auto units = std::array{
-		tr::ayu_DeleteOwnMessagesHours(tr::now),
-		tr::ayu_DeleteOwnMessagesDays(tr::now),
-		tr::ayu_DeleteOwnMessagesWeeks(tr::now),
-		tr::ayu_DeleteOwnMessagesMonths(tr::now),
+		tr::fresh_DeleteOwnMessagesHours(tr::now),
+		tr::fresh_DeleteOwnMessagesDays(tr::now),
+		tr::fresh_DeleteOwnMessagesWeeks(tr::now),
+		tr::fresh_DeleteOwnMessagesMonths(tr::now),
 	};
 	auto index = 0;
 	for (const auto &text : units) {
@@ -181,7 +181,7 @@ void FillDeleteOwnMessagesBox(
 	}
 	periodWrap->toggle(false, anim::type::instant);
 
-	addMode(Mode::Range, tr::ayu_DeleteOwnMessagesRange(tr::now));
+	addMode(Mode::Range, tr::fresh_DeleteOwnMessagesRange(tr::now));
 	const auto rangeWrap = box->addRow(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			box,
@@ -213,14 +213,14 @@ void FillDeleteOwnMessagesBox(
 		}));
 	};
 	fromButton->setClickedCallback([=] {
-		pick(tr::ayu_DeleteOwnMessagesFrom(), from, fromButton);
+		pick(tr::fresh_DeleteOwnMessagesFrom(), from, fromButton);
 	});
 	tillButton->setClickedCallback([=] {
-		pick(tr::ayu_DeleteOwnMessagesTo(), till, tillButton);
+		pick(tr::fresh_DeleteOwnMessagesTo(), till, tillButton);
 	});
 	rangeWrap->toggle(false, anim::type::instant);
 
-	addMode(Mode::Count, tr::ayu_DeleteOwnMessagesLastCount(tr::now));
+	addMode(Mode::Count, tr::fresh_DeleteOwnMessagesLastCount(tr::now));
 	const auto countWrap = box->addRow(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			box,
@@ -242,7 +242,7 @@ void FillDeleteOwnMessagesBox(
 		auto range = DeleteOwnRange();
 		if (forum && scope->current() == 1) {
 			if (topics->empty()) {
-				box->showToast(tr::ayu_DeleteOwnMessagesInvalid(tr::now));
+				box->showToast(tr::fresh_DeleteOwnMessagesInvalid(tr::now));
 				return;
 			}
 			range.topics = *topics;
@@ -253,7 +253,7 @@ void FillDeleteOwnMessagesBox(
 		case Mode::Period: {
 			const auto count = periodInput->getLastText().toInt();
 			if (count < 1) {
-				box->showToast(tr::ayu_DeleteOwnMessagesInvalid(tr::now));
+				box->showToast(tr::fresh_DeleteOwnMessagesInvalid(tr::now));
 				return;
 			}
 			const auto current = base::unixtime::now();
@@ -262,7 +262,7 @@ void FillDeleteOwnMessagesBox(
 		} break;
 		case Mode::Range:
 			if (*from >= *till) {
-				box->showToast(tr::ayu_DeleteOwnMessagesInvalid(tr::now));
+				box->showToast(tr::fresh_DeleteOwnMessagesInvalid(tr::now));
 				return;
 			}
 			range.minDate = *from;
@@ -271,7 +271,7 @@ void FillDeleteOwnMessagesBox(
 		case Mode::Count:
 			range.limit = countInput->getLastText().toInt();
 			if (range.limit < 1) {
-				box->showToast(tr::ayu_DeleteOwnMessagesInvalid(tr::now));
+				box->showToast(tr::fresh_DeleteOwnMessagesInvalid(tr::now));
 				return;
 			}
 			break;

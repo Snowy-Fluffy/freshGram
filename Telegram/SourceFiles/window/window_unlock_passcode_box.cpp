@@ -75,11 +75,11 @@ void Submit(
 			return;
 		case PasscodeAttempt::Wiped:
 			field->clear();
-			fail(tr::ayu_PasscodeWiped(tr::now));
+			fail(tr::fresh_PasscodeWiped(tr::now));
 			return;
 		case PasscodeAttempt::Unavailable:
 			field->showError();
-			fail(tr::ayu_PasscodeKeyUnavailable(tr::now));
+			fail(tr::fresh_PasscodeKeyUnavailable(tr::now));
 			return;
 		case PasscodeAttempt::Correct:
 			break;

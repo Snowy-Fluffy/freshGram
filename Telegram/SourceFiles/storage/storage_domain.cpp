@@ -16,7 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 #include "base/random.h"
 #include "ayu/ayu_settings.h"
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_vault.h"
 #include "crl/crl_async.h"
 #include "crl/crl_on_main.h"
 
@@ -93,7 +93,7 @@ void Domain::startWithSingleAccount(
 
 	if (auto localKey = account->local().peekLegacyLocalKey()) {
 		_localKey = std::move(localKey);
-		AyuVault::SetKey(_localKey);
+		FreshVault::SetKey(_localKey);
 		AyuSettings::attachVault();
 		[[maybe_unused]] const auto encrypted = encryptLocalKey(passcode);
 		account->start(nullptr);
@@ -117,7 +117,7 @@ void Domain::generateLocalKey() {
 	base::RandomFill(pass.data(), pass.size());
 	base::RandomFill(salt.data(), salt.size());
 	_localKey = CreateLocalKey(pass, salt);
-	AyuVault::SetKey(_localKey);
+	FreshVault::SetKey(_localKey);
 	AyuSettings::attachVault();
 
 	[[maybe_unused]] const auto encrypted = encryptLocalKey(QByteArray());
@@ -205,7 +205,7 @@ Domain::StartModernResult Domain::startModern(
 		return StartModernResult::Failed;
 	}
 	_localKey = std::make_shared<MTP::AuthKey>(key);
-	AyuVault::SetKey(_localKey);
+	FreshVault::SetKey(_localKey);
 	AyuSettings::attachVault();
 
 	_passcodeKeyEncrypted = keyEncrypted;
@@ -342,7 +342,7 @@ bool Domain::setPasscode(const QByteArray &passcode) {
 		return false;
 	}
 	writeAccounts();
-	AyuFakePasscode::RealPasscodeChanged(passcode);
+	FreshFakePasscode::RealPasscodeChanged(passcode);
 	finishPasscodeChange();
 	return true;
 }
@@ -360,12 +360,12 @@ void Domain::setPasscodeAsync(
 	const auto useKdf = passcode.isEmpty() ? PasscodeKdf() : kdf;
 	auto salt = QByteArray(LocalEncryptSaltSize, Qt::Uninitialized);
 	base::RandomFill(salt.data(), salt.size());
-	auto fake = std::make_shared<AyuFakePasscode::RebuildTask>(
-		AyuFakePasscode::PrepareRebuild(passcode, useKdf));
+	auto fake = std::make_shared<FreshFakePasscode::RebuildTask>(
+		FreshFakePasscode::PrepareRebuild(passcode, useKdf));
 	crl::async([=, weak = base::make_weak(this)] {
 		auto key = DerivePasscodeKey(passcode, salt, useKdf);
 		if (key) {
-			AyuFakePasscode::ComputeRebuild(*fake);
+			FreshFakePasscode::ComputeRebuild(*fake);
 		}
 		crl::on_main([=, key = std::move(key)]() mutable {
 			const auto strong = weak.get();
@@ -375,7 +375,7 @@ void Domain::setPasscodeAsync(
 			}
 			strong->applyPasscodeKey(passcode, salt, useKdf, std::move(key));
 			strong->writeAccounts();
-			AyuFakePasscode::ApplyRebuild(*fake);
+			FreshFakePasscode::ApplyRebuild(*fake);
 			strong->finishPasscodeChange();
 			done(true);
 		});

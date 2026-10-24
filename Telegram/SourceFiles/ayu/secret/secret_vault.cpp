@@ -16,7 +16,7 @@
 #include <array>
 #include <cstring>
 
-namespace AyuSecret::Vault {
+namespace FreshSecret::Vault {
 namespace {
 
 constexpr uint8_t kMagic[4] = { 'F', 'G', 'V', '1' };
@@ -217,4 +217,4 @@ bool OpenFromFile(
 	return Open(sealed, plain, context);
 }
 
-} // namespace AyuSecret::Vault
+} // namespace FreshSecret::Vault

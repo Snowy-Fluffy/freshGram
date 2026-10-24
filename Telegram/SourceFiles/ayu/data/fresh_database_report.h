@@ -5,7 +5,7 @@
 
 struct sqlite3;
 
-namespace AyuDatabaseReport {
+namespace FreshDatabaseReport {
 
 struct Options {
 	// One full copy of the database, the same call the snapshot makes.
@@ -19,4 +19,4 @@ struct Options {
 // AES-256-GCM over 4 KiB pages, the cost of the page encryption.
 [[nodiscard]] std::string MeasureCrypto();
 
-} // namespace AyuDatabaseReport
+} // namespace FreshDatabaseReport

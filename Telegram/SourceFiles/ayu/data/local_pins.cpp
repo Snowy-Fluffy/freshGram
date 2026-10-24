@@ -18,7 +18,7 @@
 #include <map>
 #include <vector>
 
-namespace AyuLocalPins {
+namespace FreshLocalPins {
 namespace {
 
 std::map<ID, std::vector<PeerId>> State;
@@ -157,4 +157,4 @@ void saveOrder(not_null<Data::Session*> owner) {
 	Save(owner);
 }
 
-} // namespace AyuLocalPins
+} // namespace FreshLocalPins

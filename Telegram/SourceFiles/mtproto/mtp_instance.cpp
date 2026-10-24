@@ -996,7 +996,7 @@ void Instance::Private::checkDelayedRequests() {
 		if (const auto shiftedDcId = queryRequestByDc(requestId)) {
 			dcWithShift = *shiftedDcId;
 		} else {
-			AyuMtp::NoteDropped();
+			FreshMtp::NoteDropped();
 			continue;
 		}
 
@@ -1625,7 +1625,7 @@ bool Instance::Private::onErrorDefault(
 		} else if (m3.hasMatch()) {
 			secs = m3.captured(1).toInt();
 		}
-		AyuMtp::NoteRetry(code, type, retryBody);
+		FreshMtp::NoteRetry(code, type, retryBody);
 		auto sendAt = crl::now() + secs * 1000 + 10;
 		auto it = _delayedRequests.begin(), e = _delayedRequests.end();
 		for (; it != e; ++it) {

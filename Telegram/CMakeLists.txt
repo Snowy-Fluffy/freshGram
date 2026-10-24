@@ -213,6 +213,8 @@ set(ayugram_files
         ayu/ui/fagram/fagram_top_bar.h
         ayu/utils/debug_logging.cpp
         ayu/utils/debug_logging.h
+        ayu/utils/fresh_storage_migration.cpp
+        ayu/utils/fresh_storage_migration.h
         ayu/utils/mtp_retry_log.cpp
         ayu/utils/network_privacy.cpp
         ayu/utils/network_privacy.h
@@ -406,18 +408,18 @@ set(ayugram_files
         ayu/data/entities.h
         ayu/data/ayu_database.cpp
         ayu/data/ayu_database.h
-        ayu/data/ayu_database_backup.cpp
-        ayu/data/ayu_vault.cpp
-        ayu/data/ayu_vault.h
-        ayu/data/ayu_database_backup.h
-        ayu/data/ayu_database_report.cpp
-        ayu/data/ayu_database_report.h
-        ayu/data/ayu_encrypted_vfs.cpp
-        ayu/data/ayu_encrypted_vfs.h
-        ayu/data/ayu_legacy_copy.cpp
-        ayu/data/ayu_legacy_copy.h
-        ayu/data/ayu_migration_v4.cpp
-        ayu/data/ayu_migration_v4.h
+        ayu/data/fresh_database_backup.cpp
+        ayu/data/fresh_vault.cpp
+        ayu/data/fresh_vault.h
+        ayu/data/fresh_database_backup.h
+        ayu/data/fresh_database_report.cpp
+        ayu/data/fresh_database_report.h
+        ayu/data/fresh_encrypted_vfs.cpp
+        ayu/data/fresh_encrypted_vfs.h
+        ayu/data/fresh_legacy_copy.cpp
+        ayu/data/fresh_legacy_copy.h
+        ayu/data/fresh_migration_v4.cpp
+        ayu/data/fresh_migration_v4.h
         ayu/data/message_rows.cpp
         ayu/data/message_rows.h
         ayu/data/message_schema.h

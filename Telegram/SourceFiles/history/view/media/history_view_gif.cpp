@@ -2753,7 +2753,7 @@ void Gif::ensureTranscribeButton() const {
 		&& !_parent->data()->isScheduled()
 		&& !_parent->data()->isAdminLogEntry()
 		&& (_data->session().premium()
-			|| AyuRecognition::LocalTranscriptionEnabled()
+			|| FreshRecognition::LocalTranscriptionEnabled()
 			|| _data->session().api().transcribes().trialsSupport())) {
 		if (!_transcribe) {
 			_transcribe = std::make_unique<TranscribeButton>(

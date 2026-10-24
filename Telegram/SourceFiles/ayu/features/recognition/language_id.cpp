@@ -12,7 +12,7 @@
 #include <mutex>
 #include <sstream>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 namespace {
 
 #ifdef FRESHGRAM_LOCAL_TRANSLATE
@@ -26,7 +26,7 @@ std::unique_ptr<fasttext::FastText> Model;
 
 [[nodiscard]] const fasttext::FastText *Load() {
 	std::call_once(LoadFlag, [] {
-		auto file = QFile(u":/gui/ayu/lid.176.ftz"_q);
+		auto file = QFile(u":/gui/fresh/lid.176.ftz"_q);
 		if (!file.open(QIODevice::ReadOnly)) {
 			return;
 		}
@@ -128,4 +128,4 @@ std::vector<LanguageGuess> GuessLanguages(const QString &text, int count) {
 	return result;
 }
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

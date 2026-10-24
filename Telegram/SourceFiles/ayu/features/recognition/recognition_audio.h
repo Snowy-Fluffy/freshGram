@@ -6,7 +6,7 @@
 #include <atomic>
 #include <vector>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 
 struct DecodedAudio {
 	std::vector<float> samples; // 16 kHz, mono.
@@ -19,4 +19,4 @@ struct DecodedAudio {
 	const QString &path,
 	const std::atomic<bool> &cancelled);
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

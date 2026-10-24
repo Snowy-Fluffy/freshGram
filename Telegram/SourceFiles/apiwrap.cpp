@@ -144,7 +144,7 @@ using UpdatedFileReferences = Data::UpdatedFileReferences;
 	const auto history = thread->owningHistory();
 	const auto topicRootId = thread->topicRootId();
 	const auto monoforumPeerId = thread->monoforumPeerId();
-	if (AyuSecret::IsSecretPeer(history->peer)) {
+	if (FreshSecret::IsSecretPeer(history->peer)) {
 		return true;
 	}
 	const auto cloudDraft = history->cloudDraft(topicRootId, monoforumPeerId);
@@ -436,7 +436,7 @@ void ApiWrap::savePinnedOrder(Data::Folder *folder) {
 	auto peers = QVector<MTPInputDialogPeer>();
 	peers.reserve(order.size());
 	for (const auto &key : order) {
-		if (!AyuLocalPins::isLocal(key)) {
+		if (!FreshLocalPins::isLocal(key)) {
 			peers.push_back(input(key));
 		}
 	}
@@ -1230,7 +1230,7 @@ void ApiWrap::requestWallPaper(
 }
 
 void ApiWrap::requestFullPeer(not_null<PeerData*> peer) {
-	if (AyuSecret::IsSecretPeer(peer)) {
+	if (FreshSecret::IsSecretPeer(peer)) {
 		return;
 	}
 	if (const auto chat = peer->asChat(); chat && chat->isForbidden()) {
@@ -1360,7 +1360,7 @@ void ApiWrap::gotUserFull(
 }
 
 void ApiWrap::requestPeerSettings(not_null<PeerData*> peer) {
-	if (AyuSecret::IsSecretPeer(peer)) {
+	if (FreshSecret::IsSecretPeer(peer)) {
 		peer->setBarSettings(PeerBarSettings());
 		return;
 	}
@@ -2030,7 +2030,7 @@ void ApiWrap::leaveChannel(not_null<ChannelData*> channel) {
 			channel,
 			Data::PeerUpdate::Flag::ChannelAmIn);
 	} else if (!_channelAmInRequests.contains(channel)) {
-		AyuKept::userLeaving(channel);
+		FreshKept::userLeaving(channel);
 		auto requestId = request(MTPchannels_LeaveChannel(
 			channel->inputChannel()
 		)).done([=](const MTPUpdates &result) {
@@ -2159,7 +2159,7 @@ void ApiWrap::updateNotifySettingsDelayed(
 }
 
 void ApiWrap::updateNotifySettingsDelayed(not_null<const PeerData*> peer) {
-	if (AyuSecret::IsSecretPeer(peer)) {
+	if (FreshSecret::IsSecretPeer(peer)) {
 		return;
 	}
 	if (_updateNotifyPeers.emplace(peer).second) {
@@ -2273,7 +2273,7 @@ void ApiWrap::clearHistory(not_null<PeerData*> peer, bool revoke) {
 
 void ApiWrap::deleteConversation(not_null<PeerData*> peer, bool revoke) {
 	if (const auto chat = peer->asChat()) {
-		AyuKept::userLeaving(chat);
+		FreshKept::userLeaving(chat);
 		request(MTPmessages_DeleteChatUser(
 			MTP_flags(0),
 			chat->inputChat(),
@@ -2436,7 +2436,7 @@ mtpRequestId ApiWrap::saveDraftToCloud(
 		const Data::Draft &draft,
 		Fn<void()> done,
 		Fn<void(const MTP::Error &)> fail) {
-	if (AyuSecret::IsSecretPeer(thread->peer())) {
+	if (FreshSecret::IsSecretPeer(thread->peer())) {
 		return 0;
 	}
 	const auto weak = base::make_weak(thread);
@@ -2459,7 +2459,7 @@ mtpRequestId ApiWrap::savePreparedDraftToCloud(
 		bool clearOnFail,
 		Fn<void()> done,
 		Fn<void(const MTP::Error &)> fail) {
-	if (AyuSecret::IsSecretPeer(thread->peer())) {
+	if (FreshSecret::IsSecretPeer(thread->peer())) {
 		return 0;
 	}
 	if (AyuSettings::getInstance().keepDraftsLocal()
@@ -3993,7 +3993,7 @@ void ApiWrap::forwardMessages(
 		auto items = std::vector<not_null<HistoryItem*>>(
 			draft.items.begin(),
 			draft.items.end());
-		if (AyuSecret::Forward(items, threads, action.options)) {
+		if (FreshSecret::Forward(items, threads, action.options)) {
 			if (successCallback) {
 				successCallback();
 			}
@@ -4283,7 +4283,7 @@ void ApiWrap::shareContact(
 		const QString &lastName,
 		const SendAction &action,
 		Fn<void(bool)> done) {
-	if (AyuSecret::Reject(action.history->peer)) {
+	if (FreshSecret::Reject(action.history->peer)) {
 		if (done) {
 			done(false);
 		}
@@ -4385,7 +4385,7 @@ void ApiWrap::sendVoiceMessage(
 		crl::time duration,
 		bool video,
 		const SendAction &action) {
-	if (AyuSecret::SendVoice(result, waveform, duration, video, action)) {
+	if (FreshSecret::SendVoice(result, waveform, duration, video, action)) {
 		return;
 	}
 	auto scheduledAction = action;
@@ -4467,7 +4467,7 @@ void ApiWrap::sendFiles(
 		SendMediaType type,
 		std::shared_ptr<SendingAlbum> album,
 		SendAction action) {
-	if (AyuSecret::SendFiles(list, action)) {
+	if (FreshSecret::SendFiles(list, action)) {
 		return;
 	}
 	const auto &ephemeral = _session->ephemeralMessages();
@@ -4557,7 +4557,7 @@ void ApiWrap::sendFile(
 		const QByteArray &fileContent,
 		SendMediaType type,
 		const SendAction &action) {
-	if (AyuSecret::SendBytes(fileContent, action)) {
+	if (FreshSecret::SendBytes(fileContent, action)) {
 		return;
 	}
 	const auto to = FileLoadTaskOptions(action);
@@ -4898,9 +4898,9 @@ void ApiWrap::sendRichMessage(
 void ApiWrap::sendMessage(
 		MessageToSend &&message,
 		std::optional<MsgId> localMessageId) {
-	if (AyuSecret::SendText(message)) {
+	if (FreshSecret::SendText(message)) {
 		return;
-	} else if (AyuPlugins::ApplyOutgoing(message)) {
+	} else if (FreshPlugins::ApplyOutgoing(message)) {
 		return;
 	}
 	applyGhostScheduling(_session, message.action.options);
@@ -5283,13 +5283,13 @@ void ApiWrap::sendInlineResult(
 		std::optional<MsgId> localMessageId,
 		Fn<void(bool)> done) {
 	if (const auto document = data->document()
-		; document && AyuSecret::SendDocument(MessageToSend(action), document)) {
+		; document && FreshSecret::SendDocument(MessageToSend(action), document)) {
 		if (done) {
 			done(true);
 		}
 		return;
 	}
-	if (AyuSecret::Reject(action.history->peer)) {
+	if (FreshSecret::Reject(action.history->peer)) {
 		if (done) {
 			done(false);
 		}

@@ -271,8 +271,8 @@ public:
 	[[nodiscard]] bool unread(not_null<Data::Thread*> thread) const;
 	[[nodiscard]] bool showNotification() const;
 	void markClientSideAsRead();
-	[[nodiscard]] bool isAyuSecret() const;
-	void setAyuSecretRead();
+	[[nodiscard]] bool isFreshSecret() const;
+	void setFreshSecretRead();
 	[[nodiscard]] bool mentionsMe() const;
 	[[nodiscard]] bool isUnreadMention() const;
 	[[nodiscard]] bool hasUnreadReaction() const;
@@ -349,14 +349,14 @@ public:
 		return _flags & MessageFlag::SendingFailed;
 	}
 	[[nodiscard]] bool hideEditedBadge() const;
-	void ayuShowEditedBadge();
-	[[nodiscard]] TimeId ayuDeletedAt() const {
-		return _ayuDeletedAt;
+	void freshShowEditedBadge();
+	[[nodiscard]] TimeId freshDeletedAt() const {
+		return _freshDeletedAt;
 	}
-	void ayuSetDeletedAt(TimeId date) {
-		_ayuDeletedAt = date;
+	void freshSetDeletedAt(TimeId date) {
+		_freshDeletedAt = date;
 	}
-	void ayuSetFromRank(const QString &rank);
+	void freshSetFromRank(const QString &rank);
 	[[nodiscard]] bool hideDisplayDate() const {
 		return isEmpty() || (_flags & MessageFlag::HideDisplayDate);
 	}
@@ -366,7 +366,7 @@ public:
 	[[nodiscard]] bool isEphemeral() const {
 		return _flags & MessageFlag::Ephemeral;
 	}
-	[[nodiscard]] bool isAyuRestored() const {
+	[[nodiscard]] bool isFreshRestored() const {
 		return _deleted && isLocal() && !isService();
 	}
 	[[nodiscard]] bool canBeSelected() const;
@@ -696,8 +696,8 @@ public:
 	[[nodiscard]] int unsupportedTTL() const {
 		return _unsupportedTTL;
 	}
-	[[nodiscard]] const std::vector<char> &ayuSavedMedia() const {
-		return _ayuSavedMedia;
+	[[nodiscard]] const std::vector<char> &freshSavedMedia() const {
+		return _freshSavedMedia;
 	}
 	void removeTranslationBit();
 
@@ -849,11 +849,11 @@ private:
 	bool _deleted = false;
 	bool _deletedAnimated = false;
 	int _unsupportedTTL = 0;
-	bool _ayuExpired = false;
-	mutable signed char _ayuEditedBadge = -1;
-	TimeId _ayuDeletedAt = 0;
-	std::vector<char> _ayuSavedMedia;
-	bool _ayuSecretRead = false;
+	bool _freshExpired = false;
+	mutable signed char _freshEditedBadge = -1;
+	TimeId _freshDeletedAt = 0;
+	std::vector<char> _freshSavedMedia;
+	bool _freshSecretRead = false;
 
 	TimeId _date = 0;
 	TimeId _ttlDestroyAt = 0;

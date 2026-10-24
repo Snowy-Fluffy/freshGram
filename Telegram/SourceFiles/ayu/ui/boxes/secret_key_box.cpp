@@ -78,13 +78,13 @@ private:
 void FillSecretKeyBox(
 		not_null<Ui::GenericBox*> box,
 		std::vector<uint8_t> keyHash) {
-	box->setTitle(tr::ayu_SecretKey());
+	box->setTitle(tr::fresh_SecretKey());
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 
 	box->addRow(
 		object_ptr<Ui::FlatLabel>(
 			box,
-			tr::ayu_SecretKeyIntro(tr::now),
+			tr::fresh_SecretKeyIntro(tr::now),
 			st::boxLabel),
 		st::boxPadding);
 

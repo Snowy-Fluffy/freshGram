@@ -7,7 +7,7 @@
 
 #include <atomic>
 
-namespace AyuRecognition {
+namespace FreshRecognition {
 namespace {
 
 constexpr auto kSampleRate = 16000;
@@ -186,4 +186,4 @@ DecodedAudio DecodeAudioFile(
 	return result;
 }
 
-} // namespace AyuRecognition
+} // namespace FreshRecognition

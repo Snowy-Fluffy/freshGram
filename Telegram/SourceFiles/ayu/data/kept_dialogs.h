@@ -16,7 +16,7 @@ class Forum;
 class ForumTopic;
 } // namespace Data
 
-namespace AyuKept {
+namespace FreshKept {
 
 [[nodiscard]] bool keepDeletedTopic(not_null<Data::Forum*> forum, MsgId rootId);
 [[nodiscard]] bool purgeDeletedTopic(not_null<Data::Forum*> forum, MsgId rootId);
@@ -41,4 +41,4 @@ void userLeaving(not_null<PeerData*> peer);
 [[nodiscard]] bool takeUserLeaving(not_null<PeerData*> peer);
 void chatAmInChanged(not_null<ChatData*> chat);
 
-} // namespace AyuKept
+} // namespace FreshKept

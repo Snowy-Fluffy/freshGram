@@ -4,9 +4,10 @@
 // but be respectful and credit the original author.
 //
 // Copyright @Radolyn, 2026
-#include "ayu/data/ayu_vault.h"
+#include "ayu/data/fresh_vault.h"
 #include "ayu/utils/crash_trace.h"
 #include "ayu/utils/debug_logging.h"
+#include "ayu/utils/fresh_storage_migration.h"
 #include "ayu/utils/network_privacy.h"
 #include "ayu/ayu_settings.h"
 
@@ -16,7 +17,7 @@
 #include "ayu/ayu_worker.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/kept_dialogs.h"
-#include "ayu/data/ayu_database_backup.h"
+#include "ayu/data/fresh_database_backup.h"
 #include "ayu/features/recognition/text_translation.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/ui/ayu_logo.h"
@@ -44,7 +45,7 @@ constexpr auto kMaxSettingsSize = std::uintmax_t(2) * 1024 * 1024;
 bool AccountsAttached = false;
 
 QString getAccountsPath() {
-	return cWorkingDir() + u"tdata/ayu_accounts.enc"_q;
+	return cWorkingDir() + u"tdata/fresh_accounts.enc"_q;
 }
 
 std::filesystem::path getSettingsPath() {
@@ -418,20 +419,21 @@ AyuSettings &AyuSettings::getInstance() {
 }
 
 void AyuSettings::load() {
+	FreshStorage::MigrateLegacyNames();
 	const auto applied = gsl::finally([] {
 		const auto &settings = getInstance();
-		AyuDatabaseBackup::configure(
+		FreshDatabaseBackup::configure(
 			settings.backupKeepCount(),
 			settings.backupIntervalHours());
-		AyuDatabaseBackup::setKeepRichest(!settings.deleteSavedFiles());
+		FreshDatabaseBackup::setKeepRichest(!settings.deleteSavedFiles());
 		AyuDatabase::purgeOlderThan(settings.keepDeletedDays());
-		AyuNetworkPrivacy::SetEnabled(settings.reduceNetworkTracking());
-		AyuDebugLogging::SetEnabled(settings.enableDebugLogging());
+		FreshNetworkPrivacy::SetEnabled(settings.reduceNetworkTracking());
+		FreshDebugLogging::SetEnabled(settings.enableDebugLogging());
 	});
 	auto sizeError = std::error_code();
 	const auto size = std::filesystem::file_size(getSettingsPath(), sizeError);
 	if (!sizeError && size > kMaxSettingsSize) {
-		LOG(("AyuGramSettings: the settings file is too big, ignoring it"));
+		LOG(("freshGram settings: the settings file is too big, ignoring it"));
 		return;
 	}
 	std::ifstream file(getSettingsPath());
@@ -462,16 +464,16 @@ void AyuSettings::load() {
 			});
 			p["useGlobalGhostMode"] = true;
 
-			LOG(("AyuGramSettings: migrated ghost mode settings to per-account format"));
+			LOG(("freshGram settings: migrated ghost mode settings to per-account format"));
 		}
 
 		try {
 			from_json(p, settings);
 		} catch (...) {
-			LOG(("AyuGramSettings: failed to parse settings file"));
+			LOG(("freshGram settings: failed to parse settings file"));
 		}
 	} catch (...) {
-		LOG(("AyuGramSettings: failed to read settings file (not json-like)"));
+		LOG(("freshGram settings: failed to read settings file (not json-like)"));
 	}
 
 	applyForcedGhost();
@@ -493,13 +495,13 @@ void AyuSettings::applyForcedGhost() {
 }
 
 void AyuSettings::attachVault() {
-	if (!AyuVault::HasKey()) {
+	if (!FreshVault::HasKey()) {
 		return;
 	}
 	auto &settings = getInstance();
 	AccountsAttached = true;
 	const auto path = getAccountsPath();
-	if (const auto bytes = AyuVault::ReadFile(path, true)) {
+	if (const auto bytes = FreshVault::ReadFile(path, true)) {
 		try {
 			const auto p = json::parse(bytes->constBegin(), bytes->constEnd());
 			if (p.contains("ghostModeSettings")
@@ -517,10 +519,10 @@ void AyuSettings::attachVault() {
 					std::unordered_set<int64>>();
 			}
 		} catch (...) {
-			LOG(("AyuGramSettings: failed to parse the sealed accounts data"));
+			LOG(("freshGram settings: failed to parse the sealed accounts data"));
 		}
 	} else if (QFile::exists(path)) {
-		LOG(("AyuGramSettings: could not read the sealed accounts data"));
+		LOG(("freshGram settings: could not read the sealed accounts data"));
 	}
 	applyForcedGhost();
 	save();
@@ -536,7 +538,7 @@ void AyuSettings::save() {
 			{ "ghostModeSettings", p["ghostModeSettings"] },
 			{ "shadowBanIds", p["shadowBanIds"] },
 		};
-		strip = AyuVault::WriteSealedFile(
+		strip = FreshVault::WriteSealedFile(
 			getAccountsPath(),
 			QByteArray::fromStdString(sealed.dump()));
 		if (strip) {
@@ -644,7 +646,7 @@ void AyuSettings::validate() {
 	if (((_translationProvider.current() == TranslationProvider::Native)
 			&& !Platform::IsTranslateProviderAvailable())
 		|| ((_translationProvider.current() == TranslationProvider::Local)
-			&& !AyuRecognition::TextTranslationAvailable())) {
+			&& !FreshRecognition::TextTranslationAvailable())) {
 		_translationProvider = defaults._translationProvider.current();
 		modified = true;
 	}
@@ -966,21 +968,21 @@ void AyuSettings::setKeepDeletedDays(int val) {
 void AyuSettings::setDeleteSavedFiles(bool val) {
 	if (_deleteSavedFiles.current() == val) return;
 	_deleteSavedFiles = val;
-	AyuDatabaseBackup::setKeepRichest(!val);
+	FreshDatabaseBackup::setKeepRichest(!val);
 	save();
 }
 
 void AyuSettings::setBackupKeepCount(int val) {
 	if (_backupKeepCount.current() == val) return;
 	_backupKeepCount = val;
-	AyuDatabaseBackup::configure(_backupKeepCount.current(), _backupIntervalHours.current());
+	FreshDatabaseBackup::configure(_backupKeepCount.current(), _backupIntervalHours.current());
 	save();
 }
 
 void AyuSettings::setBackupIntervalHours(int val) {
 	if (_backupIntervalHours.current() == val) return;
 	_backupIntervalHours = val;
-	AyuDatabaseBackup::configure(_backupKeepCount.current(), _backupIntervalHours.current());
+	FreshDatabaseBackup::configure(_backupKeepCount.current(), _backupIntervalHours.current());
 	save();
 }
 
@@ -1572,7 +1574,7 @@ void AyuSettings::setKeepDeletedTopics(bool val) {
 	_keepDeletedTopics = val;
 	save();
 	if (!val) {
-		AyuKept::releaseDeletedTopics();
+		FreshKept::releaseDeletedTopics();
 	}
 }
 
@@ -1627,21 +1629,21 @@ void AyuSettings::setStashHintUsed(bool val) {
 void AyuSettings::setReduceNetworkTracking(bool val) {
 	if (_reduceNetworkTracking.current() == val) return;
 	_reduceNetworkTracking = val;
-	AyuNetworkPrivacy::SetEnabled(val);
+	FreshNetworkPrivacy::SetEnabled(val);
 	save();
 }
 
 void AyuSettings::setEnableDebugLogging(bool val) {
 	if (_enableDebugLogging.current() == val) return;
 	_enableDebugLogging = val;
-	AyuDebugLogging::SetEnabled(val);
+	FreshDebugLogging::SetEnabled(val);
 	const auto directory = cWorkingDir() + u"tdata"_q;
 	if (val) {
-		AyuCrashTrace::Install(directory);
+		FreshCrashTrace::Install(directory);
 	} else {
 		Logs::removeFiles();
-		AyuCrashTrace::Remove(directory);
-		QFile::remove(directory + u"/ayu_db_report.txt"_q);
+		FreshCrashTrace::Remove(directory);
+		QFile::remove(directory + u"/fresh_db_report.txt"_q);
 	}
 	save();
 }
@@ -1710,7 +1712,7 @@ void AyuSettings::setTranslationProvider(TranslationProvider val) {
 	if (((val == TranslationProvider::Native)
 			&& !Platform::IsTranslateProviderAvailable())
 		|| ((val == TranslationProvider::Local)
-			&& !AyuRecognition::TextTranslationAvailable())) {
+			&& !FreshRecognition::TextTranslationAvailable())) {
 		val = TranslationProvider::Telegram;
 	}
 	if (_translationProvider.current() == val) return;
