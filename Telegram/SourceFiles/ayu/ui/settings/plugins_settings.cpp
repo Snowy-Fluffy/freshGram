@@ -271,8 +271,6 @@ void ChooseRuntimeFile(not_null<Window::SessionController*> controller) {
 void AddPluginsSettings(
 		not_null<Ui::VerticalLayout*> container,
 		not_null<Window::SessionController*> controller) {
-	Ui::AddSubsectionTitle(container, tr::ayu_Plugins());
-
 	const auto toggle = Settings::AddButtonWithIcon(
 		container,
 		tr::ayu_PluginsEnable(),
