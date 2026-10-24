@@ -8938,7 +8938,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsUpToDate" = "Up to date";
 "fresh_PluginsUpdateAvailable" = "Update: Wasmtime {wasmtime}, Python {python} ({size})";
 "fresh_PluginsDownloadTitle" = "Download plugin components";
-"fresh_PluginsDownloadText" = "Wasmtime {wasmtime} and Python {python} will be downloaded together from the @{channel} channel on Telegram, about {size}. The files are checked by signature and hash.";
+"fresh_PluginsDownloadText" = "Download the plugin components?";
 "fresh_PluginsDownload" = "Download";
 "fresh_PluginsDownloading" = "Downloading… {percent}";
 "fresh_PluginsInstalling" = "Installing…";

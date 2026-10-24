@@ -152,7 +152,7 @@
 "fresh_PluginsUpToDate" = "Aktuell";
 "fresh_PluginsUpdateAvailable" = "Update: Wasmtime {wasmtime}, Python {python} ({size})";
 "fresh_PluginsDownloadTitle" = "Plugin-Komponenten herunterladen";
-"fresh_PluginsDownloadText" = "Wasmtime {wasmtime} und Python {python} werden zusammen aus dem Telegram-Kanal @{channel} heruntergeladen, etwa {size}. Die Dateien werden per Signatur und Hash geprüft.";
+"fresh_PluginsDownloadText" = "Die Plugin-Komponenten herunterladen?";
 "fresh_PluginsDownload" = "Herunterladen";
 "fresh_PluginsDownloading" = "Wird heruntergeladen… {percent}";
 "fresh_PluginsInstalling" = "Wird installiert…";
