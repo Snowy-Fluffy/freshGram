@@ -27,6 +27,7 @@
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
 #include "fgpl/runtime_bundle.h"
+#include "fgpl/sandbox_linux.h"
 #include "fgpl/semver.h"
 #endif
 
@@ -89,7 +90,6 @@ struct Service {
 	auto config = fgpl::ManagerConfig();
 	config.root = StorePath().toStdString();
 	config.host.path = HostBinary().toStdString();
-	config.host.requireLandlock = false;
 	config.services.dataFor = &DataFor;
 	config.services.transport = NetworkTransport();
 	config.services.settingsPage = [](
@@ -128,6 +128,8 @@ struct Service {
 [[nodiscard]] State Compute() {
 	if (!AyuSettings::getInstance().pluginsEnabled()) {
 		return State::Disabled;
+	} else if (!SandboxSupported()) {
+		return State::NoSandbox;
 	} else if (!Installed()) {
 		return State::NoRuntime;
 	} else if (!AyuVault::HasKey()) {
@@ -316,6 +318,15 @@ void Stop() {
 	}
 	service.state = State::Disabled;
 	service.started = false;
+#endif
+}
+
+bool SandboxSupported() {
+#ifdef FRESHGRAM_PLUGINS
+	static const auto result = (fgpl::sandbox::LandlockAbi() > 0);
+	return result;
+#else
+	return false;
 #endif
 }
 

@@ -89,6 +89,7 @@
 "ayu_PluginsEnable" = "启用插件";
 "ayu_PluginsDescription" = "插件在独立的沙盒进程中运行，只能使用你授予的权限。";
 "ayu_PluginsNoRuntime" = "插件组件尚未安装。";
+"ayu_PluginsNoSandbox" = "插件需要 Landlock 才能在沙盒中运行，而此系统不提供。请使用启用了 Landlock 的 Linux 5.13 或更高版本。";
 "ayu_PluginsNoKey" = "解锁应用后插件才会启动。";
 "ayu_PluginsUnavailable" = "此版本不支持插件。";
 "ayu_PluginsEmpty" = "尚未安装插件。";

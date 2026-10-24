@@ -62,13 +62,13 @@ void Forever() {
 	}
 }
 
-cbor::Value Hello() {
+cbor::Value Hello(bool landlock = true, bool seccomp = true, bool rlimits = true) {
 	return proto::Map({
 		{ "t", proto::Text("hello") },
-		{ "landlock_abi", proto::Int(0) },
-		{ "landlock", proto::Bool(false) },
-		{ "seccomp", proto::Bool(false) },
-		{ "rlimits", proto::Bool(false) },
+		{ "landlock_abi", proto::Int(landlock ? 6 : 0) },
+		{ "landlock", proto::Bool(landlock) },
+		{ "seccomp", proto::Bool(seccomp) },
+		{ "rlimits", proto::Bool(rlimits) },
 	});
 }
 
@@ -184,6 +184,15 @@ int main(int argc, char **argv) {
 		Forever();
 	} else if (attack == "hello_crash") {
 		Crash();
+	} else if (attack == "hello_no_landlock") {
+		Send(Hello(false, true, true));
+		Forever();
+	} else if (attack == "hello_no_seccomp") {
+		Send(Hello(true, false, true));
+		Forever();
+	} else if (attack == "hello_no_rlimits") {
+		Send(Hello(true, true, false));
+		Forever();
 	}
 	Send(Hello());
 	if (attack == "hello_then_exit") {

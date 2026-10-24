@@ -83,6 +83,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
 	target_link_libraries(fgpl_plugin_host PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
 	target_link_options(fgpl_plugin_host PRIVATE -static-libstdc++ -static-libgcc -Wl,--as-needed)
 	fgpl_options(fgpl_plugin_host)
+	if (FGPL_BUILD_TESTS)
+		add_executable(fgpl_plugin_host_unsandboxed src/fgpl/host_main.cpp)
+		target_link_libraries(fgpl_plugin_host_unsandboxed PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
+		target_compile_definitions(fgpl_plugin_host_unsandboxed PRIVATE FGPL_UNSANDBOXED_TEST_HOST)
+		fgpl_options(fgpl_plugin_host_unsandboxed)
+	endif()
 endif()
 
 if (FGPL_BUILD_TESTS)
@@ -125,8 +131,9 @@ if (FGPL_BUILD_TESTS)
 		add_executable(test_host tests/test_host.cpp)
 		target_link_libraries(test_host PRIVATE fgpl_client wasmtime)
 		target_compile_definitions(test_host PRIVATE
-			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>")
-		add_dependencies(test_host fgpl_plugin_host)
+			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
+			FGPL_UNSANDBOXED_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host_unsandboxed>")
+		add_dependencies(test_host fgpl_plugin_host fgpl_plugin_host_unsandboxed)
 		fgpl_warnings(test_host)
 		add_test(NAME test_host COMMAND test_host)
 	endif()
@@ -169,6 +176,7 @@ if (FGPL_BUILD_TESTS)
 		target_link_libraries(test_manager PRIVATE fgpl_client fgpl_runtime)
 		target_compile_definitions(test_manager PRIVATE
 			FGPL_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host>"
+			FGPL_UNSANDBOXED_HOST_BINARY="$<TARGET_FILE:fgpl_plugin_host_unsandboxed>"
 			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
 			FGPL_PYTHON_PLUGIN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/python"
 			FGPL_PYTHON_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
@@ -176,7 +184,7 @@ if (FGPL_BUILD_TESTS)
 			add_dependencies(test_manager counter_wasm_target)
 			target_compile_definitions(test_manager PRIVATE FGPL_COUNTER_WASM="${counter_wasm}")
 		endif()
-		add_dependencies(test_manager fgpl_plugin_host)
+		add_dependencies(test_manager fgpl_plugin_host fgpl_plugin_host_unsandboxed)
 		fgpl_options(test_manager)
 		add_test(NAME test_manager COMMAND test_manager)
 

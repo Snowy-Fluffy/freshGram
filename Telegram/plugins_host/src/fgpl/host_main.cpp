@@ -14,6 +14,8 @@
 #include <memory>
 #include <string>
 
+extern char **environ;
+
 namespace {
 
 using namespace fgpl;
@@ -311,7 +313,6 @@ void HandleCall(
 int main(int argc, char **argv) {
 	auto fd = -1;
 	auto layers = sandbox::kLayersAll;
-	auto requireLandlock = false;
 	auto selftest = std::string();
 	auto compileOnly = false;
 	auto addressSpaceMb = uint64_t(0);
@@ -321,12 +322,12 @@ int main(int argc, char **argv) {
 		const auto argument = std::string(argv[i]);
 		if (argument.rfind("--ipc-fd=", 0) == 0) {
 			fd = std::atoi(argument.c_str() + 9);
+#ifdef FGPL_UNSANDBOXED_TEST_HOST
 		} else if (argument == "--layers=none") {
 			layers = 0;
-		} else if (argument == "--layers=landlock") {
-			layers = sandbox::kLayerRlimits | sandbox::kLayerLandlock;
-		} else if (argument == "--require-landlock") {
-			requireLandlock = true;
+#endif
+		} else if (argument.rfind("--layers=", 0) == 0) {
+			return 64;
 		} else if (argument.rfind("--address-space-mb=", 0) == 0) {
 			addressSpaceMb = std::strtoull(argument.c_str() + 19, nullptr, 10);
 		} else if (argument.rfind("--reservation-mb=", 0) == 0) {
@@ -351,7 +352,6 @@ int main(int argc, char **argv) {
 	auto options = sandbox::Options();
 	options.ipcFd = fd;
 	options.layers = layers;
-	options.requireLandlock = requireLandlock;
 	options.addressSpaceBytes = addressSpaceMb << 20;
 	options.cpuSeconds = cpuSeconds;
 	auto restricted = sandbox::Restrict(options);
@@ -364,6 +364,10 @@ int main(int argc, char **argv) {
 		Fatal(fd, locked.error());
 	}
 	const auto report = locked.value();
+	if (layers == sandbox::kLayersAll
+		&& !(report.rlimits && report.landlock && report.seccomp)) {
+		Fatal(fd, "the sandbox is incomplete");
+	}
 	Reply(fd, proto::Map({
 		{ "t", proto::Text("hello") },
 		{ "landlock_abi", proto::Int(report.landlockAbi) },
@@ -382,6 +386,15 @@ int main(int argc, char **argv) {
 		while (true) {
 			counter = counter + 1;
 		}
+	} else if (selftest == "env") {
+		auto count = int64_t(0);
+		for (auto entry = environ; entry && *entry; ++entry) {
+			++count;
+		}
+		Reply(fd, proto::Map({
+			{ "t", proto::Text("selftest_env") },
+			{ "count", proto::Int(count) },
+		}));
 	} else if (selftest == "hang") {
 		while (true) {
 			const auto pause = timespec{ 1, 0 };

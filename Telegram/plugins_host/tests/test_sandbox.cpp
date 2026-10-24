@@ -180,10 +180,16 @@ void TestReport() {
 	CHECK(fgpl::sandbox::LandlockAbi() >= 0);
 }
 
+void TestSpeculationIsRestricted() {
+	const auto outcome = Run("landlock", "speculation");
+	CHECK(outcome.exited && outcome.code == 0);
+}
+
 } // namespace
 
 int main() {
 	TestReport();
+	TestSpeculationIsRestricted();
 	TestLandlockAloneBlocksFilesAndSignals();
 	TestSeccompKillsEverythingElse();
 	TestWhatTheHostNeedsStillWorks();

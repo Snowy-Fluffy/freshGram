@@ -24,6 +24,10 @@
 #define PR_SET_NO_NEW_PRIVS 38
 #endif
 
+#ifndef PR_SPEC_INDIRECT_BRANCH
+#define PR_SPEC_INDIRECT_BRANCH 1
+#endif
+
 namespace fgpl::sandbox {
 namespace {
 
@@ -50,6 +54,14 @@ constexpr auto kAuditArch = uint32_t(AUDIT_ARCH_AARCH64);
 #else
 #error "the seccomp filter is written for x86_64 and aarch64"
 #endif
+
+constexpr int kSpeculation[] = { PR_SPEC_STORE_BYPASS, PR_SPEC_INDIRECT_BRANCH };
+
+void RestrictSpeculation() {
+	for (const auto which : kSpeculation) {
+		prctl(PR_SET_SPECULATION_CTRL, which, PR_SPEC_FORCE_DISABLE, 0, 0);
+	}
+}
 
 [[nodiscard]] std::string Errno(const char *what) {
 	return std::string(what) + ": " + std::strerror(errno);
@@ -285,6 +297,17 @@ private:
 
 } // namespace
 
+bool SpeculationRestricted() {
+	for (const auto which : kSpeculation) {
+		const auto state = prctl(PR_GET_SPECULATION_CTRL, which, 0, 0, 0);
+		if (state < 0 || ((state & PR_SPEC_PRCTL) && !(state & PR_SPEC_FORCE_DISABLE)
+				&& !(state & PR_SPEC_DISABLE))) {
+			return false;
+		}
+	}
+	return true;
+}
+
 int LandlockAbi() {
 	const auto abi = syscall(
 		SYS_landlock_create_ruleset,
@@ -303,6 +326,10 @@ Result<Report, std::string> Restrict(const Options &options, Report report) {
 		return Errno("PR_SET_PDEATHSIG");
 	} else if (!CloseExtraDescriptors(options.ipcFd)) {
 		return Errno("closing inherited descriptors");
+	}
+	RestrictSpeculation();
+	if (!SpeculationRestricted()) {
+		return std::string("speculation controls could not be applied");
 	}
 	if ((options.layers & kLayerRlimits) != 0) {
 		if (!Limit(RLIMIT_CORE, 0)
@@ -325,10 +352,7 @@ Result<Report, std::string> Restrict(const Options &options, Report report) {
 	if ((options.layers & kLayerLandlock) != 0) {
 		report.landlockAbi = LandlockAbi();
 		if (report.landlockAbi == 0) {
-			if (options.requireLandlock) {
-				return std::string("Landlock is not available");
-			}
-			return report;
+			return std::string("Landlock is not available");
 		}
 		const auto abi = report.landlockAbi;
 		auto attr = RulesetAttr{

@@ -141,6 +141,9 @@ void TestStartupAttacks() {
 	Expect({ "hello_giant_length", Stage::Start, protocol, 2 });
 	Expect({ "hello_stall", Stage::Start, ClientError::Timeout, 2 });
 	Expect({ "hello_crash", Stage::Start, ClientError::HostDied, 2, SIGSEGV });
+	Expect({ "hello_no_landlock", Stage::Start, ClientError::Sandbox, 2 });
+	Expect({ "hello_no_seccomp", Stage::Start, ClientError::Sandbox, 2 });
+	Expect({ "hello_no_rlimits", Stage::Start, ClientError::Sandbox, 2 });
 }
 
 void TestLoadAttacks() {

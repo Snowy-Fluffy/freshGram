@@ -16,6 +16,7 @@ namespace AyuPlugins {
 enum class State {
 	Unavailable,
 	Disabled,
+	NoSandbox,
 	NoRuntime,
 	NoKey,
 	Ready,
@@ -24,6 +25,7 @@ enum class State {
 void Start();
 void Stop();
 
+[[nodiscard]] bool SandboxSupported();
 [[nodiscard]] State CurrentState();
 [[nodiscard]] rpl::producer<State> StateValue();
 

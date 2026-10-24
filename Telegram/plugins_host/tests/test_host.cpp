@@ -32,11 +32,11 @@ public:
 };
 
 [[nodiscard]] std::unique_ptr<HostClient> Start(
-		uint32_t layers = 7,
+		bool sandboxed = true,
 		const std::string &selftest = {}) {
 	auto config = HostConfig();
-	config.path = FGPL_HOST_BINARY;
-	config.layers = layers;
+	config.path = sandboxed ? FGPL_HOST_BINARY : FGPL_UNSANDBOXED_HOST_BINARY;
+	config.unsandboxedTestHost = !sandboxed;
 	config.selftest = selftest;
 	auto started = HostClient::Start(config);
 	if (!started.ok()) {
@@ -173,7 +173,7 @@ void TestBadLoadIsReported() {
 }
 
 void TestSeccompKillsAnEscapeAttempt() {
-	const auto client = Start(7, "open");
+	const auto client = Start(true, "open");
 	if (client) {
 		auto reply = client->waitFor(3000);
 		CHECK(!reply.ok());
@@ -183,7 +183,7 @@ void TestSeccompKillsAnEscapeAttempt() {
 }
 
 void TestWithoutSandboxTheSameAttemptSucceeds() {
-	const auto client = Start(0, "open");
+	const auto client = Start(false, "open");
 	if (client) {
 		auto reply = client->waitFor(3000);
 		CHECK(reply.ok());
@@ -191,8 +191,31 @@ void TestWithoutSandboxTheSameAttemptSucceeds() {
 	}
 }
 
+void TestHostGetsNoEnvironment() {
+	setenv("FGPL_SECRET_FOR_TEST", "visible", 1);
+	const auto client = Start(true, "env");
+	unsetenv("FGPL_SECRET_FOR_TEST");
+	if (client) {
+		auto reply = client->waitFor(3000);
+		CHECK(reply.ok());
+		if (reply.ok()) {
+			const auto count = reply.value().find("count");
+			CHECK(count && count->asInt() && *count->asInt() == 0);
+		}
+	}
+}
+
+void TestShippedHostCannotDropTheSandbox() {
+	auto config = HostConfig();
+	config.path = FGPL_HOST_BINARY;
+	config.unsandboxedTestHost = true;
+	const auto started = HostClient::Start(config);
+	CHECK(!started.ok());
+	CHECK(!started.ok() && started.error().exitCode == 64);
+}
+
 void TestHungHostIsKilled() {
-	const auto client = Start(7, "hang");
+	const auto client = Start(true, "hang");
 	if (!client) {
 		return;
 	}
@@ -238,6 +261,8 @@ int main() {
 	TestBadLoadIsReported();
 	TestSeccompKillsAnEscapeAttempt();
 	TestWithoutSandboxTheSameAttemptSucceeds();
+	TestShippedHostCannotDropTheSandbox();
+	TestHostGetsNoEnvironment();
 	TestHungHostIsKilled();
 	TestAddressSpaceLimitIsEnforced();
 	TestDestructorKillsTheHost();
