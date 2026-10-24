@@ -158,6 +158,48 @@ namespace {
 	return true;
 }
 
+[[nodiscard]] bool ValidHostname(std::string_view host);
+
+[[nodiscard]] bool NumericLabel(std::string_view host) {
+	const auto dot = host.rfind('.');
+	const auto last = (dot == std::string_view::npos) ? host : host.substr(dot + 1);
+	return !last.empty() && std::isdigit(static_cast<unsigned char>(last.front()));
+}
+
+struct Host {
+	std::string name;
+	bool ip = false;
+};
+
+[[nodiscard]] Result<Host, std::string> CheckHost(std::string_view raw) {
+	auto host = Lower(raw);
+	if (host.size() > 2 && host.front() == '[' && host.back() == ']') {
+		host = host.substr(1, host.size() - 2);
+		if (!ParseV6(host)) {
+			return std::string("a bad IPv6 address");
+		}
+	}
+	if (ParseV4(host) || ParseV6(host)) {
+		if (!IsPublicAddress(host)) {
+			return std::string("the address is not public");
+		}
+		return Host{ host, true };
+	}
+	while (!host.empty() && host.back() == '.') {
+		host.pop_back();
+	}
+	if (!ValidHostname(host) || NumericLabel(host)) {
+		return std::string("a bad host name");
+	} else if (host == "localhost"
+		|| host.ends_with(".localhost")
+		|| host.ends_with(".local")
+		|| host.ends_with(".internal")
+		|| host.ends_with(".home.arpa")) {
+		return std::string("local hosts are not allowed");
+	}
+	return Host{ host, false };
+}
+
 [[nodiscard]] bool ValidHostname(std::string_view host) {
 	if (host.empty() || host.size() > 253) {
 		return false;
@@ -213,15 +255,22 @@ Result<Url, std::string> ParseUrl(std::string_view text) {
 	if (fragment != std::string::npos) {
 		target.resize(fragment);
 	}
-	if (authority.empty()
-		|| authority.find('@') != std::string_view::npos
-		|| authority.front() == '[') {
+	if (authority.empty() || authority.find('@') != std::string_view::npos) {
 		return std::string("the URL has no usable host");
 	}
 	auto url = Url();
+	const auto bracket = authority.rfind(']');
 	const auto colon = authority.rfind(':');
 	auto host = authority;
-	if (colon != std::string_view::npos) {
+	if (authority.front() == '[' && bracket == std::string_view::npos) {
+		return std::string("the URL has no usable host");
+	} else if (authority.front() != '['
+		&& colon != std::string_view::npos
+		&& authority.find(':') != colon) {
+		return std::string("an IPv6 address must be in brackets");
+	}
+	if (colon != std::string_view::npos
+		&& (bracket == std::string_view::npos || colon > bracket)) {
 		host = authority.substr(0, colon);
 		const auto port = authority.substr(colon + 1);
 		if (port.empty() || port.size() > 5) {
@@ -239,49 +288,42 @@ Result<Url, std::string> ParseUrl(std::string_view text) {
 		}
 		url.port = number;
 	}
-	url.host = Lower(host);
-	while (!url.host.empty() && url.host.back() == '.') {
-		url.host.pop_back();
+	if (host.front() == '[' && host.back() != ']') {
+		return std::string("the URL has no usable host");
 	}
-	if (!ValidHostname(url.host)) {
-		return std::string("a bad host name");
-	} else if (ParseV4(url.host)) {
-		return std::string("IP addresses are not allowed");
-	} else if (url.host == "localhost"
-		|| url.host.ends_with(".localhost")
-		|| url.host.ends_with(".local")
-		|| url.host.ends_with(".internal")) {
-		return std::string("local hosts are not allowed");
+	const auto checked = CheckHost(host);
+	if (!checked.ok()) {
+		return checked.error();
 	}
+	url.host = checked.value().name;
+	url.ip = checked.value().ip;
 	url.target = std::move(target);
-	url.text = "https://" + url.host
+	const auto shown = (url.ip && url.host.find(':') != std::string::npos)
+		? "[" + url.host + "]"
+		: url.host;
+	url.text = "https://" + shown
 		+ (url.port == 443 ? std::string() : ":" + std::to_string(url.port))
 		+ url.target;
 	return url;
 }
 
-bool HostAllowed(const Url &url, const std::vector<std::string> &patterns) {
-	for (const auto &raw : patterns) {
-		auto pattern = Lower(raw);
-		auto port = 443;
-		const auto colon = pattern.rfind(':');
-		if (colon != std::string::npos) {
-			port = std::atoi(pattern.c_str() + colon + 1);
-			pattern.resize(colon);
-		}
-		if (port != url.port) {
-			continue;
-		} else if (pattern.rfind("*.", 0) == 0) {
-			const auto suffix = pattern.substr(1);
-			if (url.host.size() > suffix.size()
-				&& url.host.ends_with(suffix)) {
-				return true;
-			}
-		} else if (pattern == url.host) {
-			return true;
+Result<Endpoint, std::string> ParseEndpoint(std::string_view host, int64_t port) {
+	if (port < 1 || port > 65535) {
+		return std::string("a bad port");
+	} else if (host.empty() || host.size() > 255) {
+		return std::string("a bad host");
+	}
+	for (const auto ch : host) {
+		if (static_cast<unsigned char>(ch) < 0x21
+			|| static_cast<unsigned char>(ch) > 0x7E) {
+			return std::string("the host has forbidden characters");
 		}
 	}
-	return false;
+	const auto checked = CheckHost(host);
+	if (!checked.ok()) {
+		return checked.error();
+	}
+	return Endpoint{ checked.value().name, int(port), checked.value().ip };
 }
 
 bool IsPublicAddress(std::string_view address) {
@@ -298,6 +340,8 @@ bool IsPublicAddress(std::string_view address) {
 		zeros = zeros && b[size_t(i)] == 0;
 	}
 	if (zeros && b[10] == 0xFF && b[11] == 0xFF) {
+		return PublicV4({ b[12], b[13], b[14], b[15] });
+	} else if (zeros && b[10] == 0 && b[11] == 0) {
 		return PublicV4({ b[12], b[13], b[14], b[15] });
 	}
 	auto allZero = true;
@@ -316,8 +360,20 @@ bool IsPublicAddress(std::string_view address) {
 		return false;
 	} else if (b[0] == 0x20 && b[1] == 0x01 && b[2] == 0x0D && b[3] == 0xB8) {
 		return false;
+	} else if (b[0] == 0xFE && (b[1] & 0xC0) == 0xC0) {
+		return false;
+	} else if (b[0] == 0x01 && b[1] == 0x00 && (b[2] | b[3] | b[4] | b[5] | b[6] | b[7]) == 0) {
+		return false;
 	} else if (b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xFF && b[3] == 0x9B) {
+		if (b[4] == 0x00 && b[5] == 0x01) {
+			return false;
+		}
 		return PublicV4({ b[12], b[13], b[14], b[15] });
+	} else if (b[0] == 0x20 && b[1] == 0x02) {
+		return PublicV4({ b[2], b[3], b[4], b[5] });
+	} else if (b[0] == 0x20 && b[1] == 0x01 && b[2] == 0x00 && b[3] == 0x00) {
+		return PublicV4({
+			uint8_t(~b[12]), uint8_t(~b[13]), uint8_t(~b[14]), uint8_t(~b[15]) });
 	}
 	return true;
 }

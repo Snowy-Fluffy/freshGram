@@ -29,12 +29,6 @@ Grants MakeGrants(const Manifest &manifest, const GrantDecision &decision) {
 			continue;
 		}
 		grants.permissions.insert(request.id);
-		if (request.id == "net.hosts") {
-			grants.hosts.insert(
-				grants.hosts.end(),
-				request.hosts.begin(),
-				request.hosts.end());
-		}
 	}
 	return grants;
 }
@@ -45,15 +39,19 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 		granted.begin(),
 		granted.end(),
 		[](const std::string &id) { return kReadingPermissions.contains(id); });
-	const auto network = Has(granted, "net.hosts") || Has(granted, "net.any");
+	const auto sockets = Has(granted, "net.tcp") || Has(granted, "net.udp");
+	const auto network = Has(granted, "net.https") || sockets;
 	if (reads && network) {
 		notes.push_back({
 			Risk::ExfiltrationPossible,
 			"can read your data and send it to the internet",
 		});
 	}
-	if (Has(granted, "net.any")) {
-		notes.push_back({ Risk::AnyServer, "can contact any server" });
+	if (network) {
+		notes.push_back({ Risk::AnyServer, "can contact any public server" });
+	}
+	if (sockets) {
+		notes.push_back({ Risk::RawSockets, "can open its own TCP or UDP connections" });
 	}
 	if (Has(granted, "messages.read_deleted")) {
 		notes.push_back({
@@ -91,12 +89,6 @@ std::vector<std::string> NewRequests(
 		if (old == previous.permissions.end()) {
 			result.push_back(request.id);
 			continue;
-		}
-		for (const auto &host : request.hosts) {
-			if (std::find(old->hosts.begin(), old->hosts.end(), host)
-				== old->hosts.end()) {
-				result.push_back(request.id + ":" + host);
-			}
 		}
 		if (request.id == "messages.read"
 			&& old->scope != "all"

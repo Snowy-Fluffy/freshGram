@@ -120,8 +120,7 @@ inline void Remove(cbor::Value &document, const std::string &path) {
 	}));
 	Set(document, "permissions.optional", cbor::Value::FromArray({
 		cbor::Value::FromMap({
-			{ "id", Text("net.hosts") },
-			{ "hosts", Array({ "api.example.com", "*.cdn.example.com:8443" }) },
+			{ "id", Text("net.https") },
 			{ "reason", Text("Talks to the service.") },
 		}),
 		cbor::Value::FromMap({

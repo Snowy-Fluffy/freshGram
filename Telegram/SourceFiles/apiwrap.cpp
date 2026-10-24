@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/data/local_pins.h"
 #include "ayu/secret/secret_send.h"
 #include "ayu/secret/secret_peer.h"
+#include "ayu/features/plugins/plugins_service.h"
 #include "apiwrap.h"
 
 #include "api/api_authorizations.h"
@@ -4898,6 +4899,8 @@ void ApiWrap::sendMessage(
 		MessageToSend &&message,
 		std::optional<MsgId> localMessageId) {
 	if (AyuSecret::SendText(message)) {
+		return;
+	} else if (AyuPlugins::ApplyOutgoing(message)) {
 		return;
 	}
 	applyGhostScheduling(_session, message.action.options);

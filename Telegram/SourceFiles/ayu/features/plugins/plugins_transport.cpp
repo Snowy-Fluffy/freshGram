@@ -18,7 +18,12 @@
 #include <QtNetwork/QNetworkProxy>
 #include <QtNetwork/QSslConfiguration>
 #include <QtNetwork/QSslSocket>
+#include <QtNetwork/QUdpSocket>
 
+#include <atomic>
+#include <deque>
+#include <map>
+#include <memory>
 #include <mutex>
 
 namespace AyuPlugins {
@@ -29,6 +34,92 @@ namespace {
 
 constexpr auto kMaxRedirects = 5;
 constexpr auto kMaxHeaderBytes = size_t(64) << 10;
+constexpr auto kWaitSliceMs = 50;
+constexpr auto kDatagramsPerSecond = 200;
+
+struct Connection {
+	int64 id = 0;
+	fgpl::NetOwner owner;
+	QString kind;
+	QString host;
+	int port = 0;
+	QHostAddress address;
+	bool tls = false;
+	crl::time opened = 0;
+	std::atomic<uint64> received = 0;
+	std::atomic<uint64> sent = 0;
+	std::atomic<bool> killed = false;
+	std::unique_ptr<QTcpSocket> stream;
+	std::unique_ptr<QUdpSocket> datagram;
+	std::deque<crl::time> recentDatagrams;
+};
+
+struct Traffic {
+	uint64 received = 0;
+	uint64 sent = 0;
+};
+
+struct Registry {
+	std::mutex mutex;
+	std::map<int64, std::shared_ptr<Connection>> connections;
+	std::map<std::string, Traffic> finished;
+	std::atomic<int64> nextId = 1;
+};
+
+[[nodiscard]] Registry &GetRegistry() {
+	static auto result = Registry();
+	return result;
+}
+
+[[nodiscard]] std::shared_ptr<Connection> Register(
+		const fgpl::NetOwner &owner,
+		QString kind,
+		QString host,
+		int port) {
+	auto &registry = GetRegistry();
+	auto connection = std::make_shared<Connection>();
+	connection->id = registry.nextId++;
+	connection->owner = owner;
+	connection->kind = std::move(kind);
+	connection->host = std::move(host);
+	connection->port = port;
+	connection->opened = crl::now();
+	const auto lock = std::scoped_lock(registry.mutex);
+	registry.connections.emplace(connection->id, connection);
+	return connection;
+}
+
+void Unregister(int64 id) {
+	auto &registry = GetRegistry();
+	auto connection = std::shared_ptr<Connection>();
+	{
+		const auto lock = std::scoped_lock(registry.mutex);
+		const auto i = registry.connections.find(id);
+		if (i == registry.connections.end()) {
+			return;
+		}
+		connection = std::move(i->second);
+		registry.connections.erase(i);
+		auto &total = registry.finished[connection->owner.plugin];
+		total.received += connection->received.load();
+		total.sent += connection->sent.load();
+	}
+	if (connection->stream) {
+		connection->stream->abort();
+		connection->stream.reset();
+	}
+	if (connection->datagram) {
+		connection->datagram->abort();
+		connection->datagram.reset();
+	}
+}
+
+[[nodiscard]] std::shared_ptr<Connection> Find(int64 id) {
+	auto &registry = GetRegistry();
+	const auto lock = std::scoped_lock(registry.mutex);
+	const auto i = registry.connections.find(id);
+	return (i == registry.connections.end()) ? nullptr : i->second;
+}
 
 struct ProxyChoice {
 	enum class Mode {
@@ -165,10 +256,56 @@ struct Parsed {
 	}
 }
 
+[[nodiscard]] fgpl::Result<QHostAddress, fgpl::FetchError> Resolve(
+		const std::string &host,
+		bool ip) {
+	if (ip) {
+		const auto address = QHostAddress(QString::fromStdString(host));
+		if (address.isNull()) {
+			return Error("invalid", u"a bad address"_q);
+		}
+		return address;
+	}
+	const auto lookup = QHostInfo::fromName(QString::fromStdString(host));
+	if (lookup.error() != QHostInfo::NoError || lookup.addresses().isEmpty()) {
+		return Error("dns", u"the host was not found"_q);
+	}
+	for (const auto &address : lookup.addresses()) {
+		if (!fgpl::net::IsPublicAddress(address.toString().toStdString())) {
+			return Error("blocked", u"the address is not public"_q);
+		}
+	}
+	return lookup.addresses().front();
+}
+
+[[nodiscard]] fgpl::Result<QNetworkProxy, fgpl::FetchError> ProxyFor(bool udp) {
+	const auto choice = CurrentChoice();
+	switch (choice.mode) {
+	case ProxyChoice::Mode::Refuse:
+		return Error("proxy", u"the selected proxy cannot carry plugin traffic"_q);
+	case ProxyChoice::Mode::Proxy:
+		if (udp && choice.proxy.type() != QNetworkProxy::Socks5Proxy) {
+			return Error("proxy", u"UDP cannot go through an HTTP proxy"_q);
+		}
+		return choice.proxy;
+	case ProxyChoice::Mode::Application:
+		return QNetworkProxy(QNetworkProxy::DefaultProxy);
+	case ProxyChoice::Mode::Direct:
+		break;
+	}
+	return QNetworkProxy(QNetworkProxy::NoProxy);
+}
+
 class NetTransport final : public fgpl::Transport {
 public:
 	fgpl::Result<fgpl::FetchResponse, fgpl::FetchError> fetch(
 			const fgpl::FetchRequest &request) override {
+		const auto entry = Register(
+			request.owner,
+			u"HTTPS"_q,
+			QString::fromStdString(request.host),
+			request.port);
+		const auto guard = gsl::finally([&] { Unregister(entry->id); });
 		auto url = request.url;
 		auto method = request.method;
 		auto body = request.body;
@@ -181,7 +318,10 @@ public:
 			if (!parsed.ok()) {
 				return Error("invalid", u"url"_q);
 			}
+			entry->host = QString::fromStdString(parsed.value().host);
+			entry->port = parsed.value().port;
 			auto response = once(
+				*entry,
 				parsed.value(),
 				method,
 				headers,
@@ -228,12 +368,205 @@ public:
 		return Error("redirect", u"too many redirects"_q);
 	}
 
+	fgpl::Result<int64_t, fgpl::FetchError> open(
+			const fgpl::NetOwner &owner,
+			const fgpl::SocketRequest &request) override {
+		const auto udp = (request.kind == fgpl::SocketKind::Udp);
+		const auto proxy = ProxyFor(udp);
+		if (!proxy.ok()) {
+			return proxy.error();
+		}
+		const auto resolved = Resolve(request.host, request.ip);
+		if (!resolved.ok()) {
+			return resolved.error();
+		}
+		const auto host = QString::fromStdString(request.host);
+		auto entry = Register(
+			owner,
+			udp ? u"UDP"_q : request.tls ? u"TLS"_q : u"TCP"_q,
+			host,
+			request.port);
+		entry->address = resolved.value();
+		entry->tls = request.tls;
+		const auto fail = [&](const char *code, QString message) {
+			Unregister(entry->id);
+			return Error(code, message);
+		};
+		if (udp) {
+			auto socket = std::make_unique<QUdpSocket>();
+			socket->setProxy(proxy.value());
+			const auto any = (resolved.value().protocol() == QAbstractSocket::IPv6Protocol)
+				? QHostAddress::AnyIPv6
+				: QHostAddress::AnyIPv4;
+			if (!socket->bind(QHostAddress(any), 0)) {
+				return fail("connect", socket->errorString());
+			}
+			entry->datagram = std::move(socket);
+			return entry->id;
+		}
+		auto socket = std::unique_ptr<QTcpSocket>();
+		if (request.tls) {
+			auto secure = std::make_unique<QSslSocket>();
+			auto configuration = QSslConfiguration::defaultConfiguration();
+			configuration.setProtocol(QSsl::TlsV1_2OrLater);
+			secure->setSslConfiguration(configuration);
+			secure->setPeerVerifyMode(QSslSocket::VerifyPeer);
+			secure->setPeerVerifyName(host);
+			socket = std::move(secure);
+		} else {
+			socket = std::make_unique<QTcpSocket>();
+		}
+		socket->setProxy(proxy.value());
+		socket->connectToHost(resolved.value(), quint16(request.port));
+		if (!socket->waitForConnected(request.timeoutMs)) {
+			return fail("connect", socket->errorString());
+		}
+		if (const auto secure = dynamic_cast<QSslSocket*>(socket.get())) {
+			secure->startClientEncryption();
+			if (!secure->waitForEncrypted(request.timeoutMs)) {
+				return fail("tls", secure->errorString());
+			}
+		}
+		entry->stream = std::move(socket);
+		return entry->id;
+	}
+
+	fgpl::Result<size_t, fgpl::FetchError> write(
+			int64_t id,
+			std::span<const uint8_t> data,
+			int timeoutMs) override {
+		const auto entry = Find(id);
+		if (!entry || entry->killed.load()) {
+			return Error("closed", u"the connection is closed"_q);
+		}
+		const auto bytes = QByteArray(
+			reinterpret_cast<const char*>(data.data()),
+			qsizetype(data.size()));
+		if (entry->datagram) {
+			const auto now = crl::now();
+			auto &recent = entry->recentDatagrams;
+			while (!recent.empty() && recent.front() <= now - 1000) {
+				recent.pop_front();
+			}
+			if (int(recent.size()) >= kDatagramsPerSecond) {
+				return Error("limit", u"too many datagrams"_q);
+			}
+			recent.push_back(now);
+			const auto written = entry->datagram->writeDatagram(
+				bytes,
+				entry->address,
+				quint16(entry->port));
+			if (written < 0) {
+				return Error("write", entry->datagram->errorString());
+			}
+			entry->sent += uint64(written);
+			return size_t(written);
+		}
+		const auto socket = entry->stream.get();
+		if (socket->state() != QAbstractSocket::ConnectedState) {
+			return Error("closed", u"the connection is closed"_q);
+		}
+		const auto deadline = QDeadlineTimer(timeoutMs);
+		if (socket->write(bytes) != bytes.size()) {
+			return Error("write", socket->errorString());
+		}
+		while (socket->bytesToWrite() > 0) {
+			if (entry->killed.load() || deadline.hasExpired()) {
+				return Error("timeout", u"the data was not sent in time"_q);
+			} else if (!socket->waitForBytesWritten(std::min(remaining(deadline), kWaitSliceMs))
+				&& socket->state() != QAbstractSocket::ConnectedState) {
+				return Error("closed", socket->errorString());
+			}
+		}
+		entry->sent += uint64(bytes.size());
+		return data.size();
+	}
+
+	fgpl::Result<fgpl::SocketRead, fgpl::FetchError> read(
+			int64_t id,
+			size_t maxBytes,
+			int timeoutMs) override {
+		const auto entry = Find(id);
+		if (!entry || entry->killed.load()) {
+			return Error("closed", u"the connection is closed"_q);
+		}
+		const auto deadline = QDeadlineTimer(timeoutMs);
+		auto result = fgpl::SocketRead();
+		if (const auto socket = entry->datagram.get()) {
+			while (true) {
+				while (socket->hasPendingDatagrams()) {
+					auto sender = QHostAddress();
+					auto port = quint16();
+					auto buffer = QByteArray(
+						int(std::max<qint64>(socket->pendingDatagramSize(), 0)),
+						Qt::Uninitialized);
+					const auto got = socket->readDatagram(
+						buffer.data(),
+						buffer.size(),
+						&sender,
+						&port);
+					if (got < 0 || port != entry->port || !sender.isEqual(entry->address)) {
+						continue;
+					}
+					entry->received += uint64(got);
+					const auto size = std::min<size_t>(size_t(got), maxBytes);
+					result.data.assign(buffer.constData(), buffer.constData() + size);
+					return result;
+				}
+				if (entry->killed.load()) {
+					return Error("closed", u"the connection was closed by the user"_q);
+				} else if (deadline.hasExpired()) {
+					return result;
+				}
+				socket->waitForReadyRead(std::min(remaining(deadline), kWaitSliceMs));
+			}
+		}
+		const auto socket = entry->stream.get();
+		while (!socket->bytesAvailable()
+			&& socket->state() == QAbstractSocket::ConnectedState
+			&& !deadline.hasExpired()) {
+			if (entry->killed.load()) {
+				return Error("closed", u"the connection was closed by the user"_q);
+			}
+			socket->waitForReadyRead(std::min(remaining(deadline), kWaitSliceMs));
+		}
+		const auto chunk = socket->read(qint64(maxBytes));
+		entry->received += uint64(chunk.size());
+		result.data.assign(chunk.constData(), chunk.constData() + chunk.size());
+		result.closed = (socket->state() != QAbstractSocket::ConnectedState)
+			&& !socket->bytesAvailable();
+		return result;
+	}
+
+	void close(int64_t id) override {
+		Unregister(id);
+	}
+
+	fgpl::NetTraffic traffic(const std::string &plugin) override {
+		auto &registry = GetRegistry();
+		const auto lock = std::scoped_lock(registry.mutex);
+		auto result = fgpl::NetTraffic();
+		if (const auto i = registry.finished.find(plugin); i != registry.finished.end()) {
+			result.received = i->second.received;
+			result.sent = i->second.sent;
+		}
+		for (const auto &[id, connection] : registry.connections) {
+			if (connection->owner.plugin == plugin) {
+				result.received += connection->received.load();
+				result.sent += connection->sent.load();
+				result.open += (connection->kind != u"HTTPS"_q) ? 1 : 0;
+			}
+		}
+		return result;
+	}
+
 private:
 	using Single = fgpl::Result<
 		std::pair<fgpl::FetchResponse, std::string>,
 		fgpl::FetchError>;
 
 	[[nodiscard]] Single once(
+			Connection &entry,
 			const fgpl::net::Url &url,
 			const std::string &method,
 			const std::vector<std::pair<std::string, std::string>> &headers,
@@ -245,15 +578,11 @@ private:
 			return Error("proxy", u"the selected proxy cannot carry plugin traffic"_q);
 		}
 		const auto host = QString::fromStdString(url.host);
-		const auto lookup = QHostInfo::fromName(host);
-		if (lookup.error() != QHostInfo::NoError || lookup.addresses().isEmpty()) {
-			return Error("dns", u"the host was not found"_q);
+		const auto resolved = Resolve(url.host, url.ip);
+		if (!resolved.ok()) {
+			return resolved.error();
 		}
-		for (const auto &address : lookup.addresses()) {
-			if (!fgpl::net::IsPublicAddress(address.toString().toStdString())) {
-				return Error("blocked", u"the address is not public"_q);
-			}
-		}
+		entry.address = resolved.value();
 		auto socket = QSslSocket();
 		auto configuration = QSslConfiguration::defaultConfiguration();
 		configuration.setProtocol(QSsl::TlsV1_2OrLater);
@@ -267,7 +596,7 @@ private:
 			socket.setProxy(choice.mode == ProxyChoice::Mode::Application
 				? QNetworkProxy(QNetworkProxy::DefaultProxy)
 				: QNetworkProxy(QNetworkProxy::NoProxy));
-			socket.connectToHost(lookup.addresses().front(), quint16(url.port));
+			socket.connectToHost(resolved.value(), quint16(url.port));
 		}
 		if (!socket.waitForConnected(remaining(deadline))) {
 			return Error("connect", socket.errorString());
@@ -298,6 +627,7 @@ private:
 		if (!body.empty()) {
 			socket.write(reinterpret_cast<const char*>(body.data()), qint64(body.size()));
 		}
+		entry.sent += head.size() + body.size();
 		if (!socket.waitForBytesWritten(remaining(deadline))) {
 			return Error("write", socket.errorString());
 		}
@@ -307,14 +637,21 @@ private:
 		auto payload = std::string();
 		auto done = false;
 		while (!done) {
+			if (entry.killed.load()) {
+				return Error("closed", u"the connection was closed by the user"_q);
+			}
 			if (!socket.bytesAvailable()
 				&& socket.state() == QAbstractSocket::ConnectedState
-				&& !socket.waitForReadyRead(remaining(deadline))
+				&& !socket.waitForReadyRead(std::min(remaining(deadline), kWaitSliceMs))
 				&& socket.state() == QAbstractSocket::ConnectedState) {
-				return Error("timeout", u"the request timed out"_q);
+				if (deadline.hasExpired()) {
+					return Error("timeout", u"the request timed out"_q);
+				}
+				continue;
 			}
 			const auto chunk = socket.readAll();
 			raw.append(chunk.constData(), size_t(chunk.size()));
+			entry.received += uint64(chunk.size());
 			const auto closed = (socket.state() != QAbstractSocket::ConnectedState
 				&& !socket.bytesAvailable());
 			if (!parsed) {
@@ -378,6 +715,37 @@ fgpl::Transport *NetworkTransport() {
 	return &result;
 }
 
+std::vector<ConnectionView> Connections() {
+	auto &registry = GetRegistry();
+	const auto lock = std::scoped_lock(registry.mutex);
+	auto result = std::vector<ConnectionView>();
+	for (const auto &[id, connection] : registry.connections) {
+		if (connection->killed.load()) {
+			continue;
+		}
+		result.push_back({
+			.id = id,
+			.plugin = QString::fromStdString(connection->owner.plugin),
+			.account = QString::fromStdString(connection->owner.account),
+			.kind = connection->kind,
+			.host = connection->host,
+			.port = connection->port,
+			.address = connection->address.toString(),
+			.tls = connection->tls,
+			.received = connection->received.load(),
+			.sent = connection->sent.load(),
+			.opened = connection->opened,
+		});
+	}
+	return result;
+}
+
+void CloseConnection(int64 id) {
+	if (const auto connection = Find(id)) {
+		connection->killed.store(true);
+	}
+}
+
 void RefreshProxy() {
 	auto choice = ProxyChoice();
 	const auto &settings = Core::App().settings().proxy();
@@ -404,6 +772,13 @@ fgpl::Transport *NetworkTransport() {
 }
 
 void RefreshProxy() {
+}
+
+std::vector<ConnectionView> Connections() {
+	return {};
+}
+
+void CloseConnection(int64 id) {
 }
 
 #endif

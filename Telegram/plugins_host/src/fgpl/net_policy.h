@@ -16,13 +16,20 @@ struct Url {
 	int port = 443;
 	std::string target;
 	std::string text;
+	bool ip = false;
+};
+
+struct Endpoint {
+	std::string host;
+	int port = 0;
+	bool ip = false;
 };
 
 [[nodiscard]] Result<Url, std::string> ParseUrl(std::string_view text);
 
-[[nodiscard]] bool HostAllowed(
-	const Url &url,
-	const std::vector<std::string> &patterns);
+[[nodiscard]] Result<Endpoint, std::string> ParseEndpoint(
+	std::string_view host,
+	int64_t port);
 
 [[nodiscard]] bool IsPublicAddress(std::string_view address);
 

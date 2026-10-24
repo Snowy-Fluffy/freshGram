@@ -39,6 +39,13 @@ constexpr auto kMaxHeaders = size_t(32);
 constexpr auto kMaxHeaderValue = size_t(4096);
 constexpr auto kMaxToast = size_t(200);
 constexpr auto kMaxMessage = size_t(4096);
+constexpr auto kMaxSocketsPerKind = 16;
+constexpr auto kMaxSocketChunk = size_t(1) << 20;
+constexpr auto kMaxDatagram = size_t(65507);
+constexpr auto kMaxSocketWaitMs = int64_t(30000);
+constexpr auto kMaxMedia = size_t(8) << 20;
+constexpr auto kMaxContacts = size_t(1000);
+constexpr auto kMaxFolders = size_t(100);
 
 [[nodiscard]] cbor::Value Text(std::string_view text) {
 	return cbor::Value::FromText(std::string(text));
@@ -167,6 +174,29 @@ Broker::Broker(Grants grants, BrokerServices services)
 	}
 }
 
+Broker::~Broker() {
+	releaseSockets();
+}
+
+void Broker::releaseSockets() {
+	if (_services.transport) {
+		for (const auto &[id, kind] : _sockets) {
+			_services.transport->close(id);
+		}
+	}
+	_sockets.clear();
+}
+
+void Broker::beginOutgoing() {
+	_outgoing = true;
+	_outgoingText = std::nullopt;
+}
+
+std::optional<std::string> Broker::finishOutgoing() {
+	_outgoing = false;
+	return std::exchange(_outgoingText, std::nullopt);
+}
+
 bool Broker::has(const char *permission) const {
 	return _grants.permissions.contains(permission);
 }
@@ -228,7 +258,30 @@ cbor::Value Broker::call(const cbor::Value &request) {
 }
 
 cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
-	if (op == "meta.info") {
+	if (_outgoing
+		&& op != "meta.info"
+		&& op != "log"
+		&& op != "messages.set_outgoing") {
+		return api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
+	}
+	if (op == "messages.set_outgoing") {
+		if (!has("messages.transform_outgoing")) {
+			return api::Fail(api::error::kDenied, "messages.transform_outgoing");
+		} else if (!_outgoing) {
+			return api::Fail(api::error::kInvalid, "only while handling message.outgoing");
+		}
+		const auto text = TextArg(args, "text", kMaxMessage);
+		if (!text || text->empty()) {
+			return api::Fail(api::error::kInvalid, "text");
+		}
+		_outgoingText = *text;
+		return api::Ok();
+	} else if (op == "plugin.unload") {
+		if (_services.unload) {
+			_services.unload();
+		}
+		return api::Ok();
+	} else if (op == "meta.info") {
 		auto granted = cbor::Array();
 		for (const auto &permission : _grants.permissions) {
 			granted.push_back(Text(permission));
@@ -266,10 +319,16 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		}
 		return api::Ok();
 	} else if (op == "net.fetch") {
-		if (!has("net.hosts")) {
-			return api::Fail(api::error::kDenied, "net.hosts");
+		if (!has("net.https")) {
+			return api::Fail(api::error::kDenied, "net.https");
 		}
 		return netFetch(args);
+	} else if (op.rfind("net.tcp.", 0) == 0
+		|| op.rfind("net.udp.", 0) == 0
+		|| op.rfind("net.socket.", 0) == 0) {
+		return socketCall(op, args);
+	} else if (op.rfind("ui.dialog.", 0) == 0) {
+		return uiCall(op, args);
 	}
 	return dataCall(op, args);
 }
@@ -350,10 +409,9 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 	const auto parsed = net::ParseUrl(*address);
 	if (!parsed.ok()) {
 		return api::Fail(api::error::kInvalid, parsed.error());
-	} else if (!net::HostAllowed(parsed.value(), _grants.hosts)) {
-		return api::Fail(api::error::kDenied, parsed.value().host);
 	}
 	auto request = FetchRequest();
+	request.owner = { _grants.pluginId, _grants.account };
 	request.method = method;
 	request.url = parsed.value().text;
 	request.host = parsed.value().host;
@@ -392,10 +450,8 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 			return api::Fail(api::error::kLimit, "the body is too large");
 		}
 	}
-	const auto patterns = _grants.hosts;
-	request.allowRedirect = [patterns](const std::string &target) {
-		const auto next = net::ParseUrl(target);
-		return next.ok() && net::HostAllowed(next.value(), patterns);
+	request.allowRedirect = [](const std::string &target) {
+		return net::ParseUrl(target).ok();
 	};
 	const auto response = _services.transport->fetch(request);
 	if (!response.ok()) {
@@ -419,6 +475,130 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 		{ "headers", cbor::Value::FromMap(std::move(headers)) },
 		{ "body", cbor::Value::FromBytes(response.value().body) },
 	}));
+}
+
+cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
+	const auto transport = _services.transport;
+	if (!transport) {
+		return api::Fail(api::error::kUnavailable, "network");
+	}
+	const auto wait = [&](int64_t fallback) {
+		return int(std::clamp<int64_t>(
+			IntArg(args, "timeout").value_or(fallback),
+			0,
+			kMaxSocketWaitMs));
+	};
+	if (op == "net.tcp.connect" || op == "net.udp.connect") {
+		const auto kind = (op == "net.tcp.connect") ? SocketKind::Tcp : SocketKind::Udp;
+		const auto permission = (kind == SocketKind::Tcp) ? "net.tcp" : "net.udp";
+		if (!has(permission)) {
+			return api::Fail(api::error::kDenied, permission);
+		}
+		const auto open = std::count_if(_sockets.begin(), _sockets.end(), [&](const auto &entry) {
+			return entry.second == kind;
+		});
+		if (open >= kMaxSocketsPerKind) {
+			return api::Fail(api::error::kLimit, "too many open sockets");
+		}
+		const auto host = TextArg(args, "host", 255);
+		const auto port = IntArg(args, "port");
+		if (!host || !port) {
+			return api::Fail(api::error::kInvalid, "host or port");
+		}
+		const auto endpoint = net::ParseEndpoint(*host, *port);
+		if (!endpoint.ok()) {
+			return api::Fail(api::error::kInvalid, endpoint.error());
+		}
+		const auto tls = Arg(args, "tls");
+		if (tls && (!tls->asBool() || (*tls->asBool() && kind == SocketKind::Udp))) {
+			return api::Fail(api::error::kInvalid, "tls");
+		}
+		auto request = SocketRequest();
+		request.kind = kind;
+		request.host = endpoint.value().host;
+		request.port = endpoint.value().port;
+		request.ip = endpoint.value().ip;
+		request.tls = tls && tls->asBool().value_or(false);
+		request.timeoutMs = std::max(wait(10000), 100);
+		const auto opened = transport->open(
+			{ _grants.pluginId, _grants.account },
+			request);
+		if (!opened.ok()) {
+			return api::Fail(opened.error().code, opened.error().message);
+		}
+		_sockets.emplace(opened.value(), kind);
+		return api::Ok(cbor::Value::FromMap({ { "id", Int(opened.value()) } }));
+	}
+	const auto id = IntArg(args, "id");
+	const auto found = id ? _sockets.find(*id) : _sockets.end();
+	if (found == _sockets.end()) {
+		return api::Fail(api::error::kNotFound, "socket");
+	} else if (!has(found->second == SocketKind::Tcp ? "net.tcp" : "net.udp")) {
+		return api::Fail(api::error::kDenied, "socket");
+	}
+	if (op == "net.socket.close") {
+		transport->close(found->first);
+		_sockets.erase(found);
+		return api::Ok();
+	} else if (op == "net.socket.send") {
+		const auto data = Arg(args, "data");
+		auto bytes = cbor::Bytes();
+		if (data && data->asBytes()) {
+			bytes = *data->asBytes();
+		} else if (data && data->asText()) {
+			bytes.assign(data->asText()->begin(), data->asText()->end());
+		} else {
+			return api::Fail(api::error::kInvalid, "data");
+		}
+		const auto limit = (found->second == SocketKind::Udp) ? kMaxDatagram : kMaxSocketChunk;
+		if (bytes.empty() || bytes.size() > limit) {
+			return api::Fail(api::error::kLimit, "the data is too large or empty");
+		}
+		const auto written = transport->write(found->first, bytes, std::max(wait(10000), 100));
+		if (!written.ok()) {
+			return api::Fail(written.error().code, written.error().message);
+		}
+		return api::Ok(cbor::Value::FromMap({ { "sent", Int(int64_t(written.value())) } }));
+	} else if (op == "net.socket.recv") {
+		const auto most = size_t(std::clamp<int64_t>(
+			IntArg(args, "max").value_or(int64_t(kMaxDatagram)),
+			1,
+			int64_t(kMaxSocketChunk)));
+		const auto read = transport->read(found->first, most, wait(1000));
+		if (!read.ok()) {
+			return api::Fail(read.error().code, read.error().message);
+		}
+		return api::Ok(cbor::Value::FromMap({
+			{ "data", cbor::Value::FromBytes(read.value().data) },
+			{ "closed", cbor::Value::FromBool(read.value().closed) },
+		}));
+	}
+	return api::Fail(api::error::kInvalid, "unknown socket operation");
+}
+
+cbor::Value Broker::uiCall(const std::string &op, const cbor::Value *args) {
+	if (!has("ui.dialog")) {
+		return api::Fail(api::error::kDenied, "ui.dialog");
+	} else if (!_services.ui) {
+		return api::Fail(api::error::kUnavailable, "dialogs");
+	}
+	if (op == "ui.dialog.show") {
+		const auto page = Arg(args, "page");
+		if (!page) {
+			return api::Fail(api::error::kInvalid, "page");
+		}
+		const auto checked = ui::ValidatePage(*page);
+		if (!checked.ok()) {
+			return api::Fail(api::error::kInvalid, checked.error());
+		} else if (!_services.ui("dialog", checked.value())) {
+			return api::Fail(api::error::kUnavailable, "dialogs");
+		}
+		return api::Ok();
+	} else if (op == "ui.dialog.close") {
+		_services.ui("dialog.close", cbor::Value());
+		return api::Ok();
+	}
+	return api::Fail(api::error::kInvalid, "unknown dialog operation");
 }
 
 cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
@@ -534,6 +714,90 @@ cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 		return data->send(*id, *text)
 			? api::Ok()
 			: api::Fail(api::error::kFailed, "the message was not sent");
+	} else if (op == "contacts.list") {
+		if (const auto refused = need("contacts.list")) {
+			return *refused;
+		}
+		const auto limit = size_t(std::clamp<int64_t>(
+			IntArg(args, "limit").value_or(200),
+			1,
+			int64_t(kMaxContacts)));
+		auto result = cbor::Array();
+		for (const auto &contact : data->contacts(limit)) {
+			if (result.size() >= limit || contact.id == api::kServiceChat) {
+				continue;
+			}
+			result.push_back(cbor::Value::FromMap({
+				{ "id", Int(contact.id) },
+				{ "name", Text(contact.name) },
+				{ "username", Text(contact.username) },
+			}));
+		}
+		return api::Ok(cbor::Value::FromArray(std::move(result)));
+	} else if (op == "folders.list") {
+		if (const auto refused = need("folders.list")) {
+			return *refused;
+		}
+		auto result = cbor::Array();
+		for (const auto &folder : data->folders()) {
+			if (result.size() >= kMaxFolders) {
+				break;
+			}
+			auto chats = cbor::Array();
+			for (const auto chat : folder.chats) {
+				if (chat != api::kServiceChat && chatInScope(chat) && chats.size() < kMaxChats) {
+					chats.push_back(Int(chat));
+				}
+			}
+			result.push_back(cbor::Value::FromMap({
+				{ "id", Int(folder.id) },
+				{ "title", Text(folder.title) },
+				{ "chats", cbor::Value::FromArray(std::move(chats)) },
+			}));
+		}
+		return api::Ok(cbor::Value::FromArray(std::move(result)));
+	} else if (op == "settings.read") {
+		if (const auto refused = need("settings.read")) {
+			return *refused;
+		}
+		const auto settings = data->settings();
+		return api::Ok(cbor::Value::FromMap({
+			{ "language", Text(settings.language) },
+			{ "theme", Text(settings.theme) },
+			{ "streamerMode", cbor::Value::FromBool(settings.streamerMode) },
+		}));
+	} else if (op == "media.get") {
+		if (const auto refused = need("media.read")) {
+			return *refused;
+		}
+		const auto chat = IntArg(args, "chat");
+		const auto message = IntArg(args, "message");
+		const auto thumbnail = Arg(args, "thumbnail");
+		if (!chat || !message || (thumbnail && !thumbnail->asBool())) {
+			return api::Fail(api::error::kInvalid, "chat, message or thumbnail");
+		} else if (*chat == api::kServiceChat || !chatInScope(*chat)) {
+			return api::Fail(api::error::kDenied, "this chat");
+		}
+		const auto info = data->chat(*chat);
+		if (!info || info->secret) {
+			return api::Fail(api::error::kNotFound, "chat");
+		}
+		const auto media = data->media(
+			*chat,
+			*message,
+			thumbnail && thumbnail->asBool().value_or(false),
+			kMaxMedia);
+		if (!media) {
+			return api::Fail(api::error::kNotFound, "the media is not downloaded");
+		} else if (media->bytes.size() > kMaxMedia) {
+			return api::Fail(api::error::kLimit, "the media is too large");
+		}
+		return api::Ok(cbor::Value::FromMap({
+			{ "kind", Text(media->kind) },
+			{ "mime", Text(media->mime) },
+			{ "name", Text(media->name) },
+			{ "data", cbor::Value::FromBytes(media->bytes) },
+		}));
 	} else if (op == "ui.toast") {
 		if (const auto refused = need("ui.toast")) {
 			return *refused;

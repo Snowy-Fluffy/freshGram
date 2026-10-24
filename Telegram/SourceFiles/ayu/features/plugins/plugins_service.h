@@ -11,6 +11,10 @@ namespace fgpl {
 class PluginManager;
 } // namespace fgpl
 
+namespace Api {
+struct MessageToSend;
+} // namespace Api
+
 namespace AyuPlugins {
 
 enum class State {
@@ -26,6 +30,7 @@ void Start();
 void Stop();
 
 [[nodiscard]] bool SandboxSupported();
+[[nodiscard]] bool ApplyOutgoing(Api::MessageToSend &message);
 [[nodiscard]] State CurrentState();
 [[nodiscard]] rpl::producer<State> StateValue();
 

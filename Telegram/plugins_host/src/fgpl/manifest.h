@@ -22,7 +22,6 @@ struct Localized {
 struct PermissionRequest {
 	std::string id;
 	Localized reason;
-	std::vector<std::string> hosts;
 	std::string scope;
 	bool required = false;
 };
@@ -85,7 +84,7 @@ struct Manifest {
 	int eventTimeoutMs = 500;
 	int storageMb = 10;
 
-	std::set<std::string> activation = { "event", "command" };
+	std::set<std::string> activation = { "event", "command", "menu", "settings" };
 	bool background = false;
 
 	std::vector<PermissionRequest> permissions;
@@ -93,6 +92,7 @@ struct Manifest {
 	std::vector<MenuItem> menus;
 	std::vector<Command> commands;
 	bool settingsPage = false;
+	std::string outgoing;
 
 	std::vector<Dependency> dependencies;
 	std::vector<Dependency> conflicts;

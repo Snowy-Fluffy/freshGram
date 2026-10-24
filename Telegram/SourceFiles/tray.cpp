@@ -20,6 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ayu/ayu_settings.h"
 #include "ayu/features/passcode_guard/lock_triggers.h"
+#include "ayu/features/plugins/plugins_service.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "main/main_domain.h"
 #include "storage/storage_domain.h"
 #include "window/window_controller.h"
@@ -78,6 +80,11 @@ void Tray::create() {
 		[=] { rebuildMenu(); },
 		_tray.lifetime());
 
+	AyuPlugins::ListChanges(
+	) | rpl::on_next([=] {
+		rebuildMenu();
+	}, _tray.lifetime());
+
 	_tray.iconClicks(
 	) | rpl::on_next([=] {
 		const auto skipTrayClick = (_lastTrayClickTime > 0)
@@ -135,6 +142,9 @@ void Tray::rebuildMenu() {
 				AyuLockTriggers::Lock();
 			});
 		}
+		AyuPlugins::AddTrayItems([&](const QString &text, Fn<void()> handler) {
+			_tray.addAction(rpl::single(text), std::move(handler));
+		});
 	}
 
 	const auto &settings = AyuSettings::getInstance();

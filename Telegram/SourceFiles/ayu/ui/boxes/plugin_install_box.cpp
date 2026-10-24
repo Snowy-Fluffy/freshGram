@@ -3,6 +3,7 @@
 
 #include "lang/lang_keys.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "core/file_utilities.h"
 #include "main/main_session.h"
 #include "mainwindow.h"
@@ -159,10 +160,7 @@ void FillInstallBox(
 	}
 	for (const auto &request : manifest.permissions) {
 		requested.insert(request.id);
-		auto label = QString::fromStdString(request.id);
-		for (const auto &host : request.hosts) {
-			label += u" "_q + QString::fromStdString(host);
-		}
+		auto label = AyuPlugins::PermissionLabel(request.id);
 		if (request.required) {
 			label = tr::ayu_PluginPermissionRequired(
 				tr::now,

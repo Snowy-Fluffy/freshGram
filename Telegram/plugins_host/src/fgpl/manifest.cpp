@@ -90,35 +90,6 @@ const auto kTopKeys = std::set<std::string>{
 			&& path.ends_with(extension));
 }
 
-[[nodiscard]] bool ValidHostPattern(const std::string &pattern) {
-	auto host = pattern;
-	const auto colon = host.rfind(':');
-	if (colon != std::string::npos) {
-		const auto port = host.substr(colon + 1);
-		if (port.empty() || port.size() > 5) {
-			return false;
-		}
-		for (const auto ch : port) {
-			if (ch < '0' || ch > '9') {
-				return false;
-			}
-		}
-		const auto number = std::stoi(port);
-		if (number < 1 || number > 65535) {
-			return false;
-		}
-		host.resize(colon);
-	}
-	if (host.rfind("*.", 0) == 0) {
-		host = host.substr(2);
-		if (host.find('.') == std::string::npos) {
-			return false;
-		}
-	}
-	return net::ParseUrl("https://" + host + "/").ok()
-		&& net::ParseUrl("https://" + host + "/").value().host == host;
-}
-
 class Reader {
 public:
 	[[nodiscard]] std::vector<std::string> &errors() {
@@ -402,7 +373,7 @@ const std::set<std::string> &KnownPermissions() {
 		"messages.history", "account.info", "stars.balance", "composer.draft",
 		"contacts.list", "settings.read", "folders.list", "ui.menu",
 		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",
-		"ui.toast", "notifications", "net.hosts", "net.any", "storage.private",
+		"ui.toast", "notifications", "net.https", "net.tcp", "net.udp", "storage.private",
 		"fs.user_selected", "clipboard", "background",
 	};
 	return known;
@@ -604,7 +575,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					reader.error(where, "entries must be objects");
 					continue;
 				}
-				reader.checkKeys(item, where, { "id", "reason", "hosts", "scope" });
+				reader.checkKeys(item, where, { "id", "reason", "scope" });
 				auto request = PermissionRequest();
 				request.required = required;
 				request.id = reader.text(item, "id", where, true, 64).value_or("");
@@ -618,20 +589,6 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				if (const auto reason = reader.localized(item, "reason", where, true, 500)) {
 					request.reason = *reason;
 				}
-				const auto hosts = reader.array(item, "hosts", where, 32);
-				for (const auto &host : hosts ? *hosts : cbor::Array()) {
-					const auto pattern = host.asText();
-					if (!pattern || !ValidHostPattern(*pattern)) {
-						reader.error(where, "has a bad host pattern");
-					} else {
-						request.hosts.push_back(*pattern);
-					}
-				}
-				if (request.id == "net.hosts" && request.hosts.empty()) {
-					reader.error(where, "net.hosts needs a non-empty 'hosts' list");
-				} else if (request.id != "net.hosts" && item.find("hosts")) {
-					reader.error(where, "'hosts' is only for net.hosts");
-				}
 				request.scope = reader.text(item, "scope", where, false, 16).value_or("");
 				if (!request.scope.empty()
 					&& (request.id != "messages.read"
@@ -644,7 +601,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
-			"events", "menus", "commands", "settingsPage" })) {
+			"events", "menus", "commands", "settingsPage", "outgoing" })) {
 		const auto events = reader.array(*contributes, "events", "contributes", 16);
 		for (const auto &item : events ? *events : cbor::Array()) {
 			const auto name = item.asText();
@@ -696,6 +653,12 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			manifest.commands.push_back(std::move(command));
 		}
 		manifest.settingsPage = reader.boolean(*contributes, "settingsPage", "contributes").value_or(false);
+		if (const auto outgoing = reader.object(*contributes, "outgoing", "contributes", false, { "onFailure" })) {
+			manifest.outgoing = reader.text(*outgoing, "onFailure", "contributes.outgoing", false, 8).value_or("pass");
+			if (manifest.outgoing != "pass" && manifest.outgoing != "block") {
+				reader.error("contributes.outgoing", "onFailure must be 'pass' or 'block'");
+			}
+		}
 	}
 
 	ReadDependencies(reader, document, "dependencies", true, manifest.id, manifest.dependencies);
@@ -770,8 +733,15 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	if (manifest.background && !hasPermission("background")) {
 		reader.error("activation.background", "needs the background permission");
 	}
-	if (hasPermission("net.hosts") && hasPermission("net.any")) {
-		reader.error("permissions", "net.hosts and net.any cannot be requested together");
+	if (!manifest.outgoing.empty() && !hasPermission("messages.transform_outgoing")) {
+		reader.error("contributes.outgoing", "needs the messages.transform_outgoing permission");
+	}
+	const auto composer = std::any_of(
+		manifest.menus.begin(),
+		manifest.menus.end(),
+		[](const MenuItem &menu) { return menu.surface == "composer"; });
+	if (composer && !hasPermission("ui.composer_button")) {
+		reader.error("contributes.menus", "the composer surface needs the ui.composer_button permission");
 	}
 	const auto &runtimeFile = manifest.kind == "python" ? manifest.entry : manifest.module;
 	if (!runtimeFile.empty() && !manifest.files.contains(runtimeFile)) {

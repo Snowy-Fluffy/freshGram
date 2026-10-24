@@ -7,10 +7,16 @@
 #include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/features/plugins/plugins_ui.h"
+#include "ayu/secret/secret_peer.h"
+#include "api/api_common.h"
 #include "crl/crl_on_main.h"
 #include "data/data_changes.h"
+#include "data/data_drafts.h"
 #include "data/data_session.h"
+#include "history/history.h"
 #include "history/history_item.h"
+#include "lang/lang_keys.h"
+#include "ui/toast/toast.h"
 #include "base/flat_set.h"
 #include "base/timer.h"
 #include "core/application.h"
@@ -41,6 +47,7 @@ namespace AyuPlugins {
 namespace {
 
 constexpr auto kPumpEach = crl::time(50);
+constexpr auto kOutgoingTimeoutMs = 1000;
 
 #ifdef FRESHGRAM_PLUGINS
 
@@ -104,6 +111,15 @@ struct Service {
 			const fgpl::cbor::Value &page) {
 		crl::on_main([=] {
 			StoreSettingsPage(id, account, page);
+		});
+	};
+	config.services.dialog = [](
+			const std::string &id,
+			const std::string &account,
+			const fgpl::cbor::Value *page) {
+		auto copy = page ? std::make_optional(*page) : std::nullopt;
+		crl::on_main([=] {
+			ShowPluginDialog(id, account, copy ? &*copy : nullptr);
 		});
 	};
 	RefreshProxy();
@@ -346,6 +362,56 @@ void Stop() {
 	service.state = State::Disabled;
 	service.started = false;
 #endif
+}
+
+bool ApplyOutgoing(Api::MessageToSend &message) {
+#ifdef FRESHGRAM_PLUGINS
+	const auto manager = GetService().manager.get();
+	const auto history = message.action.history;
+	const auto text = message.textWithTags.text;
+	if (!manager || text.isEmpty()) {
+		return false;
+	}
+	const auto peer = history->peer;
+	const auto result = manager->transformOutgoing(
+		AccountId(&history->session()).toStdString(),
+		int64_t(peer->id.value),
+		AyuSecret::IsSecretPeerId(peer->id),
+		text.toStdString(),
+		kOutgoingTimeoutMs);
+	if (result.blocked) {
+		const auto parsed = manager->manifest(result.plugin);
+		const auto name = parsed
+			? QString::fromStdString(parsed->name.get(Lang::Id().toStdString()))
+			: QString::fromStdString(result.plugin);
+		const auto cursor = MessageCursor{
+			int(text.size()),
+			int(text.size()),
+			Ui::kQFixedMax
+		};
+		history->setLocalDraft(std::make_unique<Data::Draft>(
+			message.textWithTags,
+			message.action.replyTo,
+			SuggestOptions(),
+			cursor,
+			Data::WebPageDraft()));
+		history->session().changes().entryUpdated(
+			history,
+			Data::EntryUpdate::Flag::LocalDraftSet);
+		Ui::Toast::Show(tr::ayu_PluginOutgoingBlocked(
+			tr::now,
+			lt_plugin,
+			name,
+			lt_reason,
+			QString::fromStdString(result.reason)));
+		return true;
+	}
+	const auto changed = QString::fromStdString(result.text);
+	if (changed != text) {
+		message.textWithTags = TextWithTags{ changed };
+	}
+#endif
+	return false;
 }
 
 bool SandboxSupported() {

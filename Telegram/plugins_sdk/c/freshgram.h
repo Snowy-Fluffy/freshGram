@@ -273,6 +273,14 @@ static void fg_w_text_n(fg_writer *w, const char *text, fg_u32 length) {
 	}
 }
 
+static void fg_w_bytes(fg_writer *w, const void *data, fg_u32 length) {
+	const fg_u8 *bytes = (const fg_u8 *)data;
+	fg_put_head(w, 2, length);
+	for (fg_u32 i = 0; i < length; ++i) {
+		fg_put(w, bytes[i]);
+	}
+}
+
 static void fg_w_text(fg_writer *w, const char *text) {
 	fg_w_text_n(w, text, fg_strlen(text));
 }
@@ -376,6 +384,65 @@ static int fg_storage_set_int(const char *key, fg_i64 value) {
 	fg_w_text(&w, key);
 	fg_w_text(&w, "value");
 	fg_w_int(&w, value);
+	return fg_send(&w, 0);
+}
+
+static int fg_unload(void) {
+	fg_writer w;
+	fg_begin(&w, "plugin.unload", 0);
+	return fg_send(&w, 0);
+}
+
+static int fg_set_outgoing(const char *text) {
+	fg_writer w;
+	fg_begin(&w, "messages.set_outgoing", 1);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	return fg_send(&w, 0);
+}
+
+static int fg_socket_connect(const char *op, const char *host, fg_i64 port, int tls, fg_i64 *id) {
+	fg_writer w;
+	fg_value result = fg_none();
+	fg_begin(&w, op, tls ? 3 : 2);
+	fg_w_text(&w, "host");
+	fg_w_text(&w, host);
+	fg_w_text(&w, "port");
+	fg_w_int(&w, port);
+	if (tls) {
+		fg_w_text(&w, "tls");
+		fg_w_bool(&w, 1);
+	}
+	int code = fg_send(&w, &result);
+	if (code == FG_OK) {
+		fg_as_int(fg_find(result, "id"), id);
+	}
+	return code;
+}
+
+static int fg_tcp_connect(const char *host, fg_i64 port, int tls, fg_i64 *id) {
+	return fg_socket_connect("net.tcp.connect", host, port, tls, id);
+}
+
+static int fg_udp_connect(const char *host, fg_i64 port, fg_i64 *id) {
+	return fg_socket_connect("net.udp.connect", host, port, 0, id);
+}
+
+static int fg_socket_send(fg_i64 id, const void *data, fg_u32 length) {
+	fg_writer w;
+	fg_begin(&w, "net.socket.send", 2);
+	fg_w_text(&w, "id");
+	fg_w_int(&w, id);
+	fg_w_text(&w, "data");
+	fg_w_bytes(&w, data, length);
+	return fg_send(&w, 0);
+}
+
+static int fg_socket_close(fg_i64 id) {
+	fg_writer w;
+	fg_begin(&w, "net.socket.close", 1);
+	fg_w_text(&w, "id");
+	fg_w_int(&w, id);
 	return fg_send(&w, 0);
 }
 

@@ -17,6 +17,7 @@ struct GrantDecision {
 enum class Risk : uint8_t {
 	ExfiltrationPossible,
 	AnyServer,
+	RawSockets,
 	DeletedMessages,
 	SendsInYourName,
 	ChangesOutgoing,

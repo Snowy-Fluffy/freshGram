@@ -30,7 +30,9 @@ def message(event):
     report["history"] = len(freshgram.messages.history(1, limit=3))
     response = freshgram.net.fetch("https://api.example.com/data", headers={"Accept": "text/plain"})
     report["fetch"] = [response.status, response.text()]
-    report["evil_host"] = attempt(lambda: freshgram.net.fetch("https://evil.example.org/"))
+    report["other_host"] = attempt(lambda: freshgram.net.fetch("https://evil.example.org/"))
+    report["public_ip"] = attempt(lambda: freshgram.net.fetch("https://8.8.8.8/"))
+    report["tcp"] = attempt(lambda: freshgram.net.tcp("example.com", 5222))
     report["http_url"] = attempt(lambda: freshgram.net.fetch("http://api.example.com/"))
     report["ip_url"] = attempt(lambda: freshgram.net.fetch("https://127.0.0.1/"))
     report["cookie_header"] = attempt(lambda: freshgram.net.fetch("https://api.example.com/", headers={"Cookie": "a=b"}))

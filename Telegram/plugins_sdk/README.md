@@ -31,7 +31,19 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `meta.info` | none | API level, plugin id, granted permissions |
 | `log` `{text}` | none | goes to the plugin log |
 | `storage.get/set/delete/list/usage` | `storage.private` | keys up to 128 bytes, values up to 1 MiB, 4096 keys, quota per plugin |
-| `net.fetch` `{url, method, headers, body, timeout}` | `net.hosts` | https only, host must match the allowlist; no IP literals or local names; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned |
+| `net.fetch` `{url, method, headers, body, timeout}` | `net.https` | https only, to any public host name or public IP (`https://8.8.8.8/`, `https://[2606:4700::1]/`); local names, private, loopback and link-local addresses are refused, also after DNS; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned |
+| `net.tcp.connect` `{host, port, tls, timeout}` | `net.tcp` | a TCP connection, optionally TLS with certificate checks; returns `{id}`; at most 16 open |
+| `net.udp.connect` `{host, port}` | `net.udp` | a UDP socket bound to one peer, only its datagrams are received; returns `{id}`; at most 16 open, 200 datagrams per second, refused through an HTTP proxy |
+| `net.socket.send` `{id, data, timeout}` | the socket's permission | up to 1 MiB (TCP) or 65507 bytes (UDP); returns `{sent}` |
+| `net.socket.recv` `{id, max, timeout}` | the socket's permission | waits up to `timeout` ms (0 polls); returns `{data, closed}` |
+| `net.socket.close` `{id}` | the socket's permission | sockets also close when the plugin stops |
+| `contacts.list` `{limit}` | `contacts.list` | id, name, username; no phone numbers |
+| `folders.list` | `folders.list` | chat folders with the chats in scope |
+| `settings.read` | `settings.read` | `language`, `theme`, `streamerMode` |
+| `media.get` `{chat, message, thumbnail}` | `media.read` | a file already downloaded on this device, up to 8 MiB: `kind`, `mime`, `name`, `data` |
+| `messages.set_outgoing` `{text}` | `messages.transform_outgoing` | only while handling `message.outgoing` |
+| `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
+| `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `chats.list`, `chat.info` | `chats.list`, `chat.info` | secret chats and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before}` | `messages.history` | limit up to 100; chat must be in scope |
 | `messages.send` `{chat, text}` | `messages.send` | |
@@ -42,14 +54,33 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `ui.toast` `{text}` | `ui.toast` | the plugin name is prefixed |
 
 Every call counts against a per-second budget; a plugin may make at most 256
-calls while handling one event.
+calls while handling one event. Network connections show up in the app's Network
+panel, where the user can close any of them.
 
 ## Events
 
 The host delivers `init` once and then `event` messages. A `message.*` event is
 only delivered with `messages.read`, only for chats in scope, never for secret
 chats or chat 777000; `message.deleted` loses its text without
-`messages.read_deleted`.
+`messages.read_deleted`. A plugin only receives the `message.*` events it lists
+in `contributes.events`.
+
+`message.outgoing` `{chat, text}` comes to plugins with
+`messages.transform_outgoing` and `contributes.outgoing` before a text message is
+sent (never for secret chats or 777000). The plugin may call
+`messages.set_outgoing` to replace the text; other data calls are refused during
+this event. It has about a second; `contributes.outgoing.onFailure` says what
+happens when it fails or is late: `pass` sends the text unchanged, `block` stops
+the message and puts it back into the input field.
+
+## Activation and unloading
+
+`activation.on` lists what may start the plugin: `startup`, `event`, `command`,
+`menu`, `settings` (the default is all of them except `startup`). Plugins that
+change outgoing messages or run in the background start with the app. A plugin
+calls `plugin.unload` when it has nothing to do; it is stopped after the
+current event and started again by its next activation, so it costs no memory
+in between.
 
 ## UI contributions
 
@@ -59,10 +90,12 @@ app draws them with the plugin's name next to the title. Activations come back a
 
 | Event | Fields |
 |---|---|
-| `menu.click` | `surface` (`message`, `chat`, `main_menu`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`) |
+| `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); the `composer` surface is a button next to the input field and needs `ui.composer_button` |
 | `command` | `name`, `args` (the text after `/name`), `chat` when in scope |
 | `settings.change` | `id`, `value` of a toggle, input or select |
 | `settings.click` | `id` of a button |
+| `dialog.change`, `dialog.click` | the same for a dialog shown with `ui.dialog.show` |
+| `dialog.close` | the user closed the dialog |
 
 The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items": [...]}` with up to
 64 items of type `text`, `divider`, `toggle`, `input`, `select` and `button` (`id` is a lowercase

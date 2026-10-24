@@ -35,26 +35,24 @@ void TestPermissions() {
 	CHECK(manifest.id == "com.example.demo");
 
 	auto decision = GrantDecision();
-	decision.granted = { "messages.read", "net.hosts", "calls.nothing" };
+	decision.granted = { "messages.read", "net.https", "calls.nothing" };
 	const auto grants = MakeGrants(manifest, decision);
-	CHECK(grants.permissions == (std::set<std::string>{ "messages.read", "net.hosts" }));
-	CHECK(grants.hosts.size() == 2);
+	CHECK(grants.permissions == (std::set<std::string>{ "messages.read", "net.https" }));
 	CHECK(grants.storageQuotaBytes == (uint64_t(10) << 20));
 	CHECK(MakeGrants(manifest, {}).permissions.empty());
-	CHECK(MakeGrants(manifest, {}).hosts.empty());
 
 	const auto notes = RiskNotes(grants.permissions);
-	CHECK(notes.size() == 1 && notes[0].risk == Risk::ExfiltrationPossible);
-	CHECK(RiskNotes({ "net.hosts" }).empty());
+	CHECK(notes.size() == 2 && notes[0].risk == Risk::ExfiltrationPossible);
+	CHECK(RiskNotes({ "net.https" }).size() == 1);
+	CHECK(RiskNotes({ "net.udp" }).size() == 2);
 	CHECK(RiskNotes({ "messages.read" }).empty());
-	CHECK(RiskNotes({ "messages.read_deleted", "net.any", "messages.send", "background" }).size() == 5);
+	CHECK(RiskNotes({ "messages.read_deleted", "net.tcp", "messages.send", "background" }).size() == 6);
 
 	auto next = manifest;
-	next.permissions.push_back({ "net.any", {}, {}, "", false });
-	next.permissions[1].hosts.push_back("evil.example.org");
+	next.permissions.push_back({ "net.tcp", {}, "", false });
 	next.permissions[0].scope = "all";
 	const auto added = NewRequests(manifest, next);
-	CHECK(added.size() == 3);
+	CHECK(added.size() == 2);
 	CHECK(NewRequests(manifest, manifest).empty());
 }
 

@@ -41,6 +41,10 @@ struct ManagerServices {
 		const std::string &id,
 		const std::string &account,
 		const cbor::Value &page)> settingsPage;
+	std::function<void(
+		const std::string &id,
+		const std::string &account,
+		const cbor::Value *page)> dialog;
 	DataProvider *data = nullptr;
 	std::function<DataProvider*(const std::string &account)> dataFor;
 	Transport *transport = nullptr;
@@ -106,6 +110,20 @@ struct PluginStats {
 	uint64_t events = 0;
 	uint64_t failures = 0;
 	uint64_t dropped = 0;
+	uint64_t unloads = 0;
+	uint64_t cpuMs = 0;
+	uint64_t memoryBytes = 0;
+	uint64_t netReceived = 0;
+	uint64_t netSent = 0;
+	int openSockets = 0;
+	int running = 0;
+};
+
+struct OutgoingResult {
+	bool blocked = false;
+	std::string text;
+	std::string plugin;
+	std::string reason;
 };
 
 struct PluginInfo {
@@ -194,6 +212,12 @@ public:
 		const cbor::Value &event,
 		int timeoutMs = 60000);
 	DispatchReport startEnabled(const std::string &account);
+	[[nodiscard]] OutgoingResult transformOutgoing(
+		const std::string &account,
+		int64_t chat,
+		bool secret,
+		const std::string &text,
+		int timeoutMs = 1000);
 
 	int pump();
 	bool drain(int timeoutMs = 60000);
@@ -209,6 +233,7 @@ public:
 	[[nodiscard]] size_t runningCount() const {
 		return _instances.size();
 	}
+	[[nodiscard]] bool wantsEvents() const;
 
 private:
 	struct StoredGrant {
@@ -239,6 +264,15 @@ private:
 		bool settingsPage = false;
 	};
 
+	struct Outgoing {
+		cbor::Value event;
+		std::mutex mutex;
+		std::condition_variable done;
+		bool finished = false;
+		bool ok = false;
+		std::optional<std::string> text;
+	};
+
 	struct StartPlan {
 		HostConfig host;
 		LoadRequest request;
@@ -259,13 +293,16 @@ private:
 		std::mutex mutex;
 		std::condition_variable wake;
 		std::deque<std::pair<cbor::Value, size_t>> queue;
+		std::deque<std::shared_ptr<Outgoing>> outgoing;
 		size_t queuedBytes = 0;
 		bool closing = false;
 		bool busy = false;
 		bool ready = false;
 		bool finished = false;
 		std::atomic<bool> cancel{ false };
+		std::atomic<bool> unload{ false };
 		std::atomic<HostClient*> live{ nullptr };
+		std::atomic<int> pid{ -1 };
 		bool committed = false;
 	};
 
@@ -277,6 +314,7 @@ private:
 			Started,
 			Delivered,
 			Failed,
+			Unloaded,
 		} kind = Kind::Started;
 		std::string detail;
 	};
@@ -299,7 +337,13 @@ private:
 	void saveState();
 	[[nodiscard]] cbor::Value stateDocument() const;
 
-	[[nodiscard]] Instance *ensure(Record &record, const std::string &account);
+	[[nodiscard]] Instance *ensure(
+		Record &record,
+		const std::string &account,
+		const char *trigger = nullptr);
+	[[nodiscard]] Instance *running(const std::string &id, const std::string &account);
+	[[nodiscard]] bool activatedBy(const Record &record, const char *trigger) const;
+	void sampleUsage(Record &record, const Instance &instance);
 	[[nodiscard]] Result<std::unique_ptr<Instance>, std::string> prepare(
 		Record &record,
 		const std::string &account);
@@ -323,6 +367,7 @@ private:
 	std::map<std::string, Record> _records;
 	std::map<Key, std::unique_ptr<Instance>> _instances;
 	std::map<Key, int64_t> _notBefore;
+	std::map<std::string, uint64_t> _finishedCpuMs;
 	std::map<Key, int> _streak;
 	bool _locked = false;
 	bool _hidden = false;

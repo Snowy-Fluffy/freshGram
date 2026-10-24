@@ -116,7 +116,43 @@ class Response:
         return 200 <= self.status < 300
 
 
+class Socket:
+    """A TCP or UDP connection opened through the app.
+
+    Hosts may be names or public IP addresses; local and private
+    addresses are refused. Timeouts are in milliseconds.
+    """
+
+    def __init__(self, socket_id):
+        self.id = socket_id
+
+    def send(self, data, timeout=10000):
+        return _request("net.socket.send", id=self.id, data=data, timeout=timeout)["sent"]
+
+    def recv(self, max_bytes=65507, timeout=1000):
+        """Return (data, closed); data is empty when nothing arrived in time."""
+        result = _request("net.socket.recv", id=self.id, max=max_bytes, timeout=timeout)
+        return result["data"], result["closed"]
+
+    def close(self):
+        _request("net.socket.close", id=self.id)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *details):
+        self.close()
+
+
 class _Net:
+    def tcp(self, host, port, tls=False, timeout=10000):
+        """Open a TCP connection (net.tcp), optionally wrapped in TLS."""
+        return Socket(_request("net.tcp.connect", host=host, port=port, tls=tls, timeout=timeout)["id"])
+
+    def udp(self, host, port, timeout=10000):
+        """Open a UDP socket bound to one peer (net.udp)."""
+        return Socket(_request("net.udp.connect", host=host, port=port, timeout=timeout)["id"])
+
     def fetch(self, url, method="GET", headers=None, body=None, timeout=10000):
         arguments = {"url": url, "method": method, "timeout": timeout}
         if headers:
@@ -143,6 +179,13 @@ class _Ui:
         """
         _request("ui.settings.set", page={"title": title, "items": items})
 
+    def dialog(self, title, items):
+        """Show a dialog (ui.dialog); clicks arrive as dialog.* events."""
+        _request("ui.dialog.show", page={"title": title, "items": items})
+
+    def close_dialog(self):
+        _request("ui.dialog.close")
+
 
 class _Chats:
     def list(self, limit=100):
@@ -158,6 +201,31 @@ class _Messages:
 
     def send(self, chat, text):
         _request("messages.send", chat=chat, text=text)
+
+    def set_outgoing(self, text):
+        """Replace the text of the message being sent (message.outgoing only)."""
+        _request("messages.set_outgoing", text=text)
+
+
+class _Contacts:
+    def list(self, limit=200):
+        return _request("contacts.list", limit=limit)
+
+
+class _Folders:
+    def list(self):
+        return _request("folders.list")
+
+
+class _Settings:
+    def read(self):
+        return _request("settings.read")
+
+
+class _Media:
+    def get(self, chat, message, thumbnail=False):
+        """A downloaded file of a message: kind, mime, name and data."""
+        return _request("media.get", chat=chat, message=message, thumbnail=thumbnail)
 
 
 class _Account:
@@ -186,6 +254,19 @@ messages = _Messages()
 account = _Account()
 stars = _Stars()
 composer = _Composer()
+contacts = _Contacts()
+folders = _Folders()
+settings = _Settings()
+media = _Media()
+
+
+def unload():
+    """Stop this plugin after the current event to free its memory.
+
+    The app starts it again on the next event, command, menu click or
+    settings change it is activated by.
+    """
+    _request("plugin.unload")
 
 _init_handlers = []
 _event_handlers = []
