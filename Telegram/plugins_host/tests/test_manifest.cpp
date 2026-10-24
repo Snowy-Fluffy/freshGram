@@ -93,7 +93,6 @@ void TestValidManifest() {
 	CHECK(manifest.permissions.size() == 3);
 	CHECK(manifest.permissions[0].required);
 	CHECK(manifest.permissions[1].id == "net.https");
-	CHECK(manifest.platforms.size() == 3);
 	CHECK(manifest.apiMin == 1 && manifest.apiMax == 1);
 	CHECK(manifest.events.size() == 1);
 	CHECK(manifest.files.size() == 4);
@@ -113,7 +112,6 @@ void TestLocalizedAndOptionalForms() {
 	Set(document, "locales", Array({ "en", "ru", "pt-BR" }));
 	Set(document, "categories", Array({ "utility", "translation" }));
 	Set(document, "compat.requires", Array({ "ui.menu", "net.http" }));
-	Set(document, "compat.platformVersions.windows", Text(">=10.0.19041"));
 	Set(document, "compat.accounts.premium", cbor::Value::FromBool(true));
 	Set(document, "dependencies", cbor::Value::FromArray({
 		cbor::Value::FromMap({ { "id", Text("com.example.helper") }, { "version", Text(">=1.0.0") } }),
@@ -171,10 +169,8 @@ void TestRejections() {
 	ExpectError("api order", [](auto &d) {
 		Set(d, "compat.api", cbor::Value::FromMap({ { "min", Int(3) }, { "max", Int(2) } }));
 	}, "max is below min");
-	ExpectError("platform", [](auto &d) { Set(d, "compat.platforms", Array({ "beos" })); }, "platforms");
-	ExpectError("duplicate platform", [](auto &d) { Set(d, "compat.platforms", Array({ "linux", "linux" })); }, "platforms");
-	ExpectError("empty platforms", [](auto &d) { Set(d, "compat.platforms", Array({})); }, "platforms");
-	ExpectError("platform version", [](auto &d) { Set(d, "compat.platformVersions.windows", Text("soon")); }, "version range");
+	ExpectError("platforms", [](auto &d) { Set(d, "compat.platforms", Array({ "linux" })); }, "unknown key");
+	ExpectError("platform versions", [](auto &d) { Set(d, "compat.platformVersions.windows", Text(">=10")); }, "unknown key");
 	ExpectError("requires", [](auto &d) { Set(d, "compat.requires", Array({ "Bad Feature" })); }, "requires");
 	ExpectError("kind", [](auto &d) { Set(d, "runtime.kind", Text("native")); }, "runtime.kind");
 	ExpectError("module extension", [](auto &d) { Set(d, "runtime.module", Text("plugin.so")); }, "runtime.module");
@@ -311,8 +307,6 @@ void TestCompatibility() {
 		auto result = HostEnvironment();
 		result.app = *ParseVersion("7.6.1");
 		result.apiLevel = 1;
-		result.platform = "linux";
-		result.platformVersion = *ParseVersion("6.1.0");
 		result.features = { "ui.menu", "net.http" };
 		return result;
 	};
@@ -333,20 +327,17 @@ void TestCompatibility() {
 	issues = CheckCompatibility(manifest, api);
 	CHECK(issues.size() == 1 && issues[0].problem == Problem::ApiUnsupported);
 
-	manifest.platforms = { "windows", "macos" };
-	issues = CheckCompatibility(manifest, environment());
-	CHECK(issues.size() == 1 && issues[0].problem == Problem::PlatformUnsupported);
-
-	manifest.platforms = { "linux" };
-	manifest.platformVersions.emplace("linux", *VersionRange::Parse(">=6.5.0"));
-	issues = CheckCompatibility(manifest, environment());
-	CHECK(issues.size() == 1 && issues[0].problem == Problem::PlatformVersion);
-	manifest.platformVersions.clear();
-
 	manifest.needs = { "ui.menu", "ui.canvas" };
 	issues = CheckCompatibility(manifest, environment());
 	CHECK(issues.size() == 1 && issues[0].problem == Problem::MissingFeature);
-	CHECK(issues[0].detail == "ui.canvas");
+	CHECK(issues[0].detail == "needs ui.canvas");
+
+	manifest.needs = { "net.udp", "menu.tray", "ui.dialog", "plugins.message" };
+	CHECK(CheckCompatibility(manifest, HostEnvironment{ *ParseVersion("7.6.1") }).empty());
+	auto noTray = HostEnvironment{ *ParseVersion("7.6.1") };
+	noTray.features.erase("menu.tray");
+	issues = CheckCompatibility(manifest, noTray);
+	CHECK(issues.size() == 1 && issues[0].detail == "needs menu.tray");
 	manifest.needs.clear();
 
 	manifest.premiumOnly = true;

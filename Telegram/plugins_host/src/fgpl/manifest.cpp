@@ -377,6 +377,18 @@ bool Outdated(const Manifest &manifest, const HostEnvironment &environment) {
 		: (app.minor > tested.minor);
 }
 
+const std::set<std::string> &HostFeatures() {
+	static const auto features = [] {
+		auto result = KnownPermissions();
+		for (const auto surface : {
+				"message", "chat", "profile", "composer", "main_menu", "tray" }) {
+			result.insert(std::string("menu.") + surface);
+		}
+		return result;
+	}();
+	return features;
+}
+
 const std::set<std::string> &KnownPermissions() {
 	static const auto known = std::set<std::string>{
 		"messages.read", "messages.read_deleted", "messages.send",
@@ -462,8 +474,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto compat = reader.object(document, "compat", "", true, {
-			"freshgram", "testedWith", "api", "platforms", "platformVersions",
-			"requires", "accounts" })) {
+			"freshgram", "testedWith", "api", "requires", "accounts" })) {
 		if (const auto range = reader.text(*compat, "freshgram", "compat", true, 128)) {
 			if (const auto parsed = VersionRange::Parse(*range)) {
 				manifest.appRange = *parsed;
@@ -492,30 +503,6 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				}
 			} else {
 				reader.error("compat.api", "must be a number or {min, max}");
-			}
-		}
-		if (const auto list = reader.array(*compat, "platforms", "compat", 3)) {
-			manifest.platforms.clear();
-			for (const auto &item : *list) {
-				const auto name = item.asText();
-				if (!name || (*name != "linux" && *name != "windows" && *name != "macos")
-					|| !manifest.platforms.insert(*name).second) {
-					reader.error("compat.platforms", "must list linux, windows and macos once each");
-				}
-			}
-			if (manifest.platforms.empty()) {
-				reader.error("compat.platforms", "must not be empty");
-			}
-		}
-		if (const auto versions = reader.object(*compat, "platformVersions", "compat", false, { "linux", "windows", "macos" })) {
-			for (const auto &entry : *versions->asMap()) {
-				const auto range = entry.value.asText();
-				const auto parsed = range ? VersionRange::Parse(*range) : std::nullopt;
-				if (!parsed || entry.key.rfind("x-", 0) == 0) {
-					reader.error("compat.platformVersions." + entry.key, "must be a version range");
-				} else {
-					manifest.platformVersions.emplace(entry.key, *parsed);
-				}
 			}
 		}
 		manifest.needs = Tokens(reader, *compat, "requires", "compat", 32, 64, true);
@@ -812,22 +799,9 @@ std::vector<CompatIssue> CheckCompatibility(
 				+ " to " + std::to_string(manifest.apiMax),
 		});
 	}
-	if (!manifest.platforms.contains(environment.platform)) {
-		issues.push_back({
-			Problem::PlatformUnsupported,
-			"does not support " + environment.platform,
-		});
-	} else if (const auto i = manifest.platformVersions.find(environment.platform)
-		; i != manifest.platformVersions.end()
-		&& !i->second.matches(environment.platformVersion)) {
-		issues.push_back({
-			Problem::PlatformVersion,
-			"needs " + environment.platform + " " + i->second.text(),
-		});
-	}
 	for (const auto &feature : manifest.needs) {
 		if (!environment.features.contains(feature)) {
-			issues.push_back({ Problem::MissingFeature, feature });
+			issues.push_back({ Problem::MissingFeature, "needs " + feature });
 		}
 	}
 	if (manifest.premiumOnly && !environment.premium) {

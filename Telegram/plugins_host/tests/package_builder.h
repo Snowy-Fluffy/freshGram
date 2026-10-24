@@ -107,7 +107,6 @@ inline void Remove(cbor::Value &document, const std::string &path) {
 	Set(document, "compat.freshgram", Text(">=7.6.0 <8.0.0"));
 	Set(document, "compat.testedWith", Text("7.6.1"));
 	Set(document, "compat.api", Int(1));
-	Set(document, "compat.platforms", Array({ "linux", "windows", "macos" }));
 	Set(document, "runtime.kind", Text("wasm"));
 	Set(document, "runtime.module", Text("plugin.wasm"));
 	Set(document, "runtime.language", Text("c"));

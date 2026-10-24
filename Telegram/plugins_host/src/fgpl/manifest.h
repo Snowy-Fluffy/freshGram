@@ -70,8 +70,6 @@ struct Manifest {
 	std::optional<Version> testedWith;
 	int apiMin = 1;
 	int apiMax = 1;
-	std::set<std::string> platforms = { "linux", "windows", "macos" };
-	std::map<std::string, VersionRange> platformVersions;
 	std::vector<std::string> needs;
 	bool premiumOnly = false;
 
@@ -104,12 +102,12 @@ struct Manifest {
 	std::optional<ManifestSignature> signature;
 };
 
+[[nodiscard]] const std::set<std::string> &HostFeatures();
+
 struct HostEnvironment {
 	Version app;
 	int apiLevel = 1;
-	std::string platform;
-	Version platformVersion;
-	std::set<std::string> features;
+	std::set<std::string> features = HostFeatures();
 	bool premium = false;
 };
 
@@ -117,8 +115,6 @@ enum class Problem : uint8_t {
 	AppTooOld,
 	AppTooNew,
 	ApiUnsupported,
-	PlatformUnsupported,
-	PlatformVersion,
 	MissingFeature,
 	PremiumRequired,
 };
