@@ -179,6 +179,9 @@ void Load(
 	if (!mtp) {
 		done({}, u"sign in to Telegram to download"_q);
 		return;
+	} else if (!QDir().mkpath(folder)) {
+		done({}, u"cannot create the download folder"_q);
+		return;
 	}
 	auto location = MTP::DedicatedLoader::Location();
 	location.username = ChannelName();
