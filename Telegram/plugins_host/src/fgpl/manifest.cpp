@@ -366,6 +366,17 @@ std::string Localized::get(const std::string &language) const {
 	return fallback != text.end() ? fallback->second : std::string();
 }
 
+bool Outdated(const Manifest &manifest, const HostEnvironment &environment) {
+	if (!manifest.testedWith) {
+		return false;
+	}
+	const auto &tested = *manifest.testedWith;
+	const auto &app = environment.app;
+	return (app.major != tested.major)
+		? (app.major > tested.major)
+		: (app.minor > tested.minor);
+}
+
 const std::set<std::string> &KnownPermissions() {
 	static const auto known = std::set<std::string>{
 		"messages.read", "messages.read_deleted", "messages.send",

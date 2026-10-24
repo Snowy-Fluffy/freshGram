@@ -1,11 +1,6 @@
 // This is the source code of freshGram.
 #include "ayu/features/plugins/plugins_transport.h"
 
-#include "core/application.h"
-#include "core/core_settings.h"
-#include "core/core_settings_proxy.h"
-#include "mtproto/mtproto_proxy_data.h"
-
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/broker.h"
 #include "fgpl/net_policy.h"
@@ -119,33 +114,6 @@ void Unregister(int64 id) {
 	const auto lock = std::scoped_lock(registry.mutex);
 	const auto i = registry.connections.find(id);
 	return (i == registry.connections.end()) ? nullptr : i->second;
-}
-
-struct ProxyChoice {
-	enum class Mode {
-		Direct,
-		Application,
-		Proxy,
-		Refuse,
-	};
-
-	Mode mode = Mode::Direct;
-	QNetworkProxy proxy;
-};
-
-std::mutex &ProxyMutex() {
-	static auto result = std::mutex();
-	return result;
-}
-
-ProxyChoice &Choice() {
-	static auto result = ProxyChoice();
-	return result;
-}
-
-[[nodiscard]] ProxyChoice CurrentChoice() {
-	const auto lock = std::scoped_lock(ProxyMutex());
-	return Choice();
 }
 
 [[nodiscard]] fgpl::FetchError Error(const char *code, QString message) {
@@ -278,24 +246,6 @@ struct Parsed {
 	return lookup.addresses().front();
 }
 
-[[nodiscard]] fgpl::Result<QNetworkProxy, fgpl::FetchError> ProxyFor(bool udp) {
-	const auto choice = CurrentChoice();
-	switch (choice.mode) {
-	case ProxyChoice::Mode::Refuse:
-		return Error("proxy", u"the selected proxy cannot carry plugin traffic"_q);
-	case ProxyChoice::Mode::Proxy:
-		if (udp && choice.proxy.type() != QNetworkProxy::Socks5Proxy) {
-			return Error("proxy", u"UDP cannot go through an HTTP proxy"_q);
-		}
-		return choice.proxy;
-	case ProxyChoice::Mode::Application:
-		return QNetworkProxy(QNetworkProxy::DefaultProxy);
-	case ProxyChoice::Mode::Direct:
-		break;
-	}
-	return QNetworkProxy(QNetworkProxy::NoProxy);
-}
-
 class NetTransport final : public fgpl::Transport {
 public:
 	fgpl::Result<fgpl::FetchResponse, fgpl::FetchError> fetch(
@@ -372,10 +322,6 @@ public:
 			const fgpl::NetOwner &owner,
 			const fgpl::SocketRequest &request) override {
 		const auto udp = (request.kind == fgpl::SocketKind::Udp);
-		const auto proxy = ProxyFor(udp);
-		if (!proxy.ok()) {
-			return proxy.error();
-		}
 		const auto resolved = Resolve(request.host, request.ip);
 		if (!resolved.ok()) {
 			return resolved.error();
@@ -394,7 +340,7 @@ public:
 		};
 		if (udp) {
 			auto socket = std::make_unique<QUdpSocket>();
-			socket->setProxy(proxy.value());
+			socket->setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
 			const auto any = (resolved.value().protocol() == QAbstractSocket::IPv6Protocol)
 				? QHostAddress::AnyIPv6
 				: QHostAddress::AnyIPv4;
@@ -416,7 +362,7 @@ public:
 		} else {
 			socket = std::make_unique<QTcpSocket>();
 		}
-		socket->setProxy(proxy.value());
+		socket->setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
 		socket->connectToHost(resolved.value(), quint16(request.port));
 		if (!socket->waitForConnected(request.timeoutMs)) {
 			return fail("connect", socket->errorString());
@@ -573,10 +519,6 @@ private:
 			const fgpl::cbor::Bytes &body,
 			size_t maxBytes,
 			const QDeadlineTimer &deadline) {
-		const auto choice = CurrentChoice();
-		if (choice.mode == ProxyChoice::Mode::Refuse) {
-			return Error("proxy", u"the selected proxy cannot carry plugin traffic"_q);
-		}
 		const auto host = QString::fromStdString(url.host);
 		const auto resolved = Resolve(url.host, url.ip);
 		if (!resolved.ok()) {
@@ -589,15 +531,8 @@ private:
 		socket.setSslConfiguration(configuration);
 		socket.setPeerVerifyMode(QSslSocket::VerifyPeer);
 		socket.setPeerVerifyName(host);
-		if (choice.mode == ProxyChoice::Mode::Proxy) {
-			socket.setProxy(choice.proxy);
-			socket.connectToHost(host, quint16(url.port));
-		} else {
-			socket.setProxy(choice.mode == ProxyChoice::Mode::Application
-				? QNetworkProxy(QNetworkProxy::DefaultProxy)
-				: QNetworkProxy(QNetworkProxy::NoProxy));
-			socket.connectToHost(resolved.value(), quint16(url.port));
-		}
+		socket.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+		socket.connectToHost(resolved.value(), quint16(url.port));
 		if (!socket.waitForConnected(remaining(deadline))) {
 			return Error("connect", socket.errorString());
 		}
@@ -746,32 +681,10 @@ void CloseConnection(int64 id) {
 	}
 }
 
-void RefreshProxy() {
-	auto choice = ProxyChoice();
-	const auto &settings = Core::App().settings().proxy();
-	if (settings.isSystem()) {
-		choice.mode = ProxyChoice::Mode::Application;
-	} else if (settings.isEnabled()) {
-		const auto selected = settings.selected();
-		if (selected.type == MTP::ProxyData::Type::Socks5
-			|| selected.type == MTP::ProxyData::Type::Http) {
-			choice.mode = ProxyChoice::Mode::Proxy;
-			choice.proxy = MTP::ToNetworkProxy(selected);
-		} else {
-			choice.mode = ProxyChoice::Mode::Refuse;
-		}
-	}
-	const auto lock = std::scoped_lock(ProxyMutex());
-	Choice() = std::move(choice);
-}
-
 #else
 
 fgpl::Transport *NetworkTransport() {
 	return nullptr;
-}
-
-void RefreshProxy() {
 }
 
 std::vector<ConnectionView> Connections() {

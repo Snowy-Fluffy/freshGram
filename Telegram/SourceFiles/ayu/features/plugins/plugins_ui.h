@@ -38,6 +38,11 @@ void ShowPluginDialog(
 	const fgpl::cbor::Value *page);
 
 [[nodiscard]] QString PermissionLabel(const std::string &id);
+void AddPermissionDanger(
+	not_null<Ui::VerticalLayout*> layout,
+	const std::string &id,
+	const std::string &scope,
+	const QString &reason);
 [[nodiscard]] bool HasComposerItems(not_null<Main::Session*> session);
 void ShowComposerMenu(
 	not_null<Window::SessionController*> controller,

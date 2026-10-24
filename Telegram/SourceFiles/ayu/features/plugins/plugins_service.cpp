@@ -122,7 +122,6 @@ struct Service {
 			ShowPluginDialog(id, account, copy ? &*copy : nullptr);
 		});
 	};
-	RefreshProxy();
 
 	const auto installed = Installed();
 	if (!installed) {
@@ -327,11 +326,6 @@ void Start() {
 	) | rpl::on_next([] {
 		SyncAccounts();
 		Refresh();
-	}, service.lifetime);
-
-	Core::App().proxyChanges(
-	) | rpl::on_next([] {
-		RefreshProxy();
 	}, service.lifetime);
 
 	Core::App().passcodeLockValue(

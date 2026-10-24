@@ -193,3 +193,13 @@ historyPluginsToggle: IconButton(historyAttach) {
 	icon: icon {{ "menu/bot", historyComposeIconFg }};
 	iconOver: icon {{ "menu/bot", historyComposeIconFgOver }};
 }
+
+pluginDangerLow: FlatLabel(boxDividerLabel) {
+	textFg: boxTextFgGood;
+}
+pluginDangerMedium: FlatLabel(boxDividerLabel) {
+	textFg: historyPeer8NameFg;
+}
+pluginDangerHigh: FlatLabel(boxDividerLabel) {
+	textFg: attentionButtonFg;
+}

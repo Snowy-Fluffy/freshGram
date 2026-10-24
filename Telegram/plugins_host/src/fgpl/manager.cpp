@@ -693,6 +693,9 @@ std::vector<PluginInfo> PluginManager::list() const {
 			info.issues = CheckCompatibility(
 				opened.value().manifest,
 				_config.environment);
+			const auto &tested = opened.value().manifest.testedWith;
+			info.testedWith = tested ? tested->text() : std::string();
+			info.outdated = Outdated(opened.value().manifest, _config.environment);
 		}
 		auto running = false;
 		for (const auto &instance : _instances) {

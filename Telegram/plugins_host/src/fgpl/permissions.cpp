@@ -17,7 +17,28 @@ const auto kReadingPermissions = std::set<std::string>{
 	return granted.contains(permission);
 }
 
+const auto kHighPermissions = std::set<std::string>{
+	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
+	"net.tcp", "net.udp", "background", "fs.user_selected", "clipboard",
+};
+
+const auto kLowPermissions = std::set<std::string>{
+	"storage.private", "settings.read", "ui.menu", "ui.command",
+	"ui.settings_page", "ui.composer_button", "ui.dialog", "ui.toast",
+	"notifications",
+};
+
 } // namespace
+
+Danger PermissionDanger(const std::string &id, const std::string &scope) {
+	if (kHighPermissions.contains(id)
+		|| (id == "messages.read" && scope == "all")) {
+		return Danger::High;
+	} else if (kLowPermissions.contains(id)) {
+		return Danger::Low;
+	}
+	return Danger::Medium;
+}
 
 Grants MakeGrants(const Manifest &manifest, const GrantDecision &decision) {
 	auto grants = Grants();

@@ -33,7 +33,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `storage.get/set/delete/list/usage` | `storage.private` | keys up to 128 bytes, values up to 1 MiB, 4096 keys, quota per plugin |
 | `net.fetch` `{url, method, headers, body, timeout}` | `net.https` | https only, to any public host name or public IP (`https://8.8.8.8/`, `https://[2606:4700::1]/`); local names, private, loopback and link-local addresses are refused, also after DNS; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned |
 | `net.tcp.connect` `{host, port, tls, timeout}` | `net.tcp` | a TCP connection, optionally TLS with certificate checks; returns `{id}`; at most 16 open |
-| `net.udp.connect` `{host, port}` | `net.udp` | a UDP socket bound to one peer, only its datagrams are received; returns `{id}`; at most 16 open, 200 datagrams per second, refused through an HTTP proxy |
+| `net.udp.connect` `{host, port}` | `net.udp` | a UDP socket bound to one peer, only its datagrams are received; returns `{id}`; at most 16 open, 200 datagrams per second |
 | `net.socket.send` `{id, data, timeout}` | the socket's permission | up to 1 MiB (TCP) or 65507 bytes (UDP); returns `{sent}` |
 | `net.socket.recv` `{id, max, timeout}` | the socket's permission | waits up to `timeout` ms (0 polls); returns `{data, closed}` |
 | `net.socket.close` `{id}` | the socket's permission | sockets also close when the plugin stops |
@@ -55,7 +55,11 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 
 Every call counts against a per-second budget; a plugin may make at most 256
 calls while handling one event. Network connections show up in the app's Network
-panel, where the user can close any of them.
+panel, where the user can close any of them. Plugin traffic always goes directly;
+it never uses the proxy configured in the app.
+
+Set `compat.testedWith` to the freshGram version you tested with: when the app's
+major or minor version is newer, the app marks the plugin as outdated.
 
 ## Events
 
