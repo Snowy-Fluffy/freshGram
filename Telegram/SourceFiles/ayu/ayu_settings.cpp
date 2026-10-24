@@ -1745,6 +1745,12 @@ void AyuSettings::setPluginsEnabled(bool val) {
 	save();
 }
 
+void AyuSettings::setPluginsRuntimeAutoUpdate(bool val) {
+	if (_pluginsRuntimeAutoUpdate.current() == val) return;
+	_pluginsRuntimeAutoUpdate = val;
+	save();
+}
+
 void AyuSettings::setAvatarCorners(int val) {
 	if (_avatarCorners.current() == val) return;
 	_avatarCorners = val;
@@ -1952,6 +1958,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"improveLinkPreviews", s._improveLinkPreviews.current()},
 		{"crashReporting", s._crashReporting.current()},
 		{"pluginsEnabled", s._pluginsEnabled.current()},
+		{"pluginsRuntimeAutoUpdate", s._pluginsRuntimeAutoUpdate.current()},
 		{"avatarCorners", s._avatarCorners.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
 		{"streamerMode", s._streamerMode.current()},
@@ -2139,6 +2146,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._improveLinkPreviews = j.value("improveLinkPreviews", defaults._improveLinkPreviews.current());
 	s._crashReporting = j.value("crashReporting", defaults._crashReporting.current());
 	s._pluginsEnabled = j.value("pluginsEnabled", defaults._pluginsEnabled.current());
+	s._pluginsRuntimeAutoUpdate = j.value("pluginsRuntimeAutoUpdate", defaults._pluginsRuntimeAutoUpdate.current());
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 	s._streamerMode = j.value("streamerMode", defaults._streamerMode.current());

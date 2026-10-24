@@ -1,10 +1,15 @@
 #include "check.h"
 #include "fgpl/host_client.h"
+#include "fgpl/package.h"
 #include "wat_module.h"
 
 #include <signal.h>
+#include <unistd.h>
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -205,6 +210,37 @@ void TestHostGetsNoEnvironment() {
 	}
 }
 
+void TestSealedHostSurvivesTheFileBeingReplaced() {
+	const auto copy = std::filesystem::temp_directory_path()
+		/ ("fgpl-sealed-host-" + std::to_string(getpid()));
+	std::filesystem::copy_file(
+		FGPL_HOST_BINARY,
+		copy,
+		std::filesystem::copy_options::overwrite_existing);
+	auto stream = std::ifstream(copy, std::ios::binary);
+	const auto bytes = cbor::Bytes(std::istreambuf_iterator<char>(stream), {});
+	stream.close();
+
+	CHECK(!SealExecutable(copy.string(), HashText(cbor::Bytes{ 1, 2, 3 })).ok());
+	const auto sealed = SealExecutable(copy.string(), HashText(bytes));
+	CHECK(sealed.ok());
+	{
+		auto evil = std::ofstream(copy, std::ios::binary | std::ios::trunc);
+		evil << "#!/bin/sh\nexit 0\n";
+	}
+	if (sealed.ok()) {
+		auto config = HostConfig();
+		config.path = copy.string();
+		config.executableFd = sealed.value();
+		const auto started = HostClient::Start(config);
+		CHECK(started.ok());
+		CHECK(started.ok() && started.value()->sandbox().landlock
+			&& started.value()->sandbox().seccomp);
+		close(sealed.value());
+	}
+	std::filesystem::remove(copy);
+}
+
 void TestShippedHostCannotDropTheSandbox() {
 	auto config = HostConfig();
 	config.path = FGPL_HOST_BINARY;
@@ -263,6 +299,7 @@ int main() {
 	TestWithoutSandboxTheSameAttemptSucceeds();
 	TestShippedHostCannotDropTheSandbox();
 	TestHostGetsNoEnvironment();
+	TestSealedHostSurvivesTheFileBeingReplaced();
 	TestHungHostIsKilled();
 	TestAddressSpaceLimitIsEnforced();
 	TestDestructorKillsTheHost();

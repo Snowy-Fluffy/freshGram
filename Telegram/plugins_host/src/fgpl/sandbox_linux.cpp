@@ -55,6 +55,9 @@ constexpr auto kAuditArch = uint32_t(AUDIT_ARCH_AARCH64);
 #error "the seccomp filter is written for x86_64 and aarch64"
 #endif
 
+constexpr auto kMembarrierSyncCore = uint32_t(1) << 5;
+constexpr auto kMembarrierRegisterSyncCore = uint32_t(1) << 6;
+
 constexpr int kSpeculation[] = { PR_SPEC_STORE_BYPASS, PR_SPEC_INDIRECT_BRANCH };
 
 void RestrictSpeculation() {
@@ -234,6 +237,17 @@ private:
 		program.load(argHigh(2));
 		program.equal(0, allow, kill);
 	});
+#if defined(__aarch64__)
+	conditional(uint32_t(SYS_membarrier), [&] {
+		program.load(argLow(0));
+		for (const auto command : { kMembarrierSyncCore, kMembarrierRegisterSyncCore }) {
+			const auto next = program.label();
+			program.equal(command, allow, next);
+			program.bind(next);
+		}
+		program.result(SECCOMP_RET_KILL_PROCESS);
+	});
+#endif
 	conditional(uint32_t(SYS_futex), [&] {
 		program.load(argLow(1));
 		program.mask(0xFFFFFE7F);
@@ -300,8 +314,13 @@ private:
 bool SpeculationRestricted() {
 	for (const auto which : kSpeculation) {
 		const auto state = prctl(PR_GET_SPECULATION_CTRL, which, 0, 0, 0);
-		if (state < 0 || ((state & PR_SPEC_PRCTL) && !(state & PR_SPEC_FORCE_DISABLE)
-				&& !(state & PR_SPEC_DISABLE))) {
+		if (state < 0) {
+			if (errno == ENODEV || errno == EINVAL) {
+				continue;
+			}
+			return false;
+		} else if ((state & PR_SPEC_PRCTL) && !(state & PR_SPEC_FORCE_DISABLE)
+				&& !(state & PR_SPEC_DISABLE)) {
 			return false;
 		}
 	}

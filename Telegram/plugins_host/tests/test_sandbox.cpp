@@ -99,6 +99,7 @@ void TestSeccompKillsEverythingElse() {
 	for (const auto &probe : blocked) {
 		CheckKilled(probe);
 	}
+	CheckKilled("membarrier_global");
 }
 
 void TestWhatTheHostNeedsStillWorks() {
@@ -110,6 +111,9 @@ void TestWhatTheHostNeedsStillWorks() {
 	for (const auto &probe : allowed) {
 		CheckAllowed(probe);
 	}
+#if defined(__aarch64__)
+	CheckAllowed("membarrier_sync_core");
+#endif
 }
 
 struct LandlockCase {

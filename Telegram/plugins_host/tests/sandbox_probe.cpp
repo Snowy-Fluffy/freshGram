@@ -420,6 +420,15 @@ int Yield() {
 	return Outcome(sched_yield() == 0);
 }
 
+int MembarrierSyncCore() {
+	syscall(SYS_membarrier, 1 << 6, 0, 0);
+	return Outcome(syscall(SYS_membarrier, 1 << 5, 0, 0) == 0);
+}
+
+int MembarrierGlobal() {
+	return Outcome(syscall(SYS_membarrier, 1, 0, 0) == 0);
+}
+
 int Speculation() {
 	return Outcome(fgpl::sandbox::SpeculationRestricted());
 }
@@ -494,6 +503,8 @@ int main(int argc, char **argv) {
 		{ "sleep", Sleep },
 		{ "yield", Yield },
 		{ "speculation", Speculation },
+		{ "membarrier_sync_core", MembarrierSyncCore },
+		{ "membarrier_global", MembarrierGlobal },
 	};
 	const auto probe = names.find(argv[2]);
 	if (probe == names.end()) {

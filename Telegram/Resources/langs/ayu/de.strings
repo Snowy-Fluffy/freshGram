@@ -115,6 +115,9 @@
 "ayu_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
 "ayu_PluginsNotInstalled" = "Nicht installiert";
 "ayu_PluginsCheckUpdates" = "Nach Updates suchen";
+"ayu_PluginsAutoUpdate" = "Komponenten automatisch aktualisieren";
+"ayu_PluginsInstallRuntimeFromFile" = "Komponenten aus Datei installieren";
+"ayu_PluginsUpdated" = "Plugin-Komponenten aktualisiert: Wasmtime {wasmtime} · Python {python}";
 "ayu_PluginsChecking" = "Wird geprüft…";
 "ayu_PluginsUpToDate" = "Aktuell";
 "ayu_PluginsUpdateAvailable" = "Update: Wasmtime {wasmtime}, Python {python} ({size})";

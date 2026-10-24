@@ -9,11 +9,14 @@ option(FGPL_BUILD_TESTS "Build the unit tests" ON)
 option(FGPL_SANITIZE "Build with address and undefined behavior sanitizers" OFF)
 option(FGPL_TSAN "Build with the thread sanitizer (run the host without its sandbox)" OFF)
 option(FGPL_FUZZ "Build the libFuzzer targets (needs clang)" OFF)
+option(FGPL_HOST_ONLY "Build only the plugin host, without OpenSSL and zlib (cross builds)" OFF)
 set(FGPL_WASMTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wasmtime-v50.0.0-x86_64-linux-c-api"
 	CACHE PATH "Unpacked Wasmtime C API release")
 
-find_package(ZLIB REQUIRED)
-find_package(OpenSSL REQUIRED)
+if (NOT FGPL_HOST_ONLY)
+	find_package(ZLIB REQUIRED)
+	find_package(OpenSSL REQUIRED)
+endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
@@ -37,13 +40,22 @@ function(fgpl_options target)
 	endif()
 endfunction()
 
-add_library(fgpl_core STATIC src/fgpl/cbor.cpp src/fgpl/vfs.cpp src/fgpl/sha256.cpp src/fgpl/module_cache.cpp
-	src/fgpl/base64.cpp src/fgpl/json.cpp src/fgpl/semver.cpp src/fgpl/zip_reader.cpp src/fgpl/signature.cpp src/fgpl/net_policy.cpp src/fgpl/manifest.cpp
-	src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/broker.cpp
-	src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/runtime_bundle.cpp src/fgpl/ui_tree.cpp)
-target_include_directories(fgpl_core PUBLIC src)
-target_link_libraries(fgpl_core PUBLIC ZLIB::ZLIB OpenSSL::Crypto Threads::Threads)
-fgpl_options(fgpl_core)
+add_library(fgpl_base STATIC src/fgpl/cbor.cpp src/fgpl/vfs.cpp)
+target_include_directories(fgpl_base PUBLIC src)
+target_link_libraries(fgpl_base PUBLIC Threads::Threads)
+fgpl_options(fgpl_base)
+
+if (FGPL_HOST_ONLY)
+	set(fgpl_common fgpl_base)
+else()
+	add_library(fgpl_core STATIC src/fgpl/sha256.cpp src/fgpl/module_cache.cpp
+		src/fgpl/base64.cpp src/fgpl/json.cpp src/fgpl/semver.cpp src/fgpl/zip_reader.cpp src/fgpl/signature.cpp src/fgpl/net_policy.cpp src/fgpl/manifest.cpp
+		src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/broker.cpp
+		src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/runtime_bundle.cpp src/fgpl/ui_tree.cpp)
+	target_link_libraries(fgpl_core PUBLIC fgpl_base ZLIB::ZLIB OpenSSL::Crypto)
+	fgpl_options(fgpl_core)
+	set(fgpl_common fgpl_core)
+endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	add_library(fgpl_sandbox STATIC src/fgpl/sandbox_linux.cpp)
@@ -54,8 +66,11 @@ endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	add_library(fgpl_ipc STATIC src/fgpl/ipc.cpp)
-	target_link_libraries(fgpl_ipc PUBLIC fgpl_core)
+	target_link_libraries(fgpl_ipc PUBLIC ${fgpl_common})
 	fgpl_options(fgpl_ipc)
+endif()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_HOST_ONLY)
 	add_library(fgpl_client STATIC src/fgpl/host_client.cpp src/fgpl/cached_load.cpp
 		src/fgpl/manager.cpp)
 	target_link_libraries(fgpl_client PUBLIC fgpl_ipc)
@@ -70,20 +85,22 @@ if (UNIX)
 	set_property(TARGET wasmtime PROPERTY INTERFACE_LINK_LIBRARIES pthread dl m)
 endif()
 
-add_executable(fgpl_tool src/fgpl/tool_main.cpp)
-target_link_libraries(fgpl_tool PRIVATE fgpl_runtime)
-fgpl_options(fgpl_tool)
-
 add_library(fgpl_runtime STATIC src/fgpl/runtime.cpp src/fgpl/wasi_host.cpp)
-target_link_libraries(fgpl_runtime PUBLIC fgpl_core wasmtime)
+target_link_libraries(fgpl_runtime PUBLIC ${fgpl_common} wasmtime)
 fgpl_options(fgpl_runtime)
+
+if (NOT FGPL_HOST_ONLY)
+	add_executable(fgpl_tool src/fgpl/tool_main.cpp)
+	target_link_libraries(fgpl_tool PRIVATE fgpl_runtime)
+	fgpl_options(fgpl_tool)
+endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
 	add_executable(fgpl_plugin_host src/fgpl/host_main.cpp)
 	target_link_libraries(fgpl_plugin_host PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
 	target_link_options(fgpl_plugin_host PRIVATE -static-libstdc++ -static-libgcc -Wl,--as-needed)
 	fgpl_options(fgpl_plugin_host)
-	if (FGPL_BUILD_TESTS)
+	if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 		add_executable(fgpl_plugin_host_unsandboxed src/fgpl/host_main.cpp)
 		target_link_libraries(fgpl_plugin_host_unsandboxed PRIVATE fgpl_runtime fgpl_sandbox fgpl_ipc)
 		target_compile_definitions(fgpl_plugin_host_unsandboxed PRIVATE FGPL_UNSANDBOXED_TEST_HOST)
@@ -91,7 +108,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_SANITIZE)
 	endif()
 endif()
 
-if (FGPL_BUILD_TESTS)
+if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 	enable_testing()
 	find_program(FGPL_CLANG clang)
 	set(fgpl_wasm_ready OFF)

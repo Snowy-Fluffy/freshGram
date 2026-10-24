@@ -1,13 +1,18 @@
 // This is the source code of freshGram.
 #include "ayu/features/plugins/plugins_runtime.h"
 
+#include "ayu/ayu_settings.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "base/timer.h"
 #include "core/application.h"
+#include "lang_auto.h"
 #include "crl/crl_async.h"
 #include "crl/crl_on_main.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "mtproto/dedicated_file_loader.h"
+#include "settings.h"
+#include "window/window_controller.h"
 
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/base64.h"
@@ -16,6 +21,8 @@
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
+#include <QtCore/QStorageInfo>
 
 #ifndef FRESHGRAM_RUNTIME_KEY
 #define FRESHGRAM_RUNTIME_KEY ""
@@ -25,14 +32,26 @@
 #define FRESHGRAM_RUNTIME_CHANNEL "freshgram_runtime"
 #endif
 
+#ifndef FRESHGRAM_RUNTIME_DIR
+#define FRESHGRAM_RUNTIME_DIR ""
+#endif
+
 namespace AyuPlugins {
 
 #ifdef FRESHGRAM_PLUGINS
 
 namespace {
 
+#if defined Q_PROCESSOR_ARM_64
+constexpr auto kPlatform = "linux-aarch64";
+#else
 constexpr auto kPlatform = "linux-x86_64";
+#endif
 constexpr auto kMaxIndexBytes = qint64(256) << 10;
+constexpr auto kFirstUpdateCheck = crl::time(60) * 1000;
+constexpr auto kUpdateCheckEach = crl::time(24) * 60 * 60 * 1000;
+constexpr auto kUpdateRetry = crl::time(60) * 60 * 1000;
+constexpr auto kSpaceFactor = 4;
 
 struct State {
 	RuntimeStatus status;
@@ -40,6 +59,8 @@ struct State {
 	rpl::variable<RuntimeStatus> value;
 	std::unique_ptr<MTP::WeakInstance> mtp;
 	std::unique_ptr<MTP::DedicatedLoader> loader;
+	base::Timer updates;
+	QString localIndex;
 	uint64 generation = 0;
 };
 
@@ -54,6 +75,36 @@ struct State {
 
 [[nodiscard]] QString ChannelName() {
 	return QStringLiteral(FRESHGRAM_RUNTIME_CHANNEL);
+}
+
+[[nodiscard]] QString PackagedDirectory() {
+	return QStringLiteral(FRESHGRAM_RUNTIME_DIR);
+}
+
+[[nodiscard]] QString LocalIndexPath(const State &state) {
+	if (!state.localIndex.isEmpty()) {
+		return state.localIndex;
+	}
+	const auto packaged = PackagedDirectory();
+	return packaged.isEmpty() ? QString() : (packaged + u"/runtime.json"_q);
+}
+
+[[nodiscard]] QString BundleFileName() {
+	return u"runtime-"_q + QString::fromLatin1(kPlatform) + u".zip"_q;
+}
+
+void ReadLocal(
+		const QString &path,
+		qint64 maxBytes,
+		Fn<void(QByteArray, QString)> done) {
+	auto file = QFile(path);
+	if (!file.open(QIODevice::ReadOnly)) {
+		done({}, u"cannot open "_q + path);
+	} else if (file.size() > maxBytes) {
+		done({}, u"the file is too large"_q);
+	} else {
+		done(file.readAll(), QString());
+	}
 }
 
 [[nodiscard]] QString DownloadPath() {
@@ -75,7 +126,7 @@ struct State {
 }
 
 void Publish(State &state) {
-	const auto installed = fgpl::ReadInstalledRuntime(Root());
+	const auto installed = TrustedRuntime();
 	state.status.installed = installed.has_value();
 	state.status.wasmtime = installed
 		? QString::fromStdString(installed->wasmtime)
@@ -246,6 +297,13 @@ QString RuntimeChannel() {
 	return ChannelName();
 }
 
+std::optional<fgpl::InstalledRuntime> TrustedRuntime() {
+	const auto key = TrustedKey();
+	return key
+		? fgpl::ReadTrustedRuntime(Root(), *key, kPlatform)
+		: std::nullopt;
+}
+
 RuntimeStatus CurrentRuntimeStatus() {
 	auto &state = GetState();
 	Publish(state);
@@ -298,6 +356,10 @@ void CheckRuntime(Fn<void(bool ok)> done) {
 			done(state.status.error.isEmpty());
 		}
 	};
+	if (const auto local = LocalIndexPath(state); !local.isEmpty()) {
+		ReadLocal(local, kMaxIndexBytes, parse);
+		return;
+	}
 	ResolveIndexPost(state, [=](int post, QString error) {
 		if (!error.isEmpty()) {
 			parse({}, error);
@@ -321,12 +383,65 @@ void DownloadRuntime(Fn<void(bool ok)> done) {
 		}
 		return;
 	}
+	const auto needed = qint64(bundle->size) * kSpaceFactor;
+	const auto storage = QStorageInfo(cWorkingDir());
+	if (storage.isValid() && storage.bytesAvailable() < needed) {
+		Fail(state, u"not enough free disk space: %1 needed"_q.arg(SizeText(needed)));
+		if (done) {
+			done(false);
+		}
+		return;
+	}
 	state.status.stage = RuntimeStage::Downloading;
 	state.status.error = QString();
 	state.status.progress = 0.;
 	Publish(state);
 	const auto index = *state.index;
 	const auto copy = *bundle;
+	const auto install = [=](QByteArray bytes, QString error) {
+		auto &state = GetState();
+		if (!error.isEmpty()) {
+			Fail(state, error);
+			if (done) {
+				done(false);
+			}
+			return;
+		}
+		state.status.stage = RuntimeStage::Installing;
+		Publish(state);
+		const auto generation = state.generation;
+		crl::async([=] {
+			auto result = fgpl::InstallRuntime(
+				{ reinterpret_cast<const uint8_t*>(bytes.constData()), size_t(bytes.size()) },
+				index,
+				copy,
+				Root());
+			const auto message = result.ok()
+				? QString()
+				: QString::fromStdString(result.error());
+			crl::on_main([=] {
+				auto &state = GetState();
+				if (generation != state.generation) {
+					return;
+				}
+				if (message.isEmpty()) {
+					state.status.stage = RuntimeStage::Idle;
+					Publish(state);
+					NotifyRuntimeChanged();
+				} else {
+					Fail(state, message);
+				}
+				if (done) {
+					done(message.isEmpty());
+				}
+			});
+		});
+	};
+	if (const auto local = LocalIndexPath(state); !local.isEmpty()) {
+		const auto directory = QFileInfo(local).absoluteDir();
+		ReadLocal(directory.filePath(BundleFileName()), qint64(copy.size), install);
+		return;
+	}
 	const auto name = u"rev-"_q + QString::number(index.revision);
 	auto downloads = QDir(DownloadPath());
 	for (const auto &other : downloads.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
@@ -340,51 +455,85 @@ void DownloadRuntime(Fn<void(bool ok)> done) {
 			state.status.progress = progress;
 			state.value = state.status;
 		},
-		[=](QByteArray bytes, QString error) {
-			auto &state = GetState();
-			if (!error.isEmpty()) {
-				Fail(state, error);
-				if (done) {
-					done(false);
-				}
+		install);
+}
+
+void InstallRuntimeFromFile(const QString &index, Fn<void(bool ok)> done) {
+	auto &state = GetState();
+	if (state.status.stage != RuntimeStage::Idle) {
+		if (done) {
+			done(false);
+		}
+		return;
+	}
+	state.localIndex = index;
+	const auto finish = [=](bool ok) {
+		GetState().localIndex = QString();
+		if (done) {
+			done(ok);
+		}
+	};
+	CheckRuntime([=](bool ok) {
+		if (ok) {
+			DownloadRuntime(finish);
+		} else {
+			finish(false);
+		}
+	});
+}
+
+bool RuntimePackaged() {
+	return !PackagedDirectory().isEmpty();
+}
+
+void UpdateAutomatically() {
+	auto &state = GetState();
+	const auto schedule = [](crl::time delay) {
+		GetState().updates.callOnce(delay);
+	};
+	if (!AyuSettings::getInstance().pluginsEnabled() || !TrustedRuntime()) {
+		schedule(kUpdateCheckEach);
+		return;
+	} else if (state.status.stage != RuntimeStage::Idle
+		|| (!RuntimePackaged() && !Core::App().activeAccount().maybeSession())) {
+		schedule(kUpdateRetry);
+		return;
+	}
+	CheckRuntime([=](bool ok) {
+		schedule(ok ? kUpdateCheckEach : kUpdateRetry);
+		const auto status = CurrentRuntimeStatus();
+		if (!ok
+			|| !status.updateAvailable
+			|| !AyuSettings::getInstance().pluginsRuntimeAutoUpdate()) {
+			return;
+		}
+		DownloadRuntime([](bool ok) {
+			const auto window = Core::App().activePrimaryWindow();
+			if (!ok || !window) {
 				return;
 			}
-			state.status.stage = RuntimeStage::Installing;
-			Publish(state);
-			const auto generation = state.generation;
-			crl::async([=] {
-				auto result = fgpl::InstallRuntime(
-					{ reinterpret_cast<const uint8_t*>(bytes.constData()), size_t(bytes.size()) },
-					index,
-					copy,
-					Root());
-				const auto message = result.ok()
-					? QString()
-					: QString::fromStdString(result.error());
-				crl::on_main([=] {
-					auto &state = GetState();
-					if (generation != state.generation) {
-						return;
-					}
-					if (message.isEmpty()) {
-						state.status.stage = RuntimeStage::Idle;
-						Publish(state);
-						NotifyRuntimeChanged();
-					} else {
-						Fail(state, message);
-					}
-					if (done) {
-						done(message.isEmpty());
-					}
-				});
-			});
+			const auto status = CurrentRuntimeStatus();
+			window->showToast(tr::ayu_PluginsUpdated(
+				tr::now,
+				lt_wasmtime,
+				status.wasmtime,
+				lt_python,
+				status.python));
 		});
+	});
+}
+
+void StartRuntimeUpdates() {
+	auto &state = GetState();
+	state.updates.setCallback(UpdateAutomatically);
+	state.updates.callOnce(kFirstUpdateCheck);
 }
 
 void CancelRuntime() {
 	auto &state = GetState();
 	++state.generation;
 	state.loader = nullptr;
+	state.localIndex = QString();
 	state.status.stage = RuntimeStage::Idle;
 	state.status.progress = 0.;
 	Publish(state);
@@ -410,6 +559,10 @@ QString RuntimeChannel() {
 	return QString();
 }
 
+std::optional<fgpl::InstalledRuntime> TrustedRuntime() {
+	return std::nullopt;
+}
+
 RuntimeStatus CurrentRuntimeStatus() {
 	return {};
 }
@@ -430,7 +583,20 @@ void DownloadRuntime(Fn<void(bool ok)> done) {
 	}
 }
 
+void InstallRuntimeFromFile(const QString &index, Fn<void(bool ok)> done) {
+	if (done) {
+		done(false);
+	}
+}
+
+bool RuntimePackaged() {
+	return false;
+}
+
 void CancelRuntime() {
+}
+
+void StartRuntimeUpdates() {
 }
 
 void RemoveRuntimeFiles() {

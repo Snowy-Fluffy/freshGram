@@ -7,6 +7,8 @@
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/ui/boxes/plugin_install_box.h"
+#include "core/file_utilities.h"
+#include "mainwindow.h"
 #include "lang/lang_keys.h"
 #include "settings/settings_common.h"
 #include "styles/style_boxes.h"
@@ -157,9 +159,36 @@ void AddPluginRow(
 	return result;
 }
 
+void ReportInstall(
+		base::weak_ptr<Window::SessionController> weak,
+		Fn<void()> ready,
+		bool ok) {
+	const auto strong = weak.get();
+	if (!strong) {
+		return;
+	} else if (ok) {
+		strong->showToast(tr::ayu_PluginsReady(tr::now));
+		if (ready) {
+			ready();
+		}
+	} else {
+		strong->showToast(tr::ayu_PluginsDownloadFailed(
+			tr::now,
+			lt_reason,
+			AyuPlugins::CurrentRuntimeStatus().error));
+	}
+}
+
 void OfferDownload(
 		not_null<Window::SessionController*> controller,
 		Fn<void()> ready) {
+	const auto weak = base::make_weak(controller);
+	if (AyuPlugins::RuntimePackaged()) {
+		AyuPlugins::DownloadRuntime([=](bool ok) {
+			ReportInstall(weak, ready, ok);
+		});
+		return;
+	}
 	const auto status = AyuPlugins::CurrentRuntimeStatus();
 	controller->show(Ui::MakeConfirmBox({
 		.text = tr::ayu_PluginsDownloadText(
@@ -175,18 +204,7 @@ void OfferDownload(
 		.confirmed = [=](Fn<void()> &&close) {
 			close();
 			AyuPlugins::DownloadRuntime([=](bool ok) {
-				const auto error = AyuPlugins::CurrentRuntimeStatus().error;
-				if (ok) {
-					controller->showToast(tr::ayu_PluginsReady(tr::now));
-					if (ready) {
-						ready();
-					}
-				} else {
-					controller->showToast(tr::ayu_PluginsDownloadFailed(
-						tr::now,
-						lt_reason,
-						error));
-				}
+				ReportInstall(weak, ready, ok);
 			});
 		},
 		.confirmText = tr::ayu_PluginsDownload(),
@@ -222,6 +240,26 @@ void CheckAndOffer(
 				tr::ayu_PluginsUnavailable(tr::now)));
 		}
 	});
+}
+
+void ChooseRuntimeFile(not_null<Window::SessionController*> controller) {
+	const auto weak = base::make_weak(controller);
+	FileDialog::GetOpenPath(
+		controller->widget().get(),
+		tr::ayu_PluginsInstallRuntimeFromFile(tr::now),
+		u"runtime.json (*.json)"_q,
+		[=](FileDialog::OpenResult &&result) {
+			if (result.paths.isEmpty()) {
+				return;
+			}
+			AyuPlugins::InstallRuntimeFromFile(result.paths.front(), [=](bool ok) {
+				ReportInstall(weak, [] {
+					if (AyuPlugins::SandboxSupported()) {
+						AyuSettings::getInstance().setPluginsEnabled(true);
+					}
+				}, ok);
+			});
+		});
 }
 
 } // namespace
@@ -264,6 +302,30 @@ void AddPluginsSettings(
 			CheckAndOffer(controller, nullptr);
 		}
 	});
+
+	Settings::AddButtonWithIcon(
+		container,
+		tr::ayu_PluginsAutoUpdate(),
+		st::settingsButtonNoIcon
+	)->toggleOn(
+		AyuSettings::getInstance().pluginsRuntimeAutoUpdateValue()
+	)->toggledValue(
+	) | rpl::on_next([](bool enabled) {
+		AyuSettings::getInstance().setPluginsRuntimeAutoUpdate(enabled);
+	}, container->lifetime());
+
+	if (!AyuPlugins::RuntimePackaged()) {
+		const auto offline = Settings::AddButtonWithIcon(
+			container,
+			tr::ayu_PluginsInstallRuntimeFromFile(),
+			st::settingsButtonNoIcon);
+		offline->addClickHandler([=] {
+			if (AyuPlugins::CurrentRuntimeStatus().stage
+				== AyuPlugins::RuntimeStage::Idle) {
+				ChooseRuntimeFile(controller);
+			}
+		});
+	}
 
 	const auto removal = container->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
