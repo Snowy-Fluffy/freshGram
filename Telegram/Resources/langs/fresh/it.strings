@@ -19,7 +19,6 @@
 "ayu_GhostModeOptionLongTapDescription" = "Tieni premuta un'opzione per evitare che cambi quando attivi la modalità fantasma.";
 "ayu_GhostModeOptionShiftDescription" = "Fai clic con MAIUSC su un'opzione per evitare che cambi quando attivi la modalità fantasma.";
 "ayu_MarkReadAfterAction" = "Leggi all'interazione";
-"ayu_MarkReadAfterActionDescription" = "Segna automaticamente un messaggio come letto quando ne invii uno nuovo o tocchi una reazione.";
 "fresh_DontReadOnInteract" = "Non leggere all'interazione";
 "ayu_MarkReadAfterSend" = "Invio";
 "ayu_MarkReadAfterReaction" = "Reazione";
