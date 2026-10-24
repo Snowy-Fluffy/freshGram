@@ -8875,6 +8875,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_PluginsEnable" = "Enable plugins";
 "ayu_PluginsDescription" = "Plugins run in a separate sandboxed process and can use only what you allow them.";
 "ayu_PluginsNoRuntime" = "The plugin components are not installed yet.";
+"ayu_PluginsNoSandbox" = "Plugins need Landlock to run in their sandbox, and this system does not provide it. Use Linux 5.13 or newer with Landlock enabled.";
 "ayu_PluginsNoKey" = "Plugins start after the app is unlocked.";
 "ayu_PluginsUnavailable" = "Plugins are not supported in this build.";
 "ayu_PluginsEmpty" = "No plugins installed.";

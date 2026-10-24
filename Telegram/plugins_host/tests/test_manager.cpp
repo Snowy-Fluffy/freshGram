@@ -139,7 +139,8 @@ struct Lab {
 		result.services = services;
 		result.stateKey = key;
 		if (std::getenv("FGPL_NO_SANDBOX")) {
-			result.host.layers = 0;
+			result.host.path = FGPL_UNSANDBOXED_HOST_BINARY;
+			result.host.unsandboxedTestHost = true;
 		}
 		return result;
 	}

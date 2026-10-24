@@ -89,6 +89,7 @@
 "ayu_PluginsEnable" = "Plugins aktivieren";
 "ayu_PluginsDescription" = "Plugins laufen in einem separaten, isolierten Prozess und können nur nutzen, was du ihnen erlaubst.";
 "ayu_PluginsNoRuntime" = "Die Plugin-Komponenten sind noch nicht installiert.";
+"ayu_PluginsNoSandbox" = "Plugins brauchen Landlock, um in ihrer Sandbox zu laufen, und dieses System bietet es nicht. Nutze Linux 5.13 oder neuer mit aktiviertem Landlock.";
 "ayu_PluginsNoKey" = "Plugins starten, sobald die App entsperrt ist.";
 "ayu_PluginsUnavailable" = "Plugins werden in diesem Build nicht unterstützt.";
 "ayu_PluginsEmpty" = "Keine Plugins installiert.";

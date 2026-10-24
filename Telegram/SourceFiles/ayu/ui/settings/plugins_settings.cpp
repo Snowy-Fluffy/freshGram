@@ -33,6 +33,8 @@ namespace {
 	switch (state) {
 	case AyuPlugins::State::Unavailable:
 		return tr::ayu_PluginsUnavailable(tr::now);
+	case AyuPlugins::State::NoSandbox:
+		return tr::ayu_PluginsNoSandbox(tr::now);
 	case AyuPlugins::State::NoRuntime:
 		return tr::ayu_PluginsNoRuntime(tr::now);
 	case AyuPlugins::State::NoKey:
@@ -240,6 +242,8 @@ void AddPluginsSettings(
 		auto &settings = AyuSettings::getInstance();
 		if (settings.pluginsEnabled()) {
 			settings.setPluginsEnabled(false);
+		} else if (!AyuPlugins::SandboxSupported()) {
+			controller->showToast(tr::ayu_PluginsNoSandbox(tr::now));
 		} else if (AyuPlugins::CurrentRuntimeStatus().installed) {
 			settings.setPluginsEnabled(true);
 		} else {

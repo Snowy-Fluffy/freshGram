@@ -15,7 +15,6 @@ constexpr auto kLayersAll = kLayerRlimits | kLayerLandlock | kLayerSeccomp;
 struct Options {
 	int ipcFd = -1;
 	uint32_t layers = kLayersAll;
-	bool requireLandlock = false;
 	bool allowStderr = true;
 	int maxOpenFiles = 8;
 	uint64_t addressSpaceBytes = 0;
@@ -30,6 +29,7 @@ struct Report {
 };
 
 [[nodiscard]] int LandlockAbi();
+[[nodiscard]] bool SpeculationRestricted();
 
 [[nodiscard]] Result<Report, std::string> Restrict(
 	const Options &options,

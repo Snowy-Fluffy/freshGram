@@ -420,6 +420,10 @@ int Yield() {
 	return Outcome(sched_yield() == 0);
 }
 
+int Speculation() {
+	return Outcome(fgpl::sandbox::SpeculationRestricted());
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -489,6 +493,7 @@ int main(int argc, char **argv) {
 		{ "malloc", Malloc },
 		{ "sleep", Sleep },
 		{ "yield", Yield },
+		{ "speculation", Speculation },
 	};
 	const auto probe = names.find(argv[2]);
 	if (probe == names.end()) {

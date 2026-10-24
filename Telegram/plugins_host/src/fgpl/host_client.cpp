@@ -15,7 +15,6 @@
 #include <chrono>
 #include <cstring>
 
-extern char **environ;
 
 namespace fgpl {
 namespace {
@@ -127,13 +126,8 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 		config.path,
 		"--ipc-fd=" + std::to_string(kHostFd),
 	};
-	if (config.layers == 0) {
+	if (config.unsandboxedTestHost) {
 		arguments.push_back("--layers=none");
-	} else if (config.layers == 3) {
-		arguments.push_back("--layers=landlock");
-	}
-	if (config.requireLandlock) {
-		arguments.push_back("--require-landlock");
 	}
 	if (!config.selftest.empty()) {
 		arguments.push_back("--selftest=" + config.selftest);
@@ -157,6 +151,7 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 		argv.push_back(argument.data());
 	}
 	argv.push_back(nullptr);
+	char *environment[] = { nullptr };
 	auto pid = pid_t();
 	const auto spawned = posix_spawn(
 		&pid,
@@ -164,7 +159,7 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 		&actions,
 		nullptr,
 		argv.data(),
-		environ);
+		environment);
 	posix_spawn_file_actions_destroy(&actions);
 	close(pair[1]);
 	if (config.sendTimeoutMs > 0) {
@@ -213,6 +208,15 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 	client->_sandbox.seccomp = flag("seccomp");
 	client->_sandbox.rlimits = flag("rlimits");
 	client->_sandbox.engine = proto::TextField(hello.value(), "engine");
+	if (!config.unsandboxedTestHost
+		&& !(client->_sandbox.landlock
+			&& client->_sandbox.seccomp
+			&& client->_sandbox.rlimits)) {
+		client->kill();
+		return Failure(
+			ClientError::Sandbox,
+			"the host started without its full sandbox");
+	}
 	return client;
 }
 

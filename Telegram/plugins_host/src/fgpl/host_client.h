@@ -34,8 +34,7 @@ struct ClientFailure {
 
 struct HostConfig {
 	std::string path;
-	uint32_t layers = 7;
-	bool requireLandlock = false;
+	bool unsandboxedTestHost = false;
 	std::string selftest;
 	std::vector<std::string> extraArguments;
 	int addressSpaceMb = 1024;
