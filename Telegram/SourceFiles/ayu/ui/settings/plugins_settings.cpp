@@ -11,14 +11,18 @@
 #include "mainwindow.h"
 #include "lang/lang_keys.h"
 #include "settings/settings_common.h"
+#include "settings/settings_notifications_common.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
+#include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
 #include "ui/ui_utility.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
@@ -50,33 +54,29 @@ namespace {
 
 #ifdef FRESHGRAM_PLUGINS
 
-[[nodiscard]] QString StatusText(const fgpl::PluginInfo &info) {
-	auto result = QString::fromStdString(info.version);
-	if (!info.publisher.empty()) {
-		result += u" · "_q + QString::fromStdString(info.publisher);
+[[nodiscard]] QString StatusLine(const fgpl::PluginInfo &info) {
+	auto parts = QStringList{ QString::fromStdString(info.version) };
+	if (!info.problem.empty()) {
+		parts.push_back(tr::fresh_PluginBroken(
+			tr::now,
+			lt_reason,
+			QString::fromStdString(info.problem)));
+	} else if (!info.disabledReason.empty()) {
+		parts.push_back(tr::fresh_PluginStatusDisabled(
+			tr::now,
+			lt_reason,
+			QString::fromStdString(info.disabledReason)));
+	} else if (info.status == fgpl::PluginStatus::Running) {
+		parts.push_back(tr::fresh_PluginStatusRunning(tr::now));
+	} else if (!info.enabled) {
+		parts.push_back(tr::fresh_PluginStatusOff(tr::now));
+	} else {
+		parts.push_back(tr::fresh_PluginStatusStopped(tr::now));
 	}
-	const auto status = [&] {
-		if (!info.disabledReason.empty()) {
-			return tr::fresh_PluginStatusDisabled(
-				tr::now,
-				lt_reason,
-				QString::fromStdString(info.disabledReason));
-		}
-		switch (info.status) {
-		case fgpl::PluginStatus::Running:
-			return tr::fresh_PluginStatusRunning(tr::now);
-		case fgpl::PluginStatus::Disabled:
-			return tr::fresh_PluginStatusDisabled(tr::now, lt_reason, QString());
-		case fgpl::PluginStatus::Stopped:
-			break;
-		}
-		return tr::fresh_PluginStatusStopped(tr::now);
-	}();
-	result += u" · "_q + status;
 	if (info.outdated) {
-		result += u" · "_q + tr::fresh_PluginOutdatedShort(tr::now);
+		parts.push_back(tr::fresh_PluginOutdatedShort(tr::now));
 	}
-	return result;
+	return parts.join(u" · "_q);
 }
 
 void AddPluginRow(
@@ -84,38 +84,30 @@ void AddPluginRow(
 		not_null<Window::SessionController*> controller,
 		const fgpl::PluginInfo &info) {
 	const auto id = info.id;
-	const auto name = QString::fromStdString(info.name);
-	const auto button = Settings::AddButtonWithIcon(
+	const auto broken = !info.problem.empty();
+	const auto name = info.name.empty()
+		? QString::fromStdString(info.id)
+		: QString::fromStdString(info.name);
+	const auto [button, toggle, checkView] = Settings::SetupSplitToggle(
 		container,
 		rpl::single(name),
-		st::settingsButtonNoIcon);
-	button->toggleOn(rpl::single(info.enabled), true);
-	button->addClickHandler([=] {
-		const auto snapshot = FreshPlugins::Snapshot();
-		const auto found = snapshot ? snapshot->plugin(id) : nullptr;
-		if (!found) {
+		&st::menuIconBot,
+		info.enabled && !broken,
+		rpl::single(StatusLine(info)));
+	button->setClickedCallback([=] {
+		FreshPlugins::ShowPluginDetails(controller, QString::fromStdString(id));
+	});
+	toggle->setClickedCallback([=, view = checkView.get()] {
+		if (broken) {
+			controller->showToast(tr::fresh_PluginBrokenToast(tr::now));
 			return;
 		}
-		FreshPlugins::Post([=, enable = !found->enabled](
-				not_null<fgpl::PluginManager*> manager) {
+		const auto enable = !view->checked();
+		view->setChecked(enable, anim::type::normal);
+		FreshPlugins::Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->setEnabled(id, enable);
 		});
 	});
-	container->add(
-		object_ptr<Ui::FlatLabel>(
-			container,
-			StatusText(info),
-			st::boxDividerLabel),
-		st::defaultBoxDividerLabelPadding);
-
-	const auto details = Settings::AddButtonWithIcon(
-		container,
-		tr::fresh_PluginDetails(),
-		st::settingsButtonNoIcon);
-	details->addClickHandler([=] {
-		FreshPlugins::ShowPluginDetails(controller, QString::fromStdString(id));
-	});
-	Ui::AddSkip(container);
 }
 
 #endif
@@ -256,6 +248,85 @@ void ChooseRuntimeFile(not_null<Window::SessionController*> controller) {
 		});
 }
 
+void FillComponentsBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller) {
+	box->setTitle(tr::fresh_PluginsComponents());
+	box->setWidth(st::boxWideWidth);
+	const auto container = box->verticalLayout();
+	box->addRow(
+		object_ptr<Ui::FlatLabel>(
+			box,
+			FreshPlugins::RuntimeStatusValue() | rpl::map(RuntimeLabel),
+			st::boxLabel));
+	Ui::AddSkip(container);
+
+	Settings::AddButtonWithIcon(
+		container,
+		tr::fresh_PluginsCheckUpdates(),
+		st::settingsButton,
+		{ &st::menuIconDownload }
+	)->addClickHandler([=] {
+		if (FreshPlugins::CurrentRuntimeStatus().stage
+			== FreshPlugins::RuntimeStage::Idle) {
+			CheckAndOffer(controller, nullptr);
+		}
+	});
+	Settings::AddButtonWithIcon(
+		container,
+		tr::fresh_PluginsAutoUpdate(),
+		st::settingsButton,
+		{ &st::menuIconSettings }
+	)->toggleOn(
+		AyuSettings::getInstance().pluginsRuntimeAutoUpdateValue()
+	)->toggledValue(
+	) | rpl::on_next([](bool enabled) {
+		AyuSettings::getInstance().setPluginsRuntimeAutoUpdate(enabled);
+	}, box->lifetime());
+	if (!FreshPlugins::RuntimePackaged()) {
+		Settings::AddButtonWithIcon(
+			container,
+			tr::fresh_PluginsInstallRuntimeFromFile(),
+			st::settingsButton,
+			{ &st::menuIconFile }
+		)->addClickHandler([=] {
+			if (FreshPlugins::CurrentRuntimeStatus().stage
+				== FreshPlugins::RuntimeStage::Idle) {
+				ChooseRuntimeFile(controller);
+			}
+		});
+	}
+	const auto removal = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+	Settings::AddButtonWithIcon(
+		removal->entity(),
+		tr::fresh_PluginsRemoveComponents(),
+		st::settingsAttentionButtonWithIcon,
+		{ &st::menuIconDeleteAttention }
+	)->addClickHandler([=] {
+		controller->show(Ui::MakeConfirmBox({
+			.text = tr::fresh_PluginsRemoveComponentsConfirmation(tr::now),
+			.confirmed = [=](Fn<void()> &&close) {
+				AyuSettings::getInstance().setPluginsEnabled(false);
+				FreshPlugins::RemoveRuntimeFiles();
+				close();
+			},
+			.confirmText = tr::fresh_PluginsRemove(),
+			.confirmStyle = &st::attentionBoxButton,
+		}));
+	});
+	removal->toggleOn(
+		FreshPlugins::RuntimeStatusValue() | rpl::map([](const auto &status) {
+			return status.installed;
+		}),
+		anim::type::instant);
+	Ui::AddSkip(container);
+	Ui::AddDividerText(container, tr::fresh_PluginsComponentsAbout());
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+}
+
 } // namespace
 
 void AddPluginsSettings(
@@ -264,7 +335,8 @@ void AddPluginsSettings(
 	const auto toggle = Settings::AddButtonWithIcon(
 		container,
 		tr::fresh_PluginsEnable(),
-		st::settingsButtonNoIcon);
+		st::settingsButton,
+		{ &st::menuIconCustomize });
 	toggle->toggleOn(
 		AyuSettings::getInstance().pluginsEnabledValue(),
 		true);
@@ -282,122 +354,84 @@ void AddPluginsSettings(
 			});
 		}
 	});
-
-	const auto versions = Settings::AddButtonWithLabel(
-		container,
-		tr::fresh_PluginsCheckUpdates(),
-		FreshPlugins::RuntimeStatusValue() | rpl::map(RuntimeLabel),
-		st::settingsButtonNoIcon);
-	versions->addClickHandler([=] {
-		if (FreshPlugins::CurrentRuntimeStatus().stage
-			== FreshPlugins::RuntimeStage::Idle) {
-			CheckAndOffer(controller, nullptr);
-		}
-	});
-
-	Settings::AddButtonWithIcon(
-		container,
-		tr::fresh_PluginsAutoUpdate(),
-		st::settingsButtonNoIcon
-	)->toggleOn(
-		AyuSettings::getInstance().pluginsRuntimeAutoUpdateValue()
-	)->toggledValue(
-	) | rpl::on_next([](bool enabled) {
-		AyuSettings::getInstance().setPluginsRuntimeAutoUpdate(enabled);
-	}, container->lifetime());
-
-	Settings::AddButtonWithIcon(
-		container,
-		tr::fresh_PluginsNetwork(),
-		st::settingsButtonNoIcon
-	)->addClickHandler([=] {
-		FreshPlugins::ShowNetworkPanel(controller);
-	});
-
-	if (!FreshPlugins::RuntimePackaged()) {
-		const auto offline = Settings::AddButtonWithIcon(
-			container,
-			tr::fresh_PluginsInstallRuntimeFromFile(),
-			st::settingsButtonNoIcon);
-		offline->addClickHandler([=] {
-			if (FreshPlugins::CurrentRuntimeStatus().stage
-				== FreshPlugins::RuntimeStage::Idle) {
-				ChooseRuntimeFile(controller);
-			}
-		});
-	}
-
-	const auto removal = container->add(
-		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-			container,
-			object_ptr<Ui::VerticalLayout>(container)));
-	const auto removeButton = Settings::AddButtonWithIcon(
-		removal->entity(),
-		tr::fresh_PluginsRemoveComponents(),
-		st::settingsAttentionButton);
-	removeButton->addClickHandler([=] {
-		controller->show(Ui::MakeConfirmBox({
-			.text = tr::fresh_PluginsRemoveComponentsConfirmation(tr::now),
-			.confirmed = [=](Fn<void()> &&close) {
-				AyuSettings::getInstance().setPluginsEnabled(false);
-				FreshPlugins::RemoveRuntimeFiles();
-				close();
-			},
-			.confirmText = tr::fresh_PluginsRemove(),
-		}));
-	});
-	removal->toggleOn(
-		FreshPlugins::RuntimeStatusValue() | rpl::map([](const auto &status) {
-			return status.installed;
-		}),
-		anim::type::instant);
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
 		FreshPlugins::StateValue() | rpl::map(StateText));
 
 #ifdef FRESHGRAM_PLUGINS
-	const auto list = container->add(object_ptr<Ui::VerticalLayout>(container));
+	const auto ready = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+	const auto inner = ready->entity();
+	Ui::AddSkip(inner);
+	Ui::AddSubsectionTitle(inner, tr::fresh_PluginsInstalled());
+	const auto list = inner->add(object_ptr<Ui::VerticalLayout>(inner));
+	const auto empty = std::make_shared<rpl::variable<bool>>(true);
 	const auto rebuild = [=] {
 		list->clear();
 		const auto snapshot = FreshPlugins::Snapshot();
-		if (!snapshot) {
-			return;
-		}
-		const auto &plugins = snapshot->plugins;
-		if (plugins.empty()) {
-			Ui::AddSkip(list);
-			list->add(
-				object_ptr<Ui::FlatLabel>(
-					list,
-					tr::fresh_PluginsEmpty(tr::now),
-					st::boxDividerLabel),
-				st::defaultBoxDividerLabelPadding);
-			return;
-		}
-		Ui::AddSubsectionTitle(list, tr::fresh_PluginsInstalled());
+		const auto plugins = snapshot
+			? snapshot->plugins
+			: std::vector<fgpl::PluginInfo>();
 		for (const auto &info : plugins) {
 			AddPluginRow(list, controller, info);
 		}
+		*empty = plugins.empty();
 	};
 	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
 		Ui::PostponeCall(list, rebuild);
 	}, list->lifetime());
 	rebuild();
-
-	const auto install = Settings::AddButtonWithIcon(
-		container,
-		tr::fresh_PluginsInstallFromFile(),
-		st::settingsButtonNoIcon);
-	install->addClickHandler([=] {
+	Settings::AddButtonWithIcon(
+		inner,
+		tr::fresh_PluginsAdd(),
+		st::settingsButtonActive,
+		{ &st::menuIconAdd }
+	)->addClickHandler([=] {
 		if (FreshPlugins::Running()) {
 			ChoosePluginFile(controller);
 		} else {
 			controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
 		}
 	});
+	Ui::AddSkip(inner);
+	Ui::AddDividerText(
+		inner,
+		empty->value() | rpl::map([](bool empty) {
+			return empty
+				? tr::fresh_PluginsEmpty(tr::now)
+				: tr::fresh_PluginsListAbout(tr::now);
+		}));
+	ready->toggleOn(
+		FreshPlugins::StateValue() | rpl::map([](FreshPlugins::State state) {
+			return state == FreshPlugins::State::Ready;
+		}),
+		anim::type::instant);
 #endif
+
+	Ui::AddSkip(container);
+	Ui::AddSubsectionTitle(container, tr::fresh_PluginsAdvanced());
+	Settings::AddButtonWithLabel(
+		container,
+		tr::fresh_PluginsComponents(),
+		FreshPlugins::RuntimeStatusValue() | rpl::map(RuntimeLabel),
+		st::settingsButton,
+		{ &st::menuIconDownload }
+	)->addClickHandler([=] {
+		controller->show(Box(FillComponentsBox, controller));
+	});
+	Settings::AddButtonWithIcon(
+		container,
+		tr::fresh_PluginsNetwork(),
+		st::settingsButton,
+		{ &st::menuIconNetwork }
+	)->addClickHandler([=] {
+		FreshPlugins::ShowNetworkPanel(controller);
+	});
+	Ui::AddSkip(container);
 }
 
 } // namespace AyuUi

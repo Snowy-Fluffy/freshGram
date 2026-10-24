@@ -366,7 +366,7 @@ void FillLogBox(not_null<Ui::GenericBox*> box, std::string plugin) {
 	box->addRow(object_ptr<Ui::FlatLabel>(
 		box,
 		text.isEmpty() ? tr::fresh_PluginLogEmpty(tr::now) : text.trimmed(),
-		st::boxLabel));
+		st::boxLabel))->setSelectable(true);
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -386,76 +386,49 @@ void FillLogBox(not_null<Ui::GenericBox*> box, std::string plugin) {
 		: tr::fresh_PluginContributes(tr::now, lt_list, parts.join(u", "_q));
 }
 
-void FillDetailsBox(
+[[nodiscard]] bool UsesNetwork(const fgpl::PluginInfo &info) {
+	const auto snapshot = Snapshot();
+	const auto grant = snapshot ? snapshot->grantsOf(info.id) : std::nullopt;
+	if (!grant) {
+		return false;
+	}
+	for (const auto permission : { "net.https", "net.tcp", "net.udp" }) {
+		if (grant->granted.contains(permission)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void FillPermissionsBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller,
 		std::string plugin) {
 	const auto snapshot = Snapshot();
 	const auto parsed = snapshot ? snapshot->manifest(plugin) : nullptr;
-	if (!snapshot || !parsed) {
+	if (!parsed) {
 		box->closeBox();
 		return;
 	}
 	const auto account = AccountOf(&controller->session());
-	const auto info = [&] {
-		const auto found = snapshot->plugin(plugin);
-		return found ? *found : fgpl::PluginInfo();
-	}();
-	const auto name = Utf8(parsed->name.get(Language()));
-	box->setWidth(st::boxWideWidth);
-	box->setTitle(rpl::single(name + ' ' + Utf8(info.version)));
-
-	const auto label = [&](const QString &text, const style::FlatLabel &st = st::boxLabel) {
-		if (!text.isEmpty()) {
-			box->addRow(object_ptr<Ui::FlatLabel>(box, text, st));
-		}
-	};
-	label(Utf8(parsed->description.get(Language())));
-	label(info.signedPackage
-		? tr::fresh_PluginSignedBy(tr::now, lt_publisher, Utf8(info.publisher))
-		: tr::fresh_PluginUnsigned(tr::now), st::boxDividerLabel);
-	if (info.pendingUpdate) {
-		label(tr::fresh_PluginPending(tr::now, lt_version, Utf8(info.version)), st::boxDividerLabel);
-	}
-	if (info.outdated) {
-		label(tr::fresh_PluginOutdated(tr::now, lt_version, Utf8(info.testedWith)), st::boxDividerLabel);
-	}
-	if (!parsed->messagesFrom.empty()) {
-		label(AcceptsFrom(parsed->messagesFrom), st::boxDividerLabel);
-	}
-	if (!info.disabledReason.empty()) {
-		label(tr::fresh_PluginStatusDisabled(tr::now, lt_reason, Utf8(info.disabledReason)), st::boxDividerLabel);
-	}
-	for (const auto &entry : snapshot->contributions(account, Language())) {
-		if (entry.id == plugin) {
-			label(ContributionSummary(entry), st::boxDividerLabel);
-		}
-	}
-	label(tr::fresh_PluginStats(
-		tr::now,
-		lt_cpu,
-		QString::number(info.stats.cpuMs / 1000.,'f', 1),
-		lt_memory,
-		Ui::FormatSizeText(qint64(info.stats.memoryBytes)),
-		lt_received,
-		Ui::FormatSizeText(qint64(info.stats.netReceived)),
-		lt_sent,
-		Ui::FormatSizeText(qint64(info.stats.netSent))), st::boxDividerLabel);
-	if (info.stats.unloads) {
-		label(tr::fresh_PluginUnloads(
-			tr::now,
-			lt_times,
-			QString::number(info.stats.unloads)), st::boxDividerLabel);
-	}
-
 	const auto granted = snapshot->grantsOf(plugin);
-	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
-	Ui::AddSubsectionTitle(box->verticalLayout(), tr::fresh_PluginPermissions());
-	label(tr::fresh_PluginPermissionsAllAccounts(tr::now), st::boxDividerLabel);
+	box->setTitle(tr::fresh_PluginPermissions());
+	box->setWidth(st::boxWideWidth);
+	box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		tr::fresh_PluginPermissionsAllAccounts(tr::now),
+		st::boxDividerLabel));
 	if (parsed->permissions.empty()) {
-		label(tr::fresh_PluginNoPermissions(tr::now), st::boxDividerLabel);
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::fresh_PluginNoPermissions(tr::now),
+			st::boxLabel));
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		return;
 	}
+	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
 	for (const auto &request : parsed->permissions) {
+		Ui::AddSkip(box->verticalLayout());
 		auto text = PermissionLabel(request.id);
 		if (request.required) {
 			text = tr::fresh_PluginPermissionRequired(tr::now, lt_permission, text);
@@ -474,44 +447,199 @@ void FillDetailsBox(
 			request.scope,
 			Utf8(request.reason.get(Language())));
 	}
+	box->addButton(tr::fresh_PluginApply(), [=] {
+		auto decision = fgpl::GrantDecision();
+		if (granted) {
+			decision.chats = granted->chats;
+		}
+		for (const auto &[id, check] : *checks) {
+			if (check->checked()) {
+				decision.granted.insert(id);
+			}
+		}
+		Post([=](not_null<fgpl::PluginManager*> manager) {
+			manager->grant(plugin, account, decision);
+			manager->startEnabled(account);
+		});
+		controller->showToast(tr::fresh_PluginPermissionsSaved(tr::now));
+		box->closeBox();
+	});
+	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+}
 
-	const auto container = box->verticalLayout();
-	Ui::AddSkip(container);
-	if (parsed->settingsPage) {
+[[nodiscard]] QString AboutText(
+		const fgpl::ManagerSnapshot &snapshot,
+		const fgpl::PluginInfo &info,
+		const fgpl::Manifest *parsed,
+		const std::string &account) {
+	auto lines = QStringList();
+	if (parsed) {
+		for (const auto &entry : snapshot.contributions(account, Language())) {
+			if (entry.id == info.id) {
+				if (const auto text = ContributionSummary(entry); !text.isEmpty()) {
+					lines.push_back(text);
+				}
+			}
+		}
+		if (!parsed->messagesFrom.empty()) {
+			lines.push_back(AcceptsFrom(parsed->messagesFrom));
+		}
+	}
+	lines.push_back(tr::fresh_PluginStats(
+		tr::now,
+		lt_cpu,
+		QString::number(info.stats.cpuMs / 1000., 'f', 1),
+		lt_memory,
+		Ui::FormatSizeText(qint64(info.stats.memoryBytes)),
+		lt_received,
+		Ui::FormatSizeText(qint64(info.stats.netReceived)),
+		lt_sent,
+		Ui::FormatSizeText(qint64(info.stats.netSent))));
+	if (info.stats.unloads) {
+		lines.push_back(tr::fresh_PluginUnloads(
+			tr::now,
+			lt_times,
+			QString::number(info.stats.unloads)));
+	}
+	lines.push_back(tr::fresh_PluginId(tr::now, lt_id, Utf8(info.id)));
+	return lines.join('\n');
+}
+
+void BuildDetails(
+		not_null<Ui::GenericBox*> box,
+		not_null<Ui::VerticalLayout*> content,
+		not_null<Window::SessionController*> controller,
+		const std::string &plugin) {
+	const auto snapshot = Snapshot();
+	const auto info = snapshot ? snapshot->plugin(plugin) : nullptr;
+	if (!info) {
+		box->closeBox();
+		return;
+	}
+	const auto parsed = snapshot->manifest(plugin);
+	const auto account = AccountOf(&controller->session());
+	const auto broken = !info->problem.empty();
+	const auto name = parsed
+		? Utf8(parsed->name.get(Language()))
+		: info->name.empty()
+		? Utf8(info->id)
+		: Utf8(info->name);
+	box->setTitle(rpl::single(name));
+
+	const auto label = [&](const QString &text, const style::FlatLabel &st) {
+		if (!text.isEmpty()) {
+			content->add(
+				object_ptr<Ui::FlatLabel>(content, text, st),
+				st::boxRowPadding);
+		}
+	};
+	if (parsed) {
+		label(Utf8(parsed->description.get(Language())), st::boxLabel);
+	}
+	label(tr::fresh_PluginVersion(
+		tr::now,
+		lt_version,
+		Utf8(info->version),
+		lt_publisher,
+		info->signedPackage
+			? tr::fresh_PluginSignedBy(tr::now, lt_publisher, Utf8(info->publisher))
+			: tr::fresh_PluginUnsignedShort(tr::now)), st::boxDividerLabel);
+	if (broken) {
+		label(tr::fresh_PluginBroken(tr::now, lt_reason, Utf8(info->problem)), st::pluginDangerHigh);
+	} else if (!info->disabledReason.empty()) {
+		label(tr::fresh_PluginStatusDisabled(tr::now, lt_reason, Utf8(info->disabledReason)), st::pluginDangerHigh);
+	}
+	if (info->pendingUpdate) {
+		label(tr::fresh_PluginPending(tr::now, lt_version, Utf8(info->version)), st::pluginDangerMedium);
+	}
+	if (info->outdated) {
+		label(tr::fresh_PluginOutdated(tr::now, lt_version, Utf8(info->testedWith)), st::pluginDangerMedium);
+	}
+	Ui::AddSkip(content);
+
+	if (!broken) {
+		const auto enabled = Settings::AddButtonWithIcon(
+			content,
+			tr::fresh_PluginEnabled(),
+			st::settingsButton,
+			{ &st::menuIconCustomize });
+		enabled->toggleOn(rpl::single(info->enabled), true);
+		enabled->addClickHandler([=, on = info->enabled] {
+			Post([=](not_null<fgpl::PluginManager*> manager) {
+				manager->setEnabled(plugin, !on);
+			});
+		});
+	}
+	if (parsed && parsed->settingsPage) {
 		Settings::AddButtonWithIcon(
-			container,
+			content,
 			tr::fresh_PluginSettingsButton(),
-			st::settingsButtonNoIcon
+			st::settingsButton,
+			{ &st::menuIconSettings }
 		)->addClickHandler([=] {
 			ShowPluginSettings(controller, Utf8(plugin));
 		});
 	}
+	if (parsed) {
+		const auto granted = snapshot->grantsOf(plugin);
+		const auto total = int(parsed->permissions.size());
+		const auto allowed = int(ranges::count_if(parsed->permissions, [&](const auto &request) {
+			return request.required
+				|| (granted && granted->granted.contains(request.id));
+		}));
+		Settings::AddButtonWithLabel(
+			content,
+			tr::fresh_PluginPermissions(),
+			rpl::single(tr::fresh_PluginPermissionsCount(
+				tr::now,
+				lt_allowed,
+				QString::number(allowed),
+				lt_total,
+				QString::number(total))),
+			st::settingsButton,
+			{ &st::menuIconPermissions }
+		)->addClickHandler([=] {
+			controller->show(Box(FillPermissionsBox, controller, plugin));
+		});
+	}
 	Settings::AddButtonWithIcon(
-		container,
+		content,
 		tr::fresh_PluginLog(),
-		st::settingsButtonNoIcon
+		st::settingsButton,
+		{ &st::menuIconInfo }
 	)->addClickHandler([=] {
 		controller->show(Box(FillLogBox, plugin));
 	});
+	if (UsesNetwork(*info)) {
+		Settings::AddButtonWithIcon(
+			content,
+			tr::fresh_PluginsNetwork(),
+			st::settingsButton,
+			{ &st::menuIconNetwork }
+		)->addClickHandler([=] {
+			ShowNetworkPanel(controller);
+		});
+	}
 	Settings::AddButtonWithIcon(
-		container,
-		tr::fresh_PluginsNetwork(),
-		st::settingsButtonNoIcon
-	)->addClickHandler([=] {
-		ShowNetworkPanel(controller);
-	});
-	Settings::AddButtonWithIcon(
-		container,
+		content,
 		tr::fresh_PluginUpdateFromFile(),
-		st::settingsButtonNoIcon
+		st::settingsButton,
+		{ &st::menuIconDownload }
 	)->addClickHandler([=] {
 		AyuUi::ChoosePluginFile(controller);
 	});
+	Ui::AddSkip(content);
+	Ui::AddDividerText(
+		content,
+		rpl::single(AboutText(*snapshot, *info, parsed.get(), account)));
+	Ui::AddSkip(content);
+
 	const auto weak = base::make_weak(box);
 	Settings::AddButtonWithIcon(
-		container,
-		tr::fresh_PluginsRemove(),
-		st::settingsAttentionButton
+		content,
+		tr::fresh_PluginRemove(),
+		st::settingsAttentionButtonWithIcon,
+		{ &st::menuIconDeleteAttention }
 	)->addClickHandler([=] {
 		controller->show(Ui::MakeConfirmBox({
 			.text = tr::fresh_PluginsRemoveConfirmation(
@@ -530,29 +658,52 @@ void FillDetailsBox(
 				}
 			},
 			.confirmText = tr::fresh_PluginsRemove(),
+			.confirmStyle = &st::attentionBoxButton,
 		}));
 	});
+}
 
-	box->addButton(tr::fresh_PluginApply(), [=] {
-		if (!Running()) {
+[[nodiscard]] std::optional<QString> StateKey(const std::string &plugin) {
+	const auto snapshot = Snapshot();
+	const auto info = snapshot ? snapshot->plugin(plugin) : nullptr;
+	if (!info) {
+		return std::nullopt;
+	}
+	const auto granted = snapshot->grantsOf(plugin);
+	return QStringList{
+		Utf8(info->version),
+		Utf8(info->problem),
+		Utf8(info->disabledReason),
+		QString::number(int(info->status)),
+		QString::number(int(info->enabled)),
+		QString::number(int(info->pendingUpdate)),
+		QString::number(granted ? int(granted->granted.size()) : -1),
+	}.join('\n');
+}
+
+void FillDetailsBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller,
+		std::string plugin) {
+	box->setWidth(st::boxWideWidth);
+	const auto content = box->addRow(
+		object_ptr<Ui::VerticalLayout>(box),
+		style::margins());
+	const auto shown = content->lifetime().make_state<QString>();
+	const auto rebuild = [=] {
+		const auto key = StateKey(plugin);
+		if (key.has_value() && *key == *shown) {
 			return;
 		}
-		auto decision = fgpl::GrantDecision();
-		if (granted) {
-			decision.chats = granted->chats;
-		}
-		for (const auto &[id, check] : *checks) {
-			if (check->checked()) {
-				decision.granted.insert(id);
-			}
-		}
-		Post([=](not_null<fgpl::PluginManager*> manager) {
-			manager->grant(plugin, account, decision);
-			manager->startEnabled(account);
-		});
-		controller->showToast(tr::fresh_PluginPermissionsSaved(tr::now));
-		box->closeBox();
-	});
+		*shown = key.value_or(QString());
+		content->clear();
+		BuildDetails(box, content, controller, plugin);
+	};
+	rebuild();
+	ListChanges(
+	) | rpl::on_next([=] {
+		Ui::PostponeCall(content, rebuild);
+	}, content->lifetime());
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -645,19 +796,6 @@ void FillDialogBox(
 		: tr::fresh_PluginsNetworkMinutes(tr::now, lt_minutes, QString::number(seconds / 60));
 }
 
-[[nodiscard]] bool UsesNetwork(const fgpl::PluginInfo &info) {
-	const auto snapshot = Snapshot();
-	const auto grant = snapshot ? snapshot->grantsOf(info.id) : std::nullopt;
-	if (!grant) {
-		return false;
-	}
-	for (const auto permission : { "net.https", "net.tcp", "net.udp" }) {
-		if (grant->granted.contains(permission)) {
-			return true;
-		}
-	}
-	return false;
-}
 
 void FillNetworkBox(
 		not_null<Ui::GenericBox*> box,
