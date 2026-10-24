@@ -6,6 +6,7 @@
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/secret/secret_peer.h"
 #include "core/application.h"
+#include "crl/crl_on_main.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "ui/text/format_values.h"
@@ -101,11 +102,11 @@ struct Pages {
 		not_null<Main::Session*> session,
 		const char *surface) {
 	auto result = std::vector<Entry>();
-	const auto manager = Manager();
-	if (!manager) {
+	const auto snapshot = Snapshot();
+	if (!snapshot) {
 		return result;
 	}
-	for (const auto &plugin : manager->contributions(AccountOf(session), Language())) {
+	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
 		for (const auto &menu : plugin.menus) {
 			if (menu.surface != surface) {
 				continue;
@@ -129,10 +130,18 @@ void Send(
 		not_null<Main::Session*> session,
 		const std::string &plugin,
 		cbor::Value event) {
-	const auto manager = Manager();
-	if (!manager || !manager->send(plugin, AccountOf(session), event)) {
+	if (!Running()) {
 		::Ui::Toast::Show(tr::fresh_PluginNotRunning(tr::now));
+		return;
 	}
+	const auto account = AccountOf(session);
+	Post([=, event = std::move(event)](not_null<fgpl::PluginManager*> manager) {
+		if (!manager->send(plugin, account, event)) {
+			crl::on_main([] {
+				::Ui::Toast::Show(tr::fresh_PluginNotRunning(tr::now));
+			});
+		}
+	}, false);
 }
 
 [[nodiscard]] cbor::Value ClickEvent(
@@ -349,8 +358,8 @@ void FillSettingsBox(
 void FillLogBox(not_null<Ui::GenericBox*> box, std::string plugin) {
 	box->setTitle(tr::fresh_PluginLog());
 	auto text = QString();
-	if (const auto manager = Manager()) {
-		for (const auto &line : manager->log(plugin)) {
+	if (const auto snapshot = Snapshot()) {
+		for (const auto &line : snapshot->log(plugin)) {
 			text += Utf8(line) + '\n';
 		}
 	}
@@ -381,20 +390,16 @@ void FillDetailsBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller,
 		std::string plugin) {
-	const auto manager = Manager();
-	const auto parsed = manager ? manager->manifest(plugin) : nullptr;
-	if (!manager || !parsed) {
+	const auto snapshot = Snapshot();
+	const auto parsed = snapshot ? snapshot->manifest(plugin) : nullptr;
+	if (!snapshot || !parsed) {
 		box->closeBox();
 		return;
 	}
 	const auto account = AccountOf(&controller->session());
 	const auto info = [&] {
-		for (auto &entry : manager->list()) {
-			if (entry.id == plugin) {
-				return entry;
-			}
-		}
-		return fgpl::PluginInfo();
+		const auto found = snapshot->plugin(plugin);
+		return found ? *found : fgpl::PluginInfo();
 	}();
 	const auto name = Utf8(parsed->name.get(Language()));
 	box->setWidth(st::boxWideWidth);
@@ -421,7 +426,7 @@ void FillDetailsBox(
 	if (!info.disabledReason.empty()) {
 		label(tr::fresh_PluginStatusDisabled(tr::now, lt_reason, Utf8(info.disabledReason)), st::boxDividerLabel);
 	}
-	for (const auto &entry : manager->contributions(account, Language())) {
+	for (const auto &entry : snapshot->contributions(account, Language())) {
 		if (entry.id == plugin) {
 			label(ContributionSummary(entry), st::boxDividerLabel);
 		}
@@ -443,7 +448,7 @@ void FillDetailsBox(
 			QString::number(info.stats.unloads)), st::boxDividerLabel);
 	}
 
-	const auto granted = manager->grants(plugin, account);
+	const auto granted = snapshot->grantsOf(plugin);
 	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
 	Ui::AddSubsectionTitle(box->verticalLayout(), tr::fresh_PluginPermissions());
 	label(tr::fresh_PluginPermissionsAllAccounts(tr::now), st::boxDividerLabel);
@@ -515,11 +520,10 @@ void FillDetailsBox(
 				::Ui::Text::Bold(name),
 				tr::marked),
 			.confirmed = [=](Fn<void()> &&close) {
-				if (const auto again = Manager()) {
-					again->uninstall(plugin, true);
-					ForgetSettingsPages(plugin);
-					NotifyListChanged();
-				}
+				Post([=](not_null<fgpl::PluginManager*> manager) {
+					manager->uninstall(plugin, true);
+				});
+				ForgetSettingsPages(plugin);
 				close();
 				if (const auto strong = weak.get()) {
 					strong->closeBox();
@@ -530,22 +534,22 @@ void FillDetailsBox(
 	});
 
 	box->addButton(tr::fresh_PluginApply(), [=] {
-		const auto again = Manager();
-		if (!again) {
+		if (!Running()) {
 			return;
 		}
 		auto decision = fgpl::GrantDecision();
-		if (const auto previous = again->grants(plugin, account)) {
-			decision.chats = previous->chats;
+		if (granted) {
+			decision.chats = granted->chats;
 		}
 		for (const auto &[id, check] : *checks) {
 			if (check->checked()) {
 				decision.granted.insert(id);
 			}
 		}
-		again->grant(plugin, account, decision);
-		again->startEnabled(account);
-		NotifyListChanged();
+		Post([=](not_null<fgpl::PluginManager*> manager) {
+			manager->grant(plugin, account, decision);
+			manager->startEnabled(account);
+		});
 		controller->showToast(tr::fresh_PluginPermissionsSaved(tr::now));
 		box->closeBox();
 	});
@@ -575,8 +579,8 @@ struct Dialogs {
 }
 
 [[nodiscard]] QString PluginName(const std::string &id) {
-	const auto manager = Manager();
-	const auto parsed = manager ? manager->manifest(id) : nullptr;
+	const auto snapshot = Snapshot();
+	const auto parsed = snapshot ? snapshot->manifest(id) : nullptr;
 	return parsed ? Utf8(parsed->name.get(Language())) : Utf8(id);
 }
 
@@ -622,13 +626,12 @@ void FillDialogBox(
 	box->boxClosing() | rpl::on_next([=] {
 		if (!*closedByPlugin) {
 			GetDialogs().pages.erase(key);
-			if (const auto strong = SessionFor(account)) {
-				const auto manager = Manager();
-				if (manager) {
+			if (SessionFor(account)) {
+				Post([=](not_null<fgpl::PluginManager*> manager) {
 					manager->send(plugin, account, cbor::Value::FromMap({
 						{ "type", cbor::Value::FromText("dialog.close") },
 					}));
-				}
+				}, false);
 			}
 		}
 	}, box->lifetime());
@@ -642,9 +645,9 @@ void FillDialogBox(
 		: tr::fresh_PluginsNetworkMinutes(tr::now, lt_minutes, QString::number(seconds / 60));
 }
 
-[[nodiscard]] bool UsesNetwork(const fgpl::PluginInfo &info, const std::string &account) {
-	const auto manager = Manager();
-	const auto grant = manager ? manager->grants(info.id, account) : std::nullopt;
+[[nodiscard]] bool UsesNetwork(const fgpl::PluginInfo &info) {
+	const auto snapshot = Snapshot();
+	const auto grant = snapshot ? snapshot->grantsOf(info.id) : std::nullopt;
 	if (!grant) {
 		return false;
 	}
@@ -661,21 +664,20 @@ void FillNetworkBox(
 		not_null<Window::SessionController*> controller) {
 	box->setTitle(tr::fresh_PluginsNetwork());
 	box->setWidth(st::boxWideWidth);
-	const auto account = AccountOf(&controller->session());
 	const auto content = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
 	const auto rebuild = [=] {
 		content->clear();
-		const auto manager = Manager();
+		const auto snapshot = Snapshot();
 		const auto connections = Connections();
 		auto shown = 0;
-		for (const auto &info : manager ? manager->list() : std::vector<fgpl::PluginInfo>()) {
+		for (const auto &info : snapshot ? snapshot->plugins : std::vector<fgpl::PluginInfo>()) {
 			const auto id = Utf8(info.id);
 			const auto own = ranges::count_if(connections, [&](const ConnectionView &view) {
 				return view.plugin == id;
 			});
-			if (!UsesNetwork(info, account) && !own) {
+			if (!UsesNetwork(info) && !own) {
 				continue;
 			}
 			++shown;
@@ -977,8 +979,8 @@ bool TryRunCommand(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer,
 		const QString &text) {
-	const auto manager = Manager();
-	if (!manager || !text.startsWith('/')
+	const auto snapshot = Snapshot();
+	if (!snapshot || !text.startsWith('/')
 		|| FreshSecret::IsSecretPeerId(peer->id)
 		|| (peer->isUser() && peer->asUser()->isBot())) {
 		return false;
@@ -991,7 +993,7 @@ bool TryRunCommand(
 	}
 	const auto args = (space < 0) ? QString() : trimmed.mid(space + 1).trimmed();
 	const auto session = &controller->session();
-	for (const auto &plugin : manager->contributions(AccountOf(session), Language())) {
+	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
 		for (const auto &command : plugin.commands) {
 			if (Utf8(command.name) != name) {
 				continue;
@@ -1012,14 +1014,14 @@ bool TryRunCommand(
 void ShowPluginSettings(
 		not_null<Window::SessionController*> controller,
 		const QString &pluginId) {
-	const auto manager = Manager();
+	const auto snapshot = Snapshot();
 	const auto id = pluginId.toStdString();
 	const auto account = AccountOf(&controller->session());
-	if (!manager || !PageOf(id, account)) {
+	if (!snapshot || !PageOf(id, account)) {
 		controller->showToast(tr::fresh_PluginSettingsUnavailable(tr::now));
 		return;
 	}
-	const auto parsed = manager->manifest(id);
+	const auto parsed = snapshot->manifest(id);
 	const auto name = parsed ? Utf8(parsed->name.get(Language())) : pluginId;
 	controller->show(Box(FillSettingsBox, controller, id, account, name));
 }

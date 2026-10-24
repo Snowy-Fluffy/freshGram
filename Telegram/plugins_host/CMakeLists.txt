@@ -72,7 +72,7 @@ endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT FGPL_HOST_ONLY)
 	add_library(fgpl_client STATIC src/fgpl/host_client.cpp src/fgpl/cached_load.cpp
-		src/fgpl/manager.cpp)
+		src/fgpl/async_pool.cpp src/fgpl/manager.cpp)
 	target_link_libraries(fgpl_client PUBLIC fgpl_ipc)
 	fgpl_options(fgpl_client)
 endif()

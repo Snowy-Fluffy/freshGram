@@ -312,6 +312,19 @@ static void fg_begin(fg_writer *w, const char *op, fg_u32 arguments) {
 	}
 }
 
+static void fg_begin_async(fg_writer *w, const char *op, fg_u32 arguments) {
+	fg_writer_init(w, 4096);
+	fg_w_map(w, arguments ? 3 : 2);
+	fg_w_text(w, "op");
+	fg_w_text(w, op);
+	fg_w_text(w, "async");
+	fg_w_bool(w, 1);
+	if (arguments) {
+		fg_w_text(w, "a");
+		fg_w_map(w, arguments);
+	}
+}
+
 static int fg_error_code(fg_value response) {
 	const char *text = 0;
 	fg_u32 length = 0;
@@ -354,6 +367,23 @@ static int fg_send(fg_writer *w, fg_value *result) {
 		*result = fg_find(value, "v");
 	}
 	return FG_OK;
+}
+
+static int fg_send_async(fg_writer *w, fg_i64 *ticket) {
+	fg_value value;
+	int status = fg_send(w, &value);
+	if (status != FG_OK) {
+		return status;
+	}
+	return (fg_as_int(fg_find(value, "ticket"), ticket) == 0) ? FG_OK : FG_FAILED;
+}
+
+static int fg_sleep_async(fg_i64 ms, fg_i64 *ticket) {
+	fg_writer w;
+	fg_begin_async(&w, "time.sleep", 1);
+	fg_w_text(&w, "ms");
+	fg_w_int(&w, ms);
+	return fg_send_async(&w, ticket);
 }
 
 static int fg_log(const char *text) {

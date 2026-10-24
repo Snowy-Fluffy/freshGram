@@ -21,6 +21,8 @@ maps with text keys, booleans, null, floats; no tags, no indefinite lengths).
 Request: `{"op": "<name>", "a": {<arguments>}}`.
 Response: `{"ok": true, "v": <value>}` or `{"ok": false, "e": <code>, "m": <text>}`.
 
+An awaitable request adds `"async": true`; see *Waiting without blocking*.
+
 Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 `not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`.
 
@@ -54,9 +56,13 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `composer.draft`, `composer.set_draft` | `composer.draft` | |
 | `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
 | `ui.toast` `{text}` | `ui.toast` | the plugin name is prefixed |
+| `time.sleep` `{ms}` | none | awaitable only; up to 60000 ms |
 
 Every call counts against a per-second budget; a plugin may make at most 256
-calls while handling one event. Network connections show up in the app's Network
+calls while handling one event. `runtime.limits.eventTimeoutMs` is the plugin's
+own time for an event: time spent waiting for the app (a download, a socket
+read) does not count, but all the calls of one event together may wait at most
+60 seconds. Network connections show up in the app's Network
 panel, where the user can close any of them. Plugin traffic always goes directly;
 it never uses the proxy configured in the app.
 
@@ -86,6 +92,47 @@ sent (never for secret chats or 777000). The plugin may call
 this event. It has about a second; `contributes.outgoing.onFailure` says what
 happens when it fails or is late: `pass` sends the text unchanged, `block` stops
 the message and puts it back into the input field.
+
+## Waiting without blocking
+
+A plain call waits for its answer, and the plugin handles nothing else
+meanwhile. An awaitable call (`"async": true`) is answered at once with
+`{"ticket": N}`; the app does the work in the background and later delivers
+`call.result` `{ticket, ok, v}` or `{ticket, ok: false, e, m}` as an ordinary
+event. Every call except `messages.set_outgoing` and `plugin.unload` can be
+awaited; at most 32 may wait at a time (`limit` after that), and none can be
+started while handling `message.outgoing`. When the plugin stops, the calls
+still waiting are dropped.
+
+In Python, `freshgram.aio` has the same namespaces as `freshgram` with
+awaitable calls, and handlers may be `async def`:
+
+```python
+import freshgram
+from freshgram import aio
+
+@freshgram.on_command("rates")
+async def rates(event):
+    usd, eur = await aio.gather(
+        aio.net.get("https://example.org/usd"),
+        aio.net.get("https://example.org/eur"))
+    await aio.ui.toast(usd.text() + " / " + eur.text())
+
+@freshgram.on("message.new")
+def counted(event):
+    # Runs while rates() waits for the network.
+    freshgram.storage.set("seen", freshgram.storage.get("seen", 0) + 1)
+
+freshgram.run()
+```
+
+`aio.sleep(seconds)`, `aio.gather(*awaitables)`, `aio.wait_for(awaitable,
+timeout)` and `freshgram.spawn(coroutine)` (a background task whose failure is
+logged) work on the plugin's own loop; `asyncio` does not run in the sandbox.
+An async handler of `message.outgoing` must call
+`freshgram.messages.set_outgoing` before its first `await`. In C,
+`fg_begin_async` / `fg_send_async` return the ticket and `fg_sleep_async`
+starts a timer; the results come to `fg_plugin_event`.
 
 ## Messages between plugins
 

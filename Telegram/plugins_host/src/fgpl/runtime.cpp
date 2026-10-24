@@ -5,6 +5,7 @@
 
 #include <wasmtime.h>
 
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <condition_variable>
@@ -104,6 +105,9 @@ struct PluginState {
 	std::string logLines[3];
 	std::string lastError;
 	size_t callsLeft = 0;
+	std::chrono::steady_clock::time_point budgetStart;
+	uint32_t budgetMs = 0;
+	int64_t hostMs = 0;
 	bool dead = false;
 
 };
@@ -131,6 +135,28 @@ using namespace guest;
 
 void SetDeadline(PluginState &state, uint32_t milliseconds) {
 	state.store.context().set_epoch_deadline(milliseconds / kTickMs + 1);
+	state.budgetStart = std::chrono::steady_clock::now();
+	state.budgetMs = milliseconds;
+	state.hostMs = 0;
+}
+
+[[nodiscard]] int64_t MillisecondsSince(std::chrono::steady_clock::time_point start) {
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now() - start).count();
+}
+
+[[nodiscard]] bool HostTimeLeft(const PluginState &state) {
+	return state.hostMs < int64_t(state.limits.maxHostCallMs);
+}
+
+[[nodiscard]] cbor::Value HostedCall(PluginState &state, const cbor::Value &request) {
+	const auto started = std::chrono::steady_clock::now();
+	auto response = state.bridge->call(request);
+	state.hostMs += MillisecondsSince(started);
+	const auto used = MillisecondsSince(state.budgetStart) - state.hostMs;
+	const auto left = std::max<int64_t>(int64_t(state.budgetMs) - used, 0);
+	state.store.context().set_epoch_deadline(uint64_t(left) / kTickMs + 1);
+	return response;
 }
 
 void SetDeadline(PluginState &state) {
@@ -238,6 +264,9 @@ struct Placed {
 		return guest_status::kTooManyCalls;
 	}
 	--state.callsLeft;
+	if (!HostTimeLeft(state)) {
+		return guest_status::kTooManyCalls;
+	}
 	const auto context = caller.context();
 	const auto request = uint32_t(requestPointer);
 	const auto length = uint32_t(requestLength);
@@ -257,7 +286,7 @@ struct Placed {
 	if (!decoded.ok()) {
 		return guest_status::kBadRequest;
 	}
-	const auto response = state.bridge->call(decoded.value());
+	const auto response = HostedCall(state, decoded.value());
 	auto bytes = cbor::Bytes();
 	if (!cbor::Encode(response, bytes, state.limits.cbor.maxDepth)
 		|| bytes.size() > state.limits.maxMessageBytes) {
@@ -399,9 +428,15 @@ void LinkHost(
 			auto reply = cbor::Value();
 			if (state.callsLeft == 0) {
 				reply = Pair("error", cbor::Value::FromText("too_many_calls"));
+			} else if (!HostTimeLeft(state)) {
+				reply = cbor::Value::FromMap({
+					{ "ok", cbor::Value::FromBool(false) },
+					{ "e", cbor::Value::FromText("limit") },
+					{ "m", cbor::Value::FromText("the host calls of this event took too long") },
+				});
 			} else {
 				--state.callsLeft;
-				reply = state.bridge->call(request ? *request : cbor::Value());
+				reply = HostedCall(state, request ? *request : cbor::Value());
 			}
 			auto frame = Framed(cbor::Value::FromMap({
 				{ "t", cbor::Value::FromText("reply") },

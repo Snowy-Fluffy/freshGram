@@ -2,7 +2,11 @@
 
 #include "fgpl/broker.h"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -87,6 +91,15 @@ public:
 class FakeTransport final : public Transport {
 public:
 	Result<FetchResponse, FetchError> fetch(const FetchRequest &request) override {
+		if (delayMs > 0 || holdUntilAbort) {
+			++fetching;
+			auto lock = std::unique_lock(mutex);
+			const auto wait = std::chrono::milliseconds(holdUntilAbort ? 30000 : delayMs);
+			if (wake.wait_for(lock, wait, [&] { return !aborted.empty(); })) {
+				return FetchError{ "closed", "aborted" };
+			}
+		}
+		const auto lock = std::scoped_lock(mutex);
 		requests.push_back(request);
 		if (fail) {
 			return FetchError{ "failed", "boom" };
@@ -143,7 +156,20 @@ public:
 			closed.push_back(id);
 		}
 	}
+	void abort(const NetOwner &owner) override {
+		{
+			const auto lock = std::scoped_lock(mutex);
+			aborted.push_back(owner);
+		}
+		wake.notify_all();
+	}
 
+	std::mutex mutex;
+	std::condition_variable wake;
+	int delayMs = 0;
+	bool holdUntilAbort = false;
+	std::atomic<int> fetching = 0;
+	std::vector<NetOwner> aborted;
 	std::vector<FetchRequest> requests;
 	bool fail = false;
 	size_t bodySize = 5;

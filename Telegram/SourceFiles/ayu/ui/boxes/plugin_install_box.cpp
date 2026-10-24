@@ -5,6 +5,7 @@
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_ui.h"
 #include "core/file_utilities.h"
+#include "crl/crl_on_main.h"
 #include "main/main_session.h"
 #include "mainwindow.h"
 #include "styles/style_ayu_styles.h"
@@ -69,13 +70,15 @@ void Install(
 		std::shared_ptr<QByteArray> archive,
 		fgpl::GrantDecision decision,
 		fgpl::InstallOptions options,
-		Fn<void()> done) {
-	const auto manager = FreshPlugins::Manager();
-	if (!manager) {
-		controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
-		return;
-	}
-	auto result = manager->install(BytesOf(*archive), options);
+		Fn<void()> done);
+
+void Installed(
+		not_null<Window::SessionController*> controller,
+		std::shared_ptr<QByteArray> archive,
+		fgpl::GrantDecision decision,
+		fgpl::InstallOptions options,
+		Fn<void()> done,
+		const fgpl::Result<fgpl::InstallReport, fgpl::InstallFailure> &result) {
 	if (!result.ok()) {
 		const auto failure = result.error();
 		if (failure.error == fgpl::InstallError::PublisherChanged
@@ -98,17 +101,41 @@ void Install(
 			FailureReason(failure)));
 		return;
 	}
-	const auto id = result.value().id;
-	const auto account = FreshPlugins::AccountId(&controller->session())
-		.toStdString();
-	manager->grant(id, account, decision);
-	manager->setEnabled(id, true);
-	manager->startEnabled(account);
-	FreshPlugins::NotifyListChanged();
 	controller->showToast(tr::fresh_PluginInstalledToast(tr::now));
 	if (done) {
 		done();
 	}
+}
+
+void Install(
+		not_null<Window::SessionController*> controller,
+		std::shared_ptr<QByteArray> archive,
+		fgpl::GrantDecision decision,
+		fgpl::InstallOptions options,
+		Fn<void()> done) {
+	if (!FreshPlugins::Running()) {
+		controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
+		return;
+	}
+	const auto account = FreshPlugins::AccountId(&controller->session())
+		.toStdString();
+	const auto weak = base::make_weak(controller);
+	FreshPlugins::Post([=](not_null<fgpl::PluginManager*> manager) {
+		auto result = std::make_shared<
+			fgpl::Result<fgpl::InstallReport, fgpl::InstallFailure>>(
+				manager->install(BytesOf(*archive), options));
+		if (result->ok()) {
+			const auto id = result->value().id;
+			manager->grant(id, account, decision);
+			manager->setEnabled(id, true);
+			manager->startEnabled(account);
+		}
+		crl::on_main([=] {
+			if (const auto strong = weak.get()) {
+				Installed(strong, archive, decision, options, done, *result);
+			}
+		});
+	});
 }
 
 void FillInstallBox(
@@ -117,15 +144,10 @@ void FillInstallBox(
 		std::shared_ptr<QByteArray> archive,
 		std::shared_ptr<fgpl::Package> package) {
 	const auto &manifest = package->manifest;
-	const auto manager = FreshPlugins::Manager();
-	const auto account = FreshPlugins::AccountId(&controller->session()).toStdString();
+	const auto snapshot = FreshPlugins::Snapshot();
 	const auto installed = [&]() -> std::optional<fgpl::PluginInfo> {
-		for (auto &info : manager ? manager->list() : std::vector<fgpl::PluginInfo>()) {
-			if (info.id == manifest.id) {
-				return info;
-			}
-		}
-		return std::nullopt;
+		const auto found = snapshot ? snapshot->plugin(manifest.id) : nullptr;
+		return found ? std::make_optional(*found) : std::nullopt;
 	}();
 	const auto installedVersion = installed
 		? fgpl::ParseVersion(installed->version)
@@ -133,11 +155,11 @@ void FillInstallBox(
 	const auto order = installedVersion
 		? fgpl::Compare(manifest.version, *installedVersion)
 		: 1;
-	const auto previous = (installed && manager)
-		? manager->manifest(manifest.id)
+	const auto previous = (installed && snapshot)
+		? snapshot->manifest(manifest.id)
 		: nullptr;
-	const auto granted = (installed && manager)
-		? manager->grants(manifest.id, account)
+	const auto granted = (installed && snapshot)
+		? snapshot->grantsOf(manifest.id)
 		: std::nullopt;
 	const auto added = previous
 		? fgpl::NewRequests(*previous, manifest)
@@ -308,7 +330,7 @@ void ShowPluginInstallBox(
 		not_null<Window::SessionController*> controller,
 		QByteArray archive) {
 #ifdef FRESHGRAM_PLUGINS
-	if (!FreshPlugins::Manager()) {
+	if (!FreshPlugins::Running()) {
 		controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
 		return;
 	}

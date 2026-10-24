@@ -148,6 +148,8 @@ set(ayugram_files
         ayu/utils/builtin_lang.h
         ayu/utils/crash_trace.cpp
         ayu/features/fake_passcode/fake_passcode.cpp
+        ayu/features/plugins/plugins_control.cpp
+        ayu/features/plugins/plugins_control.h
         ayu/features/plugins/plugins_data.cpp
         ayu/features/plugins/plugins_data.h
         ayu/features/plugins/plugins_runtime.cpp

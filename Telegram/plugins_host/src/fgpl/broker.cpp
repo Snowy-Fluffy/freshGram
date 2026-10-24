@@ -5,6 +5,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <thread>
 
 namespace fgpl {
 namespace api {
@@ -38,6 +41,7 @@ constexpr auto kMaxResponseBody = size_t(8) << 20;
 constexpr auto kMaxHeaders = size_t(32);
 constexpr auto kMaxHeaderValue = size_t(4096);
 constexpr auto kMaxToast = size_t(200);
+constexpr auto kMaxSleepMs = int64_t(60000);
 constexpr auto kMaxMessage = size_t(4096);
 constexpr auto kMaxSocketsPerKind = 16;
 constexpr auto kMaxSocketChunk = size_t(1) << 20;
@@ -119,6 +123,12 @@ constexpr auto kMaxPluginMessage = size_t(64) << 10;
 	});
 }
 
+[[nodiscard]] bool IsSocketCall(const std::string &op) {
+	return op.rfind("net.tcp.", 0) == 0
+		|| op.rfind("net.udp.", 0) == 0
+		|| op.rfind("net.socket.", 0) == 0;
+}
+
 } // namespace
 
 std::optional<cbor::Bytes> MemoryStorage::get(const std::string &key) {
@@ -164,6 +174,89 @@ size_t MemoryStorage::count() {
 	return _items.size();
 }
 
+// WHY: a Qt socket works only on the thread that created it, so every socket
+// call of a plugin, waited for or not, runs on one thread of its own.
+class SocketWorker final {
+public:
+	SocketWorker()
+	: _state(std::make_shared<State>())
+	, _thread([state = _state] { Loop(*state); })
+	, _id(_thread.get_id()) {
+	}
+
+	~SocketWorker() {
+		{
+			const auto lock = std::scoped_lock(_state->mutex);
+			_state->stop = true;
+		}
+		_state->wake.notify_all();
+		if (std::this_thread::get_id() == _id) {
+			_thread.detach();
+		} else {
+			_thread.join();
+		}
+	}
+
+	void post(std::function<void()> work) {
+		{
+			const auto lock = std::scoped_lock(_state->mutex);
+			_state->queue.push_back(std::move(work));
+		}
+		_state->wake.notify_one();
+	}
+
+	[[nodiscard]] cbor::Value run(const std::function<cbor::Value()> &work) {
+		if (std::this_thread::get_id() == _id) {
+			return work();
+		}
+		struct Waiting {
+			std::mutex mutex;
+			std::condition_variable done;
+			std::optional<cbor::Value> result;
+		} waiting;
+		post([&] {
+			auto value = work();
+			const auto lock = std::scoped_lock(waiting.mutex);
+			waiting.result = std::move(value);
+			waiting.done.notify_all();
+		});
+		auto lock = std::unique_lock(waiting.mutex);
+		waiting.done.wait(lock, [&] { return waiting.result.has_value(); });
+		return std::move(*waiting.result);
+	}
+
+private:
+	struct State {
+		std::mutex mutex;
+		std::condition_variable wake;
+		std::deque<std::function<void()>> queue;
+		bool stop = false;
+	};
+
+	static void Loop(State &state) {
+		while (true) {
+			auto work = std::function<void()>();
+			{
+				auto lock = std::unique_lock(state.mutex);
+				state.wake.wait(lock, [&] {
+					return state.stop || !state.queue.empty();
+				});
+				if (state.queue.empty()) {
+					return;
+				}
+				work = std::move(state.queue.front());
+				state.queue.pop_front();
+			}
+			work();
+		}
+	}
+
+	std::shared_ptr<State> _state;
+	std::thread _thread;
+	std::thread::id _id;
+
+};
+
 Broker::Broker(Grants grants, BrokerServices services)
 : _grants(std::move(grants))
 , _services(std::move(services)) {
@@ -177,15 +270,34 @@ Broker::Broker(Grants grants, BrokerServices services)
 
 Broker::~Broker() {
 	releaseSockets();
+	_socketWorker = nullptr;
+}
+
+SocketWorker &Broker::sockets() {
+	const auto lock = std::scoped_lock(_socketWorkerMutex);
+	if (!_socketWorker) {
+		_socketWorker = std::make_unique<SocketWorker>();
+	}
+	return *_socketWorker;
 }
 
 void Broker::releaseSockets() {
-	if (_services.transport) {
-		for (const auto &[id, kind] : _sockets) {
-			_services.transport->close(id);
-		}
+	const auto worker = [&] {
+		const auto lock = std::scoped_lock(_socketWorkerMutex);
+		return _socketWorker.get();
+	}();
+	if (!worker) {
+		return;
 	}
-	_sockets.clear();
+	(void)worker->run([&] {
+		if (_services.transport) {
+			for (const auto &[id, kind] : _sockets) {
+				_services.transport->close(id);
+			}
+		}
+		_sockets.clear();
+		return cbor::Value();
+	});
 }
 
 void Broker::beginOutgoing() {
@@ -238,9 +350,21 @@ cbor::Value Broker::call(const cbor::Value &request) {
 	if (args && !args->asMap()) {
 		return api::Fail(api::error::kInvalid, "arguments must be a map");
 	}
+	const auto awaited = request.find("async");
 	auto response = cbor::Value();
 	if (!admit()) {
 		response = api::Fail(api::error::kLimit, "too many calls");
+	} else if (awaited && awaited->asBool().value_or(false)) {
+		response = schedule(*name, args);
+	} else if (_outgoing
+		&& *name != "meta.info"
+		&& *name != "log"
+		&& *name != "messages.set_outgoing") {
+		response = api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
+	} else if (*name == "time.sleep") {
+		response = api::Fail(api::error::kInvalid, "time.sleep must be awaited");
+	} else if (IsSocketCall(*name)) {
+		response = sockets().run([&] { return socketCall(*name, args); });
 	} else {
 		response = dispatch(*name, args);
 	}
@@ -258,13 +382,52 @@ cbor::Value Broker::call(const cbor::Value &request) {
 	return response;
 }
 
-cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
-	if (_outgoing
-		&& op != "meta.info"
-		&& op != "log"
-		&& op != "messages.set_outgoing") {
+cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
+	if (_outgoing) {
 		return api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
+	} else if (op == "messages.set_outgoing" || op == "plugin.unload") {
+		return api::Fail(api::error::kInvalid, "this call cannot be awaited");
+	} else if (!_services.post || !_services.after || !_services.complete) {
+		return api::Fail(api::error::kUnavailable, "awaitable calls");
 	}
+	const auto self = weak_from_this().lock();
+	if (!self) {
+		return api::Fail(api::error::kUnavailable, "awaitable calls");
+	} else if (_pending.load() >= _grants.maxPending) {
+		return api::Fail(api::error::kLimit, "too many calls are pending");
+	}
+	auto delay = int64_t(-1);
+	if (op == "time.sleep") {
+		const auto ms = IntArg(args, "ms");
+		if (!ms || *ms < 0 || *ms > kMaxSleepMs) {
+			return api::Fail(api::error::kInvalid, "ms");
+		}
+		delay = *ms;
+	}
+	const auto ticket = _nextTicket++;
+	++_pending;
+	const auto copy = args ? std::make_optional(*args) : std::nullopt;
+	const auto finish = [self, ticket](cbor::Value result) {
+		self->_services.complete(ticket, std::move(result));
+		--self->_pending;
+	};
+	if (delay >= 0) {
+		_services.after(delay, [finish] {
+			finish(api::Ok());
+		});
+	} else if (IsSocketCall(op)) {
+		sockets().post([self, op, copy, finish] {
+			finish(self->socketCall(op, copy ? &*copy : nullptr));
+		});
+	} else {
+		_services.post([self, op, copy, finish] {
+			finish(self->dispatch(op, copy ? &*copy : nullptr));
+		});
+	}
+	return api::Ok(cbor::Value::FromMap({ { "ticket", Int(ticket) } }));
+}
+
+cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 	if (op == "messages.set_outgoing") {
 		if (!has("messages.transform_outgoing")) {
 			return api::Fail(api::error::kDenied, "messages.transform_outgoing");
@@ -328,6 +491,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		if (!has("storage.private")) {
 			return api::Fail(api::error::kDenied, "storage.private");
 		}
+		const auto lock = std::scoped_lock(_storageMutex);
 		return storageCall(op, args);
 	} else if (op == "ui.settings.set") {
 		if (!has("ui.settings_page")) {
@@ -349,9 +513,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "net.https");
 		}
 		return netFetch(args);
-	} else if (op.rfind("net.tcp.", 0) == 0
-		|| op.rfind("net.udp.", 0) == 0
-		|| op.rfind("net.socket.", 0) == 0) {
+	} else if (IsSocketCall(op)) {
 		return socketCall(op, args);
 	} else if (op.rfind("ui.dialog.", 0) == 0) {
 		return uiCall(op, args);

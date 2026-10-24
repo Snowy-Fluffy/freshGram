@@ -3,10 +3,12 @@
 #include "fgpl/cbor.h"
 #include "fgpl/runtime.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <span>
@@ -46,6 +48,7 @@ struct Grants {
 	std::optional<std::set<int64_t>> chats;
 	uint64_t storageQuotaBytes = uint64_t(10) << 20;
 	int callsPerSecond = 200;
+	int maxPending = 32;
 };
 
 class Storage {
@@ -258,6 +261,9 @@ public:
 	virtual void close(int64_t id) {
 		(void)id;
 	}
+	virtual void abort(const NetOwner &owner) {
+		(void)owner;
+	}
 	[[nodiscard]] virtual NetTraffic traffic(const std::string &plugin) {
 		(void)plugin;
 		return {};
@@ -275,9 +281,17 @@ struct BrokerServices {
 	std::function<void()> unload;
 	std::function<std::string(const std::string &to, cbor::Value data)> sendToPlugin;
 	std::function<std::vector<std::string>()> pluginPeers;
+
+	std::function<void(std::function<void()> work)> post;
+	std::function<void(int64_t delayMs, std::function<void()> work)> after;
+	std::function<void(int64_t ticket, cbor::Value result)> complete;
 };
 
-class Broker final : public Bridge {
+class SocketWorker;
+
+class Broker final
+	: public Bridge
+	, public std::enable_shared_from_this<Broker> {
 public:
 	Broker(Grants grants, BrokerServices services);
 	~Broker();
@@ -297,7 +311,15 @@ public:
 	[[nodiscard]] std::optional<std::string> finishOutgoing();
 	void releaseSockets();
 
+	[[nodiscard]] int pending() const {
+		return _pending.load();
+	}
+
 private:
+	[[nodiscard]] cbor::Value schedule(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] SocketWorker &sockets();
 	[[nodiscard]] bool has(const char *permission) const;
 	[[nodiscard]] bool chatVisible(int64_t id, bool secret) const;
 	[[nodiscard]] bool chatInScope(int64_t id) const;
@@ -323,6 +345,11 @@ private:
 	BrokerServices _services;
 	std::vector<int64_t> _recent;
 	std::map<int64_t, SocketKind> _sockets;
+	std::unique_ptr<SocketWorker> _socketWorker;
+	std::mutex _socketWorkerMutex;
+	std::mutex _storageMutex;
+	std::atomic<int> _pending = 0;
+	int64_t _nextTicket = 1;
 	bool _outgoing = false;
 	std::optional<std::string> _outgoingText;
 

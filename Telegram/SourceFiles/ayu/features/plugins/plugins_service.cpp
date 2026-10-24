@@ -3,12 +3,14 @@
 
 #include "ayu/ayu_settings.h"
 #include "ayu/data/fresh_vault.h"
+#include "ayu/features/plugins/plugins_control.h"
 #include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/secret/secret_peer.h"
 #include "api/api_common.h"
+#include "apiwrap.h"
 #include "crl/crl_on_main.h"
 #include "data/data_changes.h"
 #include "data/data_drafts.h"
@@ -41,12 +43,12 @@
 #endif
 
 #include <cctype>
+#include <deque>
 #include <map>
 
 namespace FreshPlugins {
 namespace {
 
-constexpr auto kPumpEach = crl::time(50);
 constexpr auto kOutgoingTimeoutMs = 1000;
 
 #ifdef FRESHGRAM_PLUGINS
@@ -57,10 +59,16 @@ struct Watched {
 	rpl::lifetime events;
 };
 
+struct Outgoing {
+	Api::MessageToSend message;
+	std::optional<MsgId> localMessageId;
+};
+
 struct Service {
-	std::unique_ptr<fgpl::PluginManager> manager;
-	base::Timer pump;
+	std::unique_ptr<Control> control;
 	std::map<Main::Account*, Watched> watched;
+	std::map<not_null<History*>, std::deque<Outgoing>> outgoing;
+	bool sending = false;
 	rpl::variable<State> state = State::Disabled;
 	rpl::event_stream<> list;
 	rpl::lifetime lifetime;
@@ -86,7 +94,7 @@ struct Service {
 	return FreshVault::DeriveKey(label, out.data(), out.size());
 }
 
-[[nodiscard]] std::unique_ptr<fgpl::PluginManager> MakeManager(
+[[nodiscard]] std::optional<fgpl::ManagerConfig> MakeConfig(
 		Service &service) {
 	auto config = fgpl::ManagerConfig();
 	config.root = StorePath().toStdString();
@@ -113,14 +121,14 @@ struct Service {
 
 	const auto installed = Installed();
 	if (!installed) {
-		return nullptr;
+		return std::nullopt;
 	}
 	auto sealed = fgpl::SealExecutable(
 		config.host.path,
 		installed->hostHash);
 	if (!sealed.ok()) {
 		LOG(("Plugins Error: %1").arg(QString::fromStdString(sealed.error())));
-		return nullptr;
+		return std::nullopt;
 	}
 	service.hostFd = sealed.value();
 	service.revision = installed->revision;
@@ -134,7 +142,7 @@ struct Service {
 	config.cache.directory = (cWorkingDir() + u"tdata/plugins/cache"_q).toStdString();
 	if (!DeriveSecret("freshgram.plugins.cache", config.cache.secret)
 		|| !DeriveSecret("freshgram.plugins.state", config.stateKey)) {
-		return nullptr;
+		return std::nullopt;
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
@@ -142,7 +150,7 @@ struct Service {
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}
-	return std::make_unique<fgpl::PluginManager>(std::move(config));
+	return config;
 }
 
 [[nodiscard]] State Compute() {
@@ -159,24 +167,24 @@ struct Service {
 }
 
 void StartAccounts(Service &service) {
-	if (!service.manager || !Core::App().domain().started()) {
+	if (!service.control || !Core::App().domain().started()) {
 		return;
 	}
 	for (const auto &[account, watched] : service.watched) {
 		if (!watched.id.empty()) {
-			service.manager->startEnabled(watched.id);
+			Post([id = watched.id](not_null<fgpl::PluginManager*> manager) {
+				manager->startEnabled(id);
+			});
 		}
 	}
 }
 
 void DropManager(Service &service) {
-	if (service.manager) {
+	if (service.control) {
 		CloseData();
-		service.manager->shutdown();
-		service.manager = nullptr;
+		service.control = nullptr;
 		ReleaseData();
 	}
-	service.pump.cancel();
 	if (service.hostFd >= 0) {
 		close(base::take(service.hostFd));
 	}
@@ -188,16 +196,17 @@ void Refresh() {
 	const auto wanted = Compute();
 	if (wanted != State::Ready) {
 		DropManager(service);
-	} else if (service.manager) {
+	} else if (service.control) {
 		const auto installed = Installed();
 		if (!installed || installed->revision != service.revision) {
 			DropManager(service);
 		}
 	}
-	if (wanted == State::Ready && !service.manager) {
-		service.manager = MakeManager(service);
-		if (service.manager) {
-			service.pump.callEach(kPumpEach);
+	if (wanted == State::Ready && !service.control) {
+		if (auto config = MakeConfig(service)) {
+			service.control = std::make_unique<Control>(std::move(*config), [] {
+				GetService().list.fire({});
+			});
 			StartAccounts(service);
 		} else {
 			DropManager(service);
@@ -216,8 +225,10 @@ void ForgetAccount(Service &service, Main::Account *account) {
 	}
 	const auto id = i->second.id;
 	service.watched.erase(i);
-	if (service.manager && !id.empty()) {
-		service.manager->onLogout(id);
+	if (!id.empty()) {
+		Post([=](not_null<fgpl::PluginManager*> manager) {
+			manager->onLogout(id);
+		});
 	}
 }
 
@@ -236,16 +247,18 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 		i->second.events.destroy();
 		if (!session) {
 			const auto id = std::exchange(i->second.id, std::string());
-			if (service.manager && !id.empty()) {
-				service.manager->onLogout(id);
+			if (!id.empty()) {
+				Post([=](not_null<fgpl::PluginManager*> manager) {
+					manager->onLogout(id);
+				});
 			}
 			return;
 		}
 		const auto id = AccountId(session).toStdString();
 		i->second.id = id;
-		if (service.manager) {
-			service.manager->startEnabled(id);
-		}
+		Post([=](not_null<fgpl::PluginManager*> manager) {
+			manager->startEnabled(id);
+		});
 		session->data().newItemAdded(
 		) | rpl::on_next([=](not_null<HistoryItem*> item) {
 			if (WantsEvents()) {
@@ -299,13 +312,6 @@ void Start() {
 	if (std::exchange(service.started, true)) {
 		return;
 	}
-	service.pump.setCallback([] {
-		auto &service = GetService();
-		if (service.manager && service.manager->pump() > 0) {
-			service.list.fire({});
-		}
-	});
-
 	AyuSettings::getInstance().pluginsEnabledValue(
 	) | rpl::on_next([] {
 		Refresh();
@@ -319,13 +325,13 @@ void Start() {
 
 	Core::App().passcodeLockValue(
 	) | rpl::on_next([](bool locked) {
-		if (const auto manager = GetService().manager.get()) {
+		Post([=](not_null<fgpl::PluginManager*> manager) {
 			if (locked) {
 				manager->onLock();
 			} else {
 				manager->onUnlock();
 			}
-		}
+		});
 		Refresh();
 	}, service.lifetime);
 
@@ -339,34 +345,53 @@ void Stop() {
 #ifdef FRESHGRAM_PLUGINS
 	auto &service = GetService();
 	service.lifetime.destroy();
-	service.pump.cancel();
 	service.watched.clear();
+	service.outgoing.clear();
 	DropManager(service);
 	service.state = State::Disabled;
 	service.started = false;
 #endif
 }
 
-bool ApplyOutgoing(Api::MessageToSend &message) {
 #ifdef FRESHGRAM_PLUGINS
-	const auto manager = GetService().manager.get();
+
+namespace {
+
+[[nodiscard]] bool Transforms(const Api::MessageToSend &message) {
+	const auto snapshot = Snapshot();
+	const auto peer = message.action.history->peer;
+	return snapshot
+		&& !message.textWithTags.text.isEmpty()
+		&& (!snapshot->loaded || snapshot->transformsOutgoing(
+			int64_t(peer->id.value),
+			FreshSecret::IsSecretPeerId(peer->id)));
+}
+
+void SendNow(Outgoing &&outgoing) {
+	auto &service = GetService();
+	const auto history = outgoing.message.action.history;
+	service.sending = true;
+	history->session().api().sendMessage(
+		std::move(outgoing.message),
+		outgoing.localMessageId);
+	service.sending = false;
+}
+
+void Refuse(
+		const Api::MessageToSend &message,
+		const fgpl::OutgoingResult &result) {
 	const auto history = message.action.history;
-	const auto text = message.textWithTags.text;
-	if (!manager || text.isEmpty()) {
-		return false;
-	}
-	const auto peer = history->peer;
-	const auto result = manager->transformOutgoing(
-		AccountId(&history->session()).toStdString(),
-		int64_t(peer->id.value),
-		FreshSecret::IsSecretPeerId(peer->id),
-		text.toStdString(),
-		kOutgoingTimeoutMs);
-	if (result.blocked) {
-		const auto parsed = manager->manifest(result.plugin);
-		const auto name = parsed
-			? QString::fromStdString(parsed->name.get(Lang::Id().toStdString()))
-			: QString::fromStdString(result.plugin);
+	const auto snapshot = Snapshot();
+	const auto parsed = snapshot ? snapshot->manifest(result.plugin) : nullptr;
+	const auto name = parsed
+		? QString::fromStdString(parsed->name.get(Lang::Id().toStdString()))
+		: QString::fromStdString(result.plugin);
+	const auto &replyTo = message.action.replyTo;
+	const auto current = history->localDraft(
+		replyTo.topicRootId,
+		replyTo.monoforumPeerId);
+	if (!current || current->textWithTags.text.isEmpty()) {
+		const auto text = message.textWithTags.text;
 		const auto cursor = MessageCursor{
 			int(text.size()),
 			int(text.size()),
@@ -374,27 +399,116 @@ bool ApplyOutgoing(Api::MessageToSend &message) {
 		};
 		history->setLocalDraft(std::make_unique<Data::Draft>(
 			message.textWithTags,
-			message.action.replyTo,
+			replyTo,
 			SuggestOptions(),
 			cursor,
 			Data::WebPageDraft()));
 		history->session().changes().entryUpdated(
 			history,
 			Data::EntryUpdate::Flag::LocalDraftSet);
-		Ui::Toast::Show(tr::fresh_PluginOutgoingBlocked(
-			tr::now,
-			lt_plugin,
-			name,
-			lt_reason,
-			QString::fromStdString(result.reason)));
-		return true;
 	}
-	const auto changed = QString::fromStdString(result.text);
-	if (changed != text) {
-		message.textWithTags = TextWithTags{ changed };
+	Ui::Toast::Show(tr::fresh_PluginOutgoingBlocked(
+		tr::now,
+		lt_plugin,
+		name,
+		lt_reason,
+		QString::fromStdString(result.reason)));
+}
+
+void Next(not_null<History*> history);
+
+void Finish(
+		not_null<History*> history,
+		base::weak_ptr<Main::Session> weak,
+		fgpl::OutgoingResult result) {
+	auto &service = GetService();
+	const auto i = service.outgoing.find(history);
+	if (i == end(service.outgoing)) {
+		return;
+	} else if (!weak || i->second.empty()) {
+		service.outgoing.erase(i);
+		return;
 	}
+	auto outgoing = std::move(i->second.front());
+	i->second.pop_front();
+	if (result.blocked) {
+		Refuse(outgoing.message, result);
+	} else {
+		const auto changed = QString::fromStdString(result.text);
+		if (changed != outgoing.message.textWithTags.text) {
+			outgoing.message.textWithTags = TextWithTags{ changed };
+		}
+		SendNow(std::move(outgoing));
+	}
+	Next(history);
+}
+
+void Next(not_null<History*> history) {
+	auto &service = GetService();
+	auto i = service.outgoing.find(history);
+	while (i != end(service.outgoing) && !i->second.empty()) {
+		if (!Transforms(i->second.front().message)) {
+			auto outgoing = std::move(i->second.front());
+			i->second.pop_front();
+			SendNow(std::move(outgoing));
+			i = service.outgoing.find(history);
+			continue;
+		}
+		const auto &message = i->second.front().message;
+		const auto peer = history->peer;
+		const auto account = AccountId(&history->session()).toStdString();
+		const auto chat = int64_t(peer->id.value);
+		const auto secret = FreshSecret::IsSecretPeerId(peer->id);
+		const auto text = message.textWithTags.text.toStdString();
+		const auto weak = base::make_weak(&history->session());
+		Post([=](not_null<fgpl::PluginManager*> manager) {
+			manager->transformOutgoingAsync(
+				account,
+				chat,
+				secret,
+				text,
+				kOutgoingTimeoutMs,
+				[=](fgpl::OutgoingResult result) {
+					crl::on_main([=, result = std::move(result)] {
+						Finish(history, weak, result);
+					});
+				});
+		}, false);
+		return;
+	}
+	if (i != end(service.outgoing)) {
+		service.outgoing.erase(i);
+	}
+}
+
+} // namespace
+
 #endif
+
+bool ApplyOutgoing(
+		Api::MessageToSend &message,
+		std::optional<MsgId> localMessageId) {
+#ifdef FRESHGRAM_PLUGINS
+	auto &service = GetService();
+	const auto history = message.action.history;
+	if (service.sending || !service.control) {
+		return false;
+	}
+	const auto queued = service.outgoing.find(history);
+	const auto waiting = (queued != end(service.outgoing))
+		&& !queued->second.empty();
+	if (!waiting && !Transforms(message)) {
+		return false;
+	}
+	auto &queue = service.outgoing[history];
+	queue.push_back({ std::move(message), localMessageId });
+	if (!waiting) {
+		Next(history);
+	}
+	return true;
+#else
 	return false;
+#endif
 }
 
 bool SandboxSupported() {
@@ -436,11 +550,30 @@ void NotifyListChanged() {
 #endif
 }
 
-fgpl::PluginManager *Manager() {
+bool Running() {
 #ifdef FRESHGRAM_PLUGINS
-	return GetService().manager.get();
+	return GetService().control != nullptr;
+#else
+	return false;
+#endif
+}
+
+std::shared_ptr<const fgpl::ManagerSnapshot> Snapshot() {
+#ifdef FRESHGRAM_PLUGINS
+	const auto &control = GetService().control;
+	return control ? control->snapshot() : nullptr;
 #else
 	return nullptr;
+#endif
+}
+
+void Post(
+		Fn<void(not_null<fgpl::PluginManager*>)> work,
+		bool changesState) {
+#ifdef FRESHGRAM_PLUGINS
+	if (const auto &control = GetService().control) {
+		control->post(std::move(work), changesState);
+	}
 #endif
 }
 

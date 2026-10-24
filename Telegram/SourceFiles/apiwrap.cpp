@@ -4900,7 +4900,7 @@ void ApiWrap::sendMessage(
 		std::optional<MsgId> localMessageId) {
 	if (FreshSecret::SendText(message)) {
 		return;
-	} else if (FreshPlugins::ApplyOutgoing(message)) {
+	} else if (FreshPlugins::ApplyOutgoing(message, localMessageId)) {
 		return;
 	}
 	applyGhostScheduling(_session, message.action.options);

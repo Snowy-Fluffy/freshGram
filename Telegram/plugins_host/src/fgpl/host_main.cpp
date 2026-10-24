@@ -90,6 +90,10 @@ void Fatal(int fd, const std::string &detail) {
 	if (start > 0) {
 		result.startTimeoutMs = uint32_t(start);
 	}
+	const auto hosted = proto::IntField(*limits, "hostcall", 0);
+	if (hosted > 0) {
+		result.maxHostCallMs = uint32_t(hosted);
+	}
 	const auto message_bytes = proto::IntField(*limits, "message", 0);
 	if (message_bytes > 0) {
 		result.maxMessageBytes = size_t(message_bytes);

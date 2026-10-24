@@ -414,6 +414,7 @@ Result<std::monostate, ClientFailure> HostClient::load(
 		return cbor::Value::FromArray(std::move(result));
 	};
 	_timeoutMs = int(request.limits.callTimeoutMs);
+	_hostCallMs = int(request.limits.maxHostCallMs);
 	_startMs = int(request.limits.startTimeoutMs);
 	_fresh = true;
 	const auto sent = ipc::WriteFrame(_fd, proto::Map({
@@ -430,6 +431,7 @@ Result<std::monostate, ClientFailure> HostClient::load(
 			{ "timeout", proto::Int(int64_t(request.limits.callTimeoutMs)) },
 			{ "start", proto::Int(int64_t(request.limits.startTimeoutMs)) },
 			{ "message", proto::Int(int64_t(request.limits.maxMessageBytes)) },
+			{ "hostcall", proto::Int(int64_t(request.limits.maxHostCallMs)) },
 		}) },
 	}));
 	if (!sent.ok()) {
@@ -476,8 +478,9 @@ Result<int32_t, ClientFailure> HostClient::run(
 	}
 	const auto grace = _fresh ? _startMs : 0;
 	_fresh = false;
-	const auto deadline = std::chrono::steady_clock::now()
+	auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(_timeoutMs + kCallGraceMs + grace);
+	auto hosted = std::chrono::milliseconds(0);
 	while (true) {
 		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
 			deadline - std::chrono::steady_clock::now()).count();
@@ -502,7 +505,16 @@ Result<int32_t, ClientFailure> HostClient::run(
 				return Failure(ClientError::Protocol, "too many calls");
 			}
 			const auto request = frame.value().find("v");
+			const auto started = std::chrono::steady_clock::now();
 			const auto response = bridge.call(request ? *request : cbor::Value());
+			const auto spent = std::min(
+				std::chrono::duration_cast<std::chrono::milliseconds>(
+					std::chrono::steady_clock::now() - started),
+				std::chrono::milliseconds(_hostCallMs) - hosted);
+			if (spent.count() > 0) {
+				hosted += spent;
+				deadline += spent;
+			}
 			if (!ipc::WriteFrame(_fd, proto::Map({
 					{ "t", proto::Text("reply") },
 					{ "v", response },
