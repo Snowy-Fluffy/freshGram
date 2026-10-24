@@ -26,6 +26,16 @@ enum class Risk : uint8_t {
 	Files,
 };
 
+enum class Danger : uint8_t {
+	Low,
+	Medium,
+	High,
+};
+
+[[nodiscard]] Danger PermissionDanger(
+	const std::string &id,
+	const std::string &scope = {});
+
 struct RiskNote {
 	Risk risk = Risk::ExfiltrationPossible;
 	std::string text;

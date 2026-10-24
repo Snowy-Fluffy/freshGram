@@ -7,6 +7,7 @@
 #include "core/file_utilities.h"
 #include "main/main_session.h"
 #include "mainwindow.h"
+#include "styles/style_ayu_styles.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
 #include "ui/boxes/confirm_box.h"
@@ -14,8 +15,11 @@
 #include "ui/text/text_utilities.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/checkbox.h"
+#include "core/version.h"
 #include "ui/widgets/labels.h"
 #include "window/window_session_controller.h"
+
+#include <algorithm>
 
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
@@ -113,7 +117,36 @@ void FillInstallBox(
 		std::shared_ptr<QByteArray> archive,
 		std::shared_ptr<fgpl::Package> package) {
 	const auto &manifest = package->manifest;
-	box->setTitle(tr::ayu_PluginInstallTitle());
+	const auto manager = AyuPlugins::Manager();
+	const auto account = AyuPlugins::AccountId(&controller->session()).toStdString();
+	const auto installed = [&]() -> std::optional<fgpl::PluginInfo> {
+		for (auto &info : manager ? manager->list() : std::vector<fgpl::PluginInfo>()) {
+			if (info.id == manifest.id) {
+				return info;
+			}
+		}
+		return std::nullopt;
+	}();
+	const auto installedVersion = installed
+		? fgpl::ParseVersion(installed->version)
+		: std::nullopt;
+	const auto order = installedVersion
+		? fgpl::Compare(manifest.version, *installedVersion)
+		: 1;
+	const auto previous = (installed && manager)
+		? manager->manifest(manifest.id)
+		: nullptr;
+	const auto granted = (installed && manager)
+		? manager->grants(manifest.id, account)
+		: std::nullopt;
+	const auto added = previous
+		? fgpl::NewRequests(*previous, manifest)
+		: std::vector<std::string>();
+	box->setTitle((!installed || order < 0)
+		? tr::ayu_PluginInstallTitle()
+		: (order > 0)
+		? tr::ayu_PluginUpdateTitle()
+		: tr::ayu_PluginInstalledTitle());
 	box->setWidth(st::boxWideWidth);
 
 	const auto name = Pick(manifest.name);
@@ -135,6 +168,41 @@ void FillInstallBox(
 				QString::fromStdString(package->publisher))
 			: tr::ayu_PluginUnsigned(tr::now),
 		st::boxLabel));
+	auto environment = fgpl::HostEnvironment();
+	if (const auto app = fgpl::ParseVersion(AppVersionStr)) {
+		environment.app = *app;
+	}
+	if (fgpl::Outdated(manifest, environment)) {
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::ayu_PluginOutdated(
+				tr::now,
+				lt_version,
+				QString::fromStdString(manifest.testedWith->text())),
+			st::boxDividerLabel));
+	}
+
+	if (installed) {
+		const auto from = QString::fromStdString(installed->version);
+		const auto to = QString::fromStdString(manifest.version.text());
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			(order > 0)
+				? tr::ayu_PluginUpdateFrom(tr::now, lt_from, from, lt_to, to)
+				: (order == 0)
+				? tr::ayu_PluginSameVersion(tr::now, lt_version, from)
+				: tr::ayu_PluginNewerInstalled(tr::now, lt_from, from, lt_to, to),
+			(order < 0) ? st::pluginDangerHigh : st::boxDividerLabel));
+	}
+	if (installed && order == 0) {
+		const auto id = QString::fromStdString(manifest.id);
+		box->addButton(tr::ayu_PluginDetails(), [=] {
+			box->closeBox();
+			AyuPlugins::ShowPluginDetails(controller, id);
+		});
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		return;
+	}
 
 	auto contributes = QStringList();
 	if (!manifest.menus.empty()) {
@@ -167,20 +235,27 @@ void FillInstallBox(
 				lt_permission,
 				label);
 		}
+		const auto fresh = std::find(added.begin(), added.end(), request.id) != added.end();
+		if (fresh) {
+			label = tr::ayu_PluginPermissionNew(tr::now, lt_permission, label);
+		}
+		const auto checked = request.required
+			|| !granted
+			|| fresh
+			|| granted->granted.contains(request.id);
 		const auto check = box->addRow(object_ptr<Ui::Checkbox>(
 			box,
 			label,
-			true));
+			checked));
 		if (request.required) {
 			check->setDisabled(true);
 		}
 		boxes->emplace_back(request.id, check);
-		if (const auto reason = Pick(request.reason); !reason.isEmpty()) {
-			box->addRow(object_ptr<Ui::FlatLabel>(
-				box,
-				reason,
-				st::boxDividerLabel));
-		}
+		AyuPlugins::AddPermissionDanger(
+			box->verticalLayout(),
+			request.id,
+			request.scope,
+			Pick(request.reason));
 	}
 	for (const auto &note : fgpl::RiskNotes(requested)) {
 		box->addRow(object_ptr<Ui::FlatLabel>(
@@ -190,7 +265,12 @@ void FillInstallBox(
 	}
 
 	const auto weak = base::make_weak(box);
-	box->addButton(tr::ayu_PluginInstall(), [=] {
+	const auto downgrade = installed && (order < 0);
+	box->addButton(!installed
+		? tr::ayu_PluginInstall()
+		: downgrade
+		? tr::ayu_PluginInstallOlder()
+		: tr::ayu_PluginUpdate(), [=] {
 		auto decision = fgpl::GrantDecision();
 		for (const auto &[id, check] : *boxes) {
 			if (check->checked()) {
@@ -199,6 +279,7 @@ void FillInstallBox(
 		}
 		auto options = fgpl::InstallOptions();
 		options.acceptUnsigned = !signedPackage;
+		options.allowDowngrade = downgrade;
 		Install(controller, archive, std::move(decision), options, [=] {
 			if (const auto strong = weak.get()) {
 				strong->closeBox();

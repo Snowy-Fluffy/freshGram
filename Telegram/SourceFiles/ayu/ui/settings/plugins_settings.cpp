@@ -72,7 +72,11 @@ namespace {
 		}
 		return tr::ayu_PluginStatusStopped(tr::now);
 	}();
-	return result + u" · "_q + status;
+	result += u" · "_q + status;
+	if (info.outdated) {
+		result += u" · "_q + tr::ayu_PluginOutdatedShort(tr::now);
+	}
+	return result;
 }
 
 void AddPluginRow(

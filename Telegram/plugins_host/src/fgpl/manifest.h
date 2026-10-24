@@ -134,6 +134,10 @@ struct CompatIssue {
 	const Manifest &manifest,
 	const HostEnvironment &environment);
 
+[[nodiscard]] bool Outdated(
+	const Manifest &manifest,
+	const HostEnvironment &environment);
+
 [[nodiscard]] const std::set<std::string> &KnownPermissions();
 
 [[nodiscard]] std::string SignedText(const cbor::Value &document);

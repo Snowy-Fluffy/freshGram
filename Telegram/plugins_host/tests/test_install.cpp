@@ -54,6 +54,17 @@ void TestPermissions() {
 	const auto added = NewRequests(manifest, next);
 	CHECK(added.size() == 2);
 	CHECK(NewRequests(manifest, manifest).empty());
+
+	CHECK(PermissionDanger("ui.toast") == Danger::Low);
+	CHECK(PermissionDanger("storage.private") == Danger::Low);
+	CHECK(PermissionDanger("net.https") == Danger::Medium);
+	CHECK(PermissionDanger("messages.read") == Danger::Medium);
+	CHECK(PermissionDanger("messages.read", "all") == Danger::High);
+	CHECK(PermissionDanger("net.udp") == Danger::High);
+	CHECK(PermissionDanger("messages.send") == Danger::High);
+	for (const auto &id : KnownPermissions()) {
+		CHECK(PermissionDanger(id) <= Danger::High);
+	}
 }
 
 void TestInstalledPackageRunsInTheSandbox() {

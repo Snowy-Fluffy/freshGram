@@ -21,6 +21,7 @@
 #include "history/history_item.h"
 #include "main/main_session.h"
 #include "settings/settings_common.h"
+#include "styles/style_ayu_styles.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
@@ -43,6 +44,7 @@
 
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
+#include "fgpl/permissions.h"
 #endif
 
 #include <map>
@@ -403,6 +405,9 @@ void FillDetailsBox(
 	if (info.pendingUpdate) {
 		label(tr::ayu_PluginPending(tr::now, lt_version, Utf8(info.version)), st::boxDividerLabel);
 	}
+	if (info.outdated) {
+		label(tr::ayu_PluginOutdated(tr::now, lt_version, Utf8(info.testedWith)), st::boxDividerLabel);
+	}
 	if (!info.disabledReason.empty()) {
 		label(tr::ayu_PluginStatusDisabled(tr::now, lt_reason, Utf8(info.disabledReason)), st::boxDividerLabel);
 	}
@@ -447,7 +452,11 @@ void FillDetailsBox(
 			check->setDisabled(true);
 		}
 		checks->emplace_back(request.id, check);
-		label(Utf8(request.reason.get(Language())), st::boxDividerLabel);
+		AddPermissionDanger(
+			box->verticalLayout(),
+			request.id,
+			request.scope,
+			Utf8(request.reason.get(Language())));
 	}
 
 	const auto container = box->verticalLayout();
@@ -722,6 +731,30 @@ void FillNetworkBox(
 }
 
 } // namespace
+
+void AddPermissionDanger(
+		not_null<Ui::VerticalLayout*> layout,
+		const std::string &id,
+		const std::string &scope,
+		const QString &reason) {
+	const auto danger = fgpl::PermissionDanger(id, scope);
+	const auto level = (danger == fgpl::Danger::High)
+		? tr::ayu_PluginDangerHigh(tr::now)
+		: (danger == fgpl::Danger::Medium)
+		? tr::ayu_PluginDangerMedium(tr::now)
+		: tr::ayu_PluginDangerLow(tr::now);
+	const auto &style = (danger == fgpl::Danger::High)
+		? st::pluginDangerHigh
+		: (danger == fgpl::Danger::Medium)
+		? st::pluginDangerMedium
+		: st::pluginDangerLow;
+	layout->add(
+		object_ptr<Ui::FlatLabel>(
+			layout,
+			reason.isEmpty() ? level : (level + u" · "_q + reason),
+			style),
+		st::boxRowPadding);
+}
 
 QString PermissionLabel(const std::string &id) {
 	if (id == "net.https") {
@@ -1006,6 +1039,13 @@ void ShowPluginDetails(not_null<Window::SessionController*>, const QString &) {
 
 QString PermissionLabel(const std::string &id) {
 	return QString::fromStdString(id);
+}
+
+void AddPermissionDanger(
+	not_null<Ui::VerticalLayout*>,
+	const std::string &,
+	const std::string &,
+	const QString &) {
 }
 
 bool HasComposerItems(not_null<Main::Session*>) {

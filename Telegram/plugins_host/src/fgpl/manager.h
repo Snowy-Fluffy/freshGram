@@ -139,6 +139,8 @@ struct PluginInfo {
 	PluginStatus status = PluginStatus::Stopped;
 	std::vector<PermissionRequest> requests;
 	std::vector<CompatIssue> issues;
+	std::string testedWith;
+	bool outdated = false;
 	PluginStats stats;
 };
 

@@ -57,6 +57,25 @@ void ExpectError(
 	}
 }
 
+void TestOutdated() {
+	const auto manifest = Parse(ValidDocument()).value();
+	auto environment = HostEnvironment();
+	for (const auto &[app, outdated] : std::vector<std::pair<const char *, bool>>{
+		{ "7.6.1", false }, { "7.6.9", false }, { "7.5.0", false },
+		{ "7.7.0", true }, { "8.0.0", true }, { "6.9.0", false },
+	}) {
+		environment.app = *ParseVersion(app);
+		if (Outdated(manifest, environment) != outdated) {
+			std::fprintf(stderr, "outdated for %s\n", app);
+			CHECK(false);
+		}
+	}
+	auto untested = manifest;
+	untested.testedWith = std::nullopt;
+	environment.app = *ParseVersion("9.0.0");
+	CHECK(!Outdated(untested, environment));
+}
+
 void TestValidManifest() {
 	const auto result = Parse(ValidDocument());
 	if (!result.ok()) {
@@ -343,6 +362,7 @@ void TestSignedTextIgnoresTheSignature() {
 } // namespace
 
 int main() {
+	TestOutdated();
 	TestValidManifest();
 	TestLocalizedAndOptionalForms();
 	TestRejections();

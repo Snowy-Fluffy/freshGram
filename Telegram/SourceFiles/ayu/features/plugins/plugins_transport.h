@@ -25,7 +25,6 @@ struct ConnectionView {
 };
 
 [[nodiscard]] fgpl::Transport *NetworkTransport();
-void RefreshProxy();
 [[nodiscard]] std::vector<ConnectionView> Connections();
 void CloseConnection(int64 id);
 
