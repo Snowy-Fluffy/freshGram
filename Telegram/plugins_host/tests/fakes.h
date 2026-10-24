@@ -3,6 +3,7 @@
 #include "fgpl/broker.h"
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,25 @@ public:
 	void toast(const std::string &text) override {
 		toasts.push_back(text);
 	}
+	std::vector<Contact> contacts(size_t) override {
+		return {
+			{ 7, "Bob", "bob", "+10000000001" },
+			{ api::kServiceChat, "Telegram", "", "" },
+			{ 8, "Carol", "", "+10000000002" },
+		};
+	}
+	std::vector<Folder> folders() override {
+		return { { 1, "Work", { 1, 3, api::kServiceChat, 5 } } };
+	}
+	AppSettings settings() override {
+		return { "ru", "dark", false };
+	}
+	std::optional<Media> media(int64_t chat, int64_t message, bool thumbnail, size_t) override {
+		if (chat == 1 && message == 100) {
+			return Media{ thumbnail ? "thumbnail" : "photo", "image/jpeg", "a.jpg", cbor::Bytes(10, 1) };
+		}
+		return std::nullopt;
+	}
 
 	std::map<int64_t, std::string> drafts;
 	std::vector<std::pair<int64_t, std::string>> sent;
@@ -77,6 +97,12 @@ public:
 		redirectToAllowed = request.allowRedirect
 			? request.allowRedirect("https://api.example.com/next")
 			: false;
+		redirectToHttp = request.allowRedirect
+			? request.allowRedirect("http://api.example.com/next")
+			: true;
+		redirectToPrivate = request.allowRedirect
+			? request.allowRedirect("https://10.0.0.1/next")
+			: true;
 		auto response = FetchResponse();
 		response.status = 200;
 		response.headers = {
@@ -87,11 +113,50 @@ public:
 		return response;
 	}
 
+	Result<int64_t, FetchError> open(const NetOwner &owner, const SocketRequest &request) override {
+		opened.push_back(request);
+		owners.push_back(owner);
+		if (fail) {
+			return FetchError{ "connect", "refused" };
+		}
+		const auto id = nextId++;
+		live.insert(id);
+		return id;
+	}
+	Result<size_t, FetchError> write(int64_t id, std::span<const uint8_t> data, int) override {
+		if (!live.contains(id)) {
+			return FetchError{ "closed", "closed" };
+		}
+		written.insert(written.end(), data.begin(), data.end());
+		return data.size();
+	}
+	Result<SocketRead, FetchError> read(int64_t id, size_t maxBytes, int) override {
+		if (!live.contains(id)) {
+			return FetchError{ "closed", "closed" };
+		}
+		auto result = SocketRead();
+		result.data = cbor::Bytes(std::min<size_t>(maxBytes, 3), 'r');
+		return result;
+	}
+	void close(int64_t id) override {
+		if (live.erase(id)) {
+			closed.push_back(id);
+		}
+	}
+
 	std::vector<FetchRequest> requests;
 	bool fail = false;
 	size_t bodySize = 5;
 	bool redirectAllowed = true;
 	bool redirectToAllowed = false;
+	bool redirectToHttp = true;
+	bool redirectToPrivate = true;
+	std::vector<SocketRequest> opened;
+	std::vector<NetOwner> owners;
+	std::set<int64_t> live;
+	std::vector<int64_t> closed;
+	cbor::Bytes written;
+	int64_t nextId = 1;
 
 };
 

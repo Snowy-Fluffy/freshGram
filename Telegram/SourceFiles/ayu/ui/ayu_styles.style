@@ -188,3 +188,8 @@ fagramMembersButtonsRight: 4px;
 fagramDividerGap: 4px;
 fagramDescriptionPadding: margins(22px, 4px, 22px, 8px);
 fagramProfileCardSkip: 6px;
+
+historyPluginsToggle: IconButton(historyAttach) {
+	icon: icon {{ "menu/bot", historyComposeIconFg }};
+	iconOver: icon {{ "menu/bot", historyComposeIconFgOver }};
+}

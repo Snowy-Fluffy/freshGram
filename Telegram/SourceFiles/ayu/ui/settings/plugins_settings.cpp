@@ -314,6 +314,14 @@ void AddPluginsSettings(
 		AyuSettings::getInstance().setPluginsRuntimeAutoUpdate(enabled);
 	}, container->lifetime());
 
+	Settings::AddButtonWithIcon(
+		container,
+		tr::ayu_PluginsNetwork(),
+		st::settingsButtonNoIcon
+	)->addClickHandler([=] {
+		AyuPlugins::ShowNetworkPanel(controller);
+	});
+
 	if (!AyuPlugins::RuntimePackaged()) {
 		const auto offline = Settings::AddButtonWithIcon(
 			container,

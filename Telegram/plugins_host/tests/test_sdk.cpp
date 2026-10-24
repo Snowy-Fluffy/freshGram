@@ -25,7 +25,6 @@ struct World {
 	explicit World(std::set<std::string> permissions) {
 		grants.pluginId = "com.example.test";
 		grants.permissions = std::move(permissions);
-		grants.hosts = { "api.example.com" };
 		grants.storageQuotaBytes = 4096;
 		services.storage = &storage;
 		services.data = &data;
@@ -76,7 +75,7 @@ void TestPythonSdk() {
 		return;
 	}
 	auto world = World({
-		"storage.private", "net.hosts", "chats.list", "account.info",
+		"storage.private", "net.https", "chats.list", "account.info",
 		"messages.history", "stars.balance", "ui.toast", "messages.read",
 	});
 	auto broker = Broker(world.grants, world.services);
@@ -128,14 +127,16 @@ void TestPythonSdk() {
 	CHECK(fetched && fetched->size() == 2);
 	CHECK(fetched && (*fetched)[0].asInt() == 200);
 	CHECK(fetched && *(*fetched)[1].asText() == "xxxxx");
-	CHECK(StringAt(*report, "evil_host") == "denied");
+	CHECK(StringAt(*report, "other_host") == "ok");
+	CHECK(StringAt(*report, "public_ip") == "ok");
+	CHECK(StringAt(*report, "tcp") == "denied");
 	CHECK(StringAt(*report, "http_url") == "invalid");
 	CHECK(StringAt(*report, "ip_url") == "invalid");
 	CHECK(StringAt(*report, "cookie_header") == "invalid");
 	CHECK(StringAt(*report, "quota") == "quota");
 	CHECK(report->find("stars")->asInt() == 1234);
 	CHECK(world.data.toasts.size() == 1);
-	CHECK(world.transport.requests.size() == 1);
+	CHECK(world.transport.requests.size() == 3);
 	CHECK(world.transport.requests[0].headers.size() == 1);
 
 	const auto second = client->deliver(*broker.filterEvent(Event(2)), broker);

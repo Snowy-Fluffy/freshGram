@@ -39,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_draw_to_reply.h"
 #include "history/view/controls/history_view_rich_draft_preview.h"
 #include "ayu/features/compose_stash/compose_stash_hint.h"
+#include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/features/compose_stash/compose_stash_manager.h"
 #include "ui/emoji_config.h"
@@ -637,6 +638,9 @@ HistoryWidget::HistoryWidget(
 		}
 		if (_scheduled) {
 			_scheduled->setVisible(!hide);
+		}
+		if (_pluginsToggle) {
+			_pluginsToggle->setVisible(!hide);
 		}
 		updateFieldSize();
 		moveFieldControls();
@@ -1343,6 +1347,12 @@ HistoryWidget::HistoryWidget(
 	}, lifetime());
 
 	setupScheduledToggle();
+	AyuPlugins::ListChanges(
+	) | rpl::on_next([=] {
+		refreshPluginsToggle();
+		updateControlsVisibility();
+		updateControlsGeometry();
+	}, lifetime());
 	setupSendAsToggle();
 	orderWidgets();
 	setupShortcuts();
@@ -3634,6 +3644,7 @@ void HistoryWidget::showHistory(
 		}
 		refreshSuggestPostToggle();
 		refreshScheduledToggle();
+		refreshPluginsToggle();
 		refreshSendGiftToggle();
 		refreshSendAsToggle();
 
@@ -4207,6 +4218,28 @@ void HistoryWidget::refreshScheduledToggle() {
 	}
 }
 
+void HistoryWidget::refreshPluginsToggle() {
+	const auto has = _history
+		&& _canSendMessages
+		&& AyuPlugins::HasComposerItems(&session());
+	if (!_pluginsToggle && has) {
+		_pluginsToggle.create(this, st::historyPluginsToggle);
+		_pluginsToggle->setAccessibleName(tr::ayu_Plugins(tr::now));
+		_pluginsToggle->show();
+		_pluginsToggle->addClickHandler([=] {
+			if (_history) {
+				AyuPlugins::ShowComposerMenu(
+					controller(),
+					_history->peer,
+					_pluginsToggle.data());
+			}
+		});
+		orderWidgets(); // Raise drag areas to the top.
+	} else if (_pluginsToggle && !has) {
+		_pluginsToggle.destroy();
+	}
+}
+
 void HistoryWidget::refreshSendGiftToggle() {
 	using Type = Api::DisallowedGiftType;
 
@@ -4488,6 +4521,9 @@ void HistoryWidget::updateControlsVisibility() {
 		if (_scheduled) {
 			_scheduled->hide();
 		}
+		if (_pluginsToggle) {
+			_pluginsToggle->hide();
+		}
 		if (_toggleSuggestPost) {
 			_toggleSuggestPost->hide();
 		}
@@ -4618,6 +4654,14 @@ void HistoryWidget::updateControlsVisibility() {
 					rightButtonsChanged = true;
 				}
 			}
+			if (_pluginsToggle) {
+				const auto was = _pluginsToggle->isVisible();
+				const auto now = (!_editMsgId) && (!hideExtra);
+				if (was != now) {
+					_pluginsToggle->setVisible(now);
+					rightButtonsChanged = true;
+				}
+			}
 			if (_toggleSuggestPost) {
 				const auto was = _toggleSuggestPost->isVisible();
 				const auto now = !_suggestOptions;
@@ -4699,6 +4743,9 @@ void HistoryWidget::updateControlsVisibility() {
 		}
 		if (_scheduled) {
 			_scheduled->hide();
+		}
+		if (_pluginsToggle) {
+			_pluginsToggle->hide();
 		}
 		if (_toggleSuggestPost) {
 			_toggleSuggestPost->hide();
@@ -7974,6 +8021,10 @@ void HistoryWidget::moveFieldControls() {
 		_scheduled->moveToRight(right, buttonsBottom);
 		right += _scheduled->width();
 	}
+	if (_pluginsToggle) {
+		_pluginsToggle->moveToRight(right, buttonsBottom);
+		right += _pluginsToggle->width();
+	}
 	if (_ttlInfo) {
 		_ttlInfo->move(width() - right - _ttlInfo->width(), buttonsBottom);
 	}
@@ -8048,6 +8099,9 @@ void HistoryWidget::updateFieldSize() {
 	}
 	if (_scheduled && !_scheduled->isHidden()) {
 		fieldWidth -= _scheduled->width();
+	}
+	if (_pluginsToggle && !_pluginsToggle->isHidden()) {
+		fieldWidth -= _pluginsToggle->width();
 	}
 	if (_ttlInfo && _ttlInfo->isVisible() && settings.showAutoDeleteButtonInMessageField()) {
 		fieldWidth -= _ttlInfo->width();
@@ -11320,6 +11374,7 @@ bool HistoryWidget::updateCanSendMessage() {
 	}
 	refreshSuggestPostToggle();
 	refreshScheduledToggle();
+	refreshPluginsToggle();
 	refreshSendGiftToggle();
 	refreshSilentToggle();
 	return true;

@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -40,8 +41,8 @@ constexpr auto kFailed = "failed";
 
 struct Grants {
 	std::string pluginId;
+	std::string account;
 	std::set<std::string> permissions;
-	std::vector<std::string> hosts;
 	std::optional<std::set<int64_t>> chats;
 	uint64_t storageQuotaBytes = uint64_t(10) << 20;
 	int callsPerSecond = 200;
@@ -103,6 +104,32 @@ struct Account {
 	std::string phone;
 };
 
+struct Contact {
+	int64_t id = 0;
+	std::string name;
+	std::string username;
+	std::string phone;
+};
+
+struct Folder {
+	int64_t id = 0;
+	std::string title;
+	std::vector<int64_t> chats;
+};
+
+struct AppSettings {
+	std::string language;
+	std::string theme;
+	bool streamerMode = false;
+};
+
+struct Media {
+	std::string kind;
+	std::string mime;
+	std::string name;
+	cbor::Bytes bytes;
+};
+
 class DataProvider {
 public:
 	virtual ~DataProvider() = default;
@@ -119,9 +146,36 @@ public:
 	virtual bool setDraft(int64_t chat, const std::string &text) = 0;
 	virtual bool send(int64_t chat, const std::string &text) = 0;
 	virtual void toast(const std::string &text) = 0;
+	[[nodiscard]] virtual std::vector<Contact> contacts(size_t limit) {
+		(void)limit;
+		return {};
+	}
+	[[nodiscard]] virtual std::vector<Folder> folders() {
+		return {};
+	}
+	[[nodiscard]] virtual AppSettings settings() {
+		return {};
+	}
+	[[nodiscard]] virtual std::optional<Media> media(
+			int64_t chat,
+			int64_t message,
+			bool thumbnail,
+			size_t maxBytes) {
+		(void)chat;
+		(void)message;
+		(void)thumbnail;
+		(void)maxBytes;
+		return std::nullopt;
+	}
+};
+
+struct NetOwner {
+	std::string plugin;
+	std::string account;
 };
 
 struct FetchRequest {
+	NetOwner owner;
 	std::string method;
 	std::string url;
 	std::string host;
@@ -144,12 +198,70 @@ struct FetchError {
 	std::string message;
 };
 
+enum class SocketKind : uint8_t {
+	Tcp,
+	Udp,
+};
+
+struct SocketRequest {
+	SocketKind kind = SocketKind::Tcp;
+	std::string host;
+	int port = 0;
+	bool ip = false;
+	bool tls = false;
+	int timeoutMs = 10000;
+};
+
+struct SocketRead {
+	cbor::Bytes data;
+	bool closed = false;
+};
+
+struct NetTraffic {
+	uint64_t received = 0;
+	uint64_t sent = 0;
+	int open = 0;
+};
+
 class Transport {
 public:
 	virtual ~Transport() = default;
 
 	[[nodiscard]] virtual Result<FetchResponse, FetchError> fetch(
 		const FetchRequest &request) = 0;
+
+	[[nodiscard]] virtual Result<int64_t, FetchError> open(
+			const NetOwner &owner,
+			const SocketRequest &request) {
+		(void)owner;
+		(void)request;
+		return FetchError{ "unavailable", "sockets are not available" };
+	}
+	[[nodiscard]] virtual Result<size_t, FetchError> write(
+			int64_t id,
+			std::span<const uint8_t> data,
+			int timeoutMs) {
+		(void)id;
+		(void)data;
+		(void)timeoutMs;
+		return FetchError{ "unavailable", "sockets are not available" };
+	}
+	[[nodiscard]] virtual Result<SocketRead, FetchError> read(
+			int64_t id,
+			size_t maxBytes,
+			int timeoutMs) {
+		(void)id;
+		(void)maxBytes;
+		(void)timeoutMs;
+		return FetchError{ "unavailable", "sockets are not available" };
+	}
+	virtual void close(int64_t id) {
+		(void)id;
+	}
+	[[nodiscard]] virtual NetTraffic traffic(const std::string &plugin) {
+		(void)plugin;
+		return {};
+	}
 };
 
 struct BrokerServices {
@@ -160,11 +272,13 @@ struct BrokerServices {
 	std::function<void(std::string_view line)> log;
 	std::function<void(std::string_view op, std::string_view outcome)> audit;
 	std::function<bool(std::string_view kind, const cbor::Value &payload)> ui;
+	std::function<void()> unload;
 };
 
 class Broker final : public Bridge {
 public:
 	Broker(Grants grants, BrokerServices services);
+	~Broker();
 
 	cbor::Value call(const cbor::Value &request) override;
 	void log(std::string_view line) override;
@@ -177,6 +291,10 @@ public:
 		return _grants;
 	}
 
+	void beginOutgoing();
+	[[nodiscard]] std::optional<std::string> finishOutgoing();
+	void releaseSockets();
+
 private:
 	[[nodiscard]] bool has(const char *permission) const;
 	[[nodiscard]] bool chatVisible(int64_t id, bool secret) const;
@@ -188,6 +306,12 @@ private:
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] cbor::Value netFetch(const cbor::Value *args);
+	[[nodiscard]] cbor::Value socketCall(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] cbor::Value uiCall(
+		const std::string &op,
+		const cbor::Value *args);
 	[[nodiscard]] cbor::Value dataCall(
 		const std::string &op,
 		const cbor::Value *args);
@@ -196,6 +320,9 @@ private:
 	Grants _grants;
 	BrokerServices _services;
 	std::vector<int64_t> _recent;
+	std::map<int64_t, SocketKind> _sockets;
+	bool _outgoing = false;
+	std::optional<std::string> _outgoingText;
 
 };
 

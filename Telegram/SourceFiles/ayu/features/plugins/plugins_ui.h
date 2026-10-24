@@ -6,6 +6,10 @@
 class HistoryItem;
 class PeerData;
 
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace fgpl::cbor {
 class Value;
 } // namespace fgpl::cbor
@@ -27,6 +31,20 @@ void StoreSettingsPage(
 	const fgpl::cbor::Value &page);
 
 void ForgetSettingsPages(const std::string &id);
+
+void ShowPluginDialog(
+	const std::string &id,
+	const std::string &account,
+	const fgpl::cbor::Value *page);
+
+[[nodiscard]] QString PermissionLabel(const std::string &id);
+[[nodiscard]] bool HasComposerItems(not_null<Main::Session*> session);
+void ShowComposerMenu(
+	not_null<Window::SessionController*> controller,
+	not_null<PeerData*> peer,
+	not_null<QWidget*> button);
+void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add);
+void ShowNetworkPanel(not_null<Window::SessionController*> controller);
 
 void AddMessageMenuItems(
 	not_null<Ui::PopupMenu*> menu,

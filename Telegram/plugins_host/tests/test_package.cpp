@@ -151,7 +151,7 @@ void TestTamperingIsDetected() {
 	auto signedBuild = Build(ValidDocument(), Files(), &seed);
 	auto edited = signedBuild.document;
 	Set(edited, "permissions.optional", cbor::Value::FromArray({
-		cbor::Value::FromMap({ { "id", Text("net.any") }, { "reason", Text("surprise") } }),
+		cbor::Value::FromMap({ { "id", Text("net.tcp") }, { "reason", Text("surprise") } }),
 	}));
 	ExpectFailure(
 		"edited after signing",

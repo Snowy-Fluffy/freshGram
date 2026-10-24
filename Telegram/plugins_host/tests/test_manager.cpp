@@ -40,9 +40,6 @@ namespace fs = std::filesystem;
 		auto entry = cbor::Map();
 		entry.push_back({ "id", Text(item.first) });
 		entry.push_back({ "reason", Text("Needed for tests.") });
-		if (!item.second.empty()) {
-			entry.push_back({ "hosts", Array(item.second) });
-		}
 		list.push_back(cbor::Value::FromMap(std::move(entry)));
 	}
 	return cbor::Value::FromArray(std::move(list));
@@ -169,7 +166,7 @@ struct Lab {
 };
 
 [[nodiscard]] GrantDecision Everything() {
-	return { { "messages.read", "storage.private", "net.hosts" }, std::nullopt };
+	return { { "messages.read", "storage.private", "net.https" }, std::nullopt };
 }
 
 void Prepare(PluginManager &manager, const std::string &id, const std::string &account = "A") {
@@ -322,10 +319,10 @@ void TestUpdatesAndRollback() {
 	const auto update = manager.install(CounterArchive(id, "1.1.0", 1, {
 		{ "messages.read", {} },
 		{ "storage.private", {} },
-		{ "net.hosts", { "api.example.com" } },
+		{ "net.https", {} },
 	}));
 	CHECK(update.ok() && update.value().updated);
-	CHECK(update.ok() && update.value().newRequests == std::vector<std::string>{ "net.hosts" });
+	CHECK(update.ok() && update.value().newRequests == std::vector<std::string>{ "net.https" });
 	CHECK(manager.list()[0].pendingUpdate);
 	CHECK(manager.list()[0].version == "1.1.0");
 	CHECK(manager.grants(id, "A")->granted.size() == 2);
@@ -409,7 +406,7 @@ void TestLockHiddenAndLogout() {
 	CHECK(manager.dispatchAndWait("A", Event()).delivered == 0);
 	CHECK(!manager.startEnabled("A").started);
 	manager.onUnlock();
-	CHECK(manager.startEnabled("A").started == 1);
+	CHECK(manager.startEnabled("A").started == 0);
 	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
 	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
 
@@ -845,6 +842,122 @@ void TestStopWhileStartingIsPrompt() {
 
 } // namespace
 
+[[nodiscard]] std::string CallingModule(const std::string &request) {
+	auto escaped = std::string();
+	for (const auto ch : request) {
+		char buffer[4];
+		std::snprintf(buffer, sizeof(buffer), "\\%02x", static_cast<unsigned char>(ch));
+		escaped += buffer;
+	}
+	return wat::Module(
+		"(data (i32.const 64) \"" + escaped + "\")",
+		"(drop (call $call (i32.const 64) (i32.const "
+			+ std::to_string(request.size())
+			+ ") (i32.const 512) (i32.const 256))) (i32.const 0)");
+}
+
+[[nodiscard]] std::string UnloadRequest() {
+	return std::string("\xa1\x62op\x6dplugin.unload", 18);
+}
+
+[[nodiscard]] std::string OutgoingRequest() {
+	return std::string("\xa2\x62op\x75messages.set_outgoing\x61" "a\xa1\x64text\x65HELLO", 40);
+}
+
+[[nodiscard]] cbor::Bytes CustomArchive(
+		const std::string &id,
+		const std::string &wat,
+		std::vector<std::pair<std::string, std::vector<std::string>>> permissions,
+		std::function<void(cbor::Value &)> edit = nullptr) {
+	const auto key = Seed(1);
+	auto document = Document(id, "1.0.0", std::move(permissions));
+	if (edit) {
+		edit(document);
+	}
+	return Build(document, { { "plugin.wasm", wat::Wasm(wat) } }, &key).archive;
+}
+
+void TestSelfUnloadAndLazyStart() {
+	auto lab = Lab("fgpl-manager-unload");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.sleepy");
+	CHECK(manager.install(CustomArchive(id, CallingModule(UnloadRequest()), {
+		{ "messages.read", {} },
+	})).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started == 0);
+	CHECK(manager.runningCount() == 0);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	for (auto waited = 0; waited < 5000 && manager.runningCount() != 0; waited += 20) {
+		manager.pump();
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	}
+	CHECK(manager.runningCount() == 0);
+	CHECK(manager.list()[0].stats.unloads == 1);
+	CHECK(manager.list()[0].stats.failures == 0);
+	CHECK(manager.list()[0].enabled);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	auto edited = Event();
+	edited.asMap()->front().value = Text("message.edited");
+	CHECK(manager.dispatchAndWait("A", edited).delivered == 0);
+	CHECK(manager.list()[0].stats.cpuMs < 60000);
+}
+
+void TestOutgoingTransform() {
+	auto lab = Lab("fgpl-manager-outgoing");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.shout");
+	const auto outgoing = [](const char *policy) {
+		return [policy](cbor::Value &document) {
+			Set(document, "contributes.outgoing.onFailure", Text(policy));
+		};
+	};
+	CHECK(manager.install(CustomArchive(id, CallingModule(OutgoingRequest()), {
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	}, outgoing("pass"))).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read", "messages.transform_outgoing" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started == 1);
+	CHECK(manager.drain(20000));
+	const auto changed = manager.transformOutgoing("A", 1, false, "hi", 5000);
+	CHECK(!changed.blocked && changed.text == "HELLO");
+	const auto secret = manager.transformOutgoing("A", 3, true, "hi", 5000);
+	CHECK(!secret.blocked && secret.text == "hi");
+	const auto service = manager.transformOutgoing("A", api::kServiceChat, false, "hi", 5000);
+	CHECK(service.text == "hi");
+	CHECK(manager.transformOutgoing("B", 1, false, "hi", 5000).text == "hi");
+
+	const auto strict = std::string("com.example.strict");
+	CHECK(manager.install(CustomArchive(strict, CrashOnEvent(), {
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	}, outgoing("block"))).ok());
+	CHECK(manager.setEnabled(strict, true));
+	CHECK(manager.grant(strict, "A", { { "messages.transform_outgoing" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started == 1);
+	CHECK(manager.drain(20000));
+	const auto blocked = manager.transformOutgoing("A", 1, false, "hi", 5000);
+	CHECK(blocked.blocked && blocked.plugin == strict);
+}
+
+void TestConflictsBothWays() {
+	auto lab = Lab("fgpl-manager-conflicts");
+	auto manager = PluginManager(lab.config());
+	CHECK(manager.install(CustomArchive("com.example.first", CrashOnEvent(), {
+		{ "messages.read", {} },
+	}, [](cbor::Value &document) {
+		Set(document, "conflicts", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("com.example.second") } }),
+		}));
+	})).ok());
+	const auto second = manager.install(CustomArchive("com.example.second", CrashOnEvent(), {
+		{ "messages.read", {} },
+	}));
+	CHECK(!second.ok() && second.error().error == InstallError::Conflict);
+}
+
 int main(int argc, char **argv) {
 	const auto only = (argc > 1) ? std::string(argv[1]) : std::string();
 	const auto run = [&](const char *name, void (*test)()) {
@@ -866,5 +979,8 @@ int main(int argc, char **argv) {
 	run("busylock", TestLockIsPromptWhileBusy);
 	run("stress", TestManyPluginsAndAccounts);
 	run("cancel", TestStopWhileStartingIsPrompt);
+	run("unload", TestSelfUnloadAndLazyStart);
+	run("outgoing", TestOutgoingTransform);
+	run("conflicts", TestConflictsBothWays);
 	return Failures() ? 1 : 0;
 }

@@ -8,7 +8,10 @@
 #include <chrono>
 #include <fstream>
 #include <iterator>
+#include <sstream>
 #include <system_error>
+
+#include <unistd.h>
 
 namespace fgpl {
 namespace {
@@ -289,6 +292,41 @@ void AppendLog(LogRing &ring, size_t maxLines, std::string_view line) {
 	return cbor::Encode(event, bytes, 16) ? bytes.size() : 0;
 }
 
+struct Usage {
+	uint64_t cpuMs = 0;
+	uint64_t rssBytes = 0;
+};
+
+[[nodiscard]] Usage ProcessUsage(int pid) {
+	if (pid <= 0) {
+		return {};
+	}
+	auto stream = std::ifstream("/proc/" + std::to_string(pid) + "/stat");
+	auto line = std::string();
+	if (!std::getline(stream, line)) {
+		return {};
+	}
+	const auto close = line.rfind(')');
+	if (close == std::string::npos) {
+		return {};
+	}
+	auto fields = std::istringstream(line.substr(close + 2));
+	auto values = std::vector<std::string>();
+	for (auto value = std::string(); fields >> value;) {
+		values.push_back(value);
+	}
+	if (values.size() < 22) {
+		return {};
+	}
+	const auto ticks = sysconf(_SC_CLK_TCK);
+	const auto page = sysconf(_SC_PAGESIZE);
+	const auto cpu = std::stoull(values[11]) + std::stoull(values[12]);
+	return {
+		ticks > 0 ? cpu * 1000 / uint64_t(ticks) : 0,
+		std::stoull(values[21]) * uint64_t(page > 0 ? page : 4096),
+	};
+}
+
 } // namespace
 
 void PluginManager::addLog(Record &record, std::string_view line) {
@@ -320,11 +358,18 @@ void PluginManager::stopMany(const std::vector<Key> &keys) {
 			continue;
 		}
 		auto &instance = *i->second;
+		_finishedCpuMs[key.first] += ProcessUsage(instance.pid.load()).cpuMs;
 		{
 			const auto lock = std::scoped_lock(instance.mutex);
 			instance.closing = true;
 			instance.queue.clear();
 			instance.queuedBytes = 0;
+			for (const auto &pending : instance.outgoing) {
+				const auto done = std::scoped_lock(pending->mutex);
+				pending->finished = true;
+				pending->done.notify_all();
+			}
+			instance.outgoing.clear();
 		}
 		instance.cancel.store(true);
 		instance.wake.notify_all();
@@ -419,6 +464,18 @@ Result<InstallReport, InstallFailure> PluginManager::install(
 		const auto version = ParseVersion(found->second.current);
 		if (!conflict.range || (version && conflict.range->matches(*version))) {
 			return fail(InstallError::Conflict, { conflict.id });
+		}
+	}
+	for (const auto &item : _records) {
+		if (item.first == manifest.id) {
+			continue;
+		}
+		const auto other = this->manifest(item.first);
+		for (const auto &conflict : other ? other->conflicts : std::vector<Dependency>()) {
+			if (conflict.id == manifest.id
+				&& (!conflict.range || conflict.range->matches(manifest.version))) {
+				return fail(InstallError::Conflict, { item.first });
+			}
 		}
 	}
 
@@ -613,6 +670,23 @@ std::vector<PluginInfo> PluginManager::list() const {
 		info.signedPackage = !record.publisher.empty();
 		info.disabledReason = record.disabledReason;
 		info.stats = record.stats;
+		if (const auto finished = _finishedCpuMs.find(record.id); finished != _finishedCpuMs.end()) {
+			info.stats.cpuMs = finished->second;
+		}
+		for (const auto &instance : _instances) {
+			if (instance.first.first == record.id) {
+				const auto usage = ProcessUsage(instance.second->pid.load());
+				info.stats.cpuMs += usage.cpuMs;
+				info.stats.memoryBytes += usage.rssBytes;
+				++info.stats.running;
+			}
+		}
+		if (_config.services.transport) {
+			const auto traffic = _config.services.transport->traffic(record.id);
+			info.stats.netReceived = traffic.received;
+			info.stats.netSent = traffic.sent;
+			info.stats.openSockets = traffic.open;
+		}
 		const auto opened = openInstalled(record, record.current, record.archiveHash);
 		if (opened.ok()) {
 			info.requests = opened.value().manifest.permissions;
@@ -678,6 +752,9 @@ std::vector<Contribution> PluginManager::contributions(
 		entry.name = parsed->name.get(language);
 		if (has("ui.menu")) {
 			for (const auto &menu : parsed->menus) {
+				if (menu.surface == "composer" && !has("ui.composer_button")) {
+					continue;
+				}
 				entry.menus.push_back({ menu.surface, menu.id, menu.title.get(language) });
 			}
 		}
@@ -713,7 +790,16 @@ bool PluginManager::send(
 		return false;
 	}
 	pump();
-	auto *instance = ensure(record, account);
+	const auto trigger = (*type == "menu.click")
+		? "menu"
+		: (*type == "command")
+		? "command"
+		: (type->rfind("settings.", 0) == 0)
+		? "settings"
+		: nullptr;
+	auto *instance = trigger
+		? ensure(record, account, trigger)
+		: running(id, account);
 	if (!instance) {
 		++record.stats.dropped;
 		return false;
@@ -735,6 +821,10 @@ bool PluginManager::send(
 		}
 	} else if (*type == "settings.change" || *type == "settings.click") {
 		if (!has("ui.settings_page") || !instance->declared.settingsPage) {
+			return false;
+		}
+	} else if (*type == "dialog.click" || *type == "dialog.change" || *type == "dialog.close") {
+		if (!has("ui.dialog")) {
 			return false;
 		}
 	} else {
@@ -869,20 +959,31 @@ Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		instance->declared.commands.insert(command.name);
 	}
 	instance->declared.settingsPage = package.manifest.settingsPage;
-	if (package.manifest.settingsPage && _config.services.settingsPage) {
-		const auto callback = _config.services.settingsPage;
-		const auto pluginId = record.id;
-		services.ui = [callback, pluginId, account](std::string_view kind, const cbor::Value &payload) {
-			if (kind != "settings") {
-				return false;
-			}
-			callback(pluginId, account, payload);
+	const auto settings = package.manifest.settingsPage
+		? _config.services.settingsPage
+		: nullptr;
+	const auto dialog = _config.services.dialog;
+	const auto pluginId = record.id;
+	services.ui = [settings, dialog, pluginId, account](std::string_view kind, const cbor::Value &payload) {
+		if (kind == "settings" && settings) {
+			settings(pluginId, account, payload);
 			return true;
-		};
-	}
-	instance->broker = std::make_unique<Broker>(
-		MakeGrants(package.manifest, { grant->second.granted, grant->second.chats }),
-		std::move(services));
+		} else if (kind == "dialog" && dialog) {
+			dialog(pluginId, account, &payload);
+			return true;
+		} else if (kind == "dialog.close" && dialog) {
+			dialog(pluginId, account, nullptr);
+			return true;
+		}
+		return false;
+	};
+	const auto raw = instance.get();
+	services.unload = [raw] {
+		raw->unload.store(true);
+	};
+	auto grants = MakeGrants(package.manifest, { grant->second.granted, grant->second.chats });
+	grants.account = account;
+	instance->broker = std::make_unique<Broker>(std::move(grants), std::move(services));
 
 	instance->plan.host = _config.host;
 	if (package.manifest.kind == "python") {
@@ -902,6 +1003,27 @@ Result<std::unique_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 }
 
 void PluginManager::run(Instance &instance) {
+	struct Release {
+		Broker *broker = nullptr;
+		~Release() {
+			broker->releaseSockets();
+		}
+	} release{ instance.broker.get() };
+	const auto unloaded = [&] {
+		if (!instance.unload.load()) {
+			return false;
+		}
+		post({
+			instance.id,
+			instance.account,
+			instance.generation,
+			Completion::Kind::Unloaded,
+			{},
+		});
+		const auto lock = std::scoped_lock(instance.mutex);
+		instance.finished = true;
+		return true;
+	};
 	const auto fail = [&](std::string detail) {
 		post({
 			instance.id,
@@ -940,6 +1062,7 @@ void PluginManager::run(Instance &instance) {
 	} else {
 		instance.client = std::move(started.value());
 		instance.live.store(instance.client.get());
+		instance.pid.store(instance.client->pid());
 		if (instance.cancel.load()) {
 			problem = "cancelled";
 		} else {
@@ -976,23 +1099,46 @@ void PluginManager::run(Instance &instance) {
 		const auto lock = std::scoped_lock(instance.mutex);
 		instance.ready = true;
 	}
+	if (unloaded()) {
+		return;
+	}
 
 	while (true) {
 		auto event = cbor::Value();
+		auto outgoing = std::shared_ptr<Outgoing>();
 		{
 			auto lock = std::unique_lock(instance.mutex);
 			instance.wake.wait(lock, [&] {
-				return instance.closing || !instance.queue.empty();
+				return instance.closing
+					|| !instance.queue.empty()
+					|| !instance.outgoing.empty();
 			});
 			if (instance.closing) {
 				return;
 			}
-			event = std::move(instance.queue.front().first);
-			instance.queuedBytes -= instance.queue.front().second;
-			instance.queue.pop_front();
+			if (!instance.outgoing.empty()) {
+				outgoing = std::move(instance.outgoing.front());
+				instance.outgoing.pop_front();
+				event = outgoing->event;
+			} else {
+				event = std::move(instance.queue.front().first);
+				instance.queuedBytes -= instance.queue.front().second;
+				instance.queue.pop_front();
+			}
 			instance.busy = true;
 		}
+		if (outgoing) {
+			instance.broker->beginOutgoing();
+		}
 		const auto result = instance.client->deliver(event, *instance.broker);
+		if (outgoing) {
+			const auto text = instance.broker->finishOutgoing();
+			const auto lock = std::scoped_lock(outgoing->mutex);
+			outgoing->ok = result.ok();
+			outgoing->text = text;
+			outgoing->finished = true;
+			outgoing->done.notify_all();
+		}
 		instance.storage->flush();
 		if (result.ok()) {
 			post({
@@ -1002,8 +1148,13 @@ void PluginManager::run(Instance &instance) {
 				Completion::Kind::Delivered,
 				{},
 			});
-			const auto lock = std::scoped_lock(instance.mutex);
-			instance.busy = false;
+			{
+				const auto lock = std::scoped_lock(instance.mutex);
+				instance.busy = false;
+			}
+			if (unloaded()) {
+				return;
+			}
 			continue;
 		}
 		fail(result.error().detail.empty()
@@ -1013,14 +1164,60 @@ void PluginManager::run(Instance &instance) {
 	}
 }
 
+bool PluginManager::wantsEvents() const {
+	if (!mayRun()) {
+		return false;
+	}
+	for (const auto &[id, record] : _records) {
+		if (!record.enabled || record.grants.empty()) {
+			continue;
+		}
+		const auto parsed = manifest(id);
+		if (!parsed || parsed->events.empty()) {
+			continue;
+		}
+		const auto active = std::any_of(_instances.begin(), _instances.end(), [&](const auto &entry) {
+			return entry.first.first == id;
+		});
+		if (active || parsed->activation.contains("event")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool PluginManager::activatedBy(const Record &record, const char *trigger) const {
+	const auto parsed = manifest(record.id);
+	if (!parsed) {
+		return false;
+	} else if (std::string_view(trigger) == "startup") {
+		const auto transforms = !parsed->outgoing.empty()
+			&& std::any_of(record.grants.begin(), record.grants.end(), [](const auto &entry) {
+				return entry.second.granted.contains("messages.transform_outgoing");
+			});
+		return parsed->activation.contains("startup") || parsed->background || transforms;
+	}
+	return parsed->activation.contains(trigger);
+}
+
+PluginManager::Instance *PluginManager::running(
+		const std::string &id,
+		const std::string &account) {
+	const auto i = _instances.find({ id, account });
+	return (i == _instances.end()) ? nullptr : i->second.get();
+}
+
 PluginManager::Instance *PluginManager::ensure(
 		Record &record,
-		const std::string &account) {
+		const std::string &account,
+		const char *trigger) {
 	const auto key = Key{ record.id, account };
 	if (const auto i = _instances.find(key); i != _instances.end()) {
 		return i->second.get();
 	}
-	if (!mayRun() || !record.enabled || !record.grants.contains(account)) {
+	if (trigger && !activatedBy(record, trigger)) {
+		return nullptr;
+	} else if (!mayRun() || !record.enabled || !record.grants.contains(account)) {
 		return nullptr;
 	} else if (const auto gate = _notBefore.find(key);
 		gate != _notBefore.end() && now() < gate->second) {
@@ -1126,6 +1323,12 @@ int PluginManager::pump() {
 			stop(key);
 			noteFailure(record->second, completion.account, completion.detail);
 			break;
+		case Completion::Kind::Unloaded:
+			++record->second.stats.unloads;
+			_streak.erase(key);
+			addLog(record->second, "unloaded itself for " + completion.account);
+			stop(key);
+			break;
 		}
 	}
 	return handled;
@@ -1180,10 +1383,21 @@ DispatchReport PluginManager::dispatch(
 		if (!record.enabled || !record.grants.contains(account)) {
 			continue;
 		}
+		const auto parsed = manifest(id);
+		const auto typeField = event.find("type");
+		const auto type = typeField ? typeField->asText() : nullptr;
+		if (!parsed || !type
+			|| std::find(parsed->events.begin(), parsed->events.end(), *type)
+				== parsed->events.end()) {
+			++report.skipped;
+			continue;
+		}
 		const auto before = _instances.size();
-		auto *instance = ensure(record, account);
+		auto *instance = ensure(record, account, "event");
 		if (!instance) {
-			++record.stats.dropped;
+			if (activatedBy(record, "event")) {
+				++record.stats.dropped;
+			}
 			++report.skipped;
 			continue;
 		}
@@ -1245,11 +1459,84 @@ DispatchReport PluginManager::startEnabled(const std::string &account) {
 			continue;
 		}
 		const auto before = _instances.size();
-		if (ensure(found->second, account)) {
+		if (ensure(found->second, account, "startup")) {
 			report.started += int(_instances.size() > before);
 		}
 	}
 	return report;
+}
+
+OutgoingResult PluginManager::transformOutgoing(
+		const std::string &account,
+		int64_t chat,
+		bool secret,
+		const std::string &text,
+		int timeoutMs) {
+	auto result = OutgoingResult();
+	result.text = text;
+	if (!ValidAccount(account) || !mayRun() || secret || chat == api::kServiceChat) {
+		return result;
+	}
+	pump();
+	for (auto &item : _records) {
+		auto &record = item.second;
+		const auto grant = record.grants.find(account);
+		const auto parsed = manifest(record.id);
+		if (!record.enabled
+			|| grant == record.grants.end()
+			|| !grant->second.granted.contains("messages.transform_outgoing")
+			|| !parsed
+			|| parsed->outgoing.empty()
+			|| (grant->second.chats && !grant->second.chats->contains(chat))) {
+			continue;
+		}
+		const auto blocking = (parsed->outgoing == "block");
+		const auto refuse = [&](std::string reason) {
+			result.blocked = true;
+			result.plugin = record.id;
+			result.reason = std::move(reason);
+		};
+		auto *instance = ensure(record, account, nullptr);
+		auto ready = false;
+		if (instance) {
+			const auto lock = std::scoped_lock(instance->mutex);
+			ready = instance->ready && !instance->closing && !instance->finished;
+		}
+		if (!ready) {
+			if (blocking) {
+				refuse("the plugin is not ready yet");
+				return result;
+			}
+			continue;
+		}
+		auto pending = std::make_shared<Outgoing>();
+		pending->event = cbor::Value::FromMap({
+			{ "type", Text("message.outgoing") },
+			{ "chat", cbor::Value::FromInt(chat) },
+			{ "text", Text(result.text) },
+		});
+		{
+			const auto lock = std::scoped_lock(instance->mutex);
+			instance->outgoing.push_back(pending);
+		}
+		instance->wake.notify_one();
+		auto lock = std::unique_lock(pending->mutex);
+		const auto answered = pending->done.wait_for(
+			lock,
+			std::chrono::milliseconds(timeoutMs),
+			[&] { return pending->finished; });
+		if (!answered || !pending->ok) {
+			if (blocking) {
+				refuse(answered ? "the plugin failed" : "the plugin did not answer in time");
+				return result;
+			}
+			continue;
+		}
+		if (pending->text) {
+			result.text = *pending->text;
+		}
+	}
+	return result;
 }
 
 void PluginManager::onLock() {

@@ -50,8 +50,8 @@ using fakes::FakeTransport;
 struct Fixture {
 	explicit Fixture(std::set<std::string> permissions) {
 		grants.pluginId = "com.example.test";
+		grants.account = "acc";
 		grants.permissions = std::move(permissions);
-		grants.hosts = { "api.example.com", "*.cdn.example.com:8443" };
 		time = 0;
 		services.storage = &storage;
 		services.data = &data;
@@ -92,12 +92,19 @@ void TestUrlParsing() {
 	CHECK(net::ParseUrl("https://example.com").value().target == "/");
 	CHECK(net::ParseUrl("https://example.com?x=1").value().target == "/?x=1");
 	CHECK(net::ParseUrl("https://example.com./").value().host == "example.com");
+	const auto ip = net::ParseUrl("https://8.8.8.8:8443/dns");
+	CHECK(ip.ok() && ip.value().ip && ip.value().text == "https://8.8.8.8:8443/dns");
+	const auto v6 = net::ParseUrl("https://[2606:4700:4700::1111]/");
+	CHECK(v6.ok() && v6.value().host == "2606:4700:4700::1111"
+		&& v6.value().text == "https://[2606:4700:4700::1111]/");
 	for (const auto bad : {
 		"http://example.com/", "ftp://example.com/", "example.com",
 		"https://", "https:///x", "https://user:pw@example.com/",
 		"https://example.com:0/", "https://example.com:70000/",
-		"https://example.com:abc/", "https://127.0.0.1/", "https://8.8.8.8/",
-		"https://[::1]/", "https://localhost/", "https://a.localhost/",
+		"https://example.com:abc/", "https://127.0.0.1/", "https://10.0.0.1/",
+		"https://[::1]/", "https://[fe80::1]/", "https://2606:4700::1/",
+		"https://[2606:4700::1/", "https://127.1/", "https://0x7f.1/",
+		"https://2130706433/", "https://localhost/", "https://a.localhost/",
 		"https://printer.local/", "https://x.internal/",
 		"https://exa mple.com/", "https://exa\tmple.com/",
 		"https://-.com/..", "https://a..b/", "https://.a/",
@@ -111,33 +118,33 @@ void TestUrlParsing() {
 	CHECK(!net::ParseUrl(std::string("https://example.com/") + std::string(3000, 'a')).ok());
 }
 
-void TestHostMatching() {
-	const auto parse = [](const char *text) {
-		return net::ParseUrl(text).value();
-	};
-	const auto patterns = std::vector<std::string>{
-		"api.example.com", "*.cdn.example.com:8443", "other.org:444",
-	};
-	CHECK(net::HostAllowed(parse("https://api.example.com/x"), patterns));
-	CHECK(net::HostAllowed(parse("https://API.example.com/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://api.example.com:444/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://sub.api.example.com/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://example.com/x"), patterns));
-	CHECK(net::HostAllowed(parse("https://a.cdn.example.com:8443/x"), patterns));
-	CHECK(net::HostAllowed(parse("https://a.b.cdn.example.com:8443/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://cdn.example.com:8443/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://a.cdn.example.com/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://evilcdn.example.com:8443/x"), patterns));
-	CHECK(net::HostAllowed(parse("https://other.org:444/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://other.org/x"), patterns));
-	CHECK(!net::HostAllowed(parse("https://api.example.com/x"), {}));
+void TestEndpoints() {
+	const auto good = net::ParseEndpoint("Example.COM.", 5222);
+	CHECK(good.ok() && good.value().host == "example.com" && !good.value().ip);
+	const auto v4 = net::ParseEndpoint("8.8.8.8", 53);
+	CHECK(v4.ok() && v4.value().ip && v4.value().port == 53);
+	const auto v6 = net::ParseEndpoint("[2606:4700:4700::1111]", 443);
+	CHECK(v6.ok() && v6.value().host == "2606:4700:4700::1111" && v6.value().ip);
+	CHECK(net::ParseEndpoint("2606:4700:4700::1111", 443).ok());
+	for (const auto bad : {
+		"127.0.0.1", "10.1.2.3", "192.168.1.1", "[::1]", "::1", "fe80::1",
+		"localhost", "printer.local", "nas.home.arpa", "127.1", "0x7f.1",
+		"2130706433", "a..b", "", "exa mple.com", "[2001:db8::1]", "224.0.0.1",
+	}) {
+		if (net::ParseEndpoint(bad, 80).ok()) {
+			std::fprintf(stderr, "endpoint accepted: %s\n", bad);
+			CHECK(false);
+		}
+	}
+	CHECK(!net::ParseEndpoint("example.com", 0).ok());
+	CHECK(!net::ParseEndpoint("example.com", 65536).ok());
 }
 
 void TestPublicAddresses() {
 	for (const auto good : {
 		"8.8.8.8", "1.1.1.1", "93.184.216.34", "172.15.0.1", "172.32.0.1",
 		"100.63.0.1", "100.128.0.1", "2606:4700:4700::1111",
-		"::ffff:8.8.8.8", "2a00:1450:4001::1",
+		"::ffff:8.8.8.8", "2a00:1450:4001::1", "2002:0808:0808::1",
 	}) {
 		if (!net::IsPublicAddress(good)) {
 			std::fprintf(stderr, "should be public: %s\n", good);
@@ -150,7 +157,9 @@ void TestPublicAddresses() {
 		"100.64.0.1", "100.127.255.255", "224.0.0.1", "255.255.255.255",
 		"198.18.0.1", "192.0.2.1", "198.51.100.1", "203.0.113.1",
 		"::", "::1", "fe80::1", "fc00::1", "fd12:3456::1", "ff02::1",
-		"::ffff:10.0.0.1", "::ffff:127.0.0.1", "2001:db8::1",
+		"::ffff:10.0.0.1", "::ffff:127.0.0.1", "2001:db8::1", "fec0::1",
+		"100::1", "64:ff9b:1::1", "2002:0a00:0001::1", "::10.0.0.1", "::5",
+		"2001:0000:4136:e378:8000:63bf:f5ff:fffe",
 		"not an address", "", "1.2.3", "1.2.3.4.5", "256.1.1.1", "1::2::3",
 		"12345::1", "1:2:3:4:5:6:7:8:9", "::ffff:1.2.3",
 	}) {
@@ -199,7 +208,15 @@ void TestEveryOperationNeedsItsPermission() {
 	const auto calls = std::vector<std::pair<std::string, cbor::Value>>{
 		{ "storage.get", Request("storage.get", { { "key", Text("k") } }) },
 		{ "storage.set", Request("storage.set", { { "key", Text("k") }, { "value", Int(1) } }) },
-		{ "net.hosts", Request("net.fetch", { { "url", Text("https://api.example.com/") } }) },
+		{ "net.https", Request("net.fetch", { { "url", Text("https://api.example.com/") } }) },
+		{ "net.tcp", Request("net.tcp.connect", { { "host", Text("example.com") }, { "port", Int(80) } }) },
+		{ "net.udp", Request("net.udp.connect", { { "host", Text("8.8.8.8") }, { "port", Int(53) } }) },
+		{ "contacts.list", Request("contacts.list") },
+		{ "folders.list", Request("folders.list") },
+		{ "settings.read", Request("settings.read") },
+		{ "media.read", Request("media.get", { { "chat", Int(1) }, { "message", Int(100) } }) },
+		{ "ui.dialog", Request("ui.dialog.close") },
+		{ "messages.transform_outgoing", Request("messages.set_outgoing", { { "text", Text("x") } }) },
 		{ "chats.list", Request("chats.list") },
 		{ "chat.info", Request("chat.info", { { "chat", Int(1) } }) },
 		{ "messages.history", Request("messages.history", { { "chat", Int(1) } }) },
@@ -293,7 +310,7 @@ void TestKeyCountLimit() {
 }
 
 void TestNetwork() {
-	auto fixture = Fixture({ "net.hosts" });
+	auto fixture = Fixture({ "net.https" });
 	auto broker = fixture.make();
 	const auto fetch = [&](cbor::Map args) {
 		return broker.call(Request("net.fetch", std::move(args)));
@@ -305,15 +322,20 @@ void TestNetwork() {
 	CHECK(Payload(ok).find("headers")->find("content-type") != nullptr);
 	CHECK(Payload(ok).find("headers")->find("set-cookie") == nullptr);
 	CHECK(fixture.transport.requests.back().url == "https://api.example.com/v1?q=1");
-	CHECK(!fixture.transport.redirectAllowed);
+	CHECK(fixture.transport.requests.back().owner.plugin == "com.example.test");
+	CHECK(fixture.transport.requests.back().owner.account == "acc");
+	CHECK(fixture.transport.redirectAllowed);
 	CHECK(fixture.transport.redirectToAllowed);
+	CHECK(!fixture.transport.redirectToHttp);
+	CHECK(!fixture.transport.redirectToPrivate);
 
-	CHECK(Code(fetch({ { "url", Text("https://evil.example.org/") } })) == "denied");
+	CHECK(IsOk(fetch({ { "url", Text("https://evil.example.org/") } })));
+	CHECK(IsOk(fetch({ { "url", Text("https://8.8.8.8/") } })));
+	CHECK(IsOk(fetch({ { "url", Text("https://api.example.com:444/") } })));
 	CHECK(Code(fetch({ { "url", Text("http://api.example.com/") } })) == "invalid");
 	CHECK(Code(fetch({ { "url", Text("https://127.0.0.1/") } })) == "invalid");
+	CHECK(Code(fetch({ { "url", Text("https://192.168.1.1/") } })) == "invalid");
 	CHECK(Code(fetch({ { "url", Text("https://user@api.example.com/") } })) == "invalid");
-	CHECK(Code(fetch({ { "url", Text("https://api.example.com:444/") } })) == "denied");
-	CHECK(Code(fetch({ { "url", Text("https://a.cdn.example.com:8443/") } })) == "");
 	CHECK(Code(fetch({})) == "invalid");
 	CHECK(Code(fetch({ { "url", Text("https://api.example.com/") }, { "method", Text("CONNECT") } })) == "invalid");
 
@@ -361,6 +383,140 @@ void TestNetwork() {
 	CHECK(fixture.transport.requests.back().timeoutMs == 100);
 	fetch({ { "url", Text("https://api.example.com/") }, { "timeout", Int(1000000) } });
 	CHECK(fixture.transport.requests.back().timeoutMs == 30000);
+}
+
+void TestSockets() {
+	auto fixture = Fixture({ "net.tcp" });
+	auto broker = fixture.make();
+	const auto call = [&](std::string_view op, cbor::Map args) {
+		return broker.call(Request(op, std::move(args)));
+	};
+	const auto opened = call("net.tcp.connect", {
+		{ "host", Text("Example.com") },
+		{ "port", Int(5222) },
+		{ "tls", cbor::Value::FromBool(true) },
+		{ "timeout", Int(1) },
+	});
+	CHECK(IsOk(opened));
+	const auto id = Payload(opened).find("id")->asInt().value_or(0);
+	CHECK(fixture.transport.opened.back().host == "example.com");
+	CHECK(fixture.transport.opened.back().tls);
+	CHECK(fixture.transport.opened.back().timeoutMs == 100);
+	CHECK(fixture.transport.owners.back().plugin == "com.example.test");
+	CHECK(Code(call("net.udp.connect", { { "host", Text("8.8.8.8") }, { "port", Int(53) } })) == "denied");
+	CHECK(Code(call("net.tcp.connect", { { "host", Text("127.0.0.1") }, { "port", Int(22) } })) == "invalid");
+	CHECK(Code(call("net.tcp.connect", { { "host", Text("10.0.0.5") }, { "port", Int(22) } })) == "invalid");
+	CHECK(Code(call("net.tcp.connect", { { "host", Text("localhost") }, { "port", Int(22) } })) == "invalid");
+	CHECK(Code(call("net.tcp.connect", { { "host", Text("example.com") }, { "port", Int(0) } })) == "invalid");
+
+	const auto sent = call("net.socket.send", { { "id", Int(id) }, { "data", Text("hello") } });
+	CHECK(IsOk(sent) && Payload(sent).find("sent")->asInt() == 5);
+	CHECK(fixture.transport.written.size() == 5);
+	CHECK(Code(call("net.socket.send", { { "id", Int(id) }, { "data", cbor::Value::FromBytes(cbor::Bytes(2 << 20, 1)) } })) == "limit");
+	CHECK(Code(call("net.socket.send", { { "id", Int(id) } })) == "invalid");
+	const auto read = call("net.socket.recv", { { "id", Int(id) }, { "max", Int(2) } });
+	CHECK(IsOk(read) && Payload(read).find("data")->asBytes()->size() == 2);
+	CHECK(Code(call("net.socket.send", { { "id", Int(id + 100) }, { "data", Text("x") } })) == "not_found");
+	CHECK(IsOk(call("net.socket.close", { { "id", Int(id) } })));
+	CHECK(Code(call("net.socket.recv", { { "id", Int(id) } })) == "not_found");
+
+	for (auto i = 0; i != 16; ++i) {
+		CHECK(IsOk(call("net.tcp.connect", { { "host", Text("8.8.8.8") }, { "port", Int(443) } })));
+	}
+	CHECK(Code(call("net.tcp.connect", { { "host", Text("8.8.8.8") }, { "port", Int(443) } })) == "limit");
+	{
+		auto other = Broker(fixture.grants, fixture.services);
+		CHECK(Code(other.call(Request("net.socket.recv", { { "id", Int(2) } }))) == "not_found");
+	}
+	broker.releaseSockets();
+	CHECK(fixture.transport.live.empty());
+
+	auto udp = Fixture({ "net.udp" });
+	auto udpBroker = udp.make();
+	const auto datagram = udpBroker.call(Request("net.udp.connect", {
+		{ "host", Text("[2606:4700:4700::1111]") },
+		{ "port", Int(53) },
+	}));
+	CHECK(IsOk(datagram));
+	CHECK(udp.transport.opened.back().kind == SocketKind::Udp && udp.transport.opened.back().ip);
+	CHECK(Code(udpBroker.call(Request("net.udp.connect", {
+		{ "host", Text("8.8.8.8") },
+		{ "port", Int(53) },
+		{ "tls", cbor::Value::FromBool(true) },
+	}))) == "invalid");
+	const auto udpId = Payload(datagram).find("id")->asInt().value_or(0);
+	CHECK(Code(udpBroker.call(Request("net.socket.send", {
+		{ "id", Int(udpId) },
+		{ "data", cbor::Value::FromBytes(cbor::Bytes(70000, 1)) },
+	}))) == "limit");
+	udp.transport.fail = true;
+	CHECK(Code(udpBroker.call(Request("net.udp.connect", { { "host", Text("8.8.4.4") }, { "port", Int(53) } }))) == "connect");
+}
+
+void TestNewDataCalls() {
+	auto fixture = Fixture({ "contacts.list", "folders.list", "settings.read", "media.read" });
+	auto broker = fixture.make();
+	const auto contacts = broker.call(Request("contacts.list"));
+	CHECK(IsOk(contacts) && Payload(contacts).asArray()->size() == 2);
+	for (const auto &contact : *Payload(contacts).asArray()) {
+		CHECK(contact.find("phone") == nullptr);
+		CHECK(contact.find("id")->asInt() != api::kServiceChat);
+	}
+	const auto folders = broker.call(Request("folders.list"));
+	CHECK(IsOk(folders) && Payload(folders).asArray()->size() == 1);
+	const auto &chats = *(*Payload(folders).asArray())[0].find("chats")->asArray();
+	CHECK(chats.size() == 3);
+	for (const auto &chat : chats) {
+		CHECK(chat.asInt() != api::kServiceChat);
+	}
+	const auto settings = broker.call(Request("settings.read"));
+	CHECK(IsOk(settings) && *Payload(settings).find("theme")->asText() == "dark");
+	const auto media = broker.call(Request("media.get", { { "chat", Int(1) }, { "message", Int(100) } }));
+	CHECK(IsOk(media) && Payload(media).find("data")->asBytes()->size() == 10);
+	CHECK(Code(broker.call(Request("media.get", { { "chat", Int(1) }, { "message", Int(7) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("media.get", { { "chat", Int(3) }, { "message", Int(100) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("media.get", { { "chat", Int(api::kServiceChat) }, { "message", Int(1) } }))) == "denied");
+	const auto thumbnail = broker.call(Request("media.get", {
+		{ "chat", Int(1) },
+		{ "message", Int(100) },
+		{ "thumbnail", cbor::Value::FromBool(true) },
+	}));
+	CHECK(IsOk(thumbnail) && *Payload(thumbnail).find("kind")->asText() == "thumbnail");
+}
+
+void TestOutgoingAndUnload() {
+	auto unloads = 0;
+	auto dialogs = std::vector<std::string>();
+	auto fixture = Fixture({ "messages.transform_outgoing", "chats.list", "ui.dialog" });
+	fixture.services.unload = [&] { ++unloads; };
+	fixture.services.ui = [&](std::string_view kind, const cbor::Value &) {
+		dialogs.emplace_back(kind);
+		return true;
+	};
+	auto broker = fixture.make();
+	CHECK(Code(broker.call(Request("messages.set_outgoing", { { "text", Text("x") } }))) == "invalid");
+	broker.beginOutgoing();
+	CHECK(Code(broker.call(Request("chats.list"))) == "unavailable");
+	CHECK(IsOk(broker.call(Request("log", { { "text", Text("still fine") } }))));
+	CHECK(Code(broker.call(Request("messages.set_outgoing", { { "text", Text("") } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.set_outgoing", { { "text", Text("changed") } }))));
+	CHECK(broker.finishOutgoing() == std::optional<std::string>("changed"));
+	CHECK(IsOk(broker.call(Request("chats.list"))));
+	broker.beginOutgoing();
+	CHECK(!broker.finishOutgoing());
+
+	CHECK(IsOk(broker.call(Request("plugin.unload"))));
+	CHECK(unloads == 1);
+	const auto page = cbor::Value::FromMap({
+		{ "title", Text("Hello") },
+		{ "items", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "type", Text("text") }, { "text", Text("hi") } }),
+		}) },
+	});
+	CHECK(IsOk(broker.call(Request("ui.dialog.show", { { "page", page } }))));
+	CHECK(Code(broker.call(Request("ui.dialog.show", { { "page", Text("x") } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("ui.dialog.close"))));
+	CHECK(dialogs == (std::vector<std::string>{ "dialog", "dialog.close" }));
 }
 
 void TestDataIsFilteredByTheBroker() {
@@ -611,7 +767,7 @@ void TestEvents() {
 
 int main() {
 	TestUrlParsing();
-	TestHostMatching();
+	TestEndpoints();
 	TestPublicAddresses();
 	TestHeaderRules();
 	TestMetaAndLog();
@@ -619,6 +775,9 @@ int main() {
 	TestStorage();
 	TestKeyCountLimit();
 	TestNetwork();
+	TestSockets();
+	TestNewDataCalls();
+	TestOutgoingAndUnload();
 	TestDataIsFilteredByTheBroker();
 	TestSettingsPage();
 	TestTargetedEvents();

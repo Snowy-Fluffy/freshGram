@@ -3,7 +3,13 @@
 
 #include "lang/lang_keys.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/secret/secret_peer.h"
+#include "core/application.h"
+#include "main/main_account.h"
+#include "main/main_domain.h"
+#include "ui/text/format_values.h"
+#include "window/window_controller.h"
 #include "ayu/ui/boxes/plugin_install_box.h"
 #include "ayu/ui/fagram/fagram_nav_drawer.h"
 #include "base/timer.h"
@@ -179,11 +185,13 @@ void SendSetting(
 void BuildSettingsContent(
 		not_null<Ui::VerticalLayout*> content,
 		not_null<Window::SessionController*> controller,
+		not_null<Main::Session*> session,
 		const std::string &plugin,
-		const std::string &account,
-		const cbor::Value &page) {
-	const auto session = &controller->session();
+		const cbor::Value &page,
+		bool dialog) {
 	const auto weak = base::make_weak(session);
+	const auto change = dialog ? "dialog.change" : "settings.change";
+	const auto click = dialog ? "dialog.click" : "settings.click";
 	const auto items = page.find("items");
 	for (const auto &item : items ? *items->asArray() : cbor::Array()) {
 		const auto type = TextOf(item, "type");
@@ -209,7 +217,7 @@ void BuildSettingsContent(
 			button->addClickHandler([=] {
 				*on = !on->current();
 				if (const auto strong = weak.get()) {
-					SendSetting(strong, plugin, "settings.change", itemId, Flag(on->current()));
+					SendSetting(strong, plugin, change, itemId, Flag(on->current()));
 				}
 			});
 		} else if (type == u"button"_q) {
@@ -219,7 +227,7 @@ void BuildSettingsContent(
 				st::settingsButtonNoIcon);
 			button->addClickHandler([=] {
 				if (const auto strong = weak.get()) {
-					SendSetting(strong, plugin, "settings.click", itemId, std::nullopt);
+					SendSetting(strong, plugin, click, itemId, std::nullopt);
 				}
 			});
 		} else if (type == u"input"_q) {
@@ -236,7 +244,7 @@ void BuildSettingsContent(
 					SendSetting(
 						strong,
 						plugin,
-						"settings.change",
+						change,
 						itemId,
 						Text(field->getLastText()));
 				}
@@ -284,7 +292,7 @@ void BuildSettingsContent(
 							SendSetting(
 								strong,
 								plugin,
-								"settings.change",
+								change,
 								itemId,
 								cbor::Value::FromText(values[index]));
 						}
@@ -316,7 +324,7 @@ void FillSettingsBox(
 	const auto rebuild = [=] {
 		content->clear();
 		if (const auto current = PageOf(plugin, account)) {
-			BuildSettingsContent(content, controller, plugin, account, *current);
+			BuildSettingsContent(content, controller, &controller->session(), plugin, *current, false);
 		}
 	};
 	rebuild();
@@ -403,6 +411,22 @@ void FillDetailsBox(
 			label(ContributionSummary(entry), st::boxDividerLabel);
 		}
 	}
+	label(tr::ayu_PluginStats(
+		tr::now,
+		lt_cpu,
+		QString::number(info.stats.cpuMs / 1000.,'f', 1),
+		lt_memory,
+		Ui::FormatSizeText(qint64(info.stats.memoryBytes)),
+		lt_received,
+		Ui::FormatSizeText(qint64(info.stats.netReceived)),
+		lt_sent,
+		Ui::FormatSizeText(qint64(info.stats.netSent))), st::boxDividerLabel);
+	if (info.stats.unloads) {
+		label(tr::ayu_PluginUnloads(
+			tr::now,
+			lt_times,
+			QString::number(info.stats.unloads)), st::boxDividerLabel);
+	}
 
 	const auto granted = manager->grants(plugin, account);
 	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
@@ -411,10 +435,7 @@ void FillDetailsBox(
 		label(tr::ayu_PluginNoPermissions(tr::now), st::boxDividerLabel);
 	}
 	for (const auto &request : parsed->permissions) {
-		auto text = Utf8(request.id);
-		for (const auto &host : request.hosts) {
-			text += ' ' + Utf8(host);
-		}
+		auto text = PermissionLabel(request.id);
 		if (request.required) {
 			text = tr::ayu_PluginPermissionRequired(tr::now, lt_permission, text);
 		}
@@ -446,6 +467,13 @@ void FillDetailsBox(
 		st::settingsButtonNoIcon
 	)->addClickHandler([=] {
 		controller->show(Box(FillLogBox, plugin));
+	});
+	Settings::AddButtonWithIcon(
+		container,
+		tr::ayu_PluginsNetwork(),
+		st::settingsButtonNoIcon
+	)->addClickHandler([=] {
+		ShowNetworkPanel(controller);
 	});
 	Settings::AddButtonWithIcon(
 		container,
@@ -504,7 +532,282 @@ void FillDetailsBox(
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
+struct Dialogs {
+	std::map<std::pair<std::string, std::string>, cbor::Value> pages;
+	std::map<std::pair<std::string, std::string>, QPointer<Ui::GenericBox>> boxes;
+	rpl::event_stream<std::pair<std::string, std::string>> changes;
+};
+
+[[nodiscard]] Dialogs &GetDialogs() {
+	static auto result = Dialogs();
+	return result;
+}
+
+[[nodiscard]] Main::Session *SessionFor(const std::string &account) {
+	for (const auto &entry : Core::App().domain().accounts()) {
+		if (const auto session = entry.account->maybeSession()) {
+			if (AccountOf(session) == account) {
+				return session;
+			}
+		}
+	}
+	return nullptr;
+}
+
+[[nodiscard]] QString PluginName(const std::string &id) {
+	const auto manager = Manager();
+	const auto parsed = manager ? manager->manifest(id) : nullptr;
+	return parsed ? Utf8(parsed->name.get(Language())) : Utf8(id);
+}
+
+void FillDialogBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller,
+		std::string plugin,
+		std::string account) {
+	const auto key = std::make_pair(plugin, account);
+	const auto session = SessionFor(account);
+	box->setWidth(st::boxWideWidth);
+	const auto content = box->addRow(
+		object_ptr<Ui::VerticalLayout>(box),
+		style::margins());
+	const auto closedByPlugin = box->lifetime().make_state<bool>(false);
+	const auto rebuild = [=] {
+		content->clear();
+		const auto &pages = GetDialogs().pages;
+		const auto i = pages.find(key);
+		if (i == pages.end() || !session) {
+			return;
+		}
+		box->setTitle(rpl::single(tr::ayu_PluginBadge(
+			tr::now,
+			lt_title,
+			TextOf(i->second, "title"),
+			lt_plugin,
+			PluginName(plugin))));
+		BuildSettingsContent(content, controller, session, plugin, i->second, true);
+	};
+	rebuild();
+	GetDialogs().changes.events(
+	) | rpl::filter([=](const auto &changed) {
+		return changed == key;
+	}) | rpl::on_next([=] {
+		if (!GetDialogs().pages.contains(key)) {
+			*closedByPlugin = true;
+			box->closeBox();
+		} else {
+			Ui::PostponeCall(content, rebuild);
+		}
+	}, content->lifetime());
+	box->boxClosing() | rpl::on_next([=] {
+		if (!*closedByPlugin) {
+			GetDialogs().pages.erase(key);
+			if (const auto strong = SessionFor(account)) {
+				const auto manager = Manager();
+				if (manager) {
+					manager->send(plugin, account, cbor::Value::FromMap({
+						{ "type", cbor::Value::FromText("dialog.close") },
+					}));
+				}
+			}
+		}
+	}, box->lifetime());
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+}
+
+[[nodiscard]] QString Age(crl::time opened) {
+	const auto seconds = std::max<crl::time>(0, (crl::now() - opened) / 1000);
+	return (seconds < 60)
+		? tr::ayu_PluginsNetworkSeconds(tr::now, lt_seconds, QString::number(seconds))
+		: tr::ayu_PluginsNetworkMinutes(tr::now, lt_minutes, QString::number(seconds / 60));
+}
+
+[[nodiscard]] bool UsesNetwork(const fgpl::PluginInfo &info, const std::string &account) {
+	const auto manager = Manager();
+	const auto grant = manager ? manager->grants(info.id, account) : std::nullopt;
+	if (!grant) {
+		return false;
+	}
+	for (const auto permission : { "net.https", "net.tcp", "net.udp" }) {
+		if (grant->granted.contains(permission)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void FillNetworkBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller) {
+	box->setTitle(tr::ayu_PluginsNetwork());
+	box->setWidth(st::boxWideWidth);
+	const auto account = AccountOf(&controller->session());
+	const auto content = box->addRow(
+		object_ptr<Ui::VerticalLayout>(box),
+		style::margins());
+	const auto rebuild = [=] {
+		content->clear();
+		const auto manager = Manager();
+		const auto connections = Connections();
+		auto shown = 0;
+		for (const auto &info : manager ? manager->list() : std::vector<fgpl::PluginInfo>()) {
+			const auto id = Utf8(info.id);
+			const auto own = ranges::count_if(connections, [&](const ConnectionView &view) {
+				return view.plugin == id;
+			});
+			if (!UsesNetwork(info, account) && !own) {
+				continue;
+			}
+			++shown;
+			Ui::AddSubsectionTitle(content, rpl::single(PluginName(info.id)));
+			content->add(object_ptr<Ui::FlatLabel>(
+				content,
+				tr::ayu_PluginsNetworkTotal(
+					tr::now,
+					lt_received,
+					Ui::FormatSizeText(qint64(info.stats.netReceived)),
+					lt_sent,
+					Ui::FormatSizeText(qint64(info.stats.netSent))),
+				st::boxDividerLabel), st::boxRowPadding);
+			if (!own) {
+				content->add(object_ptr<Ui::FlatLabel>(
+					content,
+					tr::ayu_PluginsNetworkIdle(tr::now),
+					st::boxDividerLabel), st::boxRowPadding);
+			}
+			for (const auto &view : connections) {
+				if (view.plugin != id) {
+					continue;
+				}
+				const auto endpoint = view.host + ':' + QString::number(view.port)
+					+ ((view.address.isEmpty() || view.address == view.host)
+						? QString()
+						: u" ("_q + view.address + ')');
+				const auto row = Settings::AddButtonWithLabel(
+					content,
+					rpl::single(tr::ayu_PluginsNetworkRow(
+						tr::now,
+						lt_kind,
+						view.kind,
+						lt_endpoint,
+						endpoint,
+						lt_received,
+						Ui::FormatSizeText(qint64(view.received)),
+						lt_sent,
+						Ui::FormatSizeText(qint64(view.sent)),
+						lt_age,
+						Age(view.opened))),
+					rpl::single(tr::ayu_PluginsNetworkClose(tr::now)),
+					st::settingsButtonNoIcon);
+				const auto connection = view.id;
+				row->addClickHandler([=] {
+					CloseConnection(connection);
+				});
+			}
+			Ui::AddSkip(content);
+		}
+		if (!shown) {
+			content->add(object_ptr<Ui::FlatLabel>(
+				content,
+				tr::ayu_PluginsNetworkEmpty(tr::now),
+				st::boxLabel), st::boxRowPadding);
+		}
+	};
+	rebuild();
+	const auto timer = box->lifetime().make_state<base::Timer>([=] {
+		rebuild();
+	});
+	timer->callEach(1000);
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+}
+
 } // namespace
+
+QString PermissionLabel(const std::string &id) {
+	if (id == "net.https") {
+		return tr::ayu_PermissionNetHttps(tr::now);
+	} else if (id == "net.tcp") {
+		return tr::ayu_PermissionNetTcp(tr::now);
+	} else if (id == "net.udp") {
+		return tr::ayu_PermissionNetUdp(tr::now);
+	}
+	return Utf8(id);
+}
+
+bool HasComposerItems(not_null<Main::Session*> session) {
+	return !EntriesFor(session, "composer").empty();
+}
+
+void ShowComposerMenu(
+		not_null<Window::SessionController*> controller,
+		not_null<PeerData*> peer,
+		not_null<QWidget*> button) {
+	static auto menu = base::unique_qptr<Ui::PopupMenu>();
+	const auto session = &controller->session();
+	const auto weak = base::make_weak(session);
+	const auto peerId = peer->id;
+	menu = base::make_unique_q<Ui::PopupMenu>(button, st::popupMenuWithIcons);
+	for (const auto &entry : EntriesFor(session, "composer")) {
+		menu->addAction(entry.text, [=] {
+			const auto strong = weak.get();
+			const auto found = strong ? strong->data().peerLoaded(peerId) : nullptr;
+			if (found) {
+				Send(strong, entry.plugin, ClickEvent("composer", entry.menuId, found, nullptr));
+			}
+		}, &st::menuIconBot);
+	}
+	if (!menu->empty()) {
+		menu->popup(QCursor::pos());
+	}
+}
+
+void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add) {
+	const auto session = Core::App().domain().started()
+		? Core::App().activeAccount().maybeSession()
+		: nullptr;
+	if (!session) {
+		return;
+	}
+	const auto weak = base::make_weak(session);
+	for (const auto &entry : EntriesFor(session, "tray")) {
+		add(entry.text, [=] {
+			if (const auto strong = weak.get()) {
+				Send(strong, entry.plugin, ClickEvent("tray", entry.menuId, nullptr, nullptr));
+			}
+		});
+	}
+}
+
+void ShowPluginDialog(
+		const std::string &id,
+		const std::string &account,
+		const cbor::Value *page) {
+	auto &dialogs = GetDialogs();
+	const auto key = std::make_pair(id, account);
+	if (!page) {
+		dialogs.pages.erase(key);
+		dialogs.changes.fire_copy(key);
+		return;
+	}
+	dialogs.pages[key] = *page;
+	if (const auto open = dialogs.boxes[key].data()) {
+		dialogs.changes.fire_copy(key);
+		return;
+	}
+	const auto window = Core::App().activePrimaryWindow();
+	const auto controller = window ? window->sessionController() : nullptr;
+	if (!controller || !SessionFor(account)) {
+		dialogs.pages.erase(key);
+		return;
+	}
+	auto box = Box(FillDialogBox, controller, id, account);
+	dialogs.boxes[key] = box.data();
+	controller->show(std::move(box));
+}
+
+void ShowNetworkPanel(not_null<Window::SessionController*> controller) {
+	controller->show(Box(FillNetworkBox, controller));
+}
 
 void ForgetSettingsPages(const std::string &id) {
 	auto &pages = GetPages().pages;
@@ -699,6 +1002,26 @@ void ShowPluginSettings(not_null<Window::SessionController*>, const QString &) {
 }
 
 void ShowPluginDetails(not_null<Window::SessionController*>, const QString &) {
+}
+
+QString PermissionLabel(const std::string &id) {
+	return QString::fromStdString(id);
+}
+
+bool HasComposerItems(not_null<Main::Session*>) {
+	return false;
+}
+
+void ShowComposerMenu(
+	not_null<Window::SessionController*>,
+	not_null<PeerData*>,
+	not_null<QWidget*>) {
+}
+
+void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)>) {
+}
+
+void ShowNetworkPanel(not_null<Window::SessionController*>) {
 }
 
 void ForgetSettingsPages(const std::string &) {

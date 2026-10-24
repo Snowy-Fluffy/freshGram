@@ -1,6 +1,7 @@
 // This is the source code of freshGram.
 #include "ayu/features/plugins/plugins_data.h"
 
+#include "ayu/ayu_settings.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/secret/secret_peer.h"
 #include "api/api_common.h"
@@ -8,10 +9,19 @@
 #include "core/application.h"
 #include "crl/crl_on_main.h"
 #include "data/data_changes.h"
+#include "data/data_chat_filters.h"
+#include "data/data_document.h"
+#include "data/data_document_media.h"
 #include "data/data_drafts.h"
+#include "data/data_media_types.h"
 #include "data/data_peer.h"
+#include "data/data_photo.h"
+#include "data/data_photo_media.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "lang/lang_instance.h"
+#include "ui/image/image.h"
+#include "window/themes/window_theme.h"
 #include "dialogs/dialogs_entry.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "dialogs/dialogs_main_list.h"
@@ -28,6 +38,9 @@
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
 #endif
+
+#include <QtCore/QBuffer>
+#include <QtCore/QFile>
 
 #include <atomic>
 #include <condition_variable>
@@ -149,6 +162,14 @@ template <typename T>
 	result.unread = history->unreadCount();
 	result.pinned = history->isPinnedDialog(FilterId());
 	result.secret = AyuSecret::IsSecretPeerId(peer->id);
+	return result;
+}
+
+[[nodiscard]] QByteArray Jpeg(const QImage &image) {
+	auto result = QByteArray();
+	auto buffer = QBuffer(&result);
+	buffer.open(QIODevice::WriteOnly);
+	image.save(&buffer, "JPG", 87);
 	return result;
 }
 
@@ -305,6 +326,133 @@ public:
 		}, false);
 	}
 
+	std::vector<fgpl::Contact> contacts(size_t limit) override {
+		return OnMain<std::vector<fgpl::Contact>>([=] {
+			auto result = std::vector<fgpl::Contact>();
+			const auto session = FindSession(_account);
+			if (!session) {
+				return result;
+			}
+			for (const auto &row : *session->data().contactsList()) {
+				if (result.size() >= limit) {
+					break;
+				}
+				const auto history = row->history();
+				const auto user = history ? history->peer->asUser() : nullptr;
+				if (user && !user->isSelf()) {
+					result.push_back({
+						ChatId(user),
+						Utf8(user->name()),
+						Utf8(user->username()),
+						std::string(),
+					});
+				}
+			}
+			return result;
+		}, {});
+	}
+
+	std::vector<fgpl::Folder> folders() override {
+		return OnMain<std::vector<fgpl::Folder>>([=] {
+			auto result = std::vector<fgpl::Folder>();
+			const auto session = FindSession(_account);
+			if (!session) {
+				return result;
+			}
+			auto &filters = session->data().chatsFilters();
+			for (const auto &filter : filters.list()) {
+				if (!filter.id()) {
+					continue;
+				}
+				auto folder = fgpl::Folder();
+				folder.id = filter.id();
+				folder.title = Utf8(filter.title().text.text);
+				for (const auto &row : *filters.chatsList(filter.id())->indexed()) {
+					const auto history = row->history();
+					if (history && !AyuSecret::IsSecretPeerId(history->peer->id)) {
+						folder.chats.push_back(ChatId(history->peer));
+					}
+				}
+				result.push_back(std::move(folder));
+			}
+			return result;
+		}, {});
+	}
+
+	fgpl::AppSettings settings() override {
+		return OnMain<fgpl::AppSettings>([=] {
+			auto result = fgpl::AppSettings();
+			result.language = Utf8(Lang::GetInstance().id());
+			result.theme = Window::Theme::IsNightMode() ? "dark" : "light";
+			result.streamerMode = AyuSettings::getInstance().streamerMode();
+			return result;
+		}, {});
+	}
+
+	std::optional<fgpl::Media> media(
+			int64_t chat,
+			int64_t message,
+			bool thumbnail,
+			size_t maxBytes) override {
+		return OnMain<std::optional<fgpl::Media>>([=]() -> std::optional<fgpl::Media> {
+			const auto session = FindSession(_account);
+			const auto peerId = PeerId(uint64(chat));
+			if (!session || AyuSecret::IsSecretPeerId(peerId)) {
+				return std::nullopt;
+			}
+			const auto item = session->data().message(peerId, MsgId(message));
+			const auto media = item ? item->media() : nullptr;
+			if (!media) {
+				return std::nullopt;
+			}
+			auto result = fgpl::Media();
+			auto bytes = QByteArray();
+			if (const auto photo = media->photo()) {
+				const auto view = photo->activeMediaView();
+				if (!view) {
+					return std::nullopt;
+				}
+				const auto size = thumbnail
+					? Data::PhotoSize::Thumbnail
+					: Data::PhotoSize::Large;
+				bytes = view->imageBytes(size);
+				if (bytes.isEmpty()) {
+					if (const auto image = view->image(size)) {
+						bytes = Jpeg(image->original());
+					}
+				}
+				result.kind = thumbnail ? "thumbnail" : "photo";
+				result.mime = "image/jpeg";
+			} else if (const auto document = media->document()) {
+				const auto view = document->activeMediaView();
+				if (thumbnail) {
+					const auto image = view ? view->thumbnail() : nullptr;
+					if (image) {
+						bytes = Jpeg(image->original());
+					}
+					result.kind = "thumbnail";
+					result.mime = "image/jpeg";
+				} else {
+					bytes = view ? view->bytes() : QByteArray();
+					const auto path = bytes.isEmpty() ? document->filepath(true) : QString();
+					auto file = QFile(path);
+					if (!path.isEmpty() && file.open(QIODevice::ReadOnly)) {
+						bytes = file.read(qint64(maxBytes) + 1);
+					}
+					result.kind = "document";
+					result.mime = Utf8(document->mimeString());
+					result.name = Utf8(document->filename());
+				}
+			}
+			if (bytes.isEmpty()) {
+				return std::nullopt;
+			}
+			bytes.truncate(qsizetype(std::min<size_t>(size_t(bytes.size()), maxBytes + 1)));
+			result.bytes.assign(bytes.constData(), bytes.constData() + bytes.size());
+			return result;
+		}, std::nullopt);
+	}
+
 private:
 	[[nodiscard]] History *historyOf(int64_t id) const {
 		const auto session = FindSession(_account);
@@ -348,7 +496,7 @@ void ReleaseData() {
 
 bool WantsEvents() {
 	const auto manager = Manager();
-	return manager && manager->runningCount() > 0;
+	return manager && manager->wantsEvents();
 }
 
 void SendMessageEvent(

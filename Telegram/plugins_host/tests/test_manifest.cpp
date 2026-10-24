@@ -73,7 +73,7 @@ void TestValidManifest() {
 	CHECK(manifest.name.get("ru") == "Demo");
 	CHECK(manifest.permissions.size() == 3);
 	CHECK(manifest.permissions[0].required);
-	CHECK(manifest.permissions[1].hosts.size() == 2);
+	CHECK(manifest.permissions[1].id == "net.https");
 	CHECK(manifest.platforms.size() == 3);
 	CHECK(manifest.apiMin == 1 && manifest.apiMax == 1);
 	CHECK(manifest.events.size() == 1);
@@ -180,29 +180,35 @@ void TestRejections() {
 			cbor::Value::FromMap({ { "id", Text("messages.read") } }),
 		}));
 	}, "reason");
-	ExpectError("net without hosts", [](auto &d) {
-		Set(d, "permissions.optional", cbor::Value::FromArray({
-			cbor::Value::FromMap({ { "id", Text("net.hosts") }, { "reason", Text("x") } }),
-		}));
-	}, "non-empty 'hosts'");
-	ExpectError("hosts elsewhere", [](auto &d) {
-		Set(d, "permissions.optional", cbor::Value::FromArray({
-			cbor::Value::FromMap({ { "id", Text("storage.private") }, { "reason", Text("x") }, { "hosts", Array({ "a.example.com" }) } }),
-		}));
-	}, "only for net.hosts");
-	for (const auto bad : { "127.0.0.1", "localhost", "https://a.example.com", "*", "*.com", "a.example.com:0", "a.example.com:99999", "a b.example.com" }) {
-		ExpectError("bad host", [&](auto &d) {
+	for (const auto old : { "net.hosts", "net.any" }) {
+		ExpectError("old network permission", [&](auto &d) {
 			Set(d, "permissions.optional", cbor::Value::FromArray({
-				cbor::Value::FromMap({ { "id", Text("net.hosts") }, { "reason", Text("x") }, { "hosts", Array({ bad }) } }),
+				cbor::Value::FromMap({ { "id", Text(old) }, { "reason", Text("x") } }),
 			}));
-		}, "bad host pattern");
+		}, "unknown permission");
 	}
-	ExpectError("net.any with hosts", [](auto &d) {
+	ExpectError("hosts list", [](auto &d) {
 		Set(d, "permissions.optional", cbor::Value::FromArray({
-			cbor::Value::FromMap({ { "id", Text("net.hosts") }, { "hosts", Array({ "a.example.com" }) }, { "reason", Text("x") } }),
-			cbor::Value::FromMap({ { "id", Text("net.any") }, { "reason", Text("x") } }),
+			cbor::Value::FromMap({ { "id", Text("net.https") }, { "reason", Text("x") }, { "hosts", Array({ "a.example.com" }) } }),
 		}));
-	}, "cannot be requested together");
+	}, "unknown key");
+	ExpectError("outgoing without permission", [](auto &d) {
+		Set(d, "contributes.outgoing.onFailure", Text("block"));
+	}, "messages.transform_outgoing");
+	ExpectError("outgoing policy", [](auto &d) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("messages.transform_outgoing") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.outgoing.onFailure", Text("maybe"));
+	}, "onFailure");
+	ExpectError("composer without permission", [](auto &d) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("ui.menu") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.menus", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "surface", Text("composer") }, { "id", Text("go") }, { "title", Text("Go") } }),
+		}));
+	}, "ui.composer_button");
 	ExpectError("scope", [](auto &d) {
 		Set(d, "permissions.required", cbor::Value::FromArray({
 			cbor::Value::FromMap({ { "id", Text("messages.read") }, { "reason", Text("x") }, { "scope", Text("everything") } }),
