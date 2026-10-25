@@ -78,12 +78,15 @@ void AddPluginHeader(
 	const fgpl::Manifest &manifest,
 	const std::optional<fgpl::GrantDecision> &current,
 	const std::vector<std::string> &added);
-[[nodiscard]] bool HasComposerItems(not_null<Main::Session*> session);
+[[nodiscard]] bool HasComposerItems(
+	not_null<Main::Session*> session,
+	not_null<PeerData*> peer);
 void ShowComposerMenu(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
 	not_null<QWidget*> button);
 void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add);
+[[nodiscard]] QString TrayItemsKey();
 void ShowNetworkPanel(not_null<Window::SessionController*> controller);
 
 void AddMessageMenuItems(

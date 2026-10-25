@@ -149,6 +149,14 @@ void SetDeadline(PluginState &state, uint32_t milliseconds) {
 	return state.hostMs < int64_t(state.limits.maxHostCallMs);
 }
 
+[[nodiscard]] cbor::Value TooLarge() {
+	return cbor::Value::FromMap({
+		{ "ok", cbor::Value::FromBool(false) },
+		{ "e", cbor::Value::FromText("limit") },
+		{ "m", cbor::Value::FromText("the answer is too large") },
+	});
+}
+
 [[nodiscard]] cbor::Value HostedCall(PluginState &state, const cbor::Value &request) {
 	const auto started = std::chrono::steady_clock::now();
 	auto response = state.bridge->call(request);
@@ -288,9 +296,11 @@ struct Placed {
 	}
 	const auto response = HostedCall(state, decoded.value());
 	auto bytes = cbor::Bytes();
-	if (!cbor::Encode(response, bytes, state.limits.cbor.maxDepth)
-		|| bytes.size() > state.limits.maxMessageBytes) {
+	if (!cbor::Encode(response, bytes, state.limits.cbor.maxDepth)) {
 		return guest_status::kBadResponse;
+	} else if (bytes.size() > state.limits.maxMessageBytes) {
+		bytes.clear();
+		(void)cbor::Encode(TooLarge(), bytes, state.limits.cbor.maxDepth);
 	}
 	auto placed = Place(context, *memory, *alloc, bytes);
 	if (placed.trap) {
@@ -384,10 +394,6 @@ void LinkHost(
 	return result;
 }
 
-[[nodiscard]] cbor::Value Pair(std::string key, cbor::Value value) {
-	return cbor::Value::FromMap({ { std::move(key), std::move(value) } });
-}
-
 [[nodiscard]] int32_t CommandOutput(
 		PluginState &state,
 		int fd,
@@ -427,7 +433,11 @@ void LinkHost(
 			const auto request = message.find("v");
 			auto reply = cbor::Value();
 			if (state.callsLeft == 0) {
-				reply = Pair("error", cbor::Value::FromText("too_many_calls"));
+				reply = cbor::Value::FromMap({
+					{ "ok", cbor::Value::FromBool(false) },
+					{ "e", cbor::Value::FromText("limit") },
+					{ "m", cbor::Value::FromText("too many calls for one event") },
+				});
 			} else if (!HostTimeLeft(state)) {
 				reply = cbor::Value::FromMap({
 					{ "ok", cbor::Value::FromBool(false) },
@@ -442,7 +452,13 @@ void LinkHost(
 				{ "t", cbor::Value::FromText("reply") },
 				{ "v", std::move(reply) },
 			}));
-			if (frame.empty() || frame.size() > state.limits.maxMessageBytes + 64) {
+			if (frame.size() > state.limits.maxMessageBytes + 64) {
+				frame = Framed(cbor::Value::FromMap({
+					{ "t", cbor::Value::FromText("reply") },
+					{ "v", TooLarge() },
+				}));
+			}
+			if (frame.empty()) {
 				state.dead = true;
 				state.lastError = "a reply does not fit the limits";
 				return kIo;

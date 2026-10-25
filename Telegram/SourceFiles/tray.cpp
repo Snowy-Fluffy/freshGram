@@ -80,9 +80,15 @@ void Tray::create() {
 		[=] { rebuildMenu(); },
 		_tray.lifetime());
 
+	const auto pluginItems = _tray.lifetime().make_state<QString>(
+		FreshPlugins::TrayItemsKey());
 	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
-		rebuildMenu();
+		auto now = FreshPlugins::TrayItemsKey();
+		if (*pluginItems != now) {
+			*pluginItems = std::move(now);
+			rebuildMenu();
+		}
 	}, _tray.lifetime());
 
 	_tray.iconClicks(

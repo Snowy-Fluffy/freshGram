@@ -590,7 +590,7 @@ void TestUiContributions() {
 	CHECK(manager.drain(120000));
 
 	const auto menu = lab.stored(id, "A", "menu");
-	CHECK(menu && menu->find("chat")->asInt() == 1 && menu->find("message")->asInt() == 5);
+	CHECK(menu && menu->find("chat")->asInt() == 1 && menu->find("message")->isNull());
 	CHECK(menu && menu->find("text")->isNull());
 	const auto command = lab.stored(id, "A", "command");
 	CHECK(command && *command->asText() == "bonjour");
@@ -942,7 +942,7 @@ void TestOutgoingTransform() {
 	}, outgoing("block"))).ok());
 	CHECK(manager.setEnabled(strict, true));
 	CHECK(manager.grant(strict, "A", { { "messages.transform_outgoing" }, std::nullopt }));
-	CHECK(manager.startEnabled("A").started == 1);
+	CHECK(manager.startEnabled("A").started == 0);
 	CHECK(manager.drain(20000));
 	const auto blocked = manager.transformOutgoing("A", 1, false, "hi", 5000);
 	CHECK(blocked.blocked && blocked.plugin == strict);
@@ -1209,6 +1209,76 @@ void TestSnapshotMatchesTheManager() {
 #endif
 }
 
+
+void TestPermissionsReachEveryAccount() {
+	auto lab = Lab("fgpl-manager-everywhere");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.resident");
+	CHECK(manager.install(CustomArchive(id, CallingModule(OutgoingRequest()), {
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	}, [](cbor::Value &document) {
+		Set(document, "contributes.outgoing.onFailure", Text("pass"));
+	})).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read", "messages.transform_outgoing" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started == 1);
+	CHECK(manager.startEnabled("B").started == 1);
+	CHECK(manager.drain(20000));
+	CHECK(manager.grant(id, "A", { { "messages.transform_outgoing" }, std::nullopt }));
+	CHECK(manager.runningCount() == 2);
+	manager.onLock();
+	CHECK(manager.runningCount() == 0);
+	manager.onUnlock();
+	CHECK(manager.runningCount() == 2);
+	manager.onLogout("B");
+	CHECK(manager.runningCount() == 1);
+	CHECK(manager.setEnabled(id, false));
+	CHECK(manager.runningCount() == 0);
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.runningCount() == 1);
+	manager.shutdown();
+}
+
+void TestEventsAreFilteredBeforeStart() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-prefilter");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.counter");
+	CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read", "storage.private" }, std::set<int64_t>{ 1 } }));
+	auto secret = Event(1);
+	secret.asMap()->push_back({ "secret", cbor::Value::FromBool(true) });
+	CHECK(manager.dispatch("A", secret).queued == 0);
+	CHECK(manager.dispatch("A", Event(2)).queued == 0);
+	CHECK(manager.dispatch("A", Event(api::kServiceChat)).queued == 0);
+	CHECK(manager.runningCount() == 0);
+	CHECK(manager.dispatch("A", Event(1)).queued == 1);
+	CHECK(manager.runningCount() == 1);
+	manager.shutdown();
+#endif
+}
+
+void TestFailedHandlerBlocksOutgoing() {
+	auto lab = Lab("fgpl-manager-status");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.grumpy");
+	CHECK(manager.install(CustomArchive(id, wat::Module("", "(i32.const 7)"), {
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	}, [](cbor::Value &document) {
+		Set(document, "contributes.outgoing.onFailure", Text("block"));
+	})).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.transform_outgoing" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started == 1);
+	CHECK(manager.drain(20000));
+	const auto result = manager.transformOutgoing("A", 1, false, "hi", 5000);
+	CHECK(result.blocked && result.reason == "the plugin failed");
+	manager.shutdown();
+}
+
 int main(int argc, char **argv) {
 	const auto only = (argc > 1) ? std::string(argv[1]) : std::string();
 	const auto run = [&](const char *name, void (*test)()) {
@@ -1240,5 +1310,8 @@ int main(int argc, char **argv) {
 	run("abort", TestStopDoesNotWaitForTheNetwork);
 	run("outgoingasync", TestOutgoingAnswersWithoutWaiting);
 	run("snapshot", TestSnapshotMatchesTheManager);
+	run("everywhere", TestPermissionsReachEveryAccount);
+	run("prefilter", TestEventsAreFilteredBeforeStart);
+	run("status", TestFailedHandlerBlocksOutgoing);
 	return Failures() ? 1 : 0;
 }

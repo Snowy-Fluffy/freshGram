@@ -333,7 +333,7 @@ void TestResponseLimits() {
 		return;
 	}
 	const auto result = loaded.value()->deliver(kEvent());
-	CHECK(result.ok() && result.value() == guest_status::kBadResponse);
+	CHECK(result.ok() && result.value() == guest_status::kOk);
 	CHECK(!loaded.value()->dead());
 
 	const auto huge = cbor::Value::FromText(std::string(100, 'y'));

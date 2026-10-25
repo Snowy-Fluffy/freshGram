@@ -285,7 +285,12 @@ struct BrokerServices {
 	std::function<void(std::function<void()> work)> post;
 	std::function<void(int64_t delayMs, std::function<void()> work)> after;
 	std::function<void(int64_t ticket, cbor::Value result)> complete;
+	std::shared_ptr<void> keepAlive;
 };
+
+[[nodiscard]] std::optional<cbor::Value> FilterEvent(
+	const Grants &grants,
+	const cbor::Value &event);
 
 class SocketWorker;
 
@@ -314,6 +319,10 @@ public:
 	[[nodiscard]] int pending() const {
 		return _pending.load();
 	}
+	void close() {
+		_closed = true;
+	}
+	void noteUserAction(std::string_view type);
 
 private:
 	[[nodiscard]] cbor::Value schedule(
@@ -340,6 +349,7 @@ private:
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] bool admit();
+	[[nodiscard]] std::optional<cbor::Value> throttle(const std::string &op);
 
 	Grants _grants;
 	BrokerServices _services;
@@ -349,6 +359,14 @@ private:
 	std::mutex _socketWorkerMutex;
 	std::mutex _storageMutex;
 	std::atomic<int> _pending = 0;
+	std::atomic<bool> _closed = false;
+	std::mutex _limitsMutex;
+	double _sendTokens = 5.;
+	int64_t _sendRefilled = 0;
+	int64_t _lastToast = 0;
+	int64_t _lastDialog = 0;
+	int64_t _lastUserAction = 0;
+	bool _dialogOpen = false;
 	int64_t _nextTicket = 1;
 	bool _outgoing = false;
 	std::optional<std::string> _outgoingText;

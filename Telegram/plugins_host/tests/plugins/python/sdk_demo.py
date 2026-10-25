@@ -38,7 +38,7 @@ def message(event):
     report["cookie_header"] = attempt(lambda: freshgram.net.fetch("https://api.example.com/", headers={"Cookie": "a=b"}))
     report["quota"] = attempt(lambda: freshgram.storage.set("big", "x" * 5000))
     report["stars"] = freshgram.stars.balance()
-    freshgram.ui.toast("demo done")
+    report["toast"] = attempt(lambda: freshgram.ui.toast("demo done"))
     freshgram.storage.set("report", report)
 
 

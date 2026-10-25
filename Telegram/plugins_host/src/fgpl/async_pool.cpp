@@ -18,6 +18,7 @@ void AsyncPool::ensureStarted() {
 		for (auto i = 0; i != _size; ++i) {
 			_threads.emplace_back([this] { loop(); });
 		}
+		_timersThread = std::thread([this] { timersLoop(); });
 	}
 }
 
@@ -44,23 +45,29 @@ void AsyncPool::postAfter(int64_t delayMs, std::function<void()> work) {
 			Clock::now() + std::chrono::milliseconds(std::max<int64_t>(delayMs, 0)),
 			std::move(work));
 	}
-	_wake.notify_all();
+	_timersWake.notify_all();
 }
 
 void AsyncPool::stop() {
 	auto threads = std::vector<std::thread>();
+	auto timersThread = std::thread();
 	auto dropped = std::deque<std::function<void()>>();
 	auto timers = std::multimap<Clock::time_point, std::function<void()>>();
 	{
 		const auto lock = std::scoped_lock(_mutex);
 		_stopping = true;
 		threads.swap(_threads);
+		timersThread.swap(_timersThread);
 		dropped.swap(_queue);
 		timers.swap(_timers);
 	}
 	_wake.notify_all();
+	_timersWake.notify_all();
 	for (auto &thread : threads) {
 		thread.join();
+	}
+	if (timersThread.joinable()) {
+		timersThread.join();
 	}
 	{
 		const auto lock = std::scoped_lock(_mutex);
@@ -71,27 +78,37 @@ void AsyncPool::stop() {
 void AsyncPool::loop() {
 	auto lock = std::unique_lock(_mutex);
 	while (!_stopping) {
-		const auto now = Clock::now();
-		if (!_timers.empty() && _timers.begin()->first <= now) {
-			auto work = std::move(_timers.begin()->second);
-			_timers.erase(_timers.begin());
-			lock.unlock();
-			work();
-			work = nullptr;
-			lock.lock();
-		} else if (!_queue.empty()) {
-			auto work = std::move(_queue.front());
-			_queue.pop_front();
-			lock.unlock();
-			work();
-			work = nullptr;
-			lock.lock();
-		} else if (!_timers.empty()) {
-			const auto until = _timers.begin()->first;
-			_wake.wait_until(lock, until);
-		} else {
+		if (_queue.empty()) {
 			_wake.wait(lock);
+			continue;
 		}
+		auto work = std::move(_queue.front());
+		_queue.pop_front();
+		lock.unlock();
+		work();
+		work = nullptr;
+		lock.lock();
+	}
+}
+
+void AsyncPool::timersLoop() {
+	auto lock = std::unique_lock(_mutex);
+	while (!_stopping) {
+		if (_timers.empty()) {
+			_timersWake.wait(lock);
+			continue;
+		}
+		const auto until = _timers.begin()->first;
+		if (until > Clock::now()) {
+			_timersWake.wait_until(lock, until);
+			continue;
+		}
+		auto work = std::move(_timers.begin()->second);
+		_timers.erase(_timers.begin());
+		lock.unlock();
+		work();
+		work = nullptr;
+		lock.lock();
 	}
 }
 

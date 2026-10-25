@@ -25,6 +25,7 @@ private:
 
 	void ensureStarted();
 	void loop();
+	void timersLoop();
 
 	const int _size = 1;
 	std::mutex _mutex;
@@ -32,6 +33,8 @@ private:
 	std::deque<std::function<void()>> _queue;
 	std::multimap<Clock::time_point, std::function<void()>> _timers;
 	std::vector<std::thread> _threads;
+	std::thread _timersThread;
+	std::condition_variable _timersWake;
 	bool _stopping = false;
 
 };

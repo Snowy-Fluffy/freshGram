@@ -42,7 +42,7 @@ void NotifyListChanged();
 
 [[nodiscard]] bool Running();
 [[nodiscard]] std::shared_ptr<const fgpl::ManagerSnapshot> Snapshot();
-void Post(
+bool Post(
 	Fn<void(not_null<fgpl::PluginManager*>)> work,
 	bool changesState = true);
 

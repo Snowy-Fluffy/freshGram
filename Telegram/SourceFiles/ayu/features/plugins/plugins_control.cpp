@@ -39,17 +39,18 @@ Control::~Control() {
 	_manager = nullptr;
 }
 
-void Control::post(Work work, bool changesState) {
+bool Control::post(Work work, bool changesState) {
 	{
 		const auto lock = std::scoped_lock(_mutex);
 		if (_stopping) {
-			return;
+			return false;
 		}
 		_queue.emplace_back(std::move(work), changesState);
 	}
 	if (const auto manager = _ready.load()) {
 		manager->wake();
 	}
+	return true;
 }
 
 std::shared_ptr<const fgpl::ManagerSnapshot> Control::snapshot() const {
@@ -102,14 +103,6 @@ void Control::loop() {
 			const auto lock = std::scoped_lock(_mutex);
 			return _stopping || !_queue.empty();
 		});
-	}
-	auto rest = std::deque<std::pair<Work, bool>>();
-	{
-		const auto lock = std::scoped_lock(_mutex);
-		rest.swap(_queue);
-	}
-	for (auto &[work, changesState] : rest) {
-		work(manager);
 	}
 	manager->shutdown();
 }
