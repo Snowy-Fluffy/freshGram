@@ -14,12 +14,16 @@ cp -a "$usr" "$root/usr"
 find "$root" -type d -exec chmod 755 {} +
 
 size="$(du -sk "$root/usr" | cut -f1)"
+case "$(uname -m)" in
+aarch64) architecture=arm64 ;;
+*) architecture=amd64 ;;
+esac
 cat > "$root/DEBIAN/control" <<CONTROL
 Package: freshgram
 Version: $version
 Section: net
 Priority: optional
-Architecture: amd64
+Architecture: $architecture
 Installed-Size: $size
 Maintainer: freshGram <noreply@users.noreply.github.com>
 Depends: libc6, libstdc++6, hicolor-icon-theme

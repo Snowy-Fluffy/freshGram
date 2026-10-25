@@ -10,7 +10,7 @@ Release:        1
 Summary:        Telegram Desktop fork with the AyuGram features and a Material look
 License:        GPL-3.0-or-later
 URL:            https://github.com/Snowy-Fluffy/freshGram
-BuildArch:      x86_64
+BuildArch:      %{freshgram_arch}
 AutoReqProv:    no
 Requires:       glibc, libstdc++, hicolor-icon-theme
 Recommends:     xdg-desktop-portal

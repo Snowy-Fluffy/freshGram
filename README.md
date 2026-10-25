@@ -91,9 +91,9 @@ Autoupdate is disabled by default because freshGram has no update server.
 ### GitHub Actions
 
 1. Add the repository secrets `API_ID` and `API_HASH`.
-2. Run the `Build environment` workflow once, it builds the library image and pushes it to GitHub Packages.
-3. The `Build` workflow builds Linux x86_64 on every push and pull request and produces `freshGram-linux-x86_64.tar.gz`, `freshGram.pacman` (an Arch Linux package, install it with `pacman -U`) and `freshGram.flatpak` (install it with `flatpak install --user freshGram.flatpak`).
-4. The `Build Windows` and `Build macOS` workflows run on every push and manually, and produce `freshGram.exe` (with `freshGram-windows-portable.zip`, which also holds the `TelegramForcePortable` folder that keeps all data next to the exe) and `freshGram.dmg` (ad-hoc signed, open it with right click - Open).
+2. Run the `Build environment` workflow once, it builds the library images for x86_64 and aarch64 and pushes them to GitHub Packages.
+3. The `Build` workflow builds Linux x86_64 on every push and pull request and produces `freshGram-linux-x86_64.tar.gz`, `freshGram.pacman` (an Arch Linux package, install it with `pacman -U`) and `freshGram.flatpak` (install it with `flatpak install --user freshGram.flatpak`). It builds Linux aarch64 too, its files are `freshGram-linux-aarch64.tar.gz` and `freshGram-aarch64.*` (there is no aarch64 pacman package).
+4. The `Build Windows` and `Build macOS` workflows run on every push and manually, and produce `freshGram.exe` (with `freshGram-windows-portable.zip`, which also holds the `TelegramForcePortable` folder that keeps all data next to the exe) and `freshGram.dmg` (ad-hoc signed, open it with right click - Open). Windows is built for x64 and ARM64, the ARM64 files are `freshGram-arm64.exe` and `freshGram-windows-arm64-portable.zip`.
    The first run builds all libraries, which can take more than one run: the finished part is cached, so run the workflow again until it passes.
    Run any of the three manually with `release_tag` (for example `v7.2.10`) or push a `v*` tag to publish a release with all the files attached.
 

@@ -86,9 +86,9 @@ freshGram — форк [Telegram Desktop](https://github.com/telegramdesktop/tde
 ### GitHub Actions
 
 1. Добавьте секреты репозитория `API_ID` и `API_HASH`.
-2. Один раз запустите workflow `Build environment`, он соберёт образ с библиотеками и отправит его в GitHub Packages.
-3. Workflow `Build` собирает Linux x86_64 на каждый push и pull request и выдаёт `freshGram-linux-x86_64.tar.gz`, `freshGram.pacman` (пакет Arch Linux, ставится через `pacman -U`) и `freshGram.flatpak` (ставится через `flatpak install --user freshGram.flatpak`).
-4. Workflow `Build Windows` и `Build macOS` запускаются на каждый push и вручную и выдают `freshGram.exe` (и `freshGram-windows-portable.zip` с папкой `TelegramForcePortable`, которая хранит все данные рядом с exe) и `freshGram.dmg` (подпись ad-hoc, открывать правым кликом - Открыть).
+2. Один раз запустите workflow `Build environment`, он соберёт образы с библиотеками для x86_64 и aarch64 и отправит их в GitHub Packages.
+3. Workflow `Build` собирает Linux x86_64 на каждый push и pull request и выдаёт `freshGram-linux-x86_64.tar.gz`, `freshGram.pacman` (пакет Arch Linux, ставится через `pacman -U`) и `freshGram.flatpak` (ставится через `flatpak install --user freshGram.flatpak`). Он же собирает Linux aarch64: `freshGram-linux-aarch64.tar.gz` и `freshGram-aarch64.*` (пакета pacman для aarch64 нет).
+4. Workflow `Build Windows` и `Build macOS` запускаются на каждый push и вручную и выдают `freshGram.exe` (и `freshGram-windows-portable.zip` с папкой `TelegramForcePortable`, которая хранит все данные рядом с exe) и `freshGram.dmg` (подпись ad-hoc, открывать правым кликом - Открыть). Windows собирается под x64 и ARM64, файлы ARM64: `freshGram-arm64.exe` и `freshGram-windows-arm64-portable.zip`.
    Первый запуск собирает все библиотеки и может занять больше одного запуска: готовая часть кэшируется, поэтому запускайте workflow повторно, пока он не пройдёт.
    Для релиза запустите любой из трёх вручную с `release_tag` (например `v7.2.10`) или запушьте тег `v*`, все файлы прикрепятся к релизу.
 

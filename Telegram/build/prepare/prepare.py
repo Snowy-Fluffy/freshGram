@@ -108,9 +108,12 @@ elif (win64):
         'X8664': 'x64',
     })
 elif (winarm):
+    newVisualStudio = os.environ.get('VisualStudioVersion', '').startswith('18.')
     environment.update({
         'SPECIAL_TARGET': 'winarm',
         'X8664': 'ARM64',
+        'ARM_TOOLSET': 'v145' if newVisualStudio else 'v143',
+        'ARM_VPX_TOOLCHAIN': 'arm64-win64-vs17-v145' if newVisualStudio else 'arm64-win64-vs17',
     })
 elif (mac):
     macToolchain = pathlib.Path(rootDir) / 'Toolchains/CommandLineTools-26.6'
@@ -610,7 +613,7 @@ win:
     cd lzma\\C\\Util\\LzmaLib
     SET "ToolsetProp="
 winarm:
-    SET "ToolsetProp=/property:PlatformToolset=v145"
+    SET "ToolsetProp=/property:PlatformToolset=%ARM_TOOLSET%"
 win:
     msbuild -m LzmaLib.sln /property:Configuration=Debug /property:Platform="$X8664" %ToolsetProp%
 release:
@@ -1080,7 +1083,7 @@ win32:
 win64:
     SET "TOOLCHAIN=x86_64-win64-vs17"
 winarm:
-    SET "TOOLCHAIN=arm64-win64-vs17-v145"
+    SET "TOOLCHAIN=%ARM_VPX_TOOLCHAIN%"
 win:
 depends:patches/build_libvpx_win.sh
     bash --login ../patches/build_libvpx_win.sh
@@ -1498,7 +1501,7 @@ win64:
     SET "FolderPostfix=_x64"
 winarm:
     SET "FolderPostfix=_ARM64"
-    SET "ToolsetProp=/property:PlatformToolset=v145"
+    SET "ToolsetProp=/property:PlatformToolset=%ARM_TOOLSET%"
 win:
 depends:python/Scripts/activate.bat
     %THIRDPARTY_DIR%\\python\\Scripts\\activate.bat
