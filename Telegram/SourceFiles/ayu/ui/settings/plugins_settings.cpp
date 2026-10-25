@@ -88,8 +88,9 @@ void AddPluginRow(
 	const auto name = info.name.empty()
 		? QString::fromStdString(info.id)
 		: QString::fromStdString(info.name);
+	const auto row = container->add(object_ptr<Ui::VerticalLayout>(container));
 	const auto [button, toggle, checkView] = Settings::SetupSplitToggle(
-		container,
+		row,
 		rpl::single(name),
 		&st::menuIconBot,
 		info.enabled && !broken,
