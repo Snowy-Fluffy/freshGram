@@ -203,3 +203,22 @@ pluginDangerMedium: FlatLabel(boxDividerLabel) {
 pluginDangerHigh: FlatLabel(boxDividerLabel) {
 	textFg: attentionButtonFg;
 }
+
+pluginHeaderIconSize: 56px;
+pluginHeaderIconRadius: 14px;
+pluginHeaderSkip: 14px;
+pluginHeaderLineSkip: 2px;
+pluginHeaderLetterFont: font(24px semibold);
+pluginHeaderTitle: FlatLabel(boxTitle) {
+	minWidth: 120px;
+	maxHeight: 0px;
+}
+pluginHeaderSubtitle: FlatLabel(boxDividerLabel) {
+	minWidth: 120px;
+}
+pluginHeaderSigned: FlatLabel(pluginHeaderSubtitle) {
+	textFg: boxTextFgGood;
+}
+pluginHeaderUnsigned: FlatLabel(pluginHeaderSubtitle) {
+	textFg: attentionButtonFg;
+}

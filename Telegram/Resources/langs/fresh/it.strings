@@ -100,7 +100,6 @@
 "fresh_PluginUpdateFrom" = "Installata: {from}, questo file: {to}";
 "fresh_PluginSameVersion" = "La versione {version} è già installata.";
 "fresh_PluginNewerInstalled" = "È installata la versione più recente {from}, questo file contiene la vecchia {to}.";
-"fresh_PluginPermissionNew" = "{permission} (nuovo)";
 "fresh_PluginUpdate" = "Aggiorna";
 "fresh_PluginInstallOlder" = "Installa la versione precedente";
 "fresh_PluginOutdatedShort" = "obsoleto";
@@ -133,7 +132,6 @@
 "fresh_PluginUnsigned" = "Questo plugin non è firmato. Installalo solo se ti fidi della fonte.";
 "fresh_PluginIncompatible" = "Questo plugin non può essere eseguito qui: {reason}";
 "fresh_PluginPermissions" = "Permessi";
-"fresh_PluginPermissionRequired" = "{permission} (obbligatorio)";
 "fresh_PluginInstalledToast" = "Plugin installato.";
 "fresh_PluginInstallFailed" = "Impossibile installare il plugin: {reason}";
 "fresh_PluginPublisherChanged" = "L'editore di questo plugin è cambiato. Installarlo comunque?";
@@ -180,12 +178,19 @@
 "fresh_PluginsListAbout" = "Tocca un plugin per aprirne impostazioni, permessi e registro.";
 "fresh_PluginsAdvanced" = "Avanzate";
 "fresh_PluginId" = "ID: {id}";
-"fresh_PluginVersion" = "Versione {version} · {publisher}";
-"fresh_PluginUnsignedShort" = "non firmato";
 "fresh_PluginEnabled" = "Attivo";
 "fresh_PluginPermissionsCount" = "{allowed} su {total}";
 "fresh_PluginRemove" = "Rimuovi plugin";
 "fresh_PluginsAdd" = "Installa plugin";
+"fresh_PluginVersionShort" = "Versione {version}";
+"fresh_PluginBy" = "di {author}";
+"fresh_PluginNotSigned" = "Non firmato";
+"fresh_PluginHomepage" = "Sito web";
+"fresh_PluginRepository" = "Codice sorgente";
+"fresh_PluginSupport" = "Supporto";
+"fresh_PluginLicense" = "Licenza: {license}";
+"fresh_PluginPermissionRequiredShort" = "Obbligatorio";
+"fresh_PluginPermissionNewShort" = "Nuovo";
 "fresh_PluginLogOnlyProblems" = "Solo problemi";
 "fresh_PluginLogNoProblems" = "Nessun problema registrato.";
 "fresh_PluginLogCopy" = "Copia";

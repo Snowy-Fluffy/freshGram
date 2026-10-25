@@ -61,10 +61,6 @@ constexpr auto kMaxPackageBytes = qint64(64) << 20;
 	return result;
 }
 
-[[nodiscard]] QString Pick(const fgpl::Localized &text) {
-	return QString::fromStdString(text.get(Lang::Id().toStdString()));
-}
-
 void Install(
 		not_null<Window::SessionController*> controller,
 		std::shared_ptr<QByteArray> archive,
@@ -171,25 +167,26 @@ void FillInstallBox(
 		: tr::fresh_PluginInstalledTitle());
 	box->setWidth(st::boxWideWidth);
 
-	const auto name = Pick(manifest.name);
-	const auto version = QString::fromStdString(manifest.version.text());
-	box->addRow(object_ptr<Ui::FlatLabel>(
-		box,
-		name + ' ' + version,
-		st::boxTitle));
-	if (const auto description = Pick(manifest.description); !description.isEmpty()) {
-		box->addRow(object_ptr<Ui::FlatLabel>(box, description, st::boxLabel));
-	}
 	const auto signedPackage = (package->signature == fgpl::SignatureState::Valid);
-	box->addRow(object_ptr<Ui::FlatLabel>(
-		box,
-		signedPackage
-			? tr::fresh_PluginSignedBy(
-				tr::now,
-				lt_publisher,
-				QString::fromStdString(package->publisher))
-			: tr::fresh_PluginUnsigned(tr::now),
-		st::boxLabel));
+	const auto icon = package->files.find(manifest.icon);
+	FreshPlugins::AddPluginHeader(
+		box->verticalLayout(),
+		FreshPlugins::HeaderFor(
+			manifest,
+			package->publisher,
+			signedPackage,
+			(icon != end(package->files))
+				? QByteArray(
+					reinterpret_cast<const char*>(icon->second.data()),
+					qsizetype(icon->second.size()))
+				: QByteArray()));
+	Ui::AddSkip(box->verticalLayout());
+	if (!signedPackage) {
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::fresh_PluginUnsigned(tr::now),
+			st::pluginDangerHigh));
+	}
 	auto environment = fgpl::HostEnvironment();
 	if (const auto app = fgpl::ParseVersion(AppVersionStr)) {
 		environment.app = *app;
@@ -201,7 +198,7 @@ void FillInstallBox(
 				tr::now,
 				lt_version,
 				QString::fromStdString(manifest.testedWith->text())),
-			st::boxDividerLabel));
+			st::pluginDangerMedium));
 	}
 
 	if (installed) {
@@ -250,9 +247,13 @@ void FillInstallBox(
 			st::boxDividerLabel));
 	}
 
-	if (!manifest.permissions.empty()) {
-		Ui::AddSubsectionTitle(box->verticalLayout(), tr::fresh_PluginPermissions());
-	}
+	Ui::AddSkip(box->verticalLayout());
+	Ui::AddDivider(box->verticalLayout());
+	Ui::AddSkip(box->verticalLayout());
+	box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		tr::fresh_PluginPermissions(tr::now),
+		st::boxTitle));
 	const auto decision = FreshPlugins::AddPermissionsEditor(
 		box,
 		controller,

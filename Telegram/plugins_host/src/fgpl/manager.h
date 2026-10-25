@@ -207,6 +207,7 @@ struct ManagerSnapshot {
 	std::map<std::string, std::shared_ptr<const Manifest>> manifests;
 	std::map<std::string, GrantDecision> grants;
 	std::map<std::string, std::shared_ptr<LogRing>> logs;
+	std::map<std::string, std::shared_ptr<const cbor::Bytes>> icons;
 	HostEnvironment environment;
 	bool loaded = false;
 	bool wantsEvents = false;
@@ -215,6 +216,8 @@ struct ManagerSnapshot {
 
 	[[nodiscard]] const PluginInfo *plugin(const std::string &id) const;
 	[[nodiscard]] std::shared_ptr<const Manifest> manifest(
+		const std::string &id) const;
+	[[nodiscard]] std::shared_ptr<const cbor::Bytes> icon(
 		const std::string &id) const;
 	[[nodiscard]] std::optional<GrantDecision> grantsOf(
 		const std::string &id) const;
@@ -485,6 +488,7 @@ private:
 
 	ManagerConfig _config;
 	mutable std::map<std::string, std::pair<std::string, std::shared_ptr<const Manifest>>> _manifests;
+	mutable std::map<std::string, std::shared_ptr<const cbor::Bytes>> _icons;
 	std::map<std::string, Record> _records;
 	std::map<Key, std::shared_ptr<Instance>> _instances;
 	std::vector<std::shared_ptr<OutgoingChain>> _chains;

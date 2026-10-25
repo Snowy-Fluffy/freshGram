@@ -100,7 +100,6 @@
 "fresh_PluginUpdateFrom" = "Установлена {from}, в этом файле {to}";
 "fresh_PluginSameVersion" = "Версия {version} уже установлена.";
 "fresh_PluginNewerInstalled" = "Установлена более новая версия {from}, в этом файле старая {to}.";
-"fresh_PluginPermissionNew" = "{permission} (новое)";
 "fresh_PluginUpdate" = "Обновить";
 "fresh_PluginInstallOlder" = "Установить старую версию";
 "fresh_PluginOutdatedShort" = "устарел";
@@ -133,7 +132,6 @@
 "fresh_PluginUnsigned" = "Этот плагин не подписан. Устанавливайте его, только если доверяете источнику.";
 "fresh_PluginIncompatible" = "Этот плагин не может работать здесь: {reason}";
 "fresh_PluginPermissions" = "Разрешения";
-"fresh_PluginPermissionRequired" = "{permission} (обязательно)";
 "fresh_PluginInstalledToast" = "Плагин установлен.";
 "fresh_PluginInstallFailed" = "Не удалось установить плагин: {reason}";
 "fresh_PluginPublisherChanged" = "Издатель этого плагина изменился. Всё равно установить?";
@@ -180,12 +178,19 @@
 "fresh_PluginsListAbout" = "Нажмите на плагин, чтобы открыть его настройки, разрешения и журнал.";
 "fresh_PluginsAdvanced" = "Дополнительно";
 "fresh_PluginId" = "ID: {id}";
-"fresh_PluginVersion" = "Версия {version} · {publisher}";
-"fresh_PluginUnsignedShort" = "без подписи";
 "fresh_PluginEnabled" = "Включён";
 "fresh_PluginPermissionsCount" = "{allowed} из {total}";
 "fresh_PluginRemove" = "Удалить плагин";
 "fresh_PluginsAdd" = "Установить плагин";
+"fresh_PluginVersionShort" = "Версия {version}";
+"fresh_PluginBy" = "автор: {author}";
+"fresh_PluginNotSigned" = "Без подписи";
+"fresh_PluginHomepage" = "Сайт";
+"fresh_PluginRepository" = "Исходный код";
+"fresh_PluginSupport" = "Поддержка";
+"fresh_PluginLicense" = "Лицензия: {license}";
+"fresh_PluginPermissionRequiredShort" = "Обязательно";
+"fresh_PluginPermissionNewShort" = "Новое";
 "fresh_PluginLogOnlyProblems" = "Только проблемы";
 "fresh_PluginLogNoProblems" = "Проблем не записано.";
 "fresh_PluginLogCopy" = "Копировать";

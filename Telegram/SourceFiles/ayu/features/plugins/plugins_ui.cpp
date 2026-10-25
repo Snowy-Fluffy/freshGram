@@ -23,6 +23,7 @@
 #include "history/history.h"
 #include "history/history_item.h"
 #include "main/main_session.h"
+#include "settings/detailed_settings_button.h"
 #include "settings/settings_common.h"
 #include "styles/style_ayu_styles.h"
 #include "styles/style_boxes.h"
@@ -34,6 +35,7 @@
 #include "ui/boxes/single_choice_box.h"
 #include "ui/toast/toast.h"
 #include "ui/layers/generic_box.h"
+#include "ui/painter.h"
 #include "ui/text/text_utilities.h"
 #include "ui/ui_utility.h"
 #include "ui/vertical_list.h"
@@ -604,7 +606,7 @@ void BuildDetails(
 		: info->name.empty()
 		? Utf8(info->id)
 		: Utf8(info->name);
-	box->setTitle(rpl::single(name));
+	box->setTitle(tr::fresh_PluginDetails());
 
 	const auto label = [&](const QString &text, const style::FlatLabel &st) {
 		if (!text.isEmpty()) {
@@ -613,17 +615,26 @@ void BuildDetails(
 				st::boxRowPadding);
 		}
 	};
-	if (parsed) {
-		label(Utf8(parsed->description.get(Language())), st::boxLabel);
-	}
-	label(tr::fresh_PluginVersion(
-		tr::now,
-		lt_version,
-		Utf8(info->version),
-		lt_publisher,
-		info->signedPackage
-			? tr::fresh_PluginSignedBy(tr::now, lt_publisher, Utf8(info->publisher))
-			: tr::fresh_PluginUnsignedShort(tr::now)), st::boxDividerLabel);
+	const auto icon = snapshot->icon(plugin);
+	AddPluginHeader(
+		content,
+		parsed
+			? HeaderFor(
+				*parsed,
+				info->publisher,
+				info->signedPackage,
+				icon
+					? QByteArray(
+						reinterpret_cast<const char*>(icon->data()),
+						qsizetype(icon->size()))
+					: QByteArray())
+			: PluginHeader{
+				.name = name,
+				.version = Utf8(info->version),
+				.publisher = Utf8(info->publisher),
+				.signedPackage = info->signedPackage,
+			});
+	Ui::AddSkip(content);
 	if (broken) {
 		label(tr::fresh_PluginBroken(tr::now, lt_reason, Utf8(info->problem)), st::pluginDangerHigh);
 	} else if (!info->disabledReason.empty()) {
@@ -981,6 +992,42 @@ namespace {
 	return QString();
 }
 
+[[nodiscard]] const style::icon *PermissionIcon(const std::string &id) {
+	static const auto icons = std::map<std::string, const style::icon*>{
+		{ "messages.read", &st::menuIconChatBubble },
+		{ "messages.read_deleted", &st::menuIconChatBubble },
+		{ "messages.send", &st::menuIconChatBubble },
+		{ "messages.transform_outgoing", &st::menuIconEdit },
+		{ "messages.history", &st::menuIconChatBubble },
+		{ "media.read", &st::menuIconFile },
+		{ "chats.list", &st::menuIconChats },
+		{ "chat.info", &st::menuIconInfo },
+		{ "account.info", &st::menuIconProfile },
+		{ "stars.balance", &st::menuIconEarn },
+		{ "composer.draft", &st::menuIconEdit },
+		{ "contacts.list", &st::menuIconProfile },
+		{ "settings.read", &st::menuIconSettings },
+		{ "folders.list", &st::menuIconShowInFolder },
+		{ "ui.menu", &st::menuIconCustomize },
+		{ "ui.command", &st::menuIconBotCommands },
+		{ "ui.settings_page", &st::menuIconSettings },
+		{ "ui.composer_button", &st::menuIconCustomize },
+		{ "ui.dialog", &st::menuIconCustomize },
+		{ "ui.toast", &st::menuIconInfo },
+		{ "notifications", &st::menuIconNotifications },
+		{ "net.https", &st::menuIconNetwork },
+		{ "net.tcp", &st::menuIconNetwork },
+		{ "net.udp", &st::menuIconNetwork },
+		{ "storage.private", &st::menuIconDownload },
+		{ "plugins.message", &st::menuIconBot },
+		{ "fs.user_selected", &st::menuIconFile },
+		{ "clipboard", &st::menuIconCopy },
+		{ "background", &st::menuIconPowerUsage },
+	};
+	const auto i = icons.find(id);
+	return (i != icons.end()) ? i->second : &st::menuIconLock;
+}
+
 [[nodiscard]] bool SeesChats(const fgpl::Manifest &manifest) {
 	static const auto scoped = std::set<std::string>{
 		"messages.read", "messages.read_deleted", "messages.history",
@@ -1037,7 +1084,7 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 	const auto granted = box->lifetime().make_state<
 		rpl::variable<std::set<std::string>>>();
 	auto initial = std::set<std::string>();
-	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
+	auto checks = std::make_shared<std::vector<std::pair<std::string, DetailedSettingsButton*>>>();
 
 	box->addRow(object_ptr<Ui::FlatLabel>(
 		box,
@@ -1050,13 +1097,10 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 			tr::fresh_PluginNoPermissions(tr::now),
 			st::boxLabel));
 	}
-	const auto indent = st::defaultBoxCheckbox.margin.left()
-		+ st::defaultCheck.diameter
-		+ st::defaultBoxCheckbox.textPosition.x();
 	const auto refresh = [=] {
 		auto now = std::set<std::string>();
-		for (const auto &[id, check] : *checks) {
-			if (check->checked()) {
+		for (const auto &[id, button] : *checks) {
+			if (button->toggled()) {
 				now.insert(id);
 			}
 		}
@@ -1073,28 +1117,20 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 			continue;
 		}
 		Ui::AddSkip(container);
-		container->add(
-			object_ptr<Ui::FlatLabel>(
-				container,
-				(danger == fgpl::Danger::High)
-					? tr::fresh_PluginDangerHigh(tr::now)
-					: (danger == fgpl::Danger::Medium)
-					? tr::fresh_PluginDangerMedium(tr::now)
-					: tr::fresh_PluginDangerLow(tr::now),
-				(danger == fgpl::Danger::High)
-					? st::pluginDangerHigh
-					: (danger == fgpl::Danger::Medium)
-					? st::pluginDangerMedium
-					: st::pluginDangerLow),
-			st::boxRowPadding);
+		Ui::AddSubsectionTitle(
+			container,
+			(danger == fgpl::Danger::High)
+				? tr::fresh_PluginDangerHigh()
+				: (danger == fgpl::Danger::Medium)
+				? tr::fresh_PluginDangerMedium()
+				: tr::fresh_PluginDangerLow());
+		const auto background = (danger == fgpl::Danger::High)
+			? &st::settingsIconBg1
+			: (danger == fgpl::Danger::Medium)
+			? &st::settingsIconBg3
+			: &st::settingsIconBg2;
 		for (const auto request : group) {
-			auto text = PermissionTitle(request->id, request->scope);
 			const auto fresh = ranges::find(added, request->id) != end(added);
-			if (request->required) {
-				text = tr::fresh_PluginPermissionRequired(tr::now, lt_permission, text);
-			} else if (fresh) {
-				text = tr::fresh_PluginPermissionNew(tr::now, lt_permission, text);
-			}
 			const auto checked = request->required
 				|| !current
 				|| fresh
@@ -1102,26 +1138,27 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 			if (checked) {
 				initial.insert(request->id);
 			}
-			Ui::AddSkip(container, st::defaultVerticalListSkip / 2);
-			const auto check = box->addRow(object_ptr<Ui::Checkbox>(
-				box,
-				text,
-				checked,
-				st::defaultBoxCheckbox));
+			auto about = QStringList();
 			if (request->required) {
-				check->setDisabled(true);
+				about.push_back(tr::fresh_PluginPermissionRequiredShort(tr::now));
+			} else if (fresh) {
+				about.push_back(tr::fresh_PluginPermissionNewShort(tr::now));
 			}
-			check->checkedChanges() | rpl::on_next(refresh, check->lifetime());
-			checks->emplace_back(request->id, check);
 			const auto reason = Utf8(request->reason.get(Language()));
-			container->add(
-				object_ptr<Ui::FlatLabel>(
-					container,
-					reason.isEmpty()
-						? Utf8(request->id)
-						: (Utf8(request->id) + u" · "_q + reason),
-					st::boxDividerLabel),
-				st::boxRowPadding + QMargins(indent, 0, 0, 0));
+			about.push_back(reason.isEmpty() ? Utf8(request->id) : reason);
+			const auto button = AddDetailedSettingsButton(
+				container,
+				rpl::single(PermissionTitle(request->id, request->scope)),
+				rpl::single(about.join(u" · "_q)),
+				{ .icon = PermissionIcon(request->id), .background = background },
+				rpl::single(checked),
+				st::detailedSettingsButtonStyle);
+			if (request->required) {
+				button->setToggleLocked(true);
+			}
+			button->finishAnimating();
+			button->toggledChanges() | rpl::on_next(refresh, button->lifetime());
+			checks->emplace_back(request->id, button.get());
 		}
 	}
 	*granted = std::move(initial);
@@ -1200,8 +1237,8 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 
 	return [=]() -> std::optional<fgpl::GrantDecision> {
 		auto result = fgpl::GrantDecision();
-		for (const auto &[id, check] : *checks) {
-			if (check->checked()) {
+		for (const auto &[id, button] : *checks) {
+			if (button->toggled()) {
 				result.granted.insert(id);
 			}
 		}
@@ -1214,6 +1251,136 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		}
 		return result;
 	};
+}
+
+PluginHeader HeaderFor(
+		const fgpl::Manifest &manifest,
+		const std::string &publisher,
+		bool signedPackage,
+		QByteArray icon) {
+	return {
+		.name = Utf8(manifest.name.get(Language())),
+		.version = Utf8(manifest.version.text()),
+		.author = Utf8(manifest.authorName),
+		.description = Utf8(manifest.description.get(Language())),
+		.license = Utf8(manifest.license),
+		.homepage = Utf8(manifest.homepage.empty() ? manifest.authorUrl : manifest.homepage),
+		.repository = Utf8(manifest.repository),
+		.support = Utf8(manifest.support),
+		.publisher = Utf8(publisher),
+		.signedPackage = signedPackage,
+		.icon = std::move(icon),
+	};
+}
+
+void AddPluginHeader(
+		not_null<Ui::VerticalLayout*> container,
+		const PluginHeader &data) {
+	const auto row = container->add(
+		object_ptr<Ui::RpWidget>(container),
+		st::boxRowPadding);
+	const auto size = st::pluginHeaderIconSize;
+	auto image = data.icon.isEmpty() ? QImage() : QImage::fromData(data.icon);
+	if (!image.isNull()) {
+		const auto ratio = style::DevicePixelRatio();
+		image = image.scaled(
+			size * ratio,
+			size * ratio,
+			Qt::KeepAspectRatio,
+			Qt::SmoothTransformation);
+		image.setDevicePixelRatio(ratio);
+	}
+	const auto letter = data.name.isEmpty() ? QString() : data.name.left(1).toUpper();
+	row->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(row);
+		PainterHighQualityEnabler hq(p);
+		const auto rect = QRect(0, 0, size, size);
+		auto path = QPainterPath();
+		path.addRoundedRect(rect, st::pluginHeaderIconRadius, st::pluginHeaderIconRadius);
+		if (!image.isNull()) {
+			p.setClipPath(path);
+			const auto shown = image.size() / image.devicePixelRatio();
+			p.drawImage(
+				QRect(
+					(size - shown.width()) / 2,
+					(size - shown.height()) / 2,
+					shown.width(),
+					shown.height()),
+				image);
+			return;
+		}
+		p.fillPath(path, st::settingsIconBg5);
+		p.setPen(st::settingsIconFg);
+		p.setFont(st::pluginHeaderLetterFont);
+		p.drawText(rect, letter, style::al_center);
+	}, row->lifetime());
+
+	const auto title = Ui::CreateChild<Ui::FlatLabel>(
+		row,
+		data.name,
+		st::pluginHeaderTitle);
+	auto details = QStringList{ tr::fresh_PluginVersionShort(tr::now, lt_version, data.version) };
+	if (!data.author.isEmpty()) {
+		details.push_back(tr::fresh_PluginBy(tr::now, lt_author, data.author));
+	}
+	const auto subtitle = Ui::CreateChild<Ui::FlatLabel>(
+		row,
+		details.join(u" · "_q),
+		st::pluginHeaderSubtitle);
+	const auto badge = Ui::CreateChild<Ui::FlatLabel>(
+		row,
+		data.signedPackage
+			? (u"✓ "_q + tr::fresh_PluginSignedBy(tr::now, lt_publisher, data.publisher))
+			: (u"⚠ "_q + tr::fresh_PluginNotSigned(tr::now)),
+		data.signedPackage ? st::pluginHeaderSigned : st::pluginHeaderUnsigned);
+	row->widthValue() | rpl::on_next([=](int width) {
+		const auto left = size + st::pluginHeaderSkip;
+		const auto available = std::max(width - left, 1);
+		auto top = 0;
+		for (const auto label : { title, subtitle, badge }) {
+			label->resizeToWidth(available);
+			label->moveToLeft(left, top, width);
+			top += label->height() + st::pluginHeaderLineSkip;
+		}
+		const auto height = std::max(size, top);
+		if (row->height() != height) {
+			row->resize(width, height);
+		}
+	}, row->lifetime());
+
+	if (!data.description.isEmpty()) {
+		Ui::AddSkip(container);
+		container->add(
+			object_ptr<Ui::FlatLabel>(container, data.description, st::boxLabel),
+			st::boxRowPadding);
+	}
+	auto links = TextWithEntities();
+	const auto link = [&](const QString &url, const QString &text) {
+		if (url.isEmpty()) {
+			return;
+		} else if (!links.text.isEmpty()) {
+			links.append(u" · "_q);
+		}
+		links.append(::Ui::Text::Link(text, url));
+	};
+	link(data.homepage, tr::fresh_PluginHomepage(tr::now));
+	link(data.repository, tr::fresh_PluginRepository(tr::now));
+	link(data.support, tr::fresh_PluginSupport(tr::now));
+	if (!data.license.isEmpty()) {
+		if (!links.text.isEmpty()) {
+			links.append(u" · "_q);
+		}
+		links.append(tr::fresh_PluginLicense(tr::now, lt_license, data.license));
+	}
+	if (!links.text.isEmpty()) {
+		Ui::AddSkip(container, st::defaultVerticalListSkip / 2);
+		container->add(
+			object_ptr<Ui::FlatLabel>(
+				container,
+				rpl::single(links),
+				st::boxDividerLabel),
+			st::boxRowPadding);
+	}
 }
 
 QString AcceptsFrom(const std::vector<std::string> &senders) {

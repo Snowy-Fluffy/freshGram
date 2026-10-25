@@ -900,10 +900,18 @@ std::shared_ptr<const Manifest> PluginManager::manifest(const std::string &id) c
 	const auto opened = openInstalled(record.id, record.current, record.archiveHash);
 	if (!opened.ok()) {
 		_manifests.erase(id);
+		_icons.erase(id);
 		return nullptr;
 	}
-	auto result = std::make_shared<const Manifest>(opened.value().manifest);
+	const auto &package = opened.value();
+	auto result = std::make_shared<const Manifest>(package.manifest);
 	_manifests[id] = { key, result };
+	const auto icon = package.files.find(package.manifest.icon);
+	if (icon != package.files.end()) {
+		_icons[id] = std::make_shared<const cbor::Bytes>(icon->second);
+	} else {
+		_icons.erase(id);
+	}
 	return result;
 }
 
@@ -924,6 +932,9 @@ ManagerSnapshot PluginManager::snapshot() const {
 	for (const auto &[id, record] : _records) {
 		if (const auto parsed = manifest(id)) {
 			result.manifests.emplace(id, parsed);
+			if (const auto icon = _icons.find(id); icon != _icons.end()) {
+				result.icons.emplace(id, icon->second);
+			}
 		}
 		if (const auto grant = record.grants.find(kAllAccounts); grant != record.grants.end()) {
 			result.grants.emplace(id, GrantDecision{ grant->second.granted, grant->second.chats });
@@ -943,6 +954,11 @@ const PluginInfo *ManagerSnapshot::plugin(const std::string &id) const {
 std::shared_ptr<const Manifest> ManagerSnapshot::manifest(const std::string &id) const {
 	const auto i = manifests.find(id);
 	return (i == manifests.end()) ? nullptr : i->second;
+}
+
+std::shared_ptr<const cbor::Bytes> ManagerSnapshot::icon(const std::string &id) const {
+	const auto i = icons.find(id);
+	return (i == icons.end()) ? nullptr : i->second;
 }
 
 std::optional<GrantDecision> ManagerSnapshot::grantsOf(const std::string &id) const {

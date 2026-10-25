@@ -43,6 +43,29 @@ void ShowPluginDialog(
 	const std::string &account,
 	const fgpl::cbor::Value *page);
 
+struct PluginHeader {
+	QString name;
+	QString version;
+	QString author;
+	QString description;
+	QString license;
+	QString homepage;
+	QString repository;
+	QString support;
+	QString publisher;
+	bool signedPackage = false;
+	QByteArray icon;
+};
+
+[[nodiscard]] PluginHeader HeaderFor(
+	const fgpl::Manifest &manifest,
+	const std::string &publisher,
+	bool signedPackage,
+	QByteArray icon);
+void AddPluginHeader(
+	not_null<Ui::VerticalLayout*> container,
+	const PluginHeader &data);
+
 [[nodiscard]] QString PermissionTitle(
 	const std::string &id,
 	const std::string &scope);
