@@ -3,9 +3,11 @@
 
 #include "base/basic_types.h"
 
+#ifdef FRESHGRAM_PLUGINS
 namespace fgpl {
 struct InstalledRuntime;
 } // namespace fgpl
+#endif
 
 namespace FreshPlugins {
 
@@ -32,7 +34,9 @@ struct RuntimeStatus {
 
 [[nodiscard]] bool RuntimeCanBeVerified();
 [[nodiscard]] QString RuntimeChannel();
+#ifdef FRESHGRAM_PLUGINS
 [[nodiscard]] std::optional<fgpl::InstalledRuntime> TrustedRuntime();
+#endif
 [[nodiscard]] RuntimeStatus CurrentRuntimeStatus();
 [[nodiscard]] rpl::producer<RuntimeStatus> RuntimeStatusValue();
 
