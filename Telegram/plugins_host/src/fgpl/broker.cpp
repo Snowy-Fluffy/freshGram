@@ -42,6 +42,7 @@ constexpr auto kMaxHeaders = size_t(32);
 constexpr auto kMaxHeaderValue = size_t(4096);
 constexpr auto kMaxToast = size_t(200);
 constexpr auto kMaxSleepMs = int64_t(60000);
+constexpr auto kMaxChatsScanned = size_t(5000);
 constexpr auto kSendBurst = 5.;
 constexpr auto kSendEachMs = 1000.;
 constexpr auto kToastEachMs = int64_t(2000);
@@ -115,17 +116,32 @@ constexpr auto kMaxPluginMessage = size_t(64) << 10;
 		{ "type", Text(chat.type) },
 		{ "unread", Int(chat.unread) },
 		{ "pinned", cbor::Value::FromBool(chat.pinned) },
+		{ "archived", cbor::Value::FromBool(chat.archived) },
 	});
 }
 
 [[nodiscard]] cbor::Value MessageValue(const Message &message) {
-	return cbor::Value::FromMap({
+	auto map = cbor::Map{
 		{ "id", Int(message.id) },
 		{ "chat", Int(message.chat) },
 		{ "from", Int(message.from) },
 		{ "date", Int(message.date) },
 		{ "text", Text(message.text) },
-	});
+		{ "out", cbor::Value::FromBool(message.out) },
+	};
+	if (message.topic) {
+		map.push_back({ "topic", Int(message.topic) });
+	}
+	if (message.replyTo) {
+		map.push_back({ "reply_to", Int(message.replyTo) });
+	}
+	if (!message.media.empty()) {
+		map.push_back({ "media", Text(message.media) });
+	}
+	if (message.deleted) {
+		map.push_back({ "deleted", cbor::Value::FromBool(true) });
+	}
+	return cbor::Value::FromMap(std::move(map));
 }
 
 [[nodiscard]] bool IsSocketCall(const std::string &op) {
@@ -705,6 +721,7 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 		return api::Fail(api::error::kLimit, "the response is too large");
 	}
 	auto headers = cbor::Map();
+	auto list = cbor::Array();
 	for (const auto &header : response.value().headers) {
 		auto name = header.first;
 		std::transform(name.begin(), name.end(), name.begin(), [](char ch) {
@@ -713,11 +730,20 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 		if (name == "set-cookie" || name == "set-cookie2") {
 			continue;
 		}
-		headers.push_back({ name, Text(header.second) });
+		list.push_back(cbor::Value::FromArray({ Text(name), Text(header.second) }));
+		const auto existing = std::find_if(headers.begin(), headers.end(), [&](const auto &entry) {
+			return entry.key == name;
+		});
+		if (existing != headers.end()) {
+			existing->value = Text(*existing->value.asText() + ", " + header.second);
+		} else {
+			headers.push_back({ name, Text(header.second) });
+		}
 	}
 	return api::Ok(cbor::Value::FromMap({
 		{ "status", Int(response.value().status) },
 		{ "headers", cbor::Value::FromMap(std::move(headers)) },
+		{ "header_list", cbor::Value::FromArray(std::move(list)) },
 		{ "body", cbor::Value::FromBytes(response.value().body) },
 	}));
 }
@@ -848,6 +874,18 @@ cbor::Value Broker::uiCall(const std::string &op, const cbor::Value *args) {
 
 cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 	const auto data = _services.data;
+	if (data) {
+		(void)data->takeTimedOut();
+	}
+	auto result = dataAnswer(op, args);
+	if (data && data->takeTimedOut()) {
+		return api::Fail(api::error::kUnavailable, "the app did not answer in time");
+	}
+	return result;
+}
+
+cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
+	const auto data = _services.data;
 	const auto need = [&](const char *permission) -> std::optional<cbor::Value> {
 		if (!has(permission)) {
 			return api::Fail(api::error::kDenied, permission);
@@ -865,7 +903,7 @@ cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 			1,
 			int64_t(kMaxChats)));
 		auto result = cbor::Array();
-		for (const auto &chat : data->chats(kMaxChats)) {
+		for (const auto &chat : data->chats(kMaxChatsScanned)) {
 			if (chatVisible(chat.id, chat.secret) && result.size() < limit) {
 				result.push_back(ChatValue(chat));
 			}
@@ -893,11 +931,15 @@ cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 			1,
 			int64_t(kMaxHistory)));
 		auto result = cbor::Array();
+		const auto deleted = has("messages.read_deleted");
 		for (const auto &message : data->history(
 				*id,
 				limit,
-				IntArg(args, "before").value_or(0))) {
-			if (message.chat == *id && result.size() < limit) {
+				IntArg(args, "before").value_or(0),
+				IntArg(args, "topic").value_or(0))) {
+			if (message.chat == *id
+				&& (deleted || !message.deleted)
+				&& result.size() < limit) {
 				result.push_back(MessageValue(message));
 			}
 		}
@@ -972,7 +1014,9 @@ cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 			int64_t(kMaxContacts)));
 		auto result = cbor::Array();
 		for (const auto &contact : data->contacts(limit)) {
-			if (result.size() >= limit || contact.id == api::kServiceChat) {
+			if (result.size() >= limit
+				|| contact.id == api::kServiceChat
+				|| !chatInScope(contact.id)) {
 				continue;
 			}
 			result.push_back(cbor::Value::FromMap({
@@ -1035,7 +1079,9 @@ cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 			*message,
 			thumbnail && thumbnail->asBool().value_or(false),
 			kMaxMedia);
-		if (!media) {
+		if (media && media->deleted && !has("messages.read_deleted")) {
+			return api::Fail(api::error::kDenied, "messages.read_deleted");
+		} else if (!media) {
 			return api::Fail(api::error::kNotFound, "the media is not downloaded");
 		} else if (media->bytes.size() > kMaxMedia) {
 			return api::Fail(api::error::kLimit, "the media is too large");

@@ -13,6 +13,7 @@
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_drafts.h"
+#include "data/data_folder.h"
 #include "data/data_media_types.h"
 #include "data/data_chat_participant_status.h"
 #include "history/history_item_components.h"
@@ -35,6 +36,7 @@
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "data/components/credits.h"
+#include "storage/cache/storage_cache_database.h"
 #include "ui/toast/toast.h"
 
 #ifdef FRESHGRAM_PLUGINS
@@ -57,7 +59,10 @@ namespace {
 
 constexpr auto kWaitSlice = std::chrono::milliseconds(20);
 constexpr auto kWaitTotal = std::chrono::milliseconds(1500);
+constexpr auto kWaitServer = std::chrono::milliseconds(10000);
 constexpr auto kMaxHistory = size_t(200);
+
+thread_local bool TimedOut = false;
 
 struct Gate {
 	std::atomic<bool> closed = false;
@@ -87,6 +92,7 @@ template <typename T>
 [[nodiscard]] T OnMain(Fn<T()> work, T fallback) {
 	auto &gate = GetGate();
 	if (gate.closed.load()) {
+		TimedOut = true;
 		return fallback;
 	}
 	const auto call = std::make_shared<Call<T>>();
@@ -118,6 +124,50 @@ template <typename T>
 		if (call->stage == Stage::Pending
 			&& (gate.closed.load() || std::chrono::steady_clock::now() >= until)) {
 			call->stage = Stage::Abandoned;
+			TimedOut = true;
+			return fallback;
+		}
+		call->changed.wait_for(lock, kWaitSlice);
+	}
+	return call->result;
+}
+
+template <typename T>
+[[nodiscard]] T OnMainAsync(Fn<void(Fn<void(T)> done)> start, T fallback) {
+	auto &gate = GetGate();
+	if (gate.closed.load()) {
+		TimedOut = true;
+		return fallback;
+	}
+	const auto call = std::make_shared<Call<T>>();
+	call->result = fallback;
+	crl::on_main([=] {
+		{
+			auto lock = std::unique_lock(call->mutex);
+			if (call->stage != Stage::Pending || GetGate().closed.load()) {
+				return;
+			}
+			call->stage = Stage::Running;
+		}
+		start([=](T value) {
+			{
+				auto lock = std::unique_lock(call->mutex);
+				if (call->stage != Stage::Running) {
+					return;
+				}
+				call->result = std::move(value);
+				call->stage = Stage::Finished;
+			}
+			call->changed.notify_all();
+		});
+	});
+
+	auto lock = std::unique_lock(call->mutex);
+	const auto until = std::chrono::steady_clock::now() + kWaitServer;
+	while (call->stage != Stage::Finished) {
+		if (gate.closed.load() || std::chrono::steady_clock::now() >= until) {
+			call->stage = Stage::Abandoned;
+			TimedOut = true;
 			return fallback;
 		}
 		call->changed.wait_for(lock, kWaitSlice);
@@ -145,10 +195,12 @@ template <typename T>
 }
 
 [[nodiscard]] const char *KindOf(not_null<PeerData*> peer) {
-	if (peer->isUser()) {
-		return "user";
+	if (const auto user = peer->asUser()) {
+		return user->isSelf() ? "self" : user->isBot() ? "bot" : "user";
 	} else if (peer->isChat()) {
 		return "group";
+	} else if (peer->isForum()) {
+		return "forum";
 	} else if (peer->isMegagroup()) {
 		return "supergroup";
 	}
@@ -164,6 +216,7 @@ template <typename T>
 	result.unread = history->unreadCount();
 	result.pinned = history->isPinnedDialog(FilterId());
 	result.secret = FreshSecret::IsSecretPeerId(peer->id);
+	result.archived = (history->folder() != nullptr);
 	return result;
 }
 
@@ -175,6 +228,8 @@ template <typename T>
 	return result;
 }
 
+[[nodiscard]] std::string MediaKindOf(not_null<const HistoryItem*> item);
+
 [[nodiscard]] fgpl::Message MessageOf(not_null<const HistoryItem*> item) {
 	auto result = fgpl::Message();
 	result.id = item->id.bare;
@@ -182,7 +237,70 @@ template <typename T>
 	result.from = ChatId(item->from());
 	result.date = item->date();
 	result.text = Utf8(item->originalText().text);
+	result.topic = item->topicRootId().bare;
+	result.replyTo = item->replyToId().bare;
+	result.out = item->out();
+	result.deleted = item->isDeleted();
+	result.media = MediaKindOf(item);
 	return result;
+}
+
+[[nodiscard]] std::string MediaKindOf(const MTPMessageMedia &media) {
+	return media.match([](const MTPDmessageMediaPhoto &) {
+		return std::string("photo");
+	}, [](const MTPDmessageMediaDocument &) {
+		return std::string("file");
+	}, [](const MTPDmessageMediaPoll &) {
+		return std::string("poll");
+	}, [](const MTPDmessageMediaContact &) {
+		return std::string("contact");
+	}, [](const MTPDmessageMediaGeo &) {
+		return std::string("location");
+	}, [](const MTPDmessageMediaWebPage &) {
+		return std::string("webpage");
+	}, [](const MTPDmessageMediaEmpty &) {
+		return std::string();
+	}, [](const auto &) {
+		return std::string("other");
+	});
+}
+
+[[nodiscard]] std::vector<fgpl::Message> MessagesOf(
+		const MTPmessages_Messages &result,
+		int64_t chat) {
+	auto list = std::vector<fgpl::Message>();
+	const auto parse = [&](const QVector<MTPMessage> &messages) {
+		for (const auto &message : messages) {
+			message.match([&](const MTPDmessage &data) {
+				auto entry = fgpl::Message();
+				entry.id = data.vid().v;
+				entry.chat = chat;
+				entry.from = data.vfrom_id()
+					? int64_t(peerFromMTP(*data.vfrom_id()).value)
+					: chat;
+				entry.date = data.vdate().v;
+				entry.text = data.vmessage().v.toStdString();
+				entry.out = data.is_out();
+				if (const auto reply = data.vreply_to()) {
+					reply->match([&](const MTPDmessageReplyHeader &header) {
+						entry.replyTo = header.vreply_to_msg_id().value_or_empty();
+						entry.topic = header.vreply_to_top_id().value_or_empty();
+					}, [](const auto &) {
+					});
+				}
+				if (const auto media = data.vmedia()) {
+					entry.media = MediaKindOf(*media);
+				}
+				list.push_back(std::move(entry));
+			}, [](const auto &) {
+			});
+		}
+	};
+	result.match([](const MTPDmessages_messagesNotModified &) {
+	}, [&](const auto &data) {
+		parse(data.vmessages().v);
+	});
+	return list;
 }
 
 int PluginSendDepth = 0;
@@ -231,13 +349,19 @@ public:
 			if (!session) {
 				return result;
 			}
-			for (const auto &row : *session->data().chatsList()->indexed()) {
-				if (result.size() >= limit) {
-					break;
+			const auto add = [&](not_null<Dialogs::MainList*> list) {
+				for (const auto &row : *list->indexed()) {
+					if (result.size() >= limit) {
+						break;
+					}
+					if (const auto history = row->history()) {
+						result.push_back(ChatOf(history));
+					}
 				}
-				if (const auto history = row->history()) {
-					result.push_back(ChatOf(history));
-				}
+			};
+			add(session->data().chatsList());
+			if (const auto archive = session->data().folderLoaded(Data::Folder::kId)) {
+				add(archive->chatsList());
 			}
 			return result;
 		}, {});
@@ -255,18 +379,22 @@ public:
 	std::vector<fgpl::Message> history(
 			int64_t chat,
 			size_t limit,
-			int64_t before) override {
-		return OnMain<std::vector<fgpl::Message>>([=] {
+			int64_t before,
+			int64_t topic) override {
+		const auto cap = std::min(limit, kMaxHistory);
+		auto result = OnMain<std::vector<fgpl::Message>>([=] {
 			auto result = std::vector<fgpl::Message>();
 			const auto history = historyOf(chat);
 			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
 				return result;
 			}
-			const auto cap = std::min(limit, kMaxHistory);
 			for (auto b = history->blocks.rbegin(); b != history->blocks.rend(); ++b) {
 				for (auto m = (*b)->messages.rbegin(); m != (*b)->messages.rend(); ++m) {
 					const auto item = (*m)->data();
-					if (item->isService() || item->isEmpty()) {
+					if (item->isService()
+						|| item->isEmpty()
+						|| !IsServerMsgId(item->id)
+						|| (topic && item->topicRootId().bare != topic)) {
 						continue;
 					} else if (before > 0 && item->id.bare >= before) {
 						continue;
@@ -279,6 +407,63 @@ public:
 			}
 			return result;
 		}, {});
+		if (result.size() >= cap || TimedOut) {
+			return result;
+		}
+		const auto offset = result.empty() ? before : result.back().id;
+		const auto more = int(cap - result.size());
+		auto older = OnMainAsync<std::vector<fgpl::Message>>([=](
+				Fn<void(std::vector<fgpl::Message>)> done) {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(chat);
+			if (!session || !history || FreshSecret::IsSecretPeerId(history->peer->id)) {
+				done({});
+				return;
+			}
+			const auto finish = [=](const MTPmessages_Messages &answer) {
+				done(MessagesOf(answer, chat));
+			};
+			const auto fail = [=] {
+				done({});
+			};
+			if (topic) {
+				session->api().request(MTPmessages_GetReplies(
+					history->peer->input(),
+					MTP_int(topic),
+					MTP_int(offset),
+					MTP_int(0),
+					MTP_int(0),
+					MTP_int(more),
+					MTP_int(0),
+					MTP_int(0),
+					MTP_long(0)
+				)).done(finish).fail(fail).send();
+			} else {
+				session->api().request(MTPmessages_GetHistory(
+					history->peer->input(),
+					MTP_int(offset),
+					MTP_int(0),
+					MTP_int(0),
+					MTP_int(more),
+					MTP_int(0),
+					MTP_int(0),
+					MTP_long(0)
+				)).done(finish).fail(fail).send();
+			}
+		}, {});
+		for (auto &message : older) {
+			if (result.size() >= cap) {
+				break;
+			} else if (offset > 0 && message.id >= offset) {
+				continue;
+			}
+			result.push_back(std::move(message));
+		}
+		return result;
+	}
+
+	bool takeTimedOut() override {
+		return std::exchange(TimedOut, false);
 	}
 
 	fgpl::Account account() override {
@@ -297,9 +482,24 @@ public:
 	}
 
 	int64_t stars() override {
-		return OnMain<int64_t>([=] {
+		return OnMainAsync<int64_t>([=](Fn<void(int64_t)> done) {
 			const auto session = FindSession(_account);
-			return session ? session->credits().balance().whole() : 0;
+			if (!session) {
+				done(0);
+				return;
+			}
+			const auto credits = &session->credits();
+			if (credits->loaded()) {
+				done(credits->balance().whole());
+				return;
+			}
+			const auto lifetime = std::make_shared<rpl::lifetime>();
+			credits->loadedValue(
+			) | rpl::filter(rpl::mappers::_1) | rpl::take(1) | rpl::on_next([=] {
+				done(credits->balance().whole());
+				lifetime->destroy();
+			}, *lifetime);
+			credits->load();
 		}, 0);
 	}
 
@@ -439,7 +639,13 @@ public:
 			int64_t message,
 			bool thumbnail,
 			size_t maxBytes) override {
-		return OnMain<std::optional<fgpl::Media>>([=]() -> std::optional<fgpl::Media> {
+		struct Source {
+			fgpl::Media media;
+			QByteArray bytes;
+			QString path;
+			std::optional<Storage::Cache::Key> cache;
+		};
+		const auto source = OnMain<std::optional<Source>>([=]() -> std::optional<Source> {
 			const auto session = FindSession(_account);
 			const auto peerId = PeerId(uint64(chat));
 			if (!session || FreshSecret::IsSecretPeerId(peerId)) {
@@ -447,55 +653,80 @@ public:
 			}
 			const auto item = session->data().message(peerId, MsgId(message));
 			const auto media = item ? item->media() : nullptr;
-			if (!media) {
+			if (!media || media->ttlSeconds()) {
 				return std::nullopt;
 			}
-			auto result = fgpl::Media();
-			auto bytes = QByteArray();
+			auto result = Source();
+			result.media.deleted = item->isDeleted();
+			result.media.kind = thumbnail ? "thumbnail" : MediaKindOf(item);
 			if (const auto photo = media->photo()) {
-				const auto view = photo->activeMediaView();
-				if (!view) {
-					return std::nullopt;
-				}
 				const auto size = thumbnail
 					? Data::PhotoSize::Thumbnail
 					: Data::PhotoSize::Large;
-				bytes = view->imageBytes(size);
-				if (bytes.isEmpty()) {
-					if (const auto image = view->image(size)) {
-						bytes = Jpeg(image->original());
+				if (const auto view = photo->activeMediaView()) {
+					result.bytes = view->imageBytes(size);
+					if (result.bytes.isEmpty()) {
+						if (const auto image = view->image(size)) {
+							result.bytes = Jpeg(image->original());
+						}
 					}
 				}
-				result.kind = thumbnail ? "thumbnail" : "photo";
-				result.mime = "image/jpeg";
+				if (result.bytes.isEmpty()) {
+					result.cache = photo->location(size).file().cacheKey();
+				}
+				result.media.mime = "image/jpeg";
 			} else if (const auto document = media->document()) {
 				const auto view = document->activeMediaView();
 				if (thumbnail) {
 					const auto image = view ? view->thumbnail() : nullptr;
 					if (image) {
-						bytes = Jpeg(image->original());
+						result.bytes = Jpeg(image->original());
 					}
-					result.kind = "thumbnail";
-					result.mime = "image/jpeg";
+					result.media.mime = "image/jpeg";
 				} else {
-					bytes = view ? view->bytes() : QByteArray();
-					const auto path = bytes.isEmpty() ? document->filepath(true) : QString();
-					auto file = QFile(path);
-					if (!path.isEmpty() && file.open(QIODevice::ReadOnly)) {
-						bytes = file.read(qint64(maxBytes) + 1);
+					result.bytes = view ? view->bytes() : QByteArray();
+					if (result.bytes.isEmpty()) {
+						result.path = document->filepath(false);
+						result.cache = document->cacheKey();
 					}
-					result.kind = "document";
-					result.mime = Utf8(document->mimeString());
-					result.name = Utf8(document->filename());
+					result.media.mime = Utf8(document->mimeString());
+					result.media.name = Utf8(document->filename());
 				}
-			}
-			if (bytes.isEmpty()) {
+			} else {
 				return std::nullopt;
 			}
-			bytes.truncate(qsizetype(std::min<size_t>(size_t(bytes.size()), maxBytes + 1)));
-			result.bytes.assign(bytes.constData(), bytes.constData() + bytes.size());
 			return result;
 		}, std::nullopt);
+		if (!source) {
+			return std::nullopt;
+		}
+		auto result = source->media;
+		auto bytes = source->bytes;
+		if (bytes.isEmpty() && !source->path.isEmpty()) {
+			auto file = QFile(source->path);
+			if (file.open(QIODevice::ReadOnly)) {
+				bytes = file.read(qint64(maxBytes) + 1);
+			}
+		}
+		if (bytes.isEmpty() && source->cache) {
+			const auto key = *source->cache;
+			bytes = OnMainAsync<QByteArray>([=](Fn<void(QByteArray)> done) {
+				const auto session = FindSession(_account);
+				if (!session) {
+					done(QByteArray());
+					return;
+				}
+				session->data().cache().get(key, [=](QByteArray &&value) {
+					done(std::move(value));
+				});
+			}, QByteArray());
+		}
+		if (bytes.isEmpty()) {
+			return std::nullopt;
+		}
+		bytes.truncate(qsizetype(std::min<size_t>(size_t(bytes.size()), maxBytes + 1)));
+		result.bytes.assign(bytes.constData(), bytes.constData() + bytes.size());
+		return result;
 	}
 
 private:

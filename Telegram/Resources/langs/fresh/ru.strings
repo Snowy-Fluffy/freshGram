@@ -182,6 +182,8 @@
 "fresh_PluginPermissionsCount" = "{allowed} из {total}";
 "fresh_PluginRemove" = "Удалить плагин";
 "fresh_PluginsAdd" = "Установить плагин";
+"fresh_PluginSettingsLoading" = "Загрузка настроек…";
+"fresh_PluginCommandTaken" = "{command} уже использует {plugin}; чтобы вызвать этот плагин, напишите /команда@id.плагина.";
 "fresh_PluginVersionShort" = "Версия {version}";
 "fresh_PluginBy" = "автор: {author}";
 "fresh_PluginNotSigned" = "Без подписи";

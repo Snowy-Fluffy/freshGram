@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
+#include "ayu/features/plugins/plugins_ui.h"
+#include "ayu/features/plugins/plugins_service.h"
 
 #include "base/call_delayed.h"
 #include "base/event_filter.h"
@@ -1562,6 +1564,7 @@ void ComposeControls::setHistory(SetHistoryArgs &&args) {
 	updateLikeShown();
 	updateMessagesTTLShown();
 	refreshSendGiftToggle();
+	refreshPluginsToggle();
 	updateControlsGeometry(_wrap->size());
 	updateControlsVisibility();
 	updateFieldPlaceholder();
@@ -2855,7 +2858,40 @@ void ComposeControls::show() {
 	}
 }
 
+void ComposeControls::refreshPluginsToggle() {
+	const auto has = _history
+		&& _regularWindow
+		&& (_mode == Mode::Normal)
+		&& FreshPlugins::HasComposerItems(&_history->session(), _history->peer);
+	if (has && !_pluginsToggle) {
+		_pluginsToggle = base::make_unique_q<Ui::IconButton>(
+			_wrap.get(),
+			st::historyPluginsToggle);
+		_pluginsToggle->setAccessibleName(tr::fresh_Plugins(tr::now));
+		_pluginsToggle->show();
+		_pluginsToggle->setClickedCallback([=] {
+			if (_history && _pluginsToggle) {
+				FreshPlugins::ShowComposerMenu(
+					_regularWindow,
+					_history->peer,
+					_pluginsToggle.get());
+			}
+		});
+		orderControls();
+	} else if (!has && _pluginsToggle) {
+		_pluginsToggle = nullptr;
+	} else {
+		return;
+	}
+	updateControlsVisibility();
+	updateControlsGeometry(_wrap->size());
+}
+
 void ComposeControls::init() {
+	FreshPlugins::ListChanges(
+	) | rpl::on_next([=] {
+		refreshPluginsToggle();
+	}, _wrap->lifetime());
 	if (Controls::StashHintManager::ShouldShow()) {
 		_stashHintManager = std::make_unique<Controls::StashHintManager>(
 			Controls::StashHintDescriptor{
@@ -5220,6 +5256,9 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		- ((_scheduled && !_scheduled->isHidden())
 			? _scheduled->width()
 			: 0)
+		- ((_pluginsToggle && !_pluginsToggle->isHidden())
+			? _pluginsToggle->width()
+			: 0)
 		- (_botKeyboardShow ? _botKeyboardShow->width() : 0)
 		- (_botKeyboardHide ? _botKeyboardHide->width() : 0)
 		- ((_ttlInfo
@@ -5355,6 +5394,12 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 			right += _scheduled->width();
 		}
 	}
+	if (_pluginsToggle) {
+		_pluginsToggle->moveToRight(right, buttonsTop);
+		if (!_pluginsToggle->isHidden()) {
+			right += _pluginsToggle->width();
+		}
+	}
 	if (_ttlInfo && settings.showAutoDeleteButtonInMessageField()) {
 		_ttlInfo->move(size.width() - right - _ttlInfo->width(), buttonsTop);
 	}
@@ -5410,6 +5455,9 @@ void ComposeControls::updateControlsVisibility() {
 	}
 	if (_scheduled) {
 		_scheduled->setVisible(!hide);
+	}
+	if (_pluginsToggle) {
+		_pluginsToggle->setVisible(!hide);
 	}
 	if (_giftToUser) {
 		_giftToUser->setVisible(showGiftToUser);

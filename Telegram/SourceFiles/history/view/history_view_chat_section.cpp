@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_chat_section.h"
 
+#include "ayu/features/plugins/plugins_ui.h"
+
 #include "history/admin_log/history_admin_log_section.h"
 #include "history/view/controls/history_view_top_controls.h"
 #include "history/view/controls/history_view_bottom_controls.h"
@@ -2386,6 +2388,19 @@ void ChatWidget::sendVoice(const ComposeControls::VoiceToSend &data) {
 }
 
 void ChatWidget::send(Api::SendOptions options) {
+	if (!_composeControls->isEditingMessage()) {
+		const auto command = FreshPlugins::RunCommand(
+			controller(),
+			_history->peer,
+			_repliesRootId,
+			_composeControls->getTextWithAppliedMarkdown().text);
+		if (command == FreshPlugins::CommandResult::Sent) {
+			_composeControls->clear(true);
+			return;
+		} else if (command == FreshPlugins::CommandResult::Refused) {
+			return;
+		}
+	}
 	if (const auto page = _composeControls->shownRichMessage()) {
 		sendRichDraft(page, options);
 		return;

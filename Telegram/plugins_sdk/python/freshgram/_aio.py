@@ -106,8 +106,9 @@ def _log_failure(task):
     if error is None:
         return
     text = "".join(_traceback.format_exception(type(error), error, error.__traceback__))
+    data = text.encode("utf-8")[-4000:].decode("utf-8", "ignore")
     try:
-        _channel.raw_call({"op": "log", "a": {"text": text[-4000:]}})
+        _channel.raw_call({"op": "log", "a": {"text": data}})
     except Exception:
         pass
 

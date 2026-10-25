@@ -19,6 +19,10 @@
 #include "base/weak_ptr.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_peer_bot_command.h"
+#include "data/data_peer_bot_commands.h"
 #include "data/data_user.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -69,6 +73,7 @@ namespace {
 namespace cbor = fgpl::cbor;
 
 constexpr auto kMaxPluginChats = 100;
+constexpr auto kSettingsWaitMs = crl::time(5000);
 
 struct Entry {
 	std::string plugin;
@@ -173,7 +178,8 @@ void Send(
 		const char *surface,
 		const std::string &menuId,
 		PeerData *peer,
-		HistoryItem *item) {
+		HistoryItem *item,
+		MsgId topicRootId = MsgId()) {
 	auto map = cbor::Map();
 	map.push_back({ "type", cbor::Value::FromText("menu.click") });
 	map.push_back({ "surface", cbor::Value::FromText(surface) });
@@ -181,6 +187,9 @@ void Send(
 	if (peer) {
 		map.push_back({ "chat", Number(int64_t(peer->id.value)) });
 		map.push_back({ "secret", Flag(FreshSecret::IsSecretPeerId(peer->id)) });
+	}
+	if (topicRootId) {
+		map.push_back({ "topic", Number(topicRootId.bare) });
 	}
 	if (item) {
 		if (const auto topic = item->topicRootId()) {
@@ -465,12 +474,30 @@ void FillSettingsBox(
 		style::margins());
 	const auto shown = box->lifetime().make_state<std::shared_ptr<Page>>();
 	const auto weak = base::make_weak(&controller->session());
+	const auto waited = box->lifetime().make_state<bool>(false);
 	const auto rebuild = [=] {
 		const auto page = PageOf(plugin, account);
 		*title = page ? TextOf(*page, "title") : QString();
 		ShowPage(content, controller, weak, plugin, page, false, *shown);
+		if (!page) {
+			content->add(
+				object_ptr<Ui::FlatLabel>(
+					content,
+					(*waited
+						? tr::fresh_PluginSettingsUnavailable
+						: tr::fresh_PluginSettingsLoading)(tr::now),
+					st::boxDividerLabel),
+				st::boxRowPadding);
+		}
 	};
 	rebuild();
+	if (!PageOf(plugin, account)) {
+		const auto timer = box->lifetime().make_state<base::Timer>([=] {
+			*waited = true;
+			rebuild();
+		});
+		timer->callOnce(kSettingsWaitMs);
+	}
 	GetPages().changes.events(
 	) | rpl::filter([=](const std::pair<std::string, std::string> &key) {
 		return key.first == plugin && key.second == account;
@@ -1749,6 +1776,7 @@ void AddMessageMenuItems(
 void AddPeerMenuItems(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer,
+		MsgId topicRootId,
 		bool profile,
 		Fn<void(const QString &title, Fn<void()> handler)> add) {
 	if (FreshSecret::IsSecretPeerId(peer->id)) {
@@ -1763,7 +1791,7 @@ void AddPeerMenuItems(
 			const auto strong = weak.get();
 			const auto found = strong ? strong->data().peerLoaded(peerId) : nullptr;
 			if (found) {
-				Send(strong, entry.plugin, ClickEvent(surface, entry.menuId, found, nullptr));
+				Send(strong, entry.plugin, ClickEvent(surface, entry.menuId, found, nullptr, topicRootId));
 			}
 		});
 	}
@@ -1810,40 +1838,114 @@ void AddMainMenuItems(
 	}, inner->lifetime());
 }
 
-bool TryRunCommand(
+[[nodiscard]] bool BotHasCommand(not_null<PeerData*> peer, const QString &name) {
+	const auto matches = [&](const std::vector<Data::BotCommand> &commands) {
+		return ranges::any_of(commands, [&](const Data::BotCommand &command) {
+			return !command.command.compare(name, Qt::CaseInsensitive);
+		});
+	};
+	if (const auto user = peer->asUser()) {
+		return user->isBot() && user->botInfo && matches(user->botInfo->commands);
+	}
+	const auto list = peer->isChat()
+		? &peer->asChat()->botCommands()
+		: peer->isMegagroup()
+		? &peer->asChannel()->mgInfo->botCommands()
+		: nullptr;
+	return list && ranges::any_of(*list, [&](const auto &entry) {
+		return matches(entry.second);
+	});
+}
+
+std::vector<PluginCommand> CommandsFor(
+		not_null<Main::Session*> session,
+		not_null<PeerData*> peer) {
+	auto result = std::vector<PluginCommand>();
+	const auto snapshot = Snapshot();
+	if (!snapshot || FreshSecret::IsSecretPeerId(peer->id)) {
+		return result;
+	}
+	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
+		const auto grant = snapshot->grantsOf(plugin.id);
+		if (grant
+			&& grant->chats
+			&& !grant->chats->contains(int64_t(peer->id.value))) {
+			continue;
+		}
+		for (const auto &command : plugin.commands) {
+			result.push_back({
+				.name = Utf8(command.name),
+				.description = Utf8(command.description).isEmpty()
+					? Utf8(plugin.name)
+					: (Utf8(command.description) + u" · "_q + Utf8(plugin.name)),
+				.plugin = Utf8(plugin.id),
+			});
+		}
+	}
+	return result;
+}
+
+CommandResult RunCommand(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer,
+		MsgId topicRootId,
 		const QString &text) {
-	const auto snapshot = Snapshot();
-	if (!snapshot || !text.startsWith('/')
-		|| FreshSecret::IsSecretPeerId(peer->id)
-		|| (peer->isUser() && peer->asUser()->isBot())) {
-		return false;
-	}
 	const auto trimmed = text.trimmed();
+	const auto snapshot = Snapshot();
+	if (!snapshot
+		|| !trimmed.startsWith('/')
+		|| FreshSecret::IsSecretPeerId(peer->id)) {
+		return CommandResult::None;
+	}
 	const auto space = trimmed.indexOf(QRegularExpression(u"\\s"_q));
-	const auto name = trimmed.mid(1, space < 0 ? -1 : space - 1).toLower();
-	if (name.isEmpty() || name.contains('@')) {
-		return false;
+	const auto head = trimmed.mid(1, space < 0 ? -1 : space - 1);
+	const auto at = head.indexOf('@');
+	const auto name = (at < 0 ? head : head.mid(0, at)).toLower();
+	const auto target = (at < 0) ? QString() : head.mid(at + 1).toLower();
+	if (name.isEmpty()) {
+		return CommandResult::None;
 	}
 	const auto args = (space < 0) ? QString() : trimmed.mid(space + 1).trimmed();
 	const auto session = &controller->session();
 	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
+		if (!target.isEmpty() && Utf8(plugin.id).toLower() != target) {
+			continue;
+		}
+		const auto grant = snapshot->grantsOf(plugin.id);
+		if (grant
+			&& grant->chats
+			&& !grant->chats->contains(int64_t(peer->id.value))) {
+			continue;
+		}
 		for (const auto &command : plugin.commands) {
 			if (Utf8(command.name) != name) {
 				continue;
+			} else if (target.isEmpty() && BotHasCommand(peer, name)) {
+				return CommandResult::None;
 			}
-			Send(session, plugin.id, cbor::Value::FromMap({
+			const auto info = snapshot->plugin(plugin.id);
+			const auto parsed = snapshot->manifest(plugin.id);
+			const auto startable = parsed && parsed->activation.contains("command");
+			if (!info
+				|| (info->status != fgpl::PluginStatus::Running && !startable)) {
+				controller->showToast(tr::fresh_PluginNotRunning(tr::now));
+				return CommandResult::Refused;
+			}
+			auto map = cbor::Map{
 				{ "type", cbor::Value::FromText("command") },
 				{ "name", Text(name) },
 				{ "args", Text(args) },
 				{ "chat", Number(int64_t(peer->id.value)) },
 				{ "secret", Flag(false) },
-			}));
-			return true;
+			};
+			if (topicRootId) {
+				map.push_back({ "topic", Number(topicRootId.bare) });
+			}
+			Send(session, plugin.id, cbor::Value::FromMap(std::move(map)));
+			return CommandResult::Sent;
 		}
 	}
-	return false;
+	return CommandResult::None;
 }
 
 void ShowPluginSettings(
@@ -1852,10 +1954,14 @@ void ShowPluginSettings(
 	const auto snapshot = Snapshot();
 	const auto id = pluginId.toStdString();
 	const auto account = AccountOf(&controller->session());
-	if (!snapshot || !PageOf(id, account)) {
-		controller->showToast(tr::fresh_PluginSettingsUnavailable(tr::now));
+	const auto info = snapshot ? snapshot->plugin(id) : nullptr;
+	if (!info || !info->enabled) {
+		controller->showToast(tr::fresh_PluginNotRunning(tr::now));
 		return;
 	}
+	Send(&controller->session(), id, cbor::Value::FromMap({
+		{ "type", cbor::Value::FromText("settings.open") },
+	}));
 	const auto parsed = snapshot->manifest(id);
 	const auto name = parsed ? Utf8(parsed->name.get(Language())) : pluginId;
 	controller->show(Box(FillSettingsBox, controller, id, account, name));
@@ -1875,6 +1981,7 @@ void AddMessageMenuItems(not_null<Ui::PopupMenu*>, not_null<HistoryItem*>) {
 void AddPeerMenuItems(
 	not_null<Window::SessionController*>,
 	not_null<PeerData*>,
+	MsgId,
 	bool,
 	Fn<void(const QString &, Fn<void()>)>) {
 }
@@ -1884,11 +1991,18 @@ void AddMainMenuItems(
 	not_null<Window::SessionController*>) {
 }
 
-bool TryRunCommand(
+CommandResult RunCommand(
 		not_null<Window::SessionController*>,
 		not_null<PeerData*>,
+		MsgId,
 		const QString &) {
-	return false;
+	return CommandResult::None;
+}
+
+std::vector<PluginCommand> CommandsFor(
+		not_null<Main::Session*>,
+		not_null<PeerData*>) {
+	return {};
 }
 
 void ShowPluginSettings(not_null<Window::SessionController*>, const QString &) {

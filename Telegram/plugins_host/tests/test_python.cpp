@@ -110,8 +110,15 @@ void RunWith(const char *label, const std::vector<std::string> &extra) {
 
 	auto crash = cbor::Value::FromMap({ { "crash", cbor::Value::FromBool(true) } });
 	const auto failed = client->deliver(crash, bridge);
-	CHECK(!failed.ok());
-	CHECK(!failed.ok() && failed.error().error == ClientError::CallFailed);
+	CHECK(failed.ok() && failed.value() == -1);
+	auto logged = false;
+	for (const auto &request : bridge.requests) {
+		const auto op = request.find("op");
+		logged = logged || (op && op->asText() && *op->asText() == "log");
+	}
+	CHECK(logged);
+	const auto after = client->deliver(cbor::Value::FromMap({ { "a", cbor::Value::FromInt(1) } }), bridge);
+	CHECK(after.ok() && after.value() == 1);
 }
 
 } // namespace

@@ -6084,21 +6084,27 @@ void HistoryWidget::sendVoice(const VoiceToSend &data) {
 void HistoryWidget::send(Api::SendOptions options) {
 	if (!_history) {
 		return;
-	} else if (autoTranslateBeforeSend(options)) {
+	} else if (!_editMsgId) {
+		const auto command = FreshPlugins::RunCommand(
+			controller(),
+			_history->peer,
+			MsgId(),
+			_field->getTextWithAppliedMarkdown().text);
+		if (command == FreshPlugins::CommandResult::Sent) {
+			clearFieldText();
+			saveDraftWithTextNow();
+			return;
+		} else if (command == FreshPlugins::CommandResult::Refused) {
+			return;
+		}
+	}
+	if (autoTranslateBeforeSend(options)) {
 		return;
 	} else if (_editMsgId) {
 		saveEditMessage({});
 		return;
 	} else if (const auto page = shownRichMessage()) {
 		sendRichDraft(page, options);
-		return;
-	} else if (!options.scheduled
-		&& FreshPlugins::TryRunCommand(
-			controller(),
-			_history->peer,
-			_field->getTextWithAppliedMarkdown().text)) {
-		clearFieldText();
-		saveDraftWithTextNow();
 		return;
 	}
 	if (!options.scheduled) {
@@ -8026,7 +8032,9 @@ void HistoryWidget::moveFieldControls() {
 	}
 	if (_pluginsToggle) {
 		_pluginsToggle->moveToRight(right, buttonsBottom);
-		right += _pluginsToggle->width();
+		if (!_pluginsToggle->isHidden()) {
+			right += _pluginsToggle->width();
+		}
 	}
 	if (_ttlInfo) {
 		_ttlInfo->move(width() - right - _ttlInfo->width(), buttonsBottom);

@@ -182,6 +182,8 @@
 "fresh_PluginPermissionsCount" = "{allowed} / {total}";
 "fresh_PluginRemove" = "移除插件";
 "fresh_PluginsAdd" = "安装插件";
+"fresh_PluginSettingsLoading" = "正在加载设置…";
+"fresh_PluginCommandTaken" = "{command} 已被 {plugin} 使用；输入 /命令@插件id 来调用此插件。";
 "fresh_PluginVersionShort" = "版本 {version}";
 "fresh_PluginBy" = "作者：{author}";
 "fresh_PluginNotSigned" = "未签名";

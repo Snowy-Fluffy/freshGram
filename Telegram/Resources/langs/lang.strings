@@ -8968,6 +8968,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPermissionsCount" = "{allowed} of {total}";
 "fresh_PluginRemove" = "Remove plugin";
 "fresh_PluginsAdd" = "Install plugin";
+"fresh_PluginSettingsLoading" = "Loading the settings…";
+"fresh_PluginCommandTaken" = "{command} is also used by {plugin}; type /command@plugin.id to call this one.";
 "fresh_PluginVersionShort" = "Version {version}";
 "fresh_PluginBy" = "by {author}";
 "fresh_PluginNotSigned" = "Not signed";

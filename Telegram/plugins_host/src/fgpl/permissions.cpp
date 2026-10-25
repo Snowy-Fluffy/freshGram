@@ -48,6 +48,8 @@ Grants MakeGrants(const Manifest &manifest, const GrantDecision &decision) {
 	for (const auto &request : manifest.permissions) {
 		if (!decision.granted.contains(request.id)) {
 			continue;
+		} else if (request.scope == "selected" && !decision.chats) {
+			continue;
 		}
 		grants.permissions.insert(request.id);
 	}
