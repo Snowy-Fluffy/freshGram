@@ -370,8 +370,11 @@ EOF
 
 FROM builder AS rnnoise
 RUN --mount=type=cache,target=/var/cache/ccache <<EOF
-git clone -b v0.2 --depth=1 https://github.com/xiph/rnnoise.git
+git init rnnoise
 cd rnnoise
+git remote add origin https://github.com/xiph/rnnoise.git
+git fetch --depth=1 origin 372f7b4b76cde4ca1ec4605353dd17898a99de38
+git reset --hard FETCH_HEAD
 ./autogen.sh
 ./configure --enable-static --disable-shared
 make -j$(nproc)

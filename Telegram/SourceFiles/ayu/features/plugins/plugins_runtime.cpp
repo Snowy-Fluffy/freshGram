@@ -562,10 +562,6 @@ QString RuntimeChannel() {
 	return QString();
 }
 
-std::optional<fgpl::InstalledRuntime> TrustedRuntime() {
-	return std::nullopt;
-}
-
 RuntimeStatus CurrentRuntimeStatus() {
 	return {};
 }

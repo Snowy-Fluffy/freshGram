@@ -51,6 +51,7 @@ jobs:
             libraries: qt5
             components: Microsoft.VisualStudio.Component.VC.14.44.17.14.ATL Microsoft.VisualStudio.Component.VC.14.44.17.14.MFC
             llvm: x64
+            python: '3.10'
             suffix: ''
           - arch: arm64
             runner: windows-11-arm
@@ -58,6 +59,7 @@ jobs:
             libraries: arm64-qt6
             components: Microsoft.VisualStudio.Component.VC.ATL.ARM64 Microsoft.VisualStudio.Component.VC.MFC.ARM64
             llvm: ARM64
+            python: '3.12'
             suffix: '-arm64'
 
     steps:
@@ -89,7 +91,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ matrix.python }}
 
       - name: Restore libraries
         id: libraries
