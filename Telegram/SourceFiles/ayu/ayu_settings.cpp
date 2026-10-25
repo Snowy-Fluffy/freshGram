@@ -285,15 +285,9 @@ void MessageShotSettings::setBackground(Background val) {
 	AyuSettings::save();
 }
 
-void MessageShotSettings::setShowAvatars(bool val) {
-	if (_showAvatars.current() == val) return;
-	_showAvatars = val;
-	AyuSettings::save();
-}
-
-void MessageShotSettings::setShowNames(bool val) {
-	if (_showNames.current() == val) return;
-	_showNames = val;
+void MessageShotSettings::setPrivacyMode(bool val) {
+	if (_privacyMode.current() == val) return;
+	_privacyMode = val;
 	AyuSettings::save();
 }
 
@@ -419,8 +413,7 @@ void MessageShotSettings::clearTheme() {
 void to_json(nlohmann::json &j, const MessageShotSettings &s) {
 	j = nlohmann::json{
 		{"background", s._background.current()},
-		{"showAvatars", s._showAvatars.current()},
-		{"showNames", s._showNames.current()},
+		{"privacyMode", s._privacyMode.current()},
 		{"padding", s._padding.current()},
 		{"width", s._width.current()},
 		{"scale", s._scale.current()},
@@ -451,8 +444,7 @@ void from_json(const nlohmann::json &j, MessageShotSettings &s) {
 		j.value("background", int(legacyBackground)),
 		int(Background::Transparent),
 		int(Background::Wallpaper));
-	s._showAvatars = j.value("showAvatars", true);
-	s._showNames = j.value("showNames", true);
+	s._privacyMode = j.value("privacyMode", false);
 	s._padding = std::clamp(j.value("padding", 1), 0, 3);
 	s._width = std::clamp(j.value("width", 2), 0, 2);
 	s._scale = std::clamp(j.value("scale", 0), 0, 3);

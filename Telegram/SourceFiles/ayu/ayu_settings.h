@@ -217,8 +217,7 @@ public:
 	};
 
 	[[nodiscard]] Background background() const { return Background(_background.current()); }
-	[[nodiscard]] bool showAvatars() const { return _showAvatars.current(); }
-	[[nodiscard]] bool showNames() const { return _showNames.current(); }
+	[[nodiscard]] bool privacyMode() const { return _privacyMode.current(); }
 	[[nodiscard]] int padding() const { return _padding.current(); }
 	[[nodiscard]] int width() const { return _width.current(); }
 	[[nodiscard]] int scale() const { return _scale.current(); }
@@ -238,8 +237,7 @@ public:
 	[[nodiscard]] uint64 cloudThemeAccountId() const { return _cloudThemeAccountId.current(); }
 
 	void setBackground(Background val);
-	void setShowAvatars(bool val);
-	void setShowNames(bool val);
+	void setPrivacyMode(bool val);
 	void setPadding(int val);
 	void setWidth(int val);
 	void setScale(int val);
@@ -264,8 +262,7 @@ private:
 	void clearCloudThemeData();
 
 	rpl::variable<int> _background = int(Background::Color);
-	rpl::variable<bool> _showAvatars = true;
-	rpl::variable<bool> _showNames = true;
+	rpl::variable<bool> _privacyMode = false;
 	rpl::variable<int> _padding = 1;
 	rpl::variable<int> _width = 2;
 	rpl::variable<int> _scale = 0;

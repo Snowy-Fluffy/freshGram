@@ -9795,8 +9795,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_MessageShotWidthNarrow" = "Narrow";
 "fresh_MessageShotWidthMedium" = "Medium";
 "fresh_MessageShotWidthStandard" = "Standard";
-"fresh_MessageShotShowAvatars" = "Show avatars";
-"fresh_MessageShotShowNames" = "Show names";
+"fresh_MessageShotPrivacyMode" = "Privacy mode";
 "fresh_MessageShotExport" = "Export";
 "fresh_MessageShotFormat" = "Format";
 "fresh_MessageShotScale" = "Scale";

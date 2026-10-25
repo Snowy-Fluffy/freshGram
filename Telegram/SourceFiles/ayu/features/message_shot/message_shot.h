@@ -27,8 +27,6 @@ enum RenderPart
 	Date,
 	Reactions,
 	HeaderDecorations,
-	Avatars,
-	Names,
 };
 
 void setShotConfig(ShotConfig &config);
