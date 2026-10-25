@@ -73,6 +73,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_polls.h"
 
 #include "ayu/ayu_settings.h"
+#include "ayu/features/deleted_comments/deleted_comments.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/message_shot/message_shot.h"
 #include "styles/style_ayu_icons.h"
@@ -4306,13 +4307,8 @@ ClickHandlerPtr Message::createGoToCommentsLink() const {
 			}
 			// A deleted post does not exist on the server anymore, but its
 			// comments live in the discussion group: open them from there.
-			const auto comments = item->commentsItemId();
-			if ((item->isDeleted() || item->isLocal())
-				&& comments.peer
-				&& comments.msg) {
-				controller->showRepliesForMessage(
-					history->owner().history(comments.peer),
-					comments.msg);
+			if (FreshComments::NeedsDiscussionLookup(item)) {
+				FreshComments::ShowForDeletedPost(controller, item);
 				return;
 			}
 			controller->showRepliesForMessage(history, item->id);

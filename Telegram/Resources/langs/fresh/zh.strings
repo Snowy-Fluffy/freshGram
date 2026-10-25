@@ -412,6 +412,7 @@
 "fresh_StreamerModeHeader" = "主播模式";
 "fresh_StreamerHideWholeWindow" = "隐藏整个窗口";
 "fresh_DeletedAtDate" = "删除时间：{date}";
+"fresh_DeletedPostCommentsUnavailable" = "此已删除帖子的评论已不可用。";
 "fresh_GesturesHeader" = "手势";
 "fresh_InvertSwipeGestures" = "反转滑动手势";
 "fresh_InvertSwipeGesturesDescription" = "滑动时跟随触控板的滚动方向，而不是手指方向：打开和关闭聊天、回复消息、快捷操作。";

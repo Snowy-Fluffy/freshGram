@@ -428,6 +428,7 @@
 "fresh_StreamerModeHeader" = "Mode streamer";
 "fresh_StreamerHideWholeWindow" = "Masquer toute la fenêtre";
 "fresh_DeletedAtDate" = "Supprimé : {date}";
+"fresh_DeletedPostCommentsUnavailable" = "Les commentaires de cette publication supprimée ne sont plus disponibles.";
 "fresh_GesturesHeader" = "Gestes";
 "fresh_InvertSwipeGestures" = "Inverser les gestes de balayage";
 "fresh_InvertSwipeGesturesDescription" = "Suivre le sens de défilement du pavé tactile plutôt que le sens du doigt pour les balayages : ouvrir et fermer des discussions, répondre aux messages, actions rapides.";
