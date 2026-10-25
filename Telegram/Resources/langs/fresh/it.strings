@@ -182,6 +182,13 @@
 "fresh_PluginPermissionsCount" = "{allowed} su {total}";
 "fresh_PluginRemove" = "Rimuovi plugin";
 "fresh_PluginsAdd" = "Installa plugin";
+"fresh_PermMessagesEdit" = "Modificare i messaggi che hai inviato";
+"fresh_PermMessagesDelete" = "Eliminare i messaggi che hai inviato";
+"fresh_PermMessagesReact" = "Reagire ai messaggi";
+"fresh_PermUsersInfo" = "Vedere i profili e lo stato online degli utenti";
+"fresh_PermChatsActive" = "Sapere quale chat apri";
+"fresh_RiskChangesMessages" = "Può modificare o eliminare i messaggi che hai inviato";
+"fresh_PluginChatNone" = "Non scelta";
 "fresh_PluginSettingsLoading" = "Caricamento delle impostazioni…";
 "fresh_PluginCommandTaken" = "{command} è già usato da {plugin}; scrivi /comando@id.plugin per chiamare questo.";
 "fresh_PluginVersionShort" = "Versione {version}";
@@ -225,7 +232,7 @@
 "fresh_PermNetUdp" = "Aprire connessioni UDP";
 "fresh_PermStorage" = "Conservare i propri dati";
 "fresh_PermPluginsMessage" = "Scambiare messaggi con altri plugin";
-"fresh_PermFiles" = "Leggere i file che scegli";
+"fresh_PermFiles" = "Aprire e salvare i file che scegli";
 "fresh_PermClipboard" = "Usare gli appunti";
 "fresh_PermBackground" = "Funzionare in background";
 "fresh_RiskExfiltration" = "Può leggere i tuoi dati e inviarli su Internet";
@@ -236,7 +243,7 @@
 "fresh_RiskOutgoing" = "Può modificare ciò che invii";
 "fresh_RiskBackground" = "Continua a funzionare in background";
 "fresh_RiskClipboard" = "Può usare gli appunti";
-"fresh_RiskFiles" = "Può leggere i file che scegli";
+"fresh_RiskFiles" = "Può leggere e salvare i file che scegli";
 "fresh_RiskPlugins" = "Può scambiare dati con altri plugin che lo accettano";
 "fresh_PluginChats" = "Chat";
 "fresh_PluginChatsAll" = "Tutte le chat";

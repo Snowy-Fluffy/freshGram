@@ -22,6 +22,7 @@ constexpr auto kMaxMail = size_t(1024);
 constexpr auto kAllAccounts = "*";
 constexpr auto kAsyncThreads = 8;
 constexpr auto kResultOverhead = size_t(1024);
+constexpr auto kMaxTimers = size_t(32);
 
 [[nodiscard]] size_t EncodedSize(const cbor::Value &event);
 
@@ -303,6 +304,71 @@ void PluginManager::deliverMail() {
 			{ "type", Text("plugin.message") },
 			{ "from", Text(mail.from) },
 			{ "data", std::move(mail.data) },
+		}));
+	}
+}
+
+std::string PluginManager::setTimer(
+		const Key &key,
+		const std::string &id,
+		int64_t delayMs,
+		bool repeat) {
+	const auto lock = std::scoped_lock(_timersMutex);
+	auto &timers = _timers[key];
+	if (!timers.contains(id) && timers.size() >= kMaxTimers) {
+		return api::error::kLimit;
+	}
+	timers[id] = { now() + delayMs, repeat ? delayMs : 0 };
+	return {};
+}
+
+void PluginManager::clearTimers(const std::function<bool(const Key &key)> &matches) {
+	const auto lock = std::scoped_lock(_timersMutex);
+	std::erase_if(_timers, [&](const auto &entry) {
+		return matches(entry.first);
+	});
+}
+
+void PluginManager::fireTimers() {
+	if (!mayRun()) {
+		return;
+	}
+	const auto time = now();
+	auto due = std::vector<std::pair<Key, std::string>>();
+	{
+		const auto lock = std::scoped_lock(_timersMutex);
+		for (auto i = _timers.begin(); i != _timers.end();) {
+			auto &timers = i->second;
+			for (auto j = timers.begin(); j != timers.end();) {
+				if (j->second.due > time) {
+					++j;
+					continue;
+				}
+				due.emplace_back(i->first, j->first);
+				if (j->second.period) {
+					j->second.due = time + j->second.period;
+					++j;
+				} else {
+					j = timers.erase(j);
+				}
+			}
+			i = timers.empty() ? _timers.erase(i) : std::next(i);
+		}
+	}
+	for (const auto &[key, id] : due) {
+		const auto found = _records.find(key.first);
+		if (found == _records.end() || !_accounts.contains(key.second)) {
+			continue;
+		}
+		auto &record = found->second;
+		auto *instance = ensure(record, key.second, "timer");
+		if (!instance) {
+			++record.stats.dropped;
+			continue;
+		}
+		enqueue(*instance, record, cbor::Value::FromMap({
+			{ "type", Text("timer") },
+			{ "id", Text(id) },
 		}));
 	}
 }
@@ -740,6 +806,7 @@ bool PluginManager::uninstall(const std::string &id, bool removeData) {
 		return false;
 	}
 	stopPlugin(id);
+	clearTimers([&](const Key &key) { return key.first == id; });
 	if (found->second.store) {
 		found->second.store->discard();
 	}
@@ -767,6 +834,7 @@ bool PluginManager::setEnabled(const std::string &id, bool enabled) {
 	if (!enabled) {
 		record.enabled = false;
 		stopPlugin(id);
+		clearTimers([&](const Key &key) { return key.first == id; });
 		saveState();
 		return true;
 	}
@@ -1325,6 +1393,25 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	services.pluginPeers = [this, pluginId, account] {
 		return peers(pluginId, account);
 	};
+	const auto key = Key{ pluginId, account };
+	services.setTimer = [this, key](const std::string &id, int64_t delayMs, bool repeat) {
+		return setTimer(key, id, delayMs, repeat);
+	};
+	services.clearTimer = [this, key](const std::string &id) {
+		const auto lock = std::scoped_lock(_timersMutex);
+		const auto i = _timers.find(key);
+		return (i != _timers.end()) && i->second.erase(id) > 0;
+	};
+	services.timers = [this, key] {
+		const auto lock = std::scoped_lock(_timersMutex);
+		auto result = std::vector<std::string>();
+		if (const auto i = _timers.find(key); i != _timers.end()) {
+			for (const auto &[id, timer] : i->second) {
+				result.push_back(id);
+			}
+		}
+		return result;
+	};
 	services.post = [this](std::function<void()> work) {
 		_pool->post(std::move(work));
 	};
@@ -1534,6 +1621,7 @@ void PluginManager::run(Instance &instance) {
 			const auto lock = std::scoped_lock(outgoing->mutex);
 			outgoing->ok = result.ok() && result.value() == 0;
 			outgoing->text = text;
+			outgoing->markdown = instance.broker->outgoingMarkdown();
 			outgoing->finished = true;
 			outgoing->done.notify_all();
 		}
@@ -1774,6 +1862,7 @@ void PluginManager::commitUpdate(Record &record) {
 
 int PluginManager::pump() {
 	deliverMail();
+	fireTimers();
 	auto batch = std::deque<Completion>();
 	{
 		const auto lock = std::scoped_lock(_outboxMutex);
@@ -2053,11 +2142,13 @@ bool PluginManager::advance(
 			auto finished = false;
 			auto ok = false;
 			auto text = std::optional<std::string>();
+			auto markdown = false;
 			{
 				const auto lock = std::scoped_lock(pending->mutex);
 				finished = pending->finished;
 				ok = pending->ok;
 				text = pending->text;
+				markdown = pending->markdown;
 			}
 			if (!finished && now < chain.deadline) {
 				return false;
@@ -2066,6 +2157,7 @@ bool PluginManager::advance(
 			if (finished && ok) {
 				if (text) {
 					chain.result.text = *text;
+					chain.result.markdown = markdown;
 				}
 			} else if (chain.blocking) {
 				return refuse(
@@ -2164,6 +2256,7 @@ void PluginManager::setHidden(bool hidden) {
 
 void PluginManager::onLogout(const std::string &account) {
 	_accounts.erase(account);
+	clearTimers([&](const Key &key) { return key.second == account; });
 	auto keys = std::vector<Key>();
 	for (const auto &item : _instances) {
 		if (item.first.second == account) {

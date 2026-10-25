@@ -8,7 +8,7 @@ namespace {
 const auto kReadingPermissions = std::set<std::string>{
 	"messages.read", "messages.read_deleted", "messages.history", "chats.list",
 	"chat.info", "account.info", "contacts.list", "composer.draft", "media.read",
-	"folders.list", "settings.read", "stars.balance",
+	"folders.list", "settings.read", "stars.balance", "users.info", "chats.active",
 };
 
 [[nodiscard]] bool Has(
@@ -20,6 +20,7 @@ const auto kReadingPermissions = std::set<std::string>{
 const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
 	"net.tcp", "net.udp", "background", "fs.user_selected", "clipboard",
+	"messages.edit", "messages.delete",
 };
 
 const auto kLowPermissions = std::set<std::string>{
@@ -88,6 +89,9 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 	if (Has(granted, "messages.transform_outgoing")) {
 		notes.push_back({ Risk::ChangesOutgoing, "can change what you send" });
 	}
+	if (Has(granted, "messages.edit") || Has(granted, "messages.delete")) {
+		notes.push_back({ Risk::ChangesMessages, "can edit or delete messages you sent" });
+	}
 	if (Has(granted, "background")) {
 		notes.push_back({ Risk::Background, "keeps running in the background" });
 	}
@@ -95,7 +99,7 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 		notes.push_back({ Risk::Clipboard, "can use the clipboard" });
 	}
 	if (Has(granted, "fs.user_selected")) {
-		notes.push_back({ Risk::Files, "can read files you pick" });
+		notes.push_back({ Risk::Files, "can read and save files you pick" });
 	}
 	if (Has(granted, "plugins.message")) {
 		notes.push_back({

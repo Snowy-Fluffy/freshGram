@@ -1,6 +1,7 @@
 #include "fgpl/ui_tree.h"
 
 #include <algorithm>
+#include <limits>
 #include <set>
 #include <string_view>
 
@@ -130,7 +131,7 @@ bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines) {
 
 Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 	auto check = Checker();
-	if (!page.asMap() || !check.keys(page, { "title", "items" })) {
+	if (!page.asMap() || !check.keys(page, { "title", "items", "buttons" })) {
 		return check.failed() ? check.error() : std::string("the page must be an object");
 	}
 	const auto title = check.text(page, "title", kMaxLabel, true);
@@ -142,6 +143,51 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 	}
 	auto out = cbor::Array();
 	auto ids = std::set<std::string>();
+	const auto takeId = [&](const cbor::Value &item, cbor::Map &entry) -> bool {
+		const auto idField = item.find("id");
+		const auto id = idField ? idField->asText() : nullptr;
+		if (!id || !ValidId(*id) || !ids.insert(*id).second) {
+			check.fail("an item has a bad or repeated id");
+			return false;
+		}
+		entry.push_back({ "id", Text(*id) });
+		return true;
+	};
+	const auto takeBool = [&](const cbor::Value &item, const char *name, cbor::Map &entry) {
+		const auto field = item.find(name);
+		if (field && !field->asBool()) {
+			check.fail(std::string(name) + " must be true or false");
+			return false;
+		}
+		entry.push_back({ name, cbor::Value::FromBool(field && *field->asBool()) });
+		return true;
+	};
+	const auto takeInt = [&](
+			const cbor::Value &item,
+			const char *name,
+			int64_t min,
+			int64_t max,
+			int64_t fallback) -> std::optional<int64_t> {
+		const auto field = item.find(name);
+		if (!field) {
+			return fallback;
+		}
+		const auto value = field->asInt();
+		if (!value || *value < min || *value > max) {
+			check.fail(std::string(name) + " is out of range");
+			return std::nullopt;
+		}
+		return *value;
+	};
+	const auto takeCommon = [&](const cbor::Value &item, cbor::Map &entry) {
+		const auto hint = check.text(item, "hint", kMaxHint, false, true);
+		if (check.failed()) {
+			return false;
+		} else if (hint) {
+			entry.push_back({ "hint", Text(*hint) });
+		}
+		return takeBool(item, "disabled", entry);
+	};
 	for (const auto &item : *items->asArray()) {
 		if (!item.asMap()) {
 			return std::string("every item must be an object");
@@ -153,19 +199,9 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 		}
 		auto entry = cbor::Map();
 		entry.push_back({ "type", Text(*type) });
-		const auto takeId = [&]() -> bool {
-			const auto idField = item.find("id");
-			const auto id = idField ? idField->asText() : nullptr;
-			if (!id || !ValidId(*id) || !ids.insert(*id).second) {
-				check.fail("an item has a bad or repeated id");
-				return false;
-			}
-			entry.push_back({ "id", Text(*id) });
-			return true;
-		};
-		if (*type == "text") {
+		if (*type == "text" || *type == "header") {
 			const auto text = check.keys(item, { "type", "text" })
-				? check.text(item, "text", kMaxText, true, true)
+				? check.text(item, "text", (*type == "text") ? kMaxText : kMaxLabel, true, *type == "text")
 				: std::nullopt;
 			if (!text) {
 				return check.error();
@@ -175,41 +211,125 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			if (!check.keys(item, { "type" })) {
 				return check.error();
 			}
+		} else if (*type == "link") {
+			if (!check.keys(item, { "type", "label", "url" })) {
+				return check.error();
+			}
+			const auto label = check.text(item, "label", kMaxLabel, true);
+			const auto url = label ? check.text(item, "url", kMaxUrl, true) : std::nullopt;
+			if (!url) {
+				return check.error();
+			} else if (url->rfind("https://", 0) != 0 || url->size() <= 8
+				|| url->find_first_of(" \"<>\\") != std::string::npos) {
+				return std::string("a link needs an https:// url");
+			}
+			entry.push_back({ "label", Text(*label) });
+			entry.push_back({ "url", Text(*url) });
+		} else if (*type == "progress") {
+			if (!check.keys(item, { "type", "label", "value" })) {
+				return check.error();
+			}
+			const auto label = check.text(item, "label", kMaxLabel, false);
+			const auto value = check.failed()
+				? std::nullopt
+				: takeInt(item, "value", -1, 100, 0);
+			if (!value) {
+				return check.error();
+			}
+			entry.push_back({ "label", Text(label.value_or("")) });
+			entry.push_back({ "value", cbor::Value::FromInt(*value) });
 		} else if (*type == "toggle") {
-			if (!check.keys(item, { "type", "id", "label", "value" }) || !takeId()) {
+			if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled" })
+				|| !takeId(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);
-			const auto value = item.find("value");
-			if (!label || (value && !value->asBool())) {
-				return check.failed() ? check.error() : std::string("bad toggle value");
+			if (!label || !takeBool(item, "value", entry) || !takeCommon(item, entry)) {
+				return check.error();
 			}
 			entry.push_back({ "label", Text(*label) });
-			entry.push_back({ "value", cbor::Value::FromBool(value && *value->asBool()) });
 		} else if (*type == "button") {
-			if (!check.keys(item, { "type", "id", "label" }) || !takeId()) {
+			if (!check.keys(item, { "type", "id", "label", "hint", "disabled", "style" })
+				|| !takeId(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);
-			if (!label) {
+			const auto style = label ? check.text(item, "style", 16, false) : std::nullopt;
+			if (!label || !takeCommon(item, entry)) {
 				return check.error();
+			} else if (style && *style != "default" && *style != "primary" && *style != "danger") {
+				return std::string("style must be default, primary or danger");
 			}
 			entry.push_back({ "label", Text(*label) });
+			entry.push_back({ "style", Text(style.value_or("default")) });
 		} else if (*type == "input") {
-			if (!check.keys(item, { "type", "id", "label", "value", "placeholder" }) || !takeId()) {
+			if (!check.keys(item, {
+					"type", "id", "label", "value", "placeholder",
+					"multiline", "password", "max", "hint", "disabled" })
+				|| !takeId(item, entry)) {
 				return check.error();
 			}
-			const auto label = check.text(item, "label", kMaxLabel, true);
-			const auto value = label ? check.text(item, "value", kMaxValue, false) : std::nullopt;
-			const auto placeholder = check.failed() ? std::nullopt : check.text(item, "placeholder", kMaxLabel, false);
-			if (check.failed()) {
+			const auto max = takeInt(item, "max", 1, int64_t(kMaxLongValue), int64_t(kMaxValue));
+			const auto label = max ? check.text(item, "label", kMaxLabel, true) : std::nullopt;
+			const auto multiline = item.find("multiline");
+			const auto lines = multiline && multiline->asBool().value_or(false);
+			const auto value = label
+				? check.text(item, "value", size_t(*max), false, lines)
+				: std::nullopt;
+			const auto placeholder = check.failed()
+				? std::nullopt
+				: check.text(item, "placeholder", kMaxLabel, false);
+			if (check.failed()
+				|| !takeBool(item, "multiline", entry)
+				|| !takeBool(item, "password", entry)
+				|| !takeCommon(item, entry)) {
 				return check.error();
 			}
 			entry.push_back({ "label", Text(*label) });
 			entry.push_back({ "value", Text(value.value_or("")) });
 			entry.push_back({ "placeholder", Text(placeholder.value_or("")) });
+			entry.push_back({ "max", cbor::Value::FromInt(*max) });
+		} else if (*type == "slider") {
+			if (!check.keys(item, {
+					"type", "id", "label", "min", "max", "step", "value", "hint", "disabled" })
+				|| !takeId(item, entry)) {
+				return check.error();
+			}
+			const auto label = check.text(item, "label", kMaxLabel, true);
+			const auto min = label ? takeInt(item, "min", -kMaxSliderValue, kMaxSliderValue, 0) : std::nullopt;
+			const auto max = min ? takeInt(item, "max", -kMaxSliderValue, kMaxSliderValue, 100) : std::nullopt;
+			const auto step = max ? takeInt(item, "step", 1, kMaxSliderValue, 1) : std::nullopt;
+			if (!step) {
+				return check.error();
+			} else if (*max <= *min || (*max - *min) / *step > kMaxSliderSteps) {
+				return std::string("a slider needs min below max and at most 1000 steps");
+			}
+			const auto value = takeInt(item, "value", *min, *max, *min);
+			if (!value || !takeCommon(item, entry)) {
+				return check.error();
+			}
+			entry.push_back({ "label", Text(*label) });
+			entry.push_back({ "min", cbor::Value::FromInt(*min) });
+			entry.push_back({ "max", cbor::Value::FromInt(*max) });
+			entry.push_back({ "step", cbor::Value::FromInt(*step) });
+			entry.push_back({ "value", cbor::Value::FromInt(*min + (*value - *min) / *step * *step) });
+		} else if (*type == "chat") {
+			if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled" })
+				|| !takeId(item, entry)) {
+				return check.error();
+			}
+			const auto label = check.text(item, "label", kMaxLabel, true);
+			const auto value = label
+				? takeInt(item, "value", 0, std::numeric_limits<int64_t>::max(), 0)
+				: std::nullopt;
+			if (!value || !takeCommon(item, entry)) {
+				return check.error();
+			}
+			entry.push_back({ "label", Text(*label) });
+			entry.push_back({ "value", cbor::Value::FromInt(*value) });
 		} else if (*type == "select") {
-			if (!check.keys(item, { "type", "id", "label", "value", "options" }) || !takeId()) {
+			if (!check.keys(item, { "type", "id", "label", "value", "options", "hint", "disabled" })
+				|| !takeId(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);
@@ -236,7 +356,7 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				}));
 			}
 			const auto selected = check.text(item, "value", 64, false);
-			if (check.failed()) {
+			if (check.failed() || !takeCommon(item, entry)) {
 				return check.error();
 			}
 			if (selected && !values.contains(*selected)) {
@@ -253,10 +373,38 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 		}
 		out.push_back(cbor::Value::FromMap(std::move(entry)));
 	}
-	return cbor::Value::FromMap({
+	auto buttons = cbor::Array();
+	if (const auto list = page.find("buttons")) {
+		if (!list->asArray() || list->asArray()->size() > kMaxButtons) {
+			return std::string("buttons must be a list of at most 3 entries");
+		}
+		for (const auto &button : *list->asArray()) {
+			auto entry = cbor::Map();
+			if (!button.asMap()
+				|| !check.keys(button, { "id", "label", "style" })
+				|| !takeId(button, entry)) {
+				return check.failed() ? check.error() : std::string("bad button");
+			}
+			const auto label = check.text(button, "label", kMaxButtonLabel, true);
+			const auto style = label ? check.text(button, "style", 16, false) : std::nullopt;
+			if (check.failed()) {
+				return check.error();
+			} else if (style && *style != "default" && *style != "primary" && *style != "danger") {
+				return std::string("style must be default, primary or danger");
+			}
+			entry.push_back({ "label", Text(*label) });
+			entry.push_back({ "style", Text(style.value_or("default")) });
+			buttons.push_back(cbor::Value::FromMap(std::move(entry)));
+		}
+	}
+	auto result = cbor::Map{
 		{ "title", Text(*title) },
 		{ "items", cbor::Value::FromArray(std::move(out)) },
-	});
+	};
+	if (!buttons.empty()) {
+		result.push_back({ "buttons", cbor::Value::FromArray(std::move(buttons)) });
+	}
+	return cbor::Value::FromMap(std::move(result));
 }
 
 } // namespace fgpl::ui

@@ -19,7 +19,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(1);
+constexpr auto kVersion = int64_t(2);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -31,6 +31,7 @@ constexpr auto kQuota = "quota";
 constexpr auto kLimit = "limit";
 constexpr auto kUnavailable = "unavailable";
 constexpr auto kFailed = "failed";
+constexpr auto kCancelled = "cancelled";
 
 } // namespace error
 
@@ -140,6 +141,33 @@ struct Media {
 	bool deleted = false;
 };
 
+struct OutgoingMessage {
+	int64_t chat = 0;
+	std::string text;
+	bool markdown = false;
+	int64_t replyTo = 0;
+	int64_t topic = 0;
+	bool silent = false;
+	int64_t schedule = 0;
+};
+
+struct UserInfo {
+	int64_t id = 0;
+	std::string name;
+	std::string username;
+	bool bot = false;
+	bool premium = false;
+	bool contact = false;
+	bool self = false;
+	std::string status;
+	int64_t lastSeen = 0;
+};
+
+struct PickedFile {
+	std::string name;
+	cbor::Bytes bytes;
+};
+
 class DataProvider {
 public:
 	virtual ~DataProvider() = default;
@@ -181,6 +209,111 @@ public:
 		(void)thumbnail;
 		(void)maxBytes;
 		return std::nullopt;
+	}
+
+	// The calls below answer an error code, or an empty string on success.
+	[[nodiscard]] virtual std::string sendMessage(const OutgoingMessage &message) {
+		if (message.markdown || message.replyTo || message.topic
+			|| message.silent || message.schedule) {
+			return api::error::kUnavailable;
+		}
+		return send(message.chat, message.text) ? std::string() : api::error::kFailed;
+	}
+	[[nodiscard]] virtual std::string edit(
+			int64_t chat,
+			int64_t id,
+			const std::string &text,
+			bool markdown) {
+		(void)chat;
+		(void)id;
+		(void)text;
+		(void)markdown;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string remove(
+			int64_t chat,
+			const std::vector<int64_t> &ids,
+			bool everyone) {
+		(void)chat;
+		(void)ids;
+		(void)everyone;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string react(
+			int64_t chat,
+			int64_t id,
+			const std::string &emoji) {
+		(void)chat;
+		(void)id;
+		(void)emoji;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string forward(
+			int64_t from,
+			const std::vector<int64_t> &ids,
+			int64_t to,
+			bool silent) {
+		(void)from;
+		(void)ids;
+		(void)to;
+		(void)silent;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string markRead(int64_t chat) {
+		(void)chat;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string chatAction(
+			int64_t chat,
+			int64_t topic,
+			const std::string &kind) {
+		(void)chat;
+		(void)topic;
+		(void)kind;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::vector<Message> search(
+			int64_t chat,
+			const std::string &query,
+			size_t limit) {
+		(void)chat;
+		(void)query;
+		(void)limit;
+		return {};
+	}
+	[[nodiscard]] virtual std::optional<UserInfo> user(int64_t id) {
+		(void)id;
+		return std::nullopt;
+	}
+	[[nodiscard]] virtual std::string notify(
+			const std::string &title,
+			const std::string &text) {
+		(void)title;
+		(void)text;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string clipboardWrite(const std::string &text) {
+		(void)text;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::optional<std::string> clipboardRead() {
+		return std::nullopt;
+	}
+	[[nodiscard]] virtual Result<PickedFile, std::string> pickFile(
+			const std::string &title,
+			const std::string &filter,
+			size_t maxBytes) {
+		(void)title;
+		(void)filter;
+		(void)maxBytes;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual std::string saveFile(
+			const std::string &name,
+			const cbor::Bytes &bytes) {
+		(void)name;
+		(void)bytes;
+		return api::error::kUnavailable;
 	}
 };
 
@@ -293,6 +426,9 @@ struct BrokerServices {
 	std::function<void()> unload;
 	std::function<std::string(const std::string &to, cbor::Value data)> sendToPlugin;
 	std::function<std::vector<std::string>()> pluginPeers;
+	std::function<std::string(const std::string &id, int64_t delayMs, bool repeat)> setTimer;
+	std::function<bool(const std::string &id)> clearTimer;
+	std::function<std::vector<std::string>()> timers;
 
 	std::function<void(std::function<void()> work)> post;
 	std::function<void(int64_t delayMs, std::function<void()> work)> after;
@@ -326,6 +462,9 @@ public:
 
 	void beginOutgoing();
 	[[nodiscard]] std::optional<std::string> finishOutgoing();
+	[[nodiscard]] bool outgoingMarkdown() const {
+		return _outgoingMarkdown;
+	}
 	void releaseSockets();
 
 	[[nodiscard]] int pending() const {
@@ -363,6 +502,16 @@ private:
 	[[nodiscard]] cbor::Value dataAnswer(
 		const std::string &op,
 		const cbor::Value *args);
+	[[nodiscard]] cbor::Value actionAnswer(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] cbor::Value deviceAnswer(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] cbor::Value timerCall(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] bool recentUserAction();
 	[[nodiscard]] bool admit();
 	[[nodiscard]] std::optional<cbor::Value> throttle(const std::string &op);
 
@@ -379,12 +528,15 @@ private:
 	double _sendTokens = 5.;
 	int64_t _sendRefilled = 0;
 	int64_t _lastToast = 0;
+	int64_t _lastNotify = 0;
+	std::map<int64_t, int64_t> _lastChatAction;
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;
 	bool _dialogOpen = false;
 	int64_t _nextTicket = 1;
 	bool _outgoing = false;
 	std::optional<std::string> _outgoingText;
+	bool _outgoingMarkdown = false;
 
 };
 

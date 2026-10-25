@@ -94,9 +94,80 @@ public:
 		return std::nullopt;
 	}
 
+	std::string sendMessage(const OutgoingMessage &message) override {
+		outgoing.push_back(message);
+		sent.emplace_back(message.chat, message.text);
+		return {};
+	}
+	std::string edit(int64_t chat, int64_t id, const std::string &text, bool markdown) override {
+		actions.push_back("edit " + std::to_string(chat) + " " + std::to_string(id)
+			+ " " + text + (markdown ? " md" : ""));
+		return (id == 100) ? std::string() : std::string(api::error::kDenied);
+	}
+	std::string remove(int64_t chat, const std::vector<int64_t> &ids, bool everyone) override {
+		actions.push_back("delete " + std::to_string(chat) + " " + std::to_string(ids.size())
+			+ (everyone ? " everyone" : ""));
+		return {};
+	}
+	std::string react(int64_t chat, int64_t id, const std::string &emoji) override {
+		actions.push_back("react " + std::to_string(chat) + " " + std::to_string(id) + " " + emoji);
+		return {};
+	}
+	std::string forward(int64_t from, const std::vector<int64_t> &ids, int64_t to, bool) override {
+		actions.push_back("forward " + std::to_string(from) + " " + std::to_string(ids.size())
+			+ " " + std::to_string(to));
+		return {};
+	}
+	std::string markRead(int64_t chat) override {
+		actions.push_back("read " + std::to_string(chat));
+		return {};
+	}
+	std::string chatAction(int64_t chat, int64_t, const std::string &kind) override {
+		actions.push_back("action " + std::to_string(chat) + " " + kind);
+		return {};
+	}
+	std::vector<Message> search(int64_t chat, const std::string &query, size_t limit) override {
+		auto result = history(chat, limit, 0, 0);
+		std::erase_if(result, [&](const Message &message) {
+			return message.text.find(query) == std::string::npos;
+		});
+		return result;
+	}
+	std::optional<UserInfo> user(int64_t id) override {
+		if (id != 7) {
+			return std::nullopt;
+		}
+		return UserInfo{ 7, "Bob", "bob", false, true, true, false, "online", 0 };
+	}
+	std::string notify(const std::string &title, const std::string &text) override {
+		actions.push_back("notify " + title + " " + text);
+		return {};
+	}
+	std::string clipboardWrite(const std::string &text) override {
+		clipboard = text;
+		return {};
+	}
+	std::optional<std::string> clipboardRead() override {
+		return clipboard;
+	}
+	Result<PickedFile, std::string> pickFile(const std::string &, const std::string &, size_t) override {
+		if (cancelPick) {
+			return std::string(api::error::kCancelled);
+		}
+		return PickedFile{ "a.txt", cbor::Bytes{ 'h', 'i' } };
+	}
+	std::string saveFile(const std::string &name, const cbor::Bytes &bytes) override {
+		actions.push_back("save " + name + " " + std::to_string(bytes.size()));
+		return {};
+	}
+
 	std::map<int64_t, std::string> drafts;
 	std::vector<std::pair<int64_t, std::string>> sent;
+	std::vector<OutgoingMessage> outgoing;
 	std::vector<std::string> toasts;
+	std::vector<std::string> actions;
+	std::string clipboard;
+	bool cancelPick = false;
 
 };
 

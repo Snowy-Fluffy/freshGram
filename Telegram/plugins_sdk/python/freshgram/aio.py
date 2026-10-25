@@ -17,17 +17,22 @@ from . import _aio
 from . import (
     _Account,
     _Chats,
+    _Clipboard,
     _Composer,
     _Contacts,
+    _Files,
     _Folders,
     _Media,
     _Messages,
     _Net,
+    _Notify,
     _Plugins,
     _Settings,
     _Stars,
     _Storage,
+    _Timers,
     _Ui,
+    _Users,
     _async_call,
 )
 
@@ -48,6 +53,11 @@ contacts = _Contacts(_async_call)
 folders = _Folders(_async_call)
 settings = _Settings(_async_call)
 media = _Media(_async_call)
+users = _Users(_async_call)
+notify = _Notify(_async_call)
+clipboard = _Clipboard(_async_call)
+files = _Files(_async_call)
+timers = _Timers(_async_call)
 
 
 def sleep(seconds):

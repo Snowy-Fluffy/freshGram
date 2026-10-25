@@ -69,7 +69,7 @@ struct Manifest {
 	VersionRange appRange = *VersionRange::Parse("*");
 	std::optional<Version> testedWith;
 	int apiMin = 1;
-	int apiMax = 1;
+	int apiMax = 1000;
 	std::vector<std::string> needs;
 	bool premiumOnly = false;
 
@@ -82,7 +82,7 @@ struct Manifest {
 	int eventTimeoutMs = 500;
 	int storageMb = 10;
 
-	std::set<std::string> activation = { "event", "command", "menu", "settings", "message" };
+	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer" };
 	bool background = false;
 
 	std::vector<PermissionRequest> permissions;
@@ -106,7 +106,7 @@ struct Manifest {
 
 struct HostEnvironment {
 	Version app;
-	int apiLevel = 1;
+	int apiLevel = 2;
 	std::set<std::string> features = HostFeatures();
 	bool premium = false;
 };

@@ -46,6 +46,12 @@
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/input_field.h"
+#include "ui/widgets/fields/password_input.h"
+#include "ui/widgets/continuous_sliders.h"
+#include "ui/basic_click_handlers.h"
+#include "window/window_peer_menu.h"
+#include "data/data_thread.h"
+#include "styles/style_chat_helpers.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/wrap/slide_wrap.h"
@@ -59,6 +65,7 @@
 
 #include <QtCore/QDateTime>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QUrl>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
@@ -251,13 +258,73 @@ struct Page {
 	}
 };
 
+[[nodiscard]] bool FlagOf(const cbor::Value &item, const char *name) {
+	const auto field = item.find(name);
+	return field && field->asBool().value_or(false);
+}
+
+[[nodiscard]] int64_t IntOf(const cbor::Value &item, const char *name) {
+	const auto field = item.find(name);
+	return (field && field->asInt()) ? *field->asInt() : 0;
+}
+
 [[nodiscard]] QString StructureOf(const cbor::Value &page) {
 	const auto items = page.find("items");
 	auto result = QStringList();
 	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
-		result.push_back(TextOf(item, "type") + '/' + TextOf(item, "id"));
+		result.push_back(TextOf(item, "type")
+			+ '/' + TextOf(item, "id")
+			+ (FlagOf(item, "multiline") ? u"/m"_q : QString())
+			+ (FlagOf(item, "password") ? u"/p"_q : QString())
+			+ (item.find("hint") ? u"/h"_q : QString()));
+	}
+	const auto buttons = page.find("buttons");
+	for (const auto &button : (buttons && buttons->asArray()) ? *buttons->asArray() : cbor::Array()) {
+		result.push_back(u"buttons/"_q + TextOf(button, "id") + '/' + TextOf(button, "label")
+			+ '/' + TextOf(button, "style"));
 	}
 	return result.join('\n');
+}
+
+[[nodiscard]] QString ChatName(base::weak_ptr<Main::Session> weak, int64_t id) {
+	const auto session = weak.get();
+	const auto peer = (session && id)
+		? session->data().peerLoaded(PeerId(uint64(id)))
+		: nullptr;
+	return peer
+		? peer->name()
+		: id
+		? (u"#"_q + QString::number(id))
+		: tr::fresh_PluginChatNone(tr::now);
+}
+
+void AddProgress(
+		not_null<Ui::VerticalLayout*> content,
+		rpl::producer<int> value) {
+	const auto bar = content->add(
+		object_ptr<Ui::RpWidget>(content),
+		st::boxRowPadding);
+	bar->resize(bar->width(), st::lineWidth * 4);
+	const auto current = bar->lifetime().make_state<rpl::variable<int>>(std::move(value));
+	current->changes() | rpl::on_next([=] {
+		bar->update();
+	}, bar->lifetime());
+	bar->paintOn([=](QPainter &p) {
+		auto hq = PainterHighQualityEnabler(p);
+		const auto radius = bar->height() / 2.;
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowBgOver);
+		p.drawRoundedRect(bar->rect(), radius, radius);
+		const auto percent = current->current();
+		if (percent > 0) {
+			p.setBrush(st::windowBgActive);
+			p.drawRoundedRect(
+				QRect(0, 0, bar->width() * std::min(percent, 100) / 100, bar->height()),
+				radius,
+				radius);
+		}
+	});
+	Ui::AddSkip(content);
 }
 
 [[nodiscard]] std::shared_ptr<Page> BuildSettingsContent(
@@ -273,93 +340,269 @@ struct Page {
 	const auto change = dialog ? "dialog.change" : "settings.change";
 	const auto click = dialog ? "dialog.click" : "settings.click";
 	const auto items = page.find("items");
+	const auto addHint = [&](const cbor::Value &item) -> Fn<void(const cbor::Value &)> {
+		if (!item.find("hint")) {
+			return nullptr;
+		}
+		const auto hint = content->add(
+			object_ptr<Ui::FlatLabel>(content, TextOf(item, "hint"), st::boxDividerLabel),
+			st::boxRowPadding);
+		Ui::AddSkip(content);
+		return crl::guard(hint, [=](const cbor::Value &now) {
+			hint->setText(TextOf(now, "hint"));
+		});
+	};
+	const auto withHint = [](
+			Fn<void(const cbor::Value &)> main,
+			Fn<void(const cbor::Value &)> hint) -> Fn<void(const cbor::Value &)> {
+		if (!hint) {
+			return main;
+		}
+		return [=](const cbor::Value &now) {
+			if (main) {
+				main(now);
+			}
+			hint(now);
+		};
+	};
+	const auto addButton = [&](
+			rpl::producer<QString> text,
+			const QString &style) {
+		return Settings::AddButtonWithIcon(
+			content,
+			std::move(text),
+			(style == u"danger"_q)
+				? st::settingsAttentionButton
+				: (style == u"primary"_q)
+				? st::settingsButtonLightNoIcon
+				: st::settingsButtonNoIcon);
+	};
 	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
 		const auto type = TextOf(item, "type");
 		const auto itemId = TextOf(item, "id").toStdString();
 		const auto label = content->lifetime().make_state<rpl::variable<QString>>(
 			TextOf(item, "label"));
+		const auto send = [=](const char *kind, std::optional<cbor::Value> value) {
+			if (const auto strong = weak.get()) {
+				SendSetting(strong, plugin, kind, itemId, std::move(value));
+			}
+		};
 		auto update = Fn<void(const cbor::Value &)>();
 		if (type == u"text"_q) {
 			const auto text = content->add(
 				object_ptr<Ui::FlatLabel>(content, TextOf(item, "text"), st::boxLabel),
 				st::boxRowPadding);
 			Ui::AddSkip(content);
-			update = [=](const cbor::Value &now) {
+			update = crl::guard(text, [=](const cbor::Value &now) {
 				text->setText(TextOf(now, "text"));
+			});
+		} else if (type == u"header"_q) {
+			*label = TextOf(item, "text");
+			Ui::AddSubsectionTitle(content, label->value());
+			update = [=](const cbor::Value &now) {
+				*label = TextOf(now, "text");
 			};
 		} else if (type == u"divider"_q) {
 			Ui::AddDivider(content);
+		} else if (type == u"link"_q) {
+			const auto url = content->lifetime().make_state<QString>(TextOf(item, "url"));
+			const auto host = content->lifetime().make_state<rpl::variable<QString>>(
+				QUrl(*url).host());
+			const auto button = Settings::AddButtonWithLabel(
+				content,
+				label->value(),
+				host->value(),
+				st::settingsButtonNoIcon);
+			button->addClickHandler([=] {
+				UrlClickHandler::Open(*url);
+			});
+			update = crl::guard(button, [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+				*url = TextOf(now, "url");
+				*host = QUrl(*url).host();
+			});
+		} else if (type == u"progress"_q) {
+			if (!label->current().isEmpty()) {
+				Ui::AddSubsectionTitle(content, label->value());
+			}
+			const auto percent = content->lifetime().make_state<rpl::variable<int>>(
+				int(IntOf(item, "value")));
+			AddProgress(content, percent->value());
+			update = [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+				*percent = int(IntOf(now, "value"));
+			};
 		} else if (type == u"toggle"_q) {
 			const auto button = Settings::AddButtonWithIcon(
 				content,
 				label->value(),
 				st::settingsButtonNoIcon);
 			const auto on = button->lifetime().make_state<rpl::variable<bool>>(
-				item.find("value") && item.find("value")->asBool().value_or(false));
+				FlagOf(item, "value"));
 			button->toggleOn(on->value(), true);
+			button->setDisabled(FlagOf(item, "disabled"));
 			button->addClickHandler([=] {
 				*on = !on->current();
-				if (const auto strong = weak.get()) {
-					SendSetting(strong, plugin, change, itemId, Flag(on->current()));
-				}
+				send(change, Flag(on->current()));
 			});
 			update = crl::guard(button, [=](const cbor::Value &now) {
 				*label = TextOf(now, "label");
-				*on = now.find("value") && now.find("value")->asBool().value_or(false);
+				*on = FlagOf(now, "value");
+				button->setDisabled(FlagOf(now, "disabled"));
 			});
 		} else if (type == u"button"_q) {
-			const auto button = Settings::AddButtonWithIcon(
+			const auto button = addButton(label->value(), TextOf(item, "style"));
+			button->setDisabled(FlagOf(item, "disabled"));
+			button->addClickHandler([=] {
+				send(click, std::nullopt);
+			});
+			update = crl::guard(button, [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+				button->setDisabled(FlagOf(now, "disabled"));
+			});
+		} else if (type == u"chat"_q) {
+			const auto chosen = content->lifetime().make_state<int64_t>(IntOf(item, "value"));
+			const auto name = content->lifetime().make_state<rpl::variable<QString>>(
+				ChatName(weak, *chosen));
+			const auto button = Settings::AddButtonWithLabel(
 				content,
 				label->value(),
+				name->value(),
 				st::settingsButtonNoIcon);
+			button->setDisabled(FlagOf(item, "disabled"));
 			button->addClickHandler([=] {
-				if (const auto strong = weak.get()) {
-					SendSetting(strong, plugin, click, itemId, std::nullopt);
-				}
+				Window::ShowChooseRecipientBox(
+					controller,
+					crl::guard(button, [=](not_null<Data::Thread*> thread) {
+						const auto peer = thread->peer();
+						if (FreshSecret::IsSecretPeerId(peer->id)) {
+							return false;
+						}
+						*chosen = int64_t(peer->id.value);
+						*name = peer->name();
+						send(change, Number(*chosen));
+						return true;
+					}),
+					label->value());
 			});
-			update = [=](const cbor::Value &now) {
+			update = crl::guard(button, [=](const cbor::Value &now) {
 				*label = TextOf(now, "label");
+				*chosen = IntOf(now, "value");
+				*name = ChatName(weak, *chosen);
+				button->setDisabled(FlagOf(now, "disabled"));
+			});
+		} else if (type == u"slider"_q) {
+			const auto min = IntOf(item, "min");
+			const auto step = std::max<int64_t>(IntOf(item, "step"), 1);
+			const auto count = int((IntOf(item, "max") - min) / step) + 1;
+			Ui::AddSubsectionTitle(content, label->value());
+			auto made = Settings::MakeSliderWithLabel(
+				content,
+				st::autoDownloadLimitSlider,
+				st::settingsScaleLabel,
+				st::normalFont->spacew * 2,
+				st::settingsScaleLabel.style.font->width(QString::number(IntOf(item, "max"))),
+				true);
+			const auto slider = made.slider;
+			const auto value = made.label;
+			content->add(std::move(made.widget), st::recentStickersLimitPadding);
+			const auto show = [=](int64_t number) {
+				value->setText(QString::number(number));
 			};
-		} else if (type == u"input"_q) {
-			const auto field = content->add(
-				object_ptr<Ui::InputField>(
-					content,
-					st::defaultInputField,
-					label->value(),
-					TextOf(item, "value")),
-				st::boxRowPadding);
-			const auto pending = field->lifetime().make_state<bool>(false);
-			const auto sendNow = crl::guard(field, [=] {
-				if (!*pending) {
-					return;
+			show(IntOf(item, "value"));
+			slider->setPseudoDiscrete(
+				count,
+				[=](int index) { return int(min + index * step); },
+				int(IntOf(item, "value")),
+				show,
+				[=](int number) {
+					show(number);
+					send(change, Number(number));
+				});
+			slider->setDisabled(FlagOf(item, "disabled"));
+			update = crl::guard(slider, [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+				if (!slider->isChanging()) {
+					const auto number = IntOf(now, "value");
+					slider->setValue(count > 1 ? double(number - min) / (step * (count - 1)) : 0.);
+					show(number);
 				}
-				*pending = false;
-				if (const auto strong = weak.get()) {
-					SendSetting(
-						strong,
-						plugin,
-						change,
-						itemId,
-						Text(field->getLastText()));
+				slider->setDisabled(FlagOf(now, "disabled"));
+			});
+		} else if (type == u"input"_q) {
+			const auto max = int(std::max<int64_t>(IntOf(item, "max"), 1));
+			auto getText = Fn<QString()>();
+			auto setText = Fn<void(const QString &)>();
+			auto focused = Fn<bool()>();
+			auto setEnabled = Fn<void(bool)>();
+			const auto pending = content->lifetime().make_state<bool>(false);
+			const auto sendNow = crl::guard(content, [=] {
+				if (*pending) {
+					*pending = false;
+					send(change, Text(getText()));
 				}
 			});
-			const auto timer = field->lifetime().make_state<base::Timer>(sendNow);
-			field->changes() | rpl::on_next([=] {
+			const auto timer = content->lifetime().make_state<base::Timer>(sendNow);
+			const auto edited = [=] {
 				*pending = true;
 				timer->callOnce(600);
-			}, field->lifetime());
-			field->focusedChanges(
-			) | rpl::filter(!rpl::mappers::_1) | rpl::on_next([=] {
-				sendNow();
-			}, field->lifetime());
+			};
+			if (FlagOf(item, "password")) {
+				const auto wrap = content->add(
+					object_ptr<Ui::RpWidget>(content),
+					st::boxRowPadding);
+				const auto field = Ui::CreateChild<Ui::PasswordInput>(
+					wrap,
+					st::defaultInputField,
+					label->value(),
+					TextOf(item, "value"));
+				field->heightValue() | rpl::on_next([=](int height) {
+					wrap->resize(wrap->width(), height);
+				}, field->lifetime());
+				wrap->widthValue() | rpl::on_next([=](int width) {
+					field->resizeToWidth(width);
+					field->moveToLeft(0, 0);
+				}, field->lifetime());
+				field->setMaxLength(max);
+				QObject::connect(field, &Ui::MaskedInputField::changed, edited);
+				QObject::connect(field, &Ui::MaskedInputField::blurred, sendNow);
+				getText = [=] { return field->getLastText(); };
+				setText = [=](const QString &text) { field->setText(text); };
+				focused = [=] { return field->hasFocus(); };
+				setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
+			} else {
+				const auto multiline = FlagOf(item, "multiline");
+				const auto field = content->add(
+					object_ptr<Ui::InputField>(
+						content,
+						multiline ? st::newGroupDescription : st::defaultInputField,
+						multiline
+							? Ui::InputField::Mode::MultiLine
+							: Ui::InputField::Mode::SingleLine,
+						label->value(),
+						TextOf(item, "value")),
+					st::boxRowPadding);
+				field->setMaxLength(max);
+				field->changes() | rpl::on_next(edited, field->lifetime());
+				field->focusedChanges(
+				) | rpl::filter(!rpl::mappers::_1) | rpl::on_next([=] {
+					sendNow();
+				}, field->lifetime());
+				getText = [=] { return field->getLastText(); };
+				setText = [=](const QString &text) { field->setText(text); };
+				focused = [=] { return field->hasFocus(); };
+				setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
+			}
+			setEnabled(!FlagOf(item, "disabled"));
 			raw->flush.push_back(sendNow);
 			Ui::AddSkip(content);
-			update = crl::guard(field, [=](const cbor::Value &now) {
+			update = crl::guard(content, [=](const cbor::Value &now) {
 				*label = TextOf(now, "label");
 				const auto value = TextOf(now, "value");
-				if (!field->hasFocus() && !*pending && field->getLastText() != value) {
-					field->setText(value);
+				if (!focused() && !*pending && getText() != value) {
+					setText(value);
 				}
+				setEnabled(!FlagOf(now, "disabled"));
 			});
 		} else if (type == u"select"_q) {
 			struct Choice {
@@ -400,6 +643,7 @@ struct Page {
 				label->value(),
 				current->value(),
 				st::settingsButtonNoIcon);
+			button->setDisabled(FlagOf(item, "disabled"));
 			button->addClickHandler([=] {
 				controller->show(Box(SingleChoiceBox, SingleChoiceBoxArgs{
 					.title = label->value(),
@@ -411,23 +655,29 @@ struct Page {
 						}
 						choice->selected = index;
 						*current = choice->labels[index];
-						if (const auto strong = weak.get()) {
-							SendSetting(
-								strong,
-								plugin,
-								change,
-								itemId,
-								cbor::Value::FromText(choice->values[index]));
-						}
+						send(change, cbor::Value::FromText(choice->values[index]));
 					}),
 				}));
 			});
 			update = crl::guard(button, [=](const cbor::Value &now) {
 				*label = TextOf(now, "label");
 				read(now);
+				button->setDisabled(FlagOf(now, "disabled"));
 			});
 		}
-		result->update.push_back(std::move(update));
+		result->update.push_back(withHint(std::move(update), addHint(item)));
+	}
+	const auto buttons = page.find("buttons");
+	if (!dialog && buttons && buttons->asArray() && !buttons->asArray()->empty()) {
+		Ui::AddDivider(content);
+		for (const auto &button : *buttons->asArray()) {
+			const auto buttonId = TextOf(button, "id").toStdString();
+			addButton(rpl::single(TextOf(button, "label")), TextOf(button, "style"))->addClickHandler([=] {
+				if (const auto strong = weak.get()) {
+					SendSetting(strong, plugin, click, buttonId, std::nullopt);
+				}
+			});
+		}
 	}
 	return result;
 }
@@ -992,6 +1242,7 @@ void FillDialogBox(
 		style::margins());
 	const auto closedByPlugin = box->lifetime().make_state<bool>(false);
 	const auto shown = box->lifetime().make_state<std::shared_ptr<Page>>();
+	const auto buttonsShown = box->lifetime().make_state<std::optional<QString>>();
 	const auto rebuild = [=] {
 		const auto &pages = GetDialogs().pages;
 		const auto i = pages.find(key);
@@ -1005,6 +1256,28 @@ void FillDialogBox(
 			lt_plugin,
 			PluginName(plugin)) + suffix));
 		ShowPage(content, controller, weak, plugin, &i->second, true, *shown);
+		const auto signature = StructureOf(cbor::Value::FromMap({
+			{ "buttons", i->second.find("buttons") ? *i->second.find("buttons") : cbor::Value() },
+		}));
+		if (*buttonsShown == signature) {
+			return;
+		}
+		*buttonsShown = signature;
+		box->clearButtons();
+		const auto buttons = i->second.find("buttons");
+		for (const auto &button : (buttons && buttons->asArray()) ? *buttons->asArray() : cbor::Array()) {
+			const auto buttonId = TextOf(button, "id").toStdString();
+			const auto style = TextOf(button, "style");
+			box->addButton(
+				rpl::single(TextOf(button, "label")),
+				[=] {
+					if (const auto strong = weak.get()) {
+						SendSetting(strong, plugin, "dialog.click", buttonId, std::nullopt);
+					}
+				},
+				(style == u"danger"_q) ? st::attentionBoxButton : st::defaultBoxButton);
+		}
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	};
 	rebuild();
 	const auto closeByPlugin = [=] {
@@ -1049,7 +1322,9 @@ void FillDialogBox(
 			}
 		}
 	}, box->lifetime());
-	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+	if (!*buttonsShown) {
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+	}
 }
 
 [[nodiscard]] QString Age(crl::time opened) {
@@ -1156,6 +1431,7 @@ namespace {
 	case fgpl::Risk::DeletedMessages: return tr::fresh_RiskDeleted(tr::now);
 	case fgpl::Risk::SendsInYourName: return tr::fresh_RiskSends(tr::now);
 	case fgpl::Risk::ChangesOutgoing: return tr::fresh_RiskOutgoing(tr::now);
+	case fgpl::Risk::ChangesMessages: return tr::fresh_RiskChangesMessages(tr::now);
 	case fgpl::Risk::Background: return tr::fresh_RiskBackground(tr::now);
 	case fgpl::Risk::Clipboard: return tr::fresh_RiskClipboard(tr::now);
 	case fgpl::Risk::Files: return tr::fresh_RiskFiles(tr::now);
@@ -1195,6 +1471,11 @@ namespace {
 		{ "fs.user_selected", &st::menuIconFile },
 		{ "clipboard", &st::menuIconCopy },
 		{ "background", &st::menuIconPowerUsage },
+		{ "messages.edit", &st::menuIconEdit },
+		{ "messages.delete", &st::menuIconDelete },
+		{ "messages.react", &st::menuIconReactions },
+		{ "users.info", &st::menuIconProfile },
+		{ "chats.active", &st::menuIconShowInChat },
 	};
 	const auto i = icons.find(id);
 	return (i != icons.end()) ? i->second : &st::menuIconLock;
@@ -1205,6 +1486,7 @@ namespace {
 		"messages.read", "messages.read_deleted", "messages.history",
 		"messages.send", "messages.transform_outgoing", "chats.list",
 		"chat.info", "media.read", "composer.draft", "folders.list",
+		"messages.edit", "messages.delete", "messages.react", "chats.active",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -1601,6 +1883,11 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "fs.user_selected", tr::fresh_PermFiles },
 		{ "clipboard", tr::fresh_PermClipboard },
 		{ "background", tr::fresh_PermBackground },
+		{ "messages.edit", tr::fresh_PermMessagesEdit },
+		{ "messages.delete", tr::fresh_PermMessagesDelete },
+		{ "messages.react", tr::fresh_PermMessagesReact },
+		{ "users.info", tr::fresh_PermUsersInfo },
+		{ "chats.active", tr::fresh_PermChatsActive },
 	};
 	const auto i = titles.find(id);
 	return (i != titles.end()) ? i->second(tr::now) : Utf8(id);

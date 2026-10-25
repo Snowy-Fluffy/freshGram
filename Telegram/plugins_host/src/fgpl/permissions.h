@@ -21,6 +21,7 @@ enum class Risk : uint8_t {
 	DeletedMessages,
 	SendsInYourName,
 	ChangesOutgoing,
+	ChangesMessages,
 	Background,
 	Clipboard,
 	Files,

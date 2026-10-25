@@ -182,6 +182,13 @@
 "fresh_PluginPermissionsCount" = "{allowed} sur {total}";
 "fresh_PluginRemove" = "Supprimer le plugin";
 "fresh_PluginsAdd" = "Installer un plugin";
+"fresh_PermMessagesEdit" = "Modifier les messages que vous avez envoyés";
+"fresh_PermMessagesDelete" = "Supprimer les messages que vous avez envoyés";
+"fresh_PermMessagesReact" = "Réagir aux messages";
+"fresh_PermUsersInfo" = "Voir les profils et le statut en ligne des utilisateurs";
+"fresh_PermChatsActive" = "Savoir quelle discussion vous ouvrez";
+"fresh_RiskChangesMessages" = "Peut modifier ou supprimer les messages que vous avez envoyés";
+"fresh_PluginChatNone" = "Non choisi";
 "fresh_PluginSettingsLoading" = "Chargement des réglages…";
 "fresh_PluginCommandTaken" = "{command} est déjà utilisée par {plugin} ; tapez /commande@id.du.plugin pour appeler celui-ci.";
 "fresh_PluginVersionShort" = "Version {version}";
@@ -225,7 +232,7 @@
 "fresh_PermNetUdp" = "Ouvrir des connexions UDP";
 "fresh_PermStorage" = "Conserver ses propres données";
 "fresh_PermPluginsMessage" = "Échanger des messages avec d’autres plugins";
-"fresh_PermFiles" = "Lire les fichiers que vous choisissez";
+"fresh_PermFiles" = "Ouvrir et enregistrer les fichiers que vous choisissez";
 "fresh_PermClipboard" = "Utiliser le presse-papiers";
 "fresh_PermBackground" = "Fonctionner en arrière-plan";
 "fresh_RiskExfiltration" = "Peut lire vos données et les envoyer sur Internet";
@@ -236,7 +243,7 @@
 "fresh_RiskOutgoing" = "Peut modifier ce que vous envoyez";
 "fresh_RiskBackground" = "Continue de fonctionner en arrière-plan";
 "fresh_RiskClipboard" = "Peut utiliser le presse-papiers";
-"fresh_RiskFiles" = "Peut lire les fichiers que vous choisissez";
+"fresh_RiskFiles" = "Peut lire et enregistrer les fichiers que vous choisissez";
 "fresh_RiskPlugins" = "Peut échanger des données avec d’autres plugins qui l’acceptent";
 "fresh_PluginChats" = "Discussions";
 "fresh_PluginChatsAll" = "Toutes les discussions";

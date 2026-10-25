@@ -8968,6 +8968,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPermissionsCount" = "{allowed} of {total}";
 "fresh_PluginRemove" = "Remove plugin";
 "fresh_PluginsAdd" = "Install plugin";
+"fresh_PermMessagesEdit" = "Edit messages you sent";
+"fresh_PermMessagesDelete" = "Delete messages you sent";
+"fresh_PermMessagesReact" = "Put reactions on messages";
+"fresh_PermUsersInfo" = "See user profiles and online status";
+"fresh_PermChatsActive" = "Know which chat you open";
+"fresh_RiskChangesMessages" = "Can edit or delete messages you sent";
+"fresh_PluginChatNone" = "Not chosen";
 "fresh_PluginSettingsLoading" = "Loading the settings…";
 "fresh_PluginCommandTaken" = "{command} is also used by {plugin}; type /command@plugin.id to call this one.";
 "fresh_PluginVersionShort" = "Version {version}";
@@ -9011,7 +9018,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermNetUdp" = "Open UDP connections";
 "fresh_PermStorage" = "Keep its own data";
 "fresh_PermPluginsMessage" = "Exchange messages with other plugins";
-"fresh_PermFiles" = "Read files you choose";
+"fresh_PermFiles" = "Open and save files you choose";
 "fresh_PermClipboard" = "Use the clipboard";
 "fresh_PermBackground" = "Keep running in the background";
 "fresh_RiskExfiltration" = "Can read your data and send it to the internet";
@@ -9022,7 +9029,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_RiskOutgoing" = "Can change what you send";
 "fresh_RiskBackground" = "Keeps running in the background";
 "fresh_RiskClipboard" = "Can use the clipboard";
-"fresh_RiskFiles" = "Can read files you choose";
+"fresh_RiskFiles" = "Can read and save files you choose";
 "fresh_RiskPlugins" = "Can exchange data with other plugins that accept it";
 "fresh_PluginChats" = "Chats";
 "fresh_PluginChatsAll" = "All chats";

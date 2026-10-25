@@ -93,7 +93,7 @@ void TestValidManifest() {
 	CHECK(manifest.permissions.size() == 3);
 	CHECK(manifest.permissions[0].required);
 	CHECK(manifest.permissions[1].id == "net.https");
-	CHECK(manifest.apiMin == 1 && manifest.apiMax == 1);
+	CHECK(manifest.apiMin == 1 && manifest.apiMax == 1000);
 	CHECK(manifest.events.size() == 1);
 	CHECK(manifest.files.size() == 4);
 	CHECK(!manifest.signature.has_value());
@@ -324,7 +324,14 @@ void TestCompatibility() {
 
 	auto api = environment();
 	api.apiLevel = 2;
-	issues = CheckCompatibility(manifest, api);
+	CHECK(CheckCompatibility(manifest, api).empty());
+	auto capped = manifest;
+	capped.apiMax = 1;
+	issues = CheckCompatibility(capped, api);
+	CHECK(issues.size() == 1 && issues[0].problem == Problem::ApiUnsupported);
+	auto newer = manifest;
+	newer.apiMin = 3;
+	issues = CheckCompatibility(newer, api);
 	CHECK(issues.size() == 1 && issues[0].problem == Problem::ApiUnsupported);
 
 	manifest.needs = { "ui.menu", "ui.canvas" };

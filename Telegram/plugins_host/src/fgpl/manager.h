@@ -151,6 +151,7 @@ struct PluginStats {
 struct OutgoingResult {
 	bool blocked = false;
 	std::string text;
+	bool markdown = false;
 	std::string plugin;
 	std::string reason;
 };
@@ -344,6 +345,7 @@ private:
 		bool finished = false;
 		bool ok = false;
 		std::optional<std::string> text;
+		bool markdown = false;
 	};
 
 	struct StartPlan {
@@ -418,6 +420,11 @@ private:
 		std::set<std::string> from;
 	};
 
+	struct Timer {
+		int64_t due = 0;
+		int64_t period = 0;
+	};
+
 	struct Mail {
 		std::string from;
 		std::string to;
@@ -472,6 +479,13 @@ private:
 		const std::string &from,
 		const std::string &account) const;
 	void deliverMail();
+	void fireTimers();
+	void clearTimers(const std::function<bool(const Key &key)> &matches);
+	[[nodiscard]] std::string setTimer(
+		const Key &key,
+		const std::string &id,
+		int64_t delayMs,
+		bool repeat);
 	void advanceOutgoing();
 	[[nodiscard]] bool advance(
 		OutgoingChain &chain,
@@ -501,6 +515,8 @@ private:
 	std::mutex _mailMutex;
 	std::deque<Mail> _mail;
 	std::map<Key, int> _streak;
+	std::mutex _timersMutex;
+	std::map<Key, std::map<std::string, Timer>> _timers;
 	std::set<std::string> _accounts;
 	bool _locked = false;
 	bool _hidden = false;

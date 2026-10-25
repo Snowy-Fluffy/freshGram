@@ -5,6 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
+#include "ayu/features/plugins/plugins_service.h"
 #include "ayu/secret/secret_bridge.h"
 #include "ayu/secret/secret_peer.h"
 #include "window/window_session_controller.h"
@@ -1595,6 +1596,7 @@ SessionController::SessionController(
 , _chatStyle(std::make_unique<Ui::ChatStyle>(session->colorIndicesValue())) {
 	init();
 	FreshSecret::WatchActiveChat(this);
+	FreshPlugins::WatchActiveChat(this);
 
 	_chatStyleTheme = _defaultChatTheme;
 	_chatStyle->apply(_defaultChatTheme.get());
