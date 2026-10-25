@@ -83,7 +83,7 @@ def gather(*awaitables):
 
 
 def wait_for(awaitable, timeout):
-    """Wait at most timeout seconds; raise TimeoutError after that.
+    """Wait at most timeout seconds (up to 60); raise TimeoutError after that.
 
     The call itself is not cancelled: its result is dropped.
     """
@@ -99,9 +99,10 @@ def wait_for(awaitable, timeout):
             result.set_result(item.result())
 
     def expired(item):
-        if not result.done():
+        if item.exception() is None and not result.done():
             result.set_exception(TimeoutError("the call did not finish in time"))
 
     future.add_done_callback(finished)
-    sleep(timeout).add_done_callback(expired)
+    if not result.done():
+        sleep(min(timeout, 60)).add_done_callback(expired)
     return result

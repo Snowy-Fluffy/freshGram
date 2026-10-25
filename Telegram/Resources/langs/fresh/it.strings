@@ -182,6 +182,8 @@
 "fresh_PluginPermissionsCount" = "{allowed} su {total}";
 "fresh_PluginRemove" = "Rimuovi plugin";
 "fresh_PluginsAdd" = "Installa plugin";
+"fresh_PluginSettingsLoading" = "Caricamento delle impostazioni…";
+"fresh_PluginCommandTaken" = "{command} è già usato da {plugin}; scrivi /comando@id.plugin per chiamare questo.";
 "fresh_PluginVersionShort" = "Versione {version}";
 "fresh_PluginBy" = "di {author}";
 "fresh_PluginNotSigned" = "Non firmato";

@@ -49,8 +49,22 @@ def info():
     return _request("meta.info")
 
 
+def _fit(text, limit=4000):
+    data = str(text).encode("utf-8")
+    if len(data) <= limit:
+        return str(text)
+    return data[-limit:].decode("utf-8", "ignore")
+
+
 def log(text):
-    _request("log", text=str(text))
+    _request("log", text=_fit(text))
+
+
+def _log_exception():
+    try:
+        log(_traceback.format_exc())
+    except Exception:
+        pass
 
 
 class _Namespace:
@@ -83,6 +97,7 @@ class Response:
     def __init__(self, data):
         self.status = data["status"]
         self.headers = data["headers"]
+        self.header_list = [tuple(pair) for pair in data.get("header_list", [])]
         self.body = data["body"]
 
     def text(self, encoding="utf-8"):
@@ -349,9 +364,28 @@ def on_plugin_message(sender=None):
 def on_setting(item_id=None):
     def register(function):
         def wrapper(event):
+            if event.get("type") == "settings.open":
+                return None
             if item_id is None or event.get("id") == item_id:
                 return function(event)
         _event_handlers.append(("settings.*", wrapper))
+        return function
+    return register
+
+
+def on_settings_open(function):
+    """Run when the user opens the plugin's settings; send the page here."""
+    _event_handlers.append(("settings.open", function))
+    return function
+
+
+def on_dialog(item_id=None):
+    """Run for clicks and changes in the plugin's dialog, and when it closes."""
+    def register(function):
+        def wrapper(event):
+            if item_id is None or event.get("id") == item_id:
+                return function(event)
+        _event_handlers.append(("dialog.*", wrapper))
         return function
     return register
 
@@ -367,19 +401,27 @@ def _start(result):
         _aio.spawn(result)
 
 
+def _call_each(functions, value):
+    status = 0
+    for function in functions:
+        try:
+            _start(function(value))
+        except Exception:
+            _log_exception()
+            status = -1
+    return status
+
+
 def _handle(kind, value):
     if kind == "init":
-        for function in _init_handlers:
-            _start(function(value))
-        return 0
+        return _call_each(_init_handlers, value)
     name = value.get("type", "") if isinstance(value, dict) else ""
     if name == "call.result":
         _aio.resolve(value)
         return 0
-    for pattern, function in _event_handlers:
-        if _matches(pattern, name):
-            _start(function(value))
-    return 0
+    return _call_each(
+        [function for pattern, function in _event_handlers if _matches(pattern, name)],
+        value)
 
 
 def run(handler=None):
@@ -389,19 +431,23 @@ def run(handler=None):
             message = _channel.receive()
         except EOFError:
             return
+        except ValueError:
+            _log_exception()
+            return
         kind = message.get("t")
         if kind not in ("init", "event"):
             continue
-        if handler is not None:
-            status = handler(kind, message.get("v")) or 0
-        else:
-            try:
-                status = _handle(kind, message.get("v")) or 0
-            except Exception:
-                try:
-                    log(_traceback.format_exc())
-                except Exception:
-                    pass
-                status = -1
-            _aio.run_ready()
+        value = message.get("v")
+        try:
+            if (isinstance(value, dict) and value.get("type") == "call.result"):
+                _aio.resolve(value)
+                status = 0
+            elif handler is not None:
+                status = handler(kind, value) or 0
+            else:
+                status = _handle(kind, value) or 0
+        except Exception:
+            _log_exception()
+            status = -1
+        _aio.run_ready()
         _channel.send({"t": "done", "status": int(status)})

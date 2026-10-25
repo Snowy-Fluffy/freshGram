@@ -74,10 +74,35 @@ private:
 
 };
 
+[[nodiscard]] bool ValidUtf8(const std::string &text) {
+	for (auto i = size_t(0); i < text.size();) {
+		const auto lead = uint8_t(text[i]);
+		const auto length = (lead < 0x80)
+			? 1
+			: ((lead & 0xE0) == 0xC0 && lead >= 0xC2)
+			? 2
+			: ((lead & 0xF0) == 0xE0)
+			? 3
+			: ((lead & 0xF8) == 0xF0 && lead <= 0xF4)
+			? 4
+			: 0;
+		if (!length || i + length > text.size()) {
+			return false;
+		}
+		for (auto k = 1; k != length; ++k) {
+			if ((uint8_t(text[i + k]) & 0xC0) != 0x80) {
+				return false;
+			}
+		}
+		i += length;
+	}
+	return true;
+}
+
 } // namespace
 
 bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines) {
-	if (text.size() > maxBytes) {
+	if (text.size() > maxBytes || !ValidUtf8(text)) {
 		return false;
 	}
 	for (auto i = size_t(0); i != text.size(); ++i) {
@@ -88,10 +113,12 @@ bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines) {
 			}
 		} else if (code == 0x7F) {
 			return false;
+		} else if (code == 0xD8 && i + 1 < text.size() && uint8_t(text[i + 1]) == 0x9C) {
+			return false;
 		} else if (code == 0xE2 && i + 2 < text.size()) {
 			const auto second = uint8_t(text[i + 1]);
 			const auto third = uint8_t(text[i + 2]);
-			if ((second == 0x80 && third >= 0xAA && third <= 0xAE)
+			if ((second == 0x80 && third >= 0xA8 && third <= 0xAE)
 				|| (second == 0x81 && third >= 0xA6 && third <= 0xA9)
 				|| (second == 0x80 && (third == 0x8E || third == 0x8F))) {
 				return false;
@@ -212,9 +239,12 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			if (check.failed()) {
 				return check.error();
 			}
-			const auto chosen = selected && values.contains(*selected)
+			if (selected && !values.contains(*selected)) {
+				return std::string("the value is not one of the options");
+			}
+			const auto chosen = selected
 				? *selected
-				: *values.begin();
+				: *list.front().find("value")->asText();
 			entry.push_back({ "label", Text(*label) });
 			entry.push_back({ "value", Text(chosen) });
 			entry.push_back({ "options", cbor::Value::FromArray(std::move(list)) });

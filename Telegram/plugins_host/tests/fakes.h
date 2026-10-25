@@ -34,12 +34,24 @@ public:
 		}
 		return std::nullopt;
 	}
-	std::vector<Message> history(int64_t chat, size_t limit, int64_t) override {
+	std::vector<Message> history(int64_t chat, size_t limit, int64_t, int64_t) override {
 		auto result = std::vector<Message>();
+		const auto message = [](int64_t id, int64_t chat, int64_t date, std::string text) {
+			auto result = Message();
+			result.id = id;
+			result.chat = chat;
+			result.from = 1;
+			result.date = date;
+			result.text = std::move(text);
+			return result;
+		};
+		auto removed = message(998, chat, 900, "removed");
+		removed.deleted = true;
+		result.push_back(std::move(removed));
 		for (auto i = size_t(0); i != limit; ++i) {
-			result.push_back({ int64_t(100 + i), chat, 1, 1000, "hello" });
+			result.push_back(message(int64_t(100 + i), chat, 1000, "hello"));
 		}
-		result.push_back({ 999, chat + 1, 1, 1000, "from another chat" });
+		result.push_back(message(999, chat + 1, 1000, "from another chat"));
 		return result;
 	}
 	Account account() override {

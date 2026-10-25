@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/field_autocomplete.h"
 
+#include "ayu/features/plugins/plugins_ui.h"
+
 #include "api/api_chat_participants.h"
 #include "api/api_common.h"
 #include "apiwrap.h"
@@ -243,6 +245,7 @@ struct FieldAutocomplete::BotCommandRow {
 	Ui::PeerUserpicView userpic;
 	Ui::Text::String descriptionText;
 	bool ephemeral = false;
+	QString plugin;
 };
 
 FieldAutocomplete::FieldAutocomplete(
@@ -802,6 +805,26 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 			}
 			if (!brows.empty()) {
 				brows.insert(begin(brows), { .user = self }); // Edit.
+			}
+		}
+		const auto peer = _user
+			? static_cast<PeerData*>(_user)
+			: _chat
+			? static_cast<PeerData*>(_chat)
+			: static_cast<PeerData*>(_channel);
+		if (peer && !hasUsername) {
+			const auto self = _session->user();
+			for (const auto &command : FreshPlugins::CommandsFor(_session, peer)) {
+				if (listAllSuggestions
+					|| command.name.startsWith(_filter, Qt::CaseInsensitive)) {
+					brows.push_back({
+						.user = self,
+						.command = command.name,
+						.description = command.description,
+						.userpic = self->activeUserpicView(),
+						.plugin = command.plugin,
+					});
+				}
 			}
 		}
 	}
@@ -1399,7 +1422,7 @@ void FieldAutocomplete::Inner::paintRows(Painter &p, QRect clip) {
 			}
 
 			auto toHighlight = row.command;
-			if (withUsername) {
+			if (withUsername && row.plugin.isEmpty()) {
 				toHighlight += '@' + PrimaryUsername(user);
 			}
 			user->loadUserpic();
@@ -1617,6 +1640,14 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 		if (index < _brows->size()) {
 			const auto user = _brows->at(index).user;
 			const auto &command = _brows->at(index).command;
+			if (!_brows->at(index).plugin.isEmpty()) {
+				_botCommandChosen.fire({
+					user,
+					u"/%1 "_q.arg(command),
+					FieldAutocompleteChooseMethod::ByTab,
+				});
+				return true;
+			}
 			const auto commandString = u"/%1%2"_q.arg(
 				command,
 				commandsWithUsername()

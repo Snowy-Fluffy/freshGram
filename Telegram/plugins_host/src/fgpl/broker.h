@@ -89,6 +89,7 @@ struct Chat {
 	int64_t unread = 0;
 	bool pinned = false;
 	bool secret = false;
+	bool archived = false;
 };
 
 struct Message {
@@ -97,6 +98,11 @@ struct Message {
 	int64_t from = 0;
 	int64_t date = 0;
 	std::string text;
+	int64_t topic = 0;
+	int64_t replyTo = 0;
+	bool out = false;
+	bool deleted = false;
+	std::string media;
 };
 
 struct Account {
@@ -131,6 +137,7 @@ struct Media {
 	std::string mime;
 	std::string name;
 	cbor::Bytes bytes;
+	bool deleted = false;
 };
 
 class DataProvider {
@@ -142,7 +149,12 @@ public:
 	[[nodiscard]] virtual std::vector<Message> history(
 		int64_t chat,
 		size_t limit,
-		int64_t before) = 0;
+		int64_t before,
+		int64_t topic) = 0;
+	// True once after a call that could not get an answer from the app in time.
+	[[nodiscard]] virtual bool takeTimedOut() {
+		return false;
+	}
 	[[nodiscard]] virtual Account account() = 0;
 	[[nodiscard]] virtual int64_t stars() = 0;
 	[[nodiscard]] virtual std::string draft(int64_t chat) = 0;
@@ -346,6 +358,9 @@ private:
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] cbor::Value dataCall(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] cbor::Value dataAnswer(
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] bool admit();

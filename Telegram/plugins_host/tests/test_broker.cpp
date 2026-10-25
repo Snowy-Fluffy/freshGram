@@ -583,6 +583,7 @@ void TestDataIsFilteredByTheBroker() {
 
 	const auto history = broker.call(Request("messages.history", { { "chat", Int(1) }, { "limit", Int(3) } }));
 	CHECK(IsOk(history) && Payload(history).asArray()->size() == 3);
+	CHECK(Payload(history).asArray()->front().find("id")->asInt() == 100);
 	CHECK(Code(broker.call(Request("messages.history", { { "chat", Int(api::kServiceChat) } }))) == "denied");
 	CHECK(Code(broker.call(Request("messages.history", { { "chat", Int(3) } }))) == "not_found");
 	CHECK(Payload(broker.call(Request("messages.history", { { "chat", Int(1) }, { "limit", Int(100000) } }))).asArray()->size() == 100);
@@ -640,7 +641,7 @@ void TestSettingsPage() {
 		Item({ { "type", Text("text") }, { "text", Text("Line one\nline two") } }),
 		Item({ { "type", Text("toggle") }, { "id", Text("loud") }, { "label", Text("Loud") }, { "value", cbor::Value::FromBool(true) } }),
 		Item({ { "type", Text("input") }, { "id", Text("name") }, { "label", Text("Name") } }),
-		Item({ { "type", Text("select") }, { "id", Text("mode") }, { "label", Text("Mode") }, { "value", Text("nope") },
+		Item({ { "type", Text("select") }, { "id", Text("mode") }, { "label", Text("Mode") },
 			{ "options", cbor::Value::FromArray({
 				Item({ { "value", Text("a") }, { "label", Text("A") } }),
 				Item({ { "value", Text("b") }, { "label", Text("B") } }),
@@ -658,6 +659,11 @@ void TestSettingsPage() {
 	const auto bad = [&](cbor::Value page) {
 		return Code(call(std::move(page))) == "invalid";
 	};
+	CHECK(bad(Page({ Item({ { "type", Text("select") }, { "id", Text("mode") }, { "label", Text("Mode") },
+		{ "value", Text("nope") },
+		{ "options", cbor::Value::FromArray({ Item({ { "value", Text("a") }, { "label", Text("A") } }) }) } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("text") }, { "text", Text("bad \xe2\x80\xa8 line") } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("text") }, { "text", Text("bad \xff byte") } }) })));
 	CHECK(bad(Page({ Item({ { "type", Text("webview") } }) })));
 	CHECK(bad(Page({ Item({ { "type", Text("button") }, { "id", Text("Go") }, { "label", Text("x") } }) })));
 	CHECK(bad(Page({

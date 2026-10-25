@@ -223,11 +223,33 @@ static void fg_writer_init(fg_writer *w, fg_u32 capacity) {
 	w->data = (fg_u8 *)fg_arena(capacity);
 	w->size = 0;
 	w->capacity = w->data ? capacity : 0;
-	w->failed = (w->data == 0);
+	w->failed = 0;
+}
+
+static int fg_grow(fg_writer *w, fg_u32 needed) {
+	fg_u32 capacity = w->capacity ? w->capacity : 64;
+	while (capacity < needed) {
+		if (capacity > FG_HEAP_BYTES / 2) {
+			return 0;
+		}
+		capacity *= 2;
+	}
+	fg_u8 *data = (fg_u8 *)fg_arena(capacity);
+	if (!data) {
+		return 0;
+	}
+	if (w->size) {
+		memcpy(data, w->data, w->size);
+	}
+	w->data = data;
+	w->capacity = capacity;
+	return 1;
 }
 
 static void fg_put(fg_writer *w, fg_u8 byte) {
-	if (w->size >= w->capacity) {
+	if (w->failed) {
+		return;
+	} else if (w->size >= w->capacity && !fg_grow(w, w->size + 1)) {
 		w->failed = 1;
 		return;
 	}
@@ -456,6 +478,66 @@ static int fg_tcp_connect(const char *host, fg_i64 port, int tls, fg_i64 *id) {
 
 static int fg_udp_connect(const char *host, fg_i64 port, fg_i64 *id) {
 	return fg_socket_connect("net.udp.connect", host, port, 0, id);
+}
+
+static int fg_send_text(fg_i64 chat, const char *text) {
+	fg_writer w;
+	fg_begin(&w, "messages.send", 2);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	return fg_send(&w, 0);
+}
+
+static int fg_toast(const char *text) {
+	fg_writer w;
+	fg_begin(&w, "ui.toast", 1);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	return fg_send(&w, 0);
+}
+
+static int fg_chat_info(fg_i64 chat, fg_value *result) {
+	fg_writer w;
+	fg_begin(&w, "chat.info", 1);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	return fg_send(&w, result);
+}
+
+static int fg_history(fg_i64 chat, fg_i64 limit, fg_i64 before, fg_value *result) {
+	fg_writer w;
+	fg_begin(&w, "messages.history", 3);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "limit");
+	fg_w_int(&w, limit);
+	fg_w_text(&w, "before");
+	fg_w_int(&w, before);
+	return fg_send(&w, result);
+}
+
+static int fg_fetch(const char *url, fg_i64 timeout, fg_value *result) {
+	fg_writer w;
+	fg_begin(&w, "net.fetch", 2);
+	fg_w_text(&w, "url");
+	fg_w_text(&w, url);
+	fg_w_text(&w, "timeout");
+	fg_w_int(&w, timeout);
+	return fg_send(&w, result);
+}
+
+static int fg_socket_recv(fg_i64 id, fg_i64 max, fg_i64 timeout, fg_value *result) {
+	fg_writer w;
+	fg_begin(&w, "net.socket.recv", 3);
+	fg_w_text(&w, "id");
+	fg_w_int(&w, id);
+	fg_w_text(&w, "max");
+	fg_w_int(&w, max);
+	fg_w_text(&w, "timeout");
+	fg_w_int(&w, timeout);
+	return fg_send(&w, result);
 }
 
 static int fg_socket_send(fg_i64 id, const void *data, fg_u32 length) {

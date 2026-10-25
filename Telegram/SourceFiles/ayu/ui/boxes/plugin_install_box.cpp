@@ -223,6 +223,34 @@ void FillInstallBox(
 		return;
 	}
 
+	if (snapshot) {
+		const auto language = Lang::Id().toStdString();
+		const auto account = FreshPlugins::AccountId(&controller->session()).toStdString();
+		for (const auto &other : snapshot->contributions(account, language)) {
+			if (other.id == manifest.id) {
+				continue;
+			}
+			for (const auto &command : manifest.commands) {
+				const auto taken = std::any_of(
+					other.commands.begin(),
+					other.commands.end(),
+					[&](const fgpl::ContributedCommand &existing) {
+						return existing.name == command.name;
+					});
+				if (taken) {
+					box->addRow(object_ptr<Ui::FlatLabel>(
+						box,
+						tr::fresh_PluginCommandTaken(
+							tr::now,
+							lt_command,
+							u"/"_q + QString::fromStdString(command.name),
+							lt_plugin,
+							QString::fromStdString(other.name)),
+						st::pluginDangerMedium));
+				}
+			}
+		}
+	}
 	if (!manifest.messagesFrom.empty()) {
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,

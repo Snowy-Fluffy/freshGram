@@ -96,6 +96,7 @@ void AddMessageMenuItems(
 void AddPeerMenuItems(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
+	MsgId topicRootId,
 	bool profile,
 	Fn<void(const QString &title, Fn<void()> handler)> add);
 
@@ -103,9 +104,26 @@ void AddMainMenuItems(
 	not_null<Ui::VerticalLayout*> container,
 	not_null<Window::SessionController*> controller);
 
-[[nodiscard]] bool TryRunCommand(
+struct PluginCommand {
+	QString name;
+	QString description;
+	QString plugin;
+};
+
+[[nodiscard]] std::vector<PluginCommand> CommandsFor(
+	not_null<Main::Session*> session,
+	not_null<PeerData*> peer);
+
+enum class CommandResult {
+	None,
+	Sent,
+	Refused,
+};
+
+[[nodiscard]] CommandResult RunCommand(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
+	MsgId topicRootId,
 	const QString &text);
 
 void ShowPluginSettings(

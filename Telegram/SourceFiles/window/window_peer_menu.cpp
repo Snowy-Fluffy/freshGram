@@ -1859,11 +1859,16 @@ void Filler::fill() {
 			|| _request.section == Section::History
 			|| _request.section == Section::Profile
 			|| _request.section == Section::ContextMenu)) {
+		auto first = true;
 		FreshPlugins::AddPeerMenuItems(
 			_controller,
 			_peer,
+			_topic ? _topic->rootId() : MsgId(),
 			_request.section == Section::Profile,
 			[&](const QString &text, Fn<void()> handler) {
+				if (std::exchange(first, false)) {
+					_addAction(PeerMenuCallback::Args{ .isSeparator = true });
+				}
 				_addAction(text, std::move(handler), &st::menuIconBot);
 			});
 	}

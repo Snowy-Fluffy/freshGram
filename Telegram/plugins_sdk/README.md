@@ -11,7 +11,10 @@ checked against the permissions the user granted.
 - **Any language that builds a Wasm reactor**: export `fg_alloc`, `fg_free`,
   `fg_init(ptr, len)` and `fg_on_event(ptr, len)`, and import
   `freshgram.call(req_ptr, req_len, out_ptr_slot, out_len_slot) -> status`.
-  `c/freshgram.h` is a freestanding C implementation of all of it.
+  `c/freshgram.h` is a freestanding C implementation of the protocol with
+  helpers for common calls (`fg_send_text`, `fg_toast`, `fg_chat_info`,
+  `fg_history`, `fg_fetch`, sockets, storage); any other call is built with
+  `fg_begin` and `fg_send`.
 
 ## Wire format
 
@@ -33,7 +36,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `meta.info` | none | API level, plugin id, granted permissions |
 | `log` `{text}` | none | goes to the plugin log |
 | `storage.get/set/delete/list/usage` | `storage.private` | keys up to 128 bytes, values up to 1 MiB, 4096 keys, quota per plugin |
-| `net.fetch` `{url, method, headers, body, timeout}` | `net.https` | https only, to any public host name or public IP (`https://8.8.8.8/`, `https://[2606:4700::1]/`); local names, private, loopback and link-local addresses are refused, also after DNS; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned |
+| `net.fetch` `{url, method, headers, body, timeout}` | `net.https` | https only, to any public host name or public IP (`https://8.8.8.8/`, `https://[2606:4700::1]/`); local names, private, loopback and link-local addresses are refused, also after DNS; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned; returns `{status, headers, header_list, body}`, where `headers` joins repeated headers with `, ` and `header_list` keeps every `[name, value]` pair |
 | `net.tcp.connect` `{host, port, tls, timeout}` | `net.tcp` | a TCP connection, optionally TLS with certificate checks; returns `{id}`; at most 16 open |
 | `net.udp.connect` `{host, port}` | `net.udp` | a UDP socket bound to one peer, only its datagrams are received; returns `{id}`; at most 16 open, 200 datagrams per second |
 | `net.socket.send` `{id, data, timeout}` | the socket's permission | up to 1 MiB (TCP) or 65507 bytes (UDP); returns `{sent}` |
@@ -48,8 +51,8 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
-| `chats.list`, `chat.info` | `chats.list`, `chat.info` | secret chats and the service chat 777000 are never returned |
-| `messages.history` `{chat, limit, before}` | `messages.history` | limit up to 100; chat must be in scope |
+| `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `self`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats and the service chat 777000 are never returned |
+| `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
 | `messages.send` `{chat, text}` | `messages.send` | |
 | `account.info` | `account.info` | no phone number |
 | `stars.balance` | `stars.balance` | read only |
@@ -152,8 +155,9 @@ timeout)` and `freshgram.spawn(coroutine)` (a background task whose failure is
 logged) work on the plugin's own loop; `asyncio` does not run in the sandbox.
 An async handler of `message.outgoing` must call
 `freshgram.messages.set_outgoing` before its first `await`. In C,
-`fg_begin_async` / `fg_send_async` return the ticket and `fg_sleep_async`
-starts a timer; the results come to `fg_plugin_event`.
+`fg_begin_async` starts a request and `fg_send_async` sends it and writes the
+ticket to its out-parameter; `fg_sleep_async` starts a timer. The results come
+to `fg_plugin_event`.
 
 ## Messages between plugins
 
@@ -197,7 +201,8 @@ app draws them with the plugin's name next to the title. Activations come back a
 | Event | Fields |
 |---|---|
 | `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); the `composer` surface is a button next to the input field and needs `ui.composer_button` |
-| `command` | `name`, `args` (the text after `/name`), `chat` when in scope |
+| `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope; the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
+| `settings.open` | the user opened the plugin's settings; send the page now (the plugin is started for it) |
 | `settings.change` | `id`, `value` of a toggle, input or select |
 | `settings.click` | `id` of a button |
 | `dialog.change`, `dialog.click` | the same for a dialog shown with `ui.dialog.show` |
@@ -224,6 +229,10 @@ def message(event):
 
 freshgram.run()
 ```
+
+`freshgram.on_settings_open` and `freshgram.on_dialog(item_id)` register
+handlers for the settings page and for dialogs; one failing handler is logged
+and does not stop the others.
 
 Calls raise `freshgram.Denied`, `Invalid`, `NotFound`, `QuotaExceeded`,
 `LimitExceeded`, `Unavailable` or `Failed`. `print` goes to the plugin log; the
