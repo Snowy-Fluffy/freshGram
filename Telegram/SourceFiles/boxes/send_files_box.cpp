@@ -2708,23 +2708,16 @@ struct CleanedFile {
 
 } // namespace
 
-bool SendFilesBox::hasClearableMetadata() const {
-	return ranges::any_of(_list.files, [](const Ui::PreparedFile &file) {
+bool HasClearableMetadata(const Ui::PreparedList &list) {
+	return ranges::any_of(list.files, [](const Ui::PreparedFile &file) {
 		return MetadataKindOf(file) != FreshMetadata::MediaKind::None;
 	});
 }
 
-bool SendFilesBox::clearMetadata(
-		Api::SendOptions options,
-		bool ctrlShiftEnter) {
-	if (_metadataCleared) {
-		_metadataCleared = false;
-		return false;
-	} else if (!_confirmedCallback
-		|| _clearMetadata->isHidden()
-		|| !_clearMetadata->checked()) {
-		return false;
-	}
+bool ClearPreparedListMetadata(
+		not_null<QObject*> guard,
+		not_null<Ui::PreparedList*> list,
+		Fn<void(std::optional<QString> failed)> done) {
 	struct Job {
 		int index = 0;
 		FreshMetadata::MediaKind kind = FreshMetadata::MediaKind::None;
@@ -2735,8 +2728,8 @@ bool SendFilesBox::clearMetadata(
 		QImage image;
 	};
 	auto jobs = std::vector<Job>();
-	for (auto i = 0; i != int(_list.files.size()); ++i) {
-		const auto &file = _list.files[i];
+	for (auto i = 0; i != int(list->files.size()); ++i) {
+		const auto &file = list->files[i];
 		const auto kind = MetadataKindOf(file);
 		if (kind == FreshMetadata::MediaKind::None
 			|| (kind == FreshMetadata::MediaKind::Video
@@ -2763,8 +2756,7 @@ bool SendFilesBox::clearMetadata(
 	if (jobs.empty()) {
 		return false;
 	}
-	_clearingMetadata = true;
-	const auto weak = base::make_weak(this);
+	const auto weak = base::make_weak(guard.get());
 	crl::async([=, jobs = std::move(jobs)] {
 		auto results = std::vector<CleanedFile>();
 		for (const auto &job : jobs) {
@@ -2795,17 +2787,13 @@ bool SendFilesBox::clearMetadata(
 			results.push_back(std::move(result));
 		}
 		crl::on_main(weak, [=, results = std::move(results)]() mutable {
-			_clearingMetadata = false;
 			for (const auto &result : results) {
-				if (result.index >= int(_list.files.size())) {
+				if (result.index >= int(list->files.size())) {
 					continue;
 				}
-				auto &file = _list.files[result.index];
+				auto &file = list->files[result.index];
 				if (!result.ok) {
-					showToast(tr::fresh_ClearMetadataFailed(
-						tr::now,
-						lt_name,
-						file.displayName));
+					done(file.displayName);
 					return;
 				}
 				if (result.raw) {
@@ -2829,10 +2817,43 @@ bool SendFilesBox::clearMetadata(
 					}
 				}
 			}
-			_metadataCleared = true;
-			send(options, ctrlShiftEnter);
+			done(std::nullopt);
 		});
 	});
+	return true;
+}
+
+bool SendFilesBox::hasClearableMetadata() const {
+	return HasClearableMetadata(_list);
+}
+
+bool SendFilesBox::clearMetadata(
+		Api::SendOptions options,
+		bool ctrlShiftEnter) {
+	if (_metadataCleared) {
+		_metadataCleared = false;
+		return false;
+	} else if (!_confirmedCallback
+		|| _clearMetadata->isHidden()
+		|| !_clearMetadata->checked()) {
+		return false;
+	}
+	const auto done = [=](std::optional<QString> failed) {
+		_clearingMetadata = false;
+		if (failed) {
+			showToast(tr::fresh_ClearMetadataFailed(
+				tr::now,
+				lt_name,
+				*failed));
+			return;
+		}
+		_metadataCleared = true;
+		send(options, ctrlShiftEnter);
+	};
+	if (!ClearPreparedListMetadata(this, &_list, done)) {
+		return false;
+	}
+	_clearingMetadata = true;
 	return true;
 }
 

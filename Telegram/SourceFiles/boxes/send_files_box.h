@@ -103,6 +103,16 @@ void RenameFileBox(
 	bool allowExtensionEdit,
 	Fn<void(QString)> apply);
 
+[[nodiscard]] bool HasClearableMetadata(const Ui::PreparedList &list);
+
+// Strips the metadata of the list files in the background and writes the
+// result back to the list, then calls done with the name of the file that
+// failed. Returns false if there was nothing to strip.
+bool ClearPreparedListMetadata(
+	not_null<QObject*> guard,
+	not_null<Ui::PreparedList*> list,
+	Fn<void(std::optional<QString> failed)> done);
+
 using SendFilesConfirmed = Fn<void(
 	std::shared_ptr<Ui::PreparedBundle>,
 	Api::SendOptions,
