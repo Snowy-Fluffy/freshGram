@@ -420,6 +420,7 @@
 "fresh_StreamerModeHeader" = "Streamer-Modus";
 "fresh_StreamerHideWholeWindow" = "Das ganze Fenster ausblenden";
 "fresh_DeletedAtDate" = "Gelöscht: {date}";
+"fresh_DeletedPostCommentsUnavailable" = "Die Kommentare zu diesem gelöschten Beitrag sind nicht mehr verfügbar.";
 "fresh_GesturesHeader" = "Gesten";
 "fresh_InvertSwipeGestures" = "Wischgesten umkehren";
 "fresh_InvertSwipeGesturesDescription" = "Bei Wischgesten der Scrollrichtung des Touchpads statt der Fingerrichtung folgen: Chats öffnen und schließen, auf Nachrichten antworten, Schnellaktionen.";

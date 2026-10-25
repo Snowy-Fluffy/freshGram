@@ -9214,6 +9214,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_StreamerModeHeader" = "Streamer Mode";
 "fresh_StreamerHideWholeWindow" = "Hide the whole window";
 "fresh_DeletedAtDate" = "Deleted: {date}";
+"fresh_DeletedPostCommentsUnavailable" = "The comments of this deleted post are no longer available.";
 "fresh_GesturesHeader" = "Gestures";
 "fresh_InvertSwipeGestures" = "Invert swipe gestures";
 "fresh_InvertSwipeGesturesDescription" = "Follow the scroll direction of the touchpad instead of the finger direction for swipes: opening and closing chats, replying to messages, quick actions.";

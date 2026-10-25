@@ -428,6 +428,7 @@
 "fresh_StreamerModeHeader" = "Modalità streamer";
 "fresh_StreamerHideWholeWindow" = "Nascondi l'intera finestra";
 "fresh_DeletedAtDate" = "Eliminato: {date}";
+"fresh_DeletedPostCommentsUnavailable" = "I commenti di questo post eliminato non sono più disponibili.";
 "fresh_GesturesHeader" = "Gesti";
 "fresh_InvertSwipeGestures" = "Inverti i gesti di scorrimento";
 "fresh_InvertSwipeGesturesDescription" = "Per gli scorrimenti, segui la direzione di scorrimento del touchpad invece di quella del dito: apertura e chiusura delle chat, risposta ai messaggi, azioni rapide.";

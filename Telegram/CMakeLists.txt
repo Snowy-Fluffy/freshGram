@@ -147,6 +147,8 @@ set(ayugram_files
         ayu/utils/builtin_lang.cpp
         ayu/utils/builtin_lang.h
         ayu/utils/crash_trace.cpp
+        ayu/features/deleted_comments/deleted_comments.cpp
+        ayu/features/deleted_comments/deleted_comments.h
         ayu/features/fake_passcode/fake_passcode.cpp
         ayu/features/plugins/plugins_control.cpp
         ayu/features/plugins/plugins_control.h

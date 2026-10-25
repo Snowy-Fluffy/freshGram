@@ -436,6 +436,7 @@
 "fresh_StreamerModeHeader" = "Режим стримера";
 "fresh_StreamerHideWholeWindow" = "Скрывать всё окно";
 "fresh_DeletedAtDate" = "Удалено: {date}";
+"fresh_DeletedPostCommentsUnavailable" = "Комментарии к этому удалённому посту больше недоступны.";
 "fresh_GesturesHeader" = "Жесты";
 "fresh_InvertSwipeGestures" = "Инвертировать жесты смахивания";
 "fresh_InvertSwipeGesturesDescription" = "Следовать направлению прокрутки тачпада, а не направлению движения пальцев: открытие и закрытие чатов, ответ на сообщения, быстрые действия.";
