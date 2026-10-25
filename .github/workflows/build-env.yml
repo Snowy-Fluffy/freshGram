@@ -16,12 +16,14 @@ env:
 
 jobs:
   libs:
-    name: ${{ matrix.group }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.group }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 355
     strategy:
       fail-fast: false
       matrix:
+        arch: [x86_64, aarch64]
+        group: [qt, webrtc, ffmpeg, codecs, system]
         include:
           - group: qt
             targets: qt
@@ -33,6 +35,10 @@ jobs:
             targets: zlib xz lcms2 brotli highway mozjpeg opus dav1d openh264 vpx webp avif heif jxl rnnoise
           - group: system
             targets: xcb xcb-wm xcb-util xcb-image xcb-keysyms xcb-render-util xcb-cursor xext xfixes xv xtst xrandr xrender xdamage xcomposite openal openssl xkbcommon boost breakpad ada tde2e tlottie
+          - arch: x86_64
+            suffix: ''
+          - arch: aarch64
+            suffix: '-aarch64'
 
     steps:
       - name: Clone
@@ -69,18 +75,26 @@ jobs:
             docker buildx build \
               --file Dockerfile.generated \
               --target "$target" \
-              --cache-from "type=registry,ref=$cache:$target" \
-              --cache-to "type=registry,ref=$cache:$target,mode=max,image-manifest=true,oci-mediatypes=true" \
+              --cache-from "type=registry,ref=$cache:$target${{ matrix.suffix }}" \
+              --cache-to "type=registry,ref=$cache:$target${{ matrix.suffix }},mode=max,image-manifest=true,oci-mediatypes=true" \
               --output type=cacheonly \
               .
             echo "::endgroup::"
           done
 
   image:
-    name: Final image
+    name: Final image ${{ matrix.arch }}
     needs: libs
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            suffix: ''
+          - arch: aarch64
+            suffix: '-aarch64'
 
     steps:
       - name: Clone
@@ -115,13 +129,13 @@ jobs:
           cache="ghcr.io/$owner/freshgram-build-cache"
           cache_from=""
           for target in qt webrtc ffmpeg zlib xz lcms2 brotli highway mozjpeg opus dav1d openh264 vpx webp avif heif jxl rnnoise xcb xcb-wm xcb-util xcb-image xcb-keysyms xcb-render-util xcb-cursor xext xfixes xv xtst xrandr xrender xdamage xcomposite openal openssl xkbcommon boost breakpad ada tde2e tlottie; do
-            cache_from="$cache_from --cache-from type=registry,ref=$cache:$target"
+            cache_from="$cache_from --cache-from type=registry,ref=$cache:$target${{ matrix.suffix }}"
           done
           cd "$DOCKER_DIR"
           docker buildx build \
             --file Dockerfile.generated \
             $cache_from \
-            --tag "ghcr.io/$owner/freshgram-build-env:deps-$IMAGE_REVISION" \
-            --tag "ghcr.io/$owner/freshgram-build-env:latest" \
+            --tag "ghcr.io/$owner/freshgram-build-env:deps-$IMAGE_REVISION${{ matrix.suffix }}" \
+            --tag "ghcr.io/$owner/freshgram-build-env:latest${{ matrix.suffix }}" \
             --push \
             .

@@ -41,6 +41,15 @@ if (NOT FRESHGRAM_DISABLE_RECOGNITION)
             set(GGML_BMI2 ON CACHE BOOL "" FORCE)
             set(GGML_FMA ON CACHE BOOL "" FORCE)
             set(GGML_F16C ON CACHE BOOL "" FORCE)
+        elseif (MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+            # WHY: ggml for MSVC on ARM only probes the build machine, so the answers are
+            # fixed to the ARMv8-A baseline and the binary runs on every ARM64 device.
+            set(GGML_NATIVE ON CACHE BOOL "" FORCE)
+            foreach (feature dotprod i8mm sve sme)
+                set(GGML_MACHINE_SUPPORTS_${feature} OFF CACHE BOOL "" FORCE)
+                set(GGML_MACHINE_SUPPORTS_no${feature} OFF CACHE BOOL "" FORCE)
+            endforeach()
+            set(GGML_MACHINE_SUPPORTS_fma ON CACHE BOOL "" FORCE)
         endif()
         # The warnings of the library are errors in this project.
         if (COMMAND cmake_diagnostic)

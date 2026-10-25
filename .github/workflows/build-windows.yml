@@ -38,9 +38,27 @@ env:
 
 jobs:
   windows:
-    name: Windows x64 portable
-    runs-on: windows-2025
+    name: Windows ${{ matrix.arch }} portable
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-2025
+            toolset: '14.44'
+            libraries: qt5
+            components: Microsoft.VisualStudio.Component.VC.14.44.17.14.ATL Microsoft.VisualStudio.Component.VC.14.44.17.14.MFC
+            llvm: x64
+            suffix: ''
+          - arch: arm64
+            runner: windows-11-arm
+            toolset: ''
+            libraries: arm64-qt6
+            components: Microsoft.VisualStudio.Component.VC.ATL.ARM64 Microsoft.VisualStudio.Component.VC.MFC.ARM64
+            llvm: ARM64
+            suffix: '-arm64'
 
     steps:
       - name: Check API credentials
@@ -81,11 +99,14 @@ jobs:
             Libraries
             win64
             ThirdParty
-          key: windows-libraries-qt5-v1-${{ hashFiles('freshGram/Telegram/build/prepare/**', 'freshGram/Telegram/build/qt_version.py') }}-${{ github.run_id }}
-          restore-keys: windows-libraries-qt5-v1-${{ hashFiles('freshGram/Telegram/build/prepare/**', 'freshGram/Telegram/build/qt_version.py') }}-
+          key: windows-libraries-${{ matrix.libraries }}-v1-${{ hashFiles('freshGram/Telegram/build/prepare/**', 'freshGram/Telegram/build/qt_version.py') }}-${{ github.run_id }}
+          restore-keys: windows-libraries-${{ matrix.libraries }}-v1-${{ hashFiles('freshGram/Telegram/build/prepare/**', 'freshGram/Telegram/build/qt_version.py') }}-
 
       - name: Install ATL and MFC for the toolset
         shell: pwsh
+        env:
+          COMPONENTS: ${{ matrix.components }}
+          TOOLSET: ${{ matrix.toolset }}
         run: |
           $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
           $vs = & "$installer\vswhere.exe" -latest -products * -property installationPath
@@ -96,24 +117,23 @@ jobs:
             }
           }
           Show-Atl
-          $process = Start-Process -Wait -PassThru -FilePath "$installer\vs_installer.exe" -ArgumentList @(
-            "modify", "--installPath", "`"$vs`"",
-            "--add", "Microsoft.VisualStudio.Component.VC.14.44.17.14.ATL",
-            "--add", "Microsoft.VisualStudio.Component.VC.14.44.17.14.MFC",
-            "--quiet", "--norestart", "--noUpdateInstaller")
+          $add = $env:COMPONENTS -split ' ' | ForEach-Object { '--add', $_ }
+          $process = Start-Process -Wait -PassThru -FilePath "$installer\vs_installer.exe" -ArgumentList (@(
+            "modify", "--installPath", "`"$vs`"") + $add + @(
+            "--quiet", "--norestart", "--noUpdateInstaller"))
           "Installer exit code: $($process.ExitCode)"
           Show-Atl
-          $found = Get-ChildItem $tools | Where-Object { $_.Name -like '14.44*' -and (Test-Path (Join-Path $_.FullName 'atlmfc\include\atlbase.h')) }
+          $found = Get-ChildItem $tools | Where-Object { $_.Name -like "$env:TOOLSET*" -and (Test-Path (Join-Path $_.FullName 'atlmfc\include\atlbase.h')) }
           if (-not $found) {
-            Write-Host "::error::ATL for the 14.44 toolset is still missing."
+            Write-Host "::error::ATL for the $env:TOOLSET toolset is still missing."
             exit 1
           }
 
       - name: Set up the Visual Studio environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: x64
-          toolset: '14.44'
+          arch: ${{ matrix.arch }}
+          toolset: ${{ matrix.toolset }}
 
       - name: Prepare libraries
         id: prepare
@@ -130,7 +150,7 @@ jobs:
             Libraries
             win64
             ThirdParty
-          key: windows-libraries-qt5-v1-${{ hashFiles('freshGram/Telegram/build/prepare/**', 'freshGram/Telegram/build/qt_version.py') }}-${{ github.run_id }}
+          key: windows-libraries-${{ matrix.libraries }}-v1-${{ hashFiles('freshGram/Telegram/build/prepare/**', 'freshGram/Telegram/build/qt_version.py') }}-${{ github.run_id }}
 
       - name: Stop when libraries are not ready
         if: steps.prepare.outcome != 'success'
@@ -146,7 +166,7 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
         run: |
           cd freshGram\Telegram
-          call configure.bat x64 -D TDESKTOP_API_ID=%API_ID% -D TDESKTOP_API_HASH=%API_HASH% -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          call configure.bat ${{ matrix.arch }} -D TDESKTOP_API_ID=%API_ID% -D TDESKTOP_API_HASH=%API_HASH% -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
 
       - name: Build
         id: build
@@ -174,7 +194,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          $llvm = if ($env:llvmX64) { $env:llvmX64 } else { Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin' }
+          $llvm = if ($env:llvmX64 -and '${{ matrix.arch }}' -eq 'x64') { $env:llvmX64 } else { Join-Path $env:VCINSTALLDIR 'Tools\Llvm\${{ matrix.llvm }}\bin' }
           Write-Host "lld-link: $(Test-Path (Join-Path $llvm 'lld-link.exe')) in $llvm"
           ./freshGram/.github/scripts/windows-build.ps1 -Configuration $env:BUILD_CONFIG -ExtraArguments @("/p:LinkToolPath=$llvm", '/p:LinkToolExe=lld-link.exe')
 
@@ -187,23 +207,26 @@ jobs:
 
       - name: Package
         shell: pwsh
+        env:
+          SUFFIX: ${{ matrix.suffix }}
         run: |
           $exe = Get-ChildItem "freshGram/out/$env:BUILD_CONFIG" -Filter freshGram.exe | Select-Object -First 1
           if (-not $exe) { throw "freshGram.exe was not built" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item $exe.FullName dist/freshGram.exe
+          Copy-Item $exe.FullName "dist/freshGram$env:SUFFIX.exe"
           New-Item -ItemType Directory -Force portable/TelegramForcePortable | Out-Null
           Copy-Item $exe.FullName portable/freshGram.exe
-          Compress-Archive -Path portable/* -DestinationPath dist/freshGram-windows-portable.zip -Force
-          $hashes = Get-ChildItem dist -File | Where-Object { $_.Name -ne 'SHA256SUMS-windows' } | ForEach-Object {
+          Compress-Archive -Path portable/* -DestinationPath "dist/freshGram-windows$env:SUFFIX-portable.zip" -Force
+          $sums = "SHA256SUMS-windows$env:SUFFIX"
+          $hashes = Get-ChildItem dist -File | Where-Object { $_.Name -ne $sums } | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
           }
-          $hashes | Set-Content dist/SHA256SUMS-windows
+          $hashes | Set-Content "dist/$sums"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: freshGram-windows-x64
+          name: freshGram-windows-${{ matrix.arch }}
           path: dist/
           retention-days: 7
 
@@ -224,7 +247,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: freshGram-windows-x64-symbols
+          name: freshGram-windows-${{ matrix.arch }}-symbols
           path: symbols/
           retention-days: 30
 
@@ -246,7 +269,7 @@ jobs:
           echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
 
       - name: Prepare the debug input
-        if: steps.release.outputs.tag != ''
+        if: steps.release.outputs.tag != '' && matrix.arch == 'x64'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force debug-input | Out-Null
@@ -257,7 +280,7 @@ jobs:
           Set-Content debug-input/release-tag.txt "${{ steps.release.outputs.tag }}"
 
       - name: Upload the debug input
-        if: steps.release.outputs.tag != ''
+        if: steps.release.outputs.tag != '' && matrix.arch == 'x64'
         uses: actions/upload-artifact@v4
         with:
           name: windows-debug-input
@@ -274,6 +297,6 @@ jobs:
           prerelease: ${{ steps.release.outputs.prerelease }}
           generate_release_notes: true
           files: |
-            dist/freshGram.exe
-            dist/freshGram-windows-portable.zip
-            dist/SHA256SUMS-windows
+            dist/freshGram${{ matrix.suffix }}.exe
+            dist/freshGram-windows${{ matrix.suffix }}-portable.zip
+            dist/SHA256SUMS-windows${{ matrix.suffix }}

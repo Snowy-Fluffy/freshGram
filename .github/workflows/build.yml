@@ -41,9 +41,21 @@ env:
 
 jobs:
   linux:
-    name: Linux x86_64
-    runs-on: ubuntu-latest
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            suffix: ''
+            sums: SHA256SUMS
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            suffix: '-aarch64'
+            sums: SHA256SUMS-linux-aarch64
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
 
@@ -89,7 +101,7 @@ jobs:
           IMAGE_REVISION: ${{ hashFiles('Telegram/build/docker/centos_env/Dockerfile', 'Telegram/build/docker/centos_env/gen_dockerfile.py') }}
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          image="ghcr.io/$owner/freshgram-build-env:deps-$IMAGE_REVISION"
+          image="ghcr.io/$owner/freshgram-build-env:deps-$IMAGE_REVISION${{ matrix.suffix }}"
           if ! docker pull "$image"; then
             echo "::error::Build environment deps-$IMAGE_REVISION is missing; run 'Build environment' from this ref."
             exit 1
@@ -101,8 +113,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ github.run_id }}
-          restore-keys: ccache-linux-
+          key: ccache-linux-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: ccache-linux-${{ matrix.arch }}-
 
       - name: Build, part 1
         env:
@@ -139,7 +151,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ github.run_id }}-part1
+          key: ccache-linux-${{ matrix.arch }}-${{ github.run_id }}-part1
 
       - name: Build, part 2
         env:
@@ -176,7 +188,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ github.run_id }}-part2
+          key: ccache-linux-${{ matrix.arch }}-${{ github.run_id }}-part2
 
       - name: Build, part 3
         env:
@@ -213,7 +225,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ github.run_id }}-part3
+          key: ccache-linux-${{ matrix.arch }}-${{ github.run_id }}-part3
 
       - name: Build, part 4
         env:
@@ -250,7 +262,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ github.run_id }}-part4
+          key: ccache-linux-${{ matrix.arch }}-${{ github.run_id }}-part4
 
       - name: Build, part 5
         env:
@@ -287,7 +299,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ github.run_id }}-part5
+          key: ccache-linux-${{ matrix.arch }}-${{ github.run_id }}-part5
 
       - name: Build
         env:
@@ -330,7 +342,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-${{ github.run_id }}
+          key: ccache-linux-${{ matrix.arch }}-${{ github.run_id }}
 
       - name: Keep the unstripped build and strip the packages
         id: keep
@@ -356,7 +368,7 @@ jobs:
           ls -la debug-input
 
       - name: Upload the unstripped build
-        if: steps.keep.outputs.tag != ''
+        if: steps.keep.outputs.tag != '' && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v4
         with:
           name: linux-debug-input
@@ -379,12 +391,12 @@ jobs:
       - name: Checksums
         run: |
           cd dist
-          sha256sum $(ls | grep -v '^SHA256SUMS$') > SHA256SUMS
+          sha256sum $(ls | grep -v '^${{ matrix.sums }}$') > ${{ matrix.sums }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: freshGram-linux-x86_64
+          name: freshGram-linux-${{ matrix.arch }}
           path: dist/
           retention-days: 7
 
@@ -413,10 +425,10 @@ jobs:
           prerelease: ${{ steps.release.outputs.prerelease }}
           generate_release_notes: true
           files: |
-            dist/freshGram-linux-x86_64.tar.gz
-            dist/freshGram.pacman
-            dist/freshGram.flatpak
-            dist/freshGram.AppImage
-            dist/freshGram.deb
-            dist/freshGram.rpm
-            dist/SHA256SUMS
+            dist/freshGram-linux-${{ matrix.arch }}.tar.gz
+            dist/freshGram${{ matrix.suffix }}.pacman
+            dist/freshGram${{ matrix.suffix }}.flatpak
+            dist/freshGram${{ matrix.suffix }}.AppImage
+            dist/freshGram${{ matrix.suffix }}.deb
+            dist/freshGram${{ matrix.suffix }}.rpm
+            dist/${{ matrix.sums }}
