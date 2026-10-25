@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_editing.h"
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
+#include "ayu/ayu_settings.h"
 #include "base/event_filter.h"
 #include "boxes/premium_limits_box.h"
 #include "boxes/premium_preview_box.h"
@@ -744,6 +745,21 @@ void EditCaptionBox::setupControls() {
 		rebuildPreview();
 	}, _controls->lifetime());
 
+	_clearMetadata = _controls->add(object_ptr<Ui::SlideWrap<Ui::Checkbox>>(
+		this,
+		object_ptr<Ui::Checkbox>(
+			this,
+			tr::fresh_ClearMetadata(tr::now),
+			AyuSettings::getInstance().sendClearMetadata(),
+			st::defaultBoxCheckbox),
+		st::editMediaCheckboxMargins)
+	)->toggleOn(
+		_previewRebuilds.events_starting_with({}) | rpl::map([=] {
+			return HasClearableMetadata(_preparedList);
+		}),
+		anim::type::instant
+	)->entity();
+
 	_controls->resizeToWidth(st::sendMediaPreviewSize);
 }
 
@@ -1108,7 +1124,7 @@ bool EditCaptionBox::fileFromClipboard(not_null<const QMimeData*> data) {
 }
 
 bool EditCaptionBox::setPreparedList(Ui::PreparedList &&list) {
-	if (!_isAllowedEditMedia) {
+	if (!_isAllowedEditMedia || _clearingMetadata) {
 		return false;
 	}
 	using Error = Ui::PreparedList::Error;
@@ -1285,8 +1301,36 @@ void EditCaptionBox::applyChanges() {
 	}
 }
 
+bool EditCaptionBox::clearMetadata() {
+	if (_metadataCleared) {
+		_metadataCleared = false;
+		return false;
+	} else if (!_clearMetadata
+		|| !_clearMetadata->checked()
+		|| !HasClearableMetadata(_preparedList)) {
+		return false;
+	}
+	const auto done = [=](std::optional<QString> failed) {
+		_clearingMetadata = false;
+		if (failed) {
+			showToast(tr::fresh_ClearMetadataFailed(
+				tr::now,
+				lt_name,
+				*failed));
+			return;
+		}
+		_metadataCleared = true;
+		save();
+	};
+	if (!ClearPreparedListMetadata(this, &_preparedList, done)) {
+		return false;
+	}
+	_clearingMetadata = true;
+	return true;
+}
+
 void EditCaptionBox::save() {
-	if (_saveRequestId) {
+	if (_saveRequestId || _clearingMetadata) {
 		return;
 	}
 
@@ -1319,6 +1363,8 @@ void EditCaptionBox::save() {
 					_albumType)) {
 			_error = tr::lng_edit_media_album_error(tr::now);
 			update();
+			return;
+		} else if (clearMetadata()) {
 			return;
 		}
 		auto action = Api::SendAction(item->history(), options);

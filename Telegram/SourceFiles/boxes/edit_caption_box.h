@@ -30,6 +30,7 @@ class ComposeAiButton;
 
 namespace Ui {
 class AbstractSinglePreview;
+class Checkbox;
 class InputField;
 class EmojiButton;
 class PopupMenu;
@@ -112,6 +113,7 @@ private:
 
 	bool validateLength(const QString &text) const;
 	void applyChanges();
+	[[nodiscard]] bool clearMetadata();
 	void save();
 	void closeAfterSave();
 
@@ -143,6 +145,7 @@ private:
 	base::unique_qptr<Ui::PopupMenu> _previewMenu;
 	base::unique_qptr<ChatHelpers::TabbedPanel> _emojiPanel;
 	base::unique_qptr<QObject> _emojiFilter;
+	Ui::Checkbox *_clearMetadata = nullptr;
 
 	const TextWithTags _initialText;
 	Ui::PreparedList _initialList;
@@ -160,6 +163,8 @@ private:
 	bool _isVideo = false;
 	bool _asFile = false;
 	bool _sendLargePhotos = false;
+	bool _clearingMetadata = false;
+	bool _metadataCleared = false;
 
 	QString _error;
 
