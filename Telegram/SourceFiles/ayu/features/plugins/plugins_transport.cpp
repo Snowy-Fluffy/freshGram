@@ -8,6 +8,7 @@
 
 #include "crl/crl_async.h"
 
+#include <QtCore/QDateTime>
 #include <QtCore/QDeadlineTimer>
 #include <QtCore/QUrl>
 #include <QtNetwork/QHostAddress>
@@ -44,6 +45,8 @@ constexpr auto kMaxRedirects = 5;
 constexpr auto kMaxHeaderBytes = size_t(64) << 10;
 constexpr auto kWaitSliceMs = 50;
 constexpr auto kDatagramsPerSecond = 200;
+constexpr auto kMaxLogEntries = size_t(300);
+constexpr auto kMaxLogPath = 120;
 
 struct Connection {
 	int64 id = 0;
@@ -72,6 +75,8 @@ struct Registry {
 	std::map<int64, std::shared_ptr<Connection>> connections;
 	std::map<std::string, Traffic> finished;
 	std::atomic<int64> nextId = 1;
+	std::deque<NetworkEvent> log;
+	std::atomic<uint64> logVersion = 0;
 };
 
 [[nodiscard]] Registry &GetRegistry() {
@@ -97,6 +102,28 @@ struct Registry {
 	return connection;
 }
 
+void AddLog(NetworkEvent event) {
+	auto &registry = GetRegistry();
+	event.when = QDateTime::currentMSecsSinceEpoch();
+	const auto lock = std::scoped_lock(registry.mutex);
+	registry.log.push_back(std::move(event));
+	while (registry.log.size() > kMaxLogEntries) {
+		registry.log.pop_front();
+	}
+	++registry.logVersion;
+}
+
+[[nodiscard]] NetworkEvent EventOf(const Connection &connection) {
+	auto result = NetworkEvent();
+	result.plugin = QString::fromStdString(connection.owner.plugin);
+	result.kind = connection.kind;
+	result.target = connection.host + ':' + QString::number(connection.port);
+	result.received = connection.received.load();
+	result.sent = connection.sent.load();
+	result.duration = crl::now() - connection.opened;
+	return result;
+}
+
 void Unregister(int64 id) {
 	auto &registry = GetRegistry();
 	auto connection = std::shared_ptr<Connection>();
@@ -108,6 +135,19 @@ void Unregister(int64 id) {
 		}
 		connection = std::move(i->second);
 		registry.connections.erase(i);
+		if (connection->stream || connection->datagram) {
+			auto event = EventOf(*connection);
+			event.action = u"close"_q;
+			event.result = connection->killed.load()
+				? u"closed by the user"_q
+				: QString();
+			event.when = QDateTime::currentMSecsSinceEpoch();
+			registry.log.push_back(std::move(event));
+			while (registry.log.size() > kMaxLogEntries) {
+				registry.log.pop_front();
+			}
+			++registry.logVersion;
+		}
 		auto &total = registry.finished[connection->owner.plugin];
 		total.received += connection->received.load();
 		total.sent += connection->sent.load();
@@ -430,7 +470,50 @@ public:
 			u"HTTPS"_q,
 			QString::fromStdString(request.host),
 			request.port);
-		const auto guard = gsl::finally([&] { Unregister(entry->id); });
+		auto result = fetchHops(request, entry);
+		auto event = EventOf(*entry);
+		event.action = QString::fromStdString(request.method);
+		const auto url = QUrl(QString::fromStdString(request.url));
+		event.target = url.host() + url.path().left(kMaxLogPath);
+		if (result.ok()) {
+			event.result = QString::number(result.value().status);
+			event.failed = (result.value().status >= 400);
+		} else {
+			event.result = QString::fromStdString(result.error().code + ": " + result.error().message);
+			event.failed = true;
+		}
+		Unregister(entry->id);
+		AddLog(std::move(event));
+		return result;
+	}
+
+	fgpl::Result<int64_t, fgpl::FetchError> open(
+			const fgpl::NetOwner &owner,
+			const fgpl::SocketRequest &request) override {
+		auto result = openSocket(owner, request);
+		auto event = NetworkEvent();
+		event.plugin = QString::fromStdString(owner.plugin);
+		event.kind = (request.kind == fgpl::SocketKind::Udp)
+			? u"UDP"_q
+			: request.tls
+			? u"TLS"_q
+			: u"TCP"_q;
+		event.action = u"open"_q;
+		event.target = QString::fromStdString(request.host) + ':' + QString::number(request.port);
+		if (!result.ok()) {
+			event.result = QString::fromStdString(result.error().code + ": " + result.error().message);
+			event.failed = true;
+		} else if (const auto entry = Find(result.value())) {
+			event.result = entry->address.toString();
+		}
+		AddLog(std::move(event));
+		return result;
+	}
+
+private:
+	fgpl::Result<fgpl::FetchResponse, fgpl::FetchError> fetchHops(
+			const fgpl::FetchRequest &request,
+			const std::shared_ptr<Connection> &entry) {
 		auto url = request.url;
 		auto method = request.method;
 		auto body = request.body;
@@ -493,9 +576,9 @@ public:
 		return Error("redirect", u"too many redirects"_q);
 	}
 
-	fgpl::Result<int64_t, fgpl::FetchError> open(
+	fgpl::Result<int64_t, fgpl::FetchError> openSocket(
 			const fgpl::NetOwner &owner,
-			const fgpl::SocketRequest &request) override {
+			const fgpl::SocketRequest &request) {
 		const auto udp = (request.kind == fgpl::SocketKind::Udp);
 		const auto host = QString::fromStdString(request.host);
 		const auto deadline = QDeadlineTimer(request.timeoutMs);
@@ -553,6 +636,7 @@ public:
 		return entry->id;
 	}
 
+public:
 	fgpl::Result<size_t, fgpl::FetchError> write(
 			int64_t id,
 			std::span<const uint8_t> data,
@@ -824,6 +908,23 @@ fgpl::Transport *NetworkTransport() {
 	return &result;
 }
 
+std::vector<NetworkEvent> NetworkLog() {
+	auto &registry = GetRegistry();
+	const auto lock = std::scoped_lock(registry.mutex);
+	return { registry.log.begin(), registry.log.end() };
+}
+
+uint64 NetworkLogVersion() {
+	return GetRegistry().logVersion.load();
+}
+
+void ClearNetworkLog() {
+	auto &registry = GetRegistry();
+	const auto lock = std::scoped_lock(registry.mutex);
+	registry.log.clear();
+	++registry.logVersion;
+}
+
 std::vector<ConnectionView> Connections() {
 	auto &registry = GetRegistry();
 	const auto lock = std::scoped_lock(registry.mutex);
@@ -859,6 +960,17 @@ void CloseConnection(int64 id) {
 
 fgpl::Transport *NetworkTransport() {
 	return nullptr;
+}
+
+std::vector<NetworkEvent> NetworkLog() {
+	return {};
+}
+
+uint64 NetworkLogVersion() {
+	return 0;
+}
+
+void ClearNetworkLog() {
 }
 
 std::vector<ConnectionView> Connections() {

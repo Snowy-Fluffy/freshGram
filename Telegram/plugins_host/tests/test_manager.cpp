@@ -1310,6 +1310,26 @@ void TestTimersWakeThePlugin() {
 	manager.shutdown();
 }
 
+void TestManualStartOfLazyPlugin() {
+	auto lab = Lab("fgpl-manager-manual");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.lazy");
+	CHECK(manager.install(CustomArchive(id, wat::Module("", "(i32.const 0)"), {
+		{ "messages.read", {} },
+	})).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started == 0);
+	CHECK(manager.list()[0].onDemand);
+	CHECK(manager.list()[0].status == PluginStatus::Stopped);
+	CHECK(manager.start(id));
+	CHECK(manager.runningCount() == 1);
+	CHECK(manager.list()[0].status == PluginStatus::Running);
+	CHECK(manager.setEnabled(id, false));
+	CHECK(!manager.start(id));
+	manager.shutdown();
+}
+
 int main(int argc, char **argv) {
 	const auto only = (argc > 1) ? std::string(argv[1]) : std::string();
 	const auto run = [&](const char *name, void (*test)()) {
@@ -1330,6 +1350,7 @@ int main(int argc, char **argv) {
 	run("overflow", TestQueueOverflowDropsTheOldest);
 	run("busylock", TestLockIsPromptWhileBusy);
 	run("timers", TestTimersWakeThePlugin);
+	run("manual", TestManualStartOfLazyPlugin);
 	run("stress", TestManyPluginsAndAccounts);
 	run("cancel", TestStopWhileStartingIsPrompt);
 	run("unload", TestSelfUnloadAndLazyStart);

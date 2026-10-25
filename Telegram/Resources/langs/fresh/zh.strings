@@ -182,6 +182,15 @@
 "fresh_PluginPermissionsCount" = "{allowed} / {total}";
 "fresh_PluginRemove" = "移除插件";
 "fresh_PluginsAdd" = "安装插件";
+"fresh_PluginStatusOnDemand" = "需要时启动";
+"fresh_PluginStatusRetry" = "出错，{seconds} 秒后重试：{reason}";
+"fresh_PluginStatusFailed" = "出错后已停止：{reason}";
+"fresh_PluginStart" = "立即启动";
+"fresh_PluginStarted" = "插件已启动。";
+"fresh_PluginStartFailed" = "插件无法启动，请查看其日志。";
+"fresh_PluginsNetworkLog" = "网络日志";
+"fresh_PluginsNetworkLogErrors" = "仅错误";
+"fresh_PluginsNetworkLogEmpty" = "暂无网络活动。";
 "fresh_PermMessagesEdit" = "编辑你发送的消息";
 "fresh_PermMessagesDelete" = "删除你发送的消息";
 "fresh_PermMessagesReact" = "对消息做出回应";

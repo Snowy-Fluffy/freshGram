@@ -850,6 +850,7 @@ bool PluginManager::setEnabled(const std::string &id, bool enabled) {
 	}
 	record.enabled = true;
 	record.disabledReason.clear();
+	record.lastFailure.clear();
 	record.failures.clear();
 	for (auto i = _notBefore.begin(); i != _notBefore.end();) {
 		i = (i->first.first == id) ? _notBefore.erase(i) : std::next(i);
@@ -857,6 +858,22 @@ bool PluginManager::setEnabled(const std::string &id, bool enabled) {
 	saveState();
 	startEverywhere(record);
 	return true;
+}
+
+bool PluginManager::start(const std::string &id) {
+	const auto found = _records.find(id);
+	if (found == _records.end() || !found->second.enabled || !mayRun()) {
+		return false;
+	}
+	auto &record = found->second;
+	std::erase_if(_notBefore, [&](const auto &entry) {
+		return entry.first.first == id;
+	});
+	auto started = false;
+	for (const auto &account : _accounts) {
+		started = (ensure(record, account) != nullptr) || started;
+	}
+	return started;
 }
 
 void PluginManager::startEverywhere(Record &record) {
@@ -962,6 +979,13 @@ std::vector<PluginInfo> PluginManager::list() const {
 		info.status = running
 			? PluginStatus::Running
 			: (!record.enabled ? PluginStatus::Disabled : PluginStatus::Stopped);
+		info.onDemand = !activatedBy(record, "startup");
+		info.lastFailure = record.lastFailure;
+		for (const auto &[key, until] : _notBefore) {
+			if (key.first == record.id) {
+				info.retryInMs = std::max(info.retryInMs, until - now());
+			}
+		}
 		result.push_back(std::move(info));
 	}
 	return result;
@@ -1814,6 +1838,7 @@ void PluginManager::noteFailure(
 		const std::string &account,
 		const std::string &why) {
 	addLog(record, "failure: " + why);
+	record.lastFailure = why;
 	++record.stats.failures;
 	const auto time = now();
 	record.failures.push_back(time);
@@ -1891,6 +1916,7 @@ int PluginManager::pump() {
 			++record->second.stats.events;
 			++_deliveredTotal;
 			_streak.erase(key);
+			record->second.lastFailure.clear();
 			if (!instance.committed) {
 				instance.committed = true;
 				commitUpdate(record->second);
