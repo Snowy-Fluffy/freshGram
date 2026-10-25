@@ -11,8 +11,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer_values.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
+#include "data/data_session.h"
 #include "data/data_user.h"
+#include "history/history.h"
+#include "history/history_item.h"
+#include "history/view/history_view_element.h"
 #include "main/main_session.h"
+#include "main/session/send_as_peers.h"
 #include "apiwrap.h"
 
 namespace Dialogs {
@@ -72,6 +77,50 @@ void SearchFromController::prepare() {
 			delegate()->peerListRefreshRows();
 		}
 	}
+	prependChannelRows();
+}
+
+void SearchFromController::prependChannelRows() {
+	auto channels = std::vector<not_null<ChannelData*>>();
+	const auto add = [&](PeerData *from) {
+		const auto channel = from ? from->asChannel() : nullptr;
+		if (channel
+			&& channel != peer()
+			&& !ranges::contains(channels, not_null(channel))
+			&& !delegate()->peerListFindRow(channel->id.value)) {
+			channels.push_back(channel);
+		}
+	};
+	if (const auto megagroup = peer()->asMegagroup()) {
+		add(megagroup->discussionLink());
+	}
+	for (const auto &sendAs : session().sendAsPeers().list(peer())) {
+		add(sendAs.peer);
+	}
+	if (const auto history = peer()->owner().historyLoaded(peer())) {
+		for (const auto &block : history->blocks) {
+			for (const auto &view : block->messages) {
+				add(view->data()->from());
+			}
+		}
+	}
+	if (channels.empty()) {
+		return;
+	}
+	for (const auto &channel : channels | ranges::views::reverse) {
+		delegate()->peerListPrependRow(
+			std::make_unique<PeerListRow>(channel));
+	}
+	setDescriptionText({});
+	delegate()->peerListRefreshRows();
+}
+
+std::unique_ptr<PeerListRow> SearchFromController::createSearchRow(
+		not_null<PeerData*> peer) {
+	if (peer->isChannel()) {
+		return std::make_unique<PeerListRow>(peer);
+	}
+	return AddSpecialBoxController::createSearchRow(peer);
 }
 
 void SearchFromController::rowClicked(not_null<PeerListRow*> row) {

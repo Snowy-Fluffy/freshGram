@@ -1987,6 +1987,8 @@ void AddSpecialBoxSearchController::searchGlobalDone(
 				if (const auto user = peer->asUser()) {
 					_additional->checkForLoaded(user);
 					delegate()->peerListSearchAddRow(user);
+				} else if (peer->isChannel()) {
+					delegate()->peerListSearchAddRow(peer);
 				}
 			}
 		}

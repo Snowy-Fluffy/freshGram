@@ -26,7 +26,12 @@ public:
 	void prepare() override;
 	void rowClicked(not_null<PeerListRow*> row) override;
 
+	[[nodiscard]] std::unique_ptr<PeerListRow> createSearchRow(
+		not_null<PeerData*> peer) override;
+
 private:
+	void prependChannelRows();
+
 	Fn<void(not_null<PeerData*>)> _callback;
 
 };
