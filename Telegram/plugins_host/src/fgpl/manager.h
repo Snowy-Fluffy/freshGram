@@ -25,9 +25,15 @@
 
 namespace fgpl {
 
+struct LogLine {
+	int64_t unixMs = 0;
+	std::string text;
+	bool fromApp = false;
+};
+
 struct LogRing {
 	std::mutex mutex;
-	std::deque<std::string> lines;
+	std::deque<LogLine> lines;
 };
 
 class SharedStorage final : public Storage {
@@ -213,6 +219,7 @@ struct ManagerSnapshot {
 	[[nodiscard]] std::optional<GrantDecision> grantsOf(
 		const std::string &id) const;
 	[[nodiscard]] std::vector<std::string> log(const std::string &id) const;
+	[[nodiscard]] std::vector<LogLine> logLines(const std::string &id) const;
 	[[nodiscard]] std::vector<Contribution> contributions(
 		const std::string &account,
 		const std::string &language) const;
@@ -249,6 +256,7 @@ public:
 		const std::string &account,
 		const cbor::Value &event);
 	[[nodiscard]] std::vector<std::string> log(const std::string &id) const;
+	void clearLog(const std::string &id);
 
 	void onLock();
 	void onUnlock();

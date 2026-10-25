@@ -432,9 +432,11 @@ bool PluginManager::mayRun() const {
 
 namespace {
 
-void AppendLog(LogRing &ring, size_t maxLines, std::string_view line) {
+void AppendLog(LogRing &ring, size_t maxLines, std::string_view line, bool fromApp) {
+	const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count();
 	const auto lock = std::scoped_lock(ring.mutex);
-	ring.lines.emplace_back(line.substr(0, 500));
+	ring.lines.push_back({ int64_t(time), std::string(line.substr(0, 500)), fromApp });
 	while (ring.lines.size() > maxLines) {
 		ring.lines.pop_front();
 	}
@@ -483,7 +485,7 @@ struct Usage {
 } // namespace
 
 void PluginManager::addLog(Record &record, std::string_view line) {
-	AppendLog(*record.log, _config.logLines, line);
+	AppendLog(*record.log, _config.logLines, line, true);
 }
 
 std::vector<std::string> PluginManager::log(const std::string &id) const {
@@ -491,8 +493,20 @@ std::vector<std::string> PluginManager::log(const std::string &id) const {
 	if (found == _records.end()) {
 		return {};
 	}
+	auto result = std::vector<std::string>();
 	const auto lock = std::scoped_lock(found->second.log->mutex);
-	return { found->second.log->lines.begin(), found->second.log->lines.end() };
+	for (const auto &line : found->second.log->lines) {
+		result.push_back(line.text);
+	}
+	return result;
+}
+
+void PluginManager::clearLog(const std::string &id) {
+	const auto found = _records.find(id);
+	if (found != _records.end()) {
+		const auto lock = std::scoped_lock(found->second.log->mutex);
+		found->second.log->lines.clear();
+	}
 }
 
 void PluginManager::post(Completion completion) {
@@ -937,6 +951,14 @@ std::optional<GrantDecision> ManagerSnapshot::grantsOf(const std::string &id) co
 }
 
 std::vector<std::string> ManagerSnapshot::log(const std::string &id) const {
+	auto result = std::vector<std::string>();
+	for (auto &line : logLines(id)) {
+		result.push_back(std::move(line.text));
+	}
+	return result;
+}
+
+std::vector<LogLine> ManagerSnapshot::logLines(const std::string &id) const {
 	const auto i = logs.find(id);
 	if (i == logs.end() || !i->second) {
 		return {};
@@ -1217,7 +1239,7 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	const auto ring = record.log;
 	const auto maxLines = _config.logLines;
 	services.log = [ring, maxLines](std::string_view line) {
-		AppendLog(*ring, maxLines, line);
+		AppendLog(*ring, maxLines, line, false);
 	};
 	for (const auto &menu : manifest.menus) {
 		instance->declared.menus.insert(menu.surface + "/" + menu.id);

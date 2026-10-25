@@ -12,6 +12,8 @@
 #include "ui/text/format_values.h"
 #include "window/window_controller.h"
 #include "ayu/ui/boxes/plugin_install_box.h"
+#include "boxes/filters/edit_filter_chats_list.h"
+#include "boxes/peer_list_box.h"
 #include "ayu/ui/fagram/fagram_nav_drawer.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
@@ -40,6 +42,7 @@
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
 
@@ -47,6 +50,11 @@
 #include "fgpl/manager.h"
 #include "fgpl/permissions.h"
 #endif
+
+#include <QtCore/QDateTime>
+#include <QtCore/QRegularExpression>
+#include <QtGui/QClipboard>
+#include <QtGui/QGuiApplication>
 
 #include <map>
 
@@ -57,6 +65,8 @@ namespace FreshPlugins {
 namespace {
 
 namespace cbor = fgpl::cbor;
+
+constexpr auto kMaxPluginChats = 100;
 
 struct Entry {
 	std::string plugin;
@@ -225,12 +235,12 @@ void BuildSettingsContent(
 		} else if (type == u"divider"_q) {
 			Ui::AddDivider(content);
 		} else if (type == u"toggle"_q) {
-			const auto on = content->lifetime().make_state<rpl::variable<bool>>(
-				item.find("value") && item.find("value")->asBool().value_or(false));
 			const auto button = Settings::AddButtonWithIcon(
 				content,
 				rpl::single(label),
 				st::settingsButtonNoIcon);
+			const auto on = button->lifetime().make_state<rpl::variable<bool>>(
+				item.find("value") && item.find("value")->asBool().value_or(false));
 			button->toggleOn(on->value(), true);
 			button->addClickHandler([=] {
 				*on = !on->current();
@@ -274,8 +284,8 @@ void BuildSettingsContent(
 		} else if (type == u"select"_q) {
 			auto values = std::vector<std::string>();
 			auto labels = std::vector<QString>();
-			const auto current = content->lifetime().make_state<rpl::variable<QString>>();
-			const auto selected = content->lifetime().make_state<int>(0);
+			const auto current = std::make_shared<rpl::variable<QString>>();
+			const auto selected = std::make_shared<int>(0);
 			const auto chosen = TextOf(item, "value").toStdString();
 			const auto options = item.find("options");
 			for (const auto &option : options ? *options->asArray() : cbor::Array()) {
@@ -303,7 +313,7 @@ void BuildSettingsContent(
 					.title = rpl::single(label),
 					.options = labels,
 					.initialSelection = *selected,
-					.callback = [=](int index) {
+					.callback = crl::guard(button, [=](int index) {
 						*selected = index;
 						*current = labels[index];
 						if (const auto strong = weak.get()) {
@@ -314,7 +324,7 @@ void BuildSettingsContent(
 								itemId,
 								cbor::Value::FromText(values[index]));
 						}
-					},
+					}),
 				}));
 			});
 		}
@@ -355,18 +365,116 @@ void FillSettingsBox(
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
-void FillLogBox(not_null<Ui::GenericBox*> box, std::string plugin) {
-	box->setTitle(tr::fresh_PluginLog());
-	auto text = QString();
-	if (const auto snapshot = Snapshot()) {
-		for (const auto &line : snapshot->log(plugin)) {
-			text += Utf8(line) + '\n';
+[[nodiscard]] bool IsProblemLine(const fgpl::LogLine &line) {
+	static const auto error = QRegularExpression(
+		u"^\\s*(Traceback \\(most recent call last\\)|[\\w.]*(Error|Exception)\\b)"_q);
+	const auto text = Utf8(line.text);
+	return (line.fromApp
+			&& (text.startsWith(u"failure:"_q) || text.startsWith(u"rolled back"_q)))
+		|| error.match(text).hasMatch();
+}
+
+[[nodiscard]] QString LogText(const fgpl::LogLine &line) {
+	return QDateTime::fromMSecsSinceEpoch(line.unixMs).toString(u"HH:mm:ss"_q)
+		+ u"  "_q
+		+ Utf8(line.text);
+}
+
+void FillLogBox(
+		not_null<Ui::GenericBox*> box,
+		std::string plugin,
+		QString name) {
+	box->setTitle(rpl::single(tr::fresh_PluginBadge(
+		tr::now,
+		lt_title,
+		tr::fresh_PluginLog(tr::now),
+		lt_plugin,
+		name)));
+	box->setWidth(st::boxWideWidth);
+	const auto onlyProblems = box->lifetime().make_state<rpl::variable<bool>>(false);
+	const auto filter = Settings::AddButtonWithIcon(
+		box->verticalLayout(),
+		tr::fresh_PluginLogOnlyProblems(),
+		st::settingsButtonNoIcon);
+	filter->toggleOn(rpl::single(false));
+	Ui::AddSkip(box->verticalLayout());
+	const auto lines = box->addRow(
+		object_ptr<Ui::VerticalLayout>(box),
+		style::margins());
+	const auto shown = box->lifetime().make_state<std::optional<QString>>();
+	const auto rebuild = [=] {
+		const auto snapshot = Snapshot();
+		const auto all = snapshot
+			? snapshot->logLines(plugin)
+			: std::vector<fgpl::LogLine>();
+		const auto problems = onlyProblems->current();
+		const auto key = QString::number(all.size())
+			+ ' ' + QString::number(all.empty() ? 0 : all.back().unixMs)
+			+ ' ' + QString::number(int(problems));
+		if (*shown == key) {
+			return;
 		}
-	}
-	box->addRow(object_ptr<Ui::FlatLabel>(
-		box,
-		text.isEmpty() ? tr::fresh_PluginLogEmpty(tr::now) : text.trimmed(),
-		st::boxLabel))->setSelectable(true);
+		const auto grew = shown->has_value();
+		*shown = key;
+		lines->clear();
+		auto added = 0;
+		for (const auto &line : all) {
+			const auto problem = IsProblemLine(line);
+			if (problems && !problem) {
+				continue;
+			}
+			lines->add(
+				object_ptr<Ui::FlatLabel>(
+					lines,
+					LogText(line),
+					problem
+						? st::pluginDangerHigh
+						: line.fromApp
+						? st::boxDividerLabel
+						: st::boxLabel),
+				st::boxRowPadding)->setSelectable(true);
+			++added;
+		}
+		if (!added) {
+			lines->add(
+				object_ptr<Ui::FlatLabel>(
+					lines,
+					problems
+						? tr::fresh_PluginLogNoProblems(tr::now)
+						: tr::fresh_PluginLogEmpty(tr::now),
+					st::boxDividerLabel),
+				st::boxRowPadding);
+		}
+		if (grew || added) {
+			crl::on_main(box, [=] {
+				box->scrollToY(QWIDGETSIZE_MAX);
+			});
+		}
+	};
+	filter->toggledValue(
+	) | rpl::on_next([=](bool value) {
+		*onlyProblems = value;
+		rebuild();
+	}, filter->lifetime());
+	const auto timer = box->lifetime().make_state<base::Timer>(rebuild);
+	timer->callEach(1000);
+
+	box->addLeftButton(tr::fresh_PluginLogClear(), [=] {
+		Post([=](not_null<fgpl::PluginManager*> manager) {
+			manager->clearLog(plugin);
+		}, false);
+	});
+	box->addButton(tr::fresh_PluginLogCopy(), [=] {
+		const auto snapshot = Snapshot();
+		auto text = QStringList();
+		for (const auto &line : snapshot ? snapshot->logLines(plugin) : std::vector<fgpl::LogLine>()) {
+			if (!onlyProblems->current() || IsProblemLine(line)) {
+				text.push_back(LogText(line));
+			}
+		}
+		QGuiApplication::clipboard()->setText(text.join('\n'));
+		box->showToast(tr::lng_text_copied(tr::now));
+	});
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -411,54 +519,26 @@ void FillPermissionsBox(
 		return;
 	}
 	const auto account = AccountOf(&controller->session());
-	const auto granted = snapshot->grantsOf(plugin);
-	box->setTitle(tr::fresh_PluginPermissions());
+	box->setTitle(rpl::single(tr::fresh_PluginBadge(
+		tr::now,
+		lt_title,
+		tr::fresh_PluginPermissions(tr::now),
+		lt_plugin,
+		Utf8(parsed->name.get(Language())))));
 	box->setWidth(st::boxWideWidth);
-	box->addRow(object_ptr<Ui::FlatLabel>(
+	const auto decision = AddPermissionsEditor(
 		box,
-		tr::fresh_PluginPermissionsAllAccounts(tr::now),
-		st::boxDividerLabel));
-	if (parsed->permissions.empty()) {
-		box->addRow(object_ptr<Ui::FlatLabel>(
-			box,
-			tr::fresh_PluginNoPermissions(tr::now),
-			st::boxLabel));
-		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
-		return;
-	}
-	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
-	for (const auto &request : parsed->permissions) {
-		Ui::AddSkip(box->verticalLayout());
-		auto text = PermissionLabel(request.id);
-		if (request.required) {
-			text = tr::fresh_PluginPermissionRequired(tr::now, lt_permission, text);
-		}
-		const auto check = box->addRow(object_ptr<Ui::Checkbox>(
-			box,
-			text,
-			request.required || (granted && granted->granted.contains(request.id))));
-		if (request.required) {
-			check->setDisabled(true);
-		}
-		checks->emplace_back(request.id, check);
-		AddPermissionDanger(
-			box->verticalLayout(),
-			request.id,
-			request.scope,
-			Utf8(request.reason.get(Language())));
-	}
+		controller,
+		*parsed,
+		snapshot->grantsOf(plugin),
+		{});
 	box->addButton(tr::fresh_PluginApply(), [=] {
-		auto decision = fgpl::GrantDecision();
-		if (granted) {
-			decision.chats = granted->chats;
+		const auto chosen = decision();
+		if (!chosen) {
+			return;
 		}
-		for (const auto &[id, check] : *checks) {
-			if (check->checked()) {
-				decision.granted.insert(id);
-			}
-		}
-		Post([=](not_null<fgpl::PluginManager*> manager) {
-			manager->grant(plugin, account, decision);
+		Post([=, chosen = *chosen](not_null<fgpl::PluginManager*> manager) {
+			manager->grant(plugin, account, chosen);
 			manager->startEnabled(account);
 		});
 		controller->showToast(tr::fresh_PluginPermissionsSaved(tr::now));
@@ -608,7 +688,7 @@ void BuildDetails(
 		st::settingsButton,
 		{ &st::menuIconInfo }
 	)->addClickHandler([=] {
-		controller->show(Box(FillLogBox, plugin));
+		controller->show(Box(FillLogBox, plugin, name));
 	});
 	if (UsesNetwork(*info)) {
 		Settings::AddButtonWithIcon(
@@ -883,6 +963,259 @@ void FillNetworkBox(
 
 } // namespace
 
+namespace {
+
+[[nodiscard]] QString RiskText(fgpl::Risk risk) {
+	switch (risk) {
+	case fgpl::Risk::ExfiltrationPossible: return tr::fresh_RiskExfiltration(tr::now);
+	case fgpl::Risk::AnyServer: return tr::fresh_RiskAnyServer(tr::now);
+	case fgpl::Risk::RawSockets: return tr::fresh_RiskSockets(tr::now);
+	case fgpl::Risk::DeletedMessages: return tr::fresh_RiskDeleted(tr::now);
+	case fgpl::Risk::SendsInYourName: return tr::fresh_RiskSends(tr::now);
+	case fgpl::Risk::ChangesOutgoing: return tr::fresh_RiskOutgoing(tr::now);
+	case fgpl::Risk::Background: return tr::fresh_RiskBackground(tr::now);
+	case fgpl::Risk::Clipboard: return tr::fresh_RiskClipboard(tr::now);
+	case fgpl::Risk::Files: return tr::fresh_RiskFiles(tr::now);
+	case fgpl::Risk::PluginMessages: return tr::fresh_RiskPlugins(tr::now);
+	}
+	return QString();
+}
+
+[[nodiscard]] bool SeesChats(const fgpl::Manifest &manifest) {
+	static const auto scoped = std::set<std::string>{
+		"messages.read", "messages.read_deleted", "messages.history",
+		"messages.send", "messages.transform_outgoing", "chats.list",
+		"chat.info", "media.read", "composer.draft", "folders.list",
+	};
+	return ranges::any_of(manifest.permissions, [](const auto &request) {
+		return scoped.contains(request.id);
+	});
+}
+
+void ChooseChats(
+		not_null<Window::SessionController*> controller,
+		std::set<int64_t> current,
+		Fn<void(std::set<int64_t>)> done) {
+	const auto session = &controller->session();
+	auto peers = base::flat_set<not_null<History*>>();
+	for (const auto id : current) {
+		if (const auto history = session->data().historyLoaded(PeerId(uint64(id)))) {
+			peers.emplace(history);
+		}
+	}
+	auto list = std::make_unique<EditFilterChatsListController>(
+		session,
+		tr::fresh_PluginChatsChoose(),
+		Data::ChatFilter::Flags(),
+		Data::ChatFilter::Flags(),
+		peers,
+		kMaxPluginChats,
+		nullptr);
+	auto initBox = [=](not_null<PeerListBox*> box) {
+		box->addButton(tr::lng_settings_save(), crl::guard(box, [=] {
+			auto chosen = std::set<int64_t>();
+			for (const auto &peer : box->collectSelectedRows()) {
+				chosen.insert(int64_t(peer->id.value));
+			}
+			done(std::move(chosen));
+			box->closeBox();
+		}));
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	};
+	controller->show(Box<PeerListBox>(std::move(list), std::move(initBox)));
+}
+
+} // namespace
+
+Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller,
+		const fgpl::Manifest &manifest,
+		const std::optional<fgpl::GrantDecision> &current,
+		const std::vector<std::string> &added) {
+	const auto container = box->verticalLayout();
+	const auto granted = box->lifetime().make_state<
+		rpl::variable<std::set<std::string>>>();
+	auto initial = std::set<std::string>();
+	auto checks = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
+
+	box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		tr::fresh_PluginPermissionsAllAccounts(tr::now),
+		st::boxDividerLabel));
+	if (manifest.permissions.empty()) {
+		Ui::AddSkip(container);
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::fresh_PluginNoPermissions(tr::now),
+			st::boxLabel));
+	}
+	const auto indent = st::defaultBoxCheckbox.margin.left()
+		+ st::defaultCheck.diameter
+		+ st::defaultBoxCheckbox.textPosition.x();
+	const auto refresh = [=] {
+		auto now = std::set<std::string>();
+		for (const auto &[id, check] : *checks) {
+			if (check->checked()) {
+				now.insert(id);
+			}
+		}
+		*granted = std::move(now);
+	};
+	for (const auto danger : { fgpl::Danger::High, fgpl::Danger::Medium, fgpl::Danger::Low }) {
+		auto group = std::vector<const fgpl::PermissionRequest*>();
+		for (const auto &request : manifest.permissions) {
+			if (fgpl::PermissionDanger(request.id, request.scope) == danger) {
+				group.push_back(&request);
+			}
+		}
+		if (group.empty()) {
+			continue;
+		}
+		Ui::AddSkip(container);
+		container->add(
+			object_ptr<Ui::FlatLabel>(
+				container,
+				(danger == fgpl::Danger::High)
+					? tr::fresh_PluginDangerHigh(tr::now)
+					: (danger == fgpl::Danger::Medium)
+					? tr::fresh_PluginDangerMedium(tr::now)
+					: tr::fresh_PluginDangerLow(tr::now),
+				(danger == fgpl::Danger::High)
+					? st::pluginDangerHigh
+					: (danger == fgpl::Danger::Medium)
+					? st::pluginDangerMedium
+					: st::pluginDangerLow),
+			st::boxRowPadding);
+		for (const auto request : group) {
+			auto text = PermissionTitle(request->id, request->scope);
+			const auto fresh = ranges::find(added, request->id) != end(added);
+			if (request->required) {
+				text = tr::fresh_PluginPermissionRequired(tr::now, lt_permission, text);
+			} else if (fresh) {
+				text = tr::fresh_PluginPermissionNew(tr::now, lt_permission, text);
+			}
+			const auto checked = request->required
+				|| !current
+				|| fresh
+				|| current->granted.contains(request->id);
+			if (checked) {
+				initial.insert(request->id);
+			}
+			Ui::AddSkip(container, st::defaultVerticalListSkip / 2);
+			const auto check = box->addRow(object_ptr<Ui::Checkbox>(
+				box,
+				text,
+				checked,
+				st::defaultBoxCheckbox));
+			if (request->required) {
+				check->setDisabled(true);
+			}
+			check->checkedChanges() | rpl::on_next(refresh, check->lifetime());
+			checks->emplace_back(request->id, check);
+			const auto reason = Utf8(request->reason.get(Language()));
+			container->add(
+				object_ptr<Ui::FlatLabel>(
+					container,
+					reason.isEmpty()
+						? Utf8(request->id)
+						: (Utf8(request->id) + u" · "_q + reason),
+					st::boxDividerLabel),
+				st::boxRowPadding + QMargins(indent, 0, 0, 0));
+		}
+	}
+	*granted = std::move(initial);
+
+	const auto chatsMode = std::make_shared<Ui::RadiobuttonGroup>(
+		(current && current->chats)
+			? 1
+			: ranges::any_of(manifest.permissions, [](const auto &request) {
+				return request.id == "messages.read" && request.scope == "selected";
+			})
+			? 1
+			: 0);
+	const auto chats = std::make_shared<std::set<int64_t>>(
+		(current && current->chats) ? *current->chats : std::set<int64_t>());
+	const auto chatsShown = SeesChats(manifest);
+	if (chatsShown) {
+		Ui::AddSkip(container);
+		Ui::AddSubsectionTitle(container, tr::fresh_PluginChats());
+		box->addRow(object_ptr<Ui::Radiobutton>(
+			box,
+			chatsMode,
+			0,
+			tr::fresh_PluginChatsAll(tr::now),
+			st::defaultBoxCheckbox));
+		Ui::AddSkip(container, st::defaultVerticalListSkip / 2);
+		box->addRow(object_ptr<Ui::Radiobutton>(
+			box,
+			chatsMode,
+			1,
+			tr::fresh_PluginChatsSelected(tr::now),
+			st::defaultBoxCheckbox));
+		const auto picker = container->add(
+			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+				container,
+				object_ptr<Ui::VerticalLayout>(container)));
+		const auto count = box->lifetime().make_state<rpl::variable<int>>(
+			int(chats->size()));
+		Ui::AddSkip(picker->entity(), st::defaultVerticalListSkip / 2);
+		Settings::AddButtonWithLabel(
+			picker->entity(),
+			tr::fresh_PluginChatsChoose(),
+			count->value() | rpl::map([](int value) {
+				return tr::fresh_PluginChatsCount(
+					tr::now,
+					lt_amount,
+					QString::number(value));
+			}),
+			st::settingsButton,
+			{ &st::menuIconChats }
+		)->addClickHandler([=] {
+			ChooseChats(controller, *chats, crl::guard(box, [=](std::set<int64_t> chosen) {
+				*chats = std::move(chosen);
+				*count = int(chats->size());
+			}));
+		});
+		picker->toggleOn(chatsMode->value() | rpl::map([](int value) {
+			return value == 1;
+		}));
+		picker->finishAnimating();
+		Ui::AddSkip(container);
+		Ui::AddDividerText(container, tr::fresh_PluginChatsAbout());
+	}
+
+	Ui::AddSkip(container);
+	Ui::AddDividerText(
+		container,
+		granted->value() | rpl::map([](const std::set<std::string> &now) {
+			auto lines = QStringList();
+			for (const auto &note : fgpl::RiskNotes(now)) {
+				lines.push_back(u"• "_q + RiskText(note.risk));
+			}
+			return lines.isEmpty()
+				? tr::fresh_PluginRisksNone(tr::now)
+				: (tr::fresh_PluginRisks(tr::now) + '\n' + lines.join('\n'));
+		}));
+
+	return [=]() -> std::optional<fgpl::GrantDecision> {
+		auto result = fgpl::GrantDecision();
+		for (const auto &[id, check] : *checks) {
+			if (check->checked()) {
+				result.granted.insert(id);
+			}
+		}
+		if (chatsShown && chatsMode->current() == 1) {
+			if (chats->empty()) {
+				controller->showToast(tr::fresh_PluginChatsNone(tr::now));
+				return std::nullopt;
+			}
+			result.chats = *chats;
+		}
+		return result;
+	};
+}
+
 QString AcceptsFrom(const std::vector<std::string> &senders) {
 	auto names = QStringList();
 	for (const auto &sender : senders) {
@@ -893,41 +1226,49 @@ QString AcceptsFrom(const std::vector<std::string> &senders) {
 	return tr::fresh_PluginAcceptsFrom(tr::now, lt_list, names.join(u", "_q));
 }
 
-void AddPermissionDanger(
-		not_null<Ui::VerticalLayout*> layout,
-		const std::string &id,
-		const std::string &scope,
-		const QString &reason) {
-	const auto danger = fgpl::PermissionDanger(id, scope);
-	const auto level = (danger == fgpl::Danger::High)
-		? tr::fresh_PluginDangerHigh(tr::now)
-		: (danger == fgpl::Danger::Medium)
-		? tr::fresh_PluginDangerMedium(tr::now)
-		: tr::fresh_PluginDangerLow(tr::now);
-	const auto &style = (danger == fgpl::Danger::High)
-		? st::pluginDangerHigh
-		: (danger == fgpl::Danger::Medium)
-		? st::pluginDangerMedium
-		: st::pluginDangerLow;
-	layout->add(
-		object_ptr<Ui::FlatLabel>(
-			layout,
-			reason.isEmpty() ? level : (level + u" · "_q + reason),
-			style),
-		st::boxRowPadding);
+QString PermissionTitle(const std::string &id, const std::string &scope) {
+	if (id == "messages.read" && scope == "all") {
+		return tr::fresh_PermMessagesReadAll(tr::now);
+	} else if (id == "messages.read" && scope == "selected") {
+		return tr::fresh_PermMessagesReadSelected(tr::now);
+	}
+	static const auto titles = std::map<std::string, tr::phrase<>>{
+		{ "messages.read", tr::fresh_PermMessagesRead },
+		{ "messages.read_deleted", tr::fresh_PermMessagesReadDeleted },
+		{ "messages.send", tr::fresh_PermMessagesSend },
+		{ "messages.transform_outgoing", tr::fresh_PermMessagesTransform },
+		{ "media.read", tr::fresh_PermMediaRead },
+		{ "chats.list", tr::fresh_PermChatsList },
+		{ "chat.info", tr::fresh_PermChatInfo },
+		{ "messages.history", tr::fresh_PermMessagesHistory },
+		{ "account.info", tr::fresh_PermAccountInfo },
+		{ "stars.balance", tr::fresh_PermStarsBalance },
+		{ "composer.draft", tr::fresh_PermComposerDraft },
+		{ "contacts.list", tr::fresh_PermContactsList },
+		{ "settings.read", tr::fresh_PermSettingsRead },
+		{ "folders.list", tr::fresh_PermFoldersList },
+		{ "ui.menu", tr::fresh_PermUiMenu },
+		{ "ui.command", tr::fresh_PermUiCommand },
+		{ "ui.settings_page", tr::fresh_PermUiSettingsPage },
+		{ "ui.composer_button", tr::fresh_PermUiComposerButton },
+		{ "ui.dialog", tr::fresh_PermUiDialog },
+		{ "ui.toast", tr::fresh_PermUiToast },
+		{ "notifications", tr::fresh_PermNotifications },
+		{ "net.https", tr::fresh_PermNetHttps },
+		{ "net.tcp", tr::fresh_PermNetTcp },
+		{ "net.udp", tr::fresh_PermNetUdp },
+		{ "storage.private", tr::fresh_PermStorage },
+		{ "plugins.message", tr::fresh_PermPluginsMessage },
+		{ "fs.user_selected", tr::fresh_PermFiles },
+		{ "clipboard", tr::fresh_PermClipboard },
+		{ "background", tr::fresh_PermBackground },
+	};
+	const auto i = titles.find(id);
+	return (i != titles.end()) ? i->second(tr::now) : Utf8(id);
 }
 
 QString PermissionLabel(const std::string &id) {
-	if (id == "net.https") {
-		return tr::fresh_PermissionNetHttps(tr::now);
-	} else if (id == "net.tcp") {
-		return tr::fresh_PermissionNetTcp(tr::now);
-	} else if (id == "net.udp") {
-		return tr::fresh_PermissionNetUdp(tr::now);
-	} else if (id == "plugins.message") {
-		return tr::fresh_PermissionPluginsMessage(tr::now);
-	}
-	return Utf8(id);
+	return PermissionTitle(id, std::string());
 }
 
 bool HasComposerItems(not_null<Main::Session*> session) {
@@ -1087,13 +1428,22 @@ void AddMainMenuItems(
 	const auto inner = container->add(object_ptr<Ui::VerticalLayout>(container));
 	const auto session = &controller->session();
 	const auto weak = base::make_weak(session);
+	const auto shown = inner->lifetime().make_state<std::optional<QString>>();
 	const auto rebuild = [=] {
-		inner->clear();
 		const auto strong = weak.get();
-		if (!strong) {
+		const auto entries = strong
+			? EntriesFor(strong, "main_menu")
+			: std::vector<Entry>();
+		auto key = QStringList();
+		for (const auto &entry : entries) {
+			key.push_back(Utf8(entry.plugin + '/' + entry.menuId) + ' ' + entry.text);
+		}
+		if (*shown == key.join('\n')) {
 			return;
 		}
-		for (const auto &entry : EntriesFor(strong, "main_menu")) {
+		*shown = key.join('\n');
+		inner->clear();
+		for (const auto &entry : entries) {
 			FA::Ui::AddMainMenuButton(
 				inner,
 				rpl::single(entry.text),
@@ -1200,19 +1550,16 @@ void ShowPluginSettings(not_null<Window::SessionController*>, const QString &) {
 void ShowPluginDetails(not_null<Window::SessionController*>, const QString &) {
 }
 
+QString PermissionTitle(const std::string &id, const std::string &) {
+	return QString::fromStdString(id);
+}
+
 QString PermissionLabel(const std::string &id) {
 	return QString::fromStdString(id);
 }
 
 QString AcceptsFrom(const std::vector<std::string> &) {
 	return QString();
-}
-
-void AddPermissionDanger(
-	not_null<Ui::VerticalLayout*>,
-	const std::string &,
-	const std::string &,
-	const QString &) {
 }
 
 bool HasComposerItems(not_null<Main::Session*>) {

@@ -156,6 +156,44 @@ void AddPluginRow(
 	return result;
 }
 
+[[nodiscard]] QString RuntimeShortLabel(
+		const FreshPlugins::RuntimeStatus &status) {
+	using Stage = FreshPlugins::RuntimeStage;
+	if (status.stage != Stage::Idle) {
+		return RuntimeLabel(status);
+	} else if (!status.error.isEmpty()) {
+		return tr::fresh_PluginsComponentsError(tr::now);
+	} else if (!status.installed) {
+		return tr::fresh_PluginsNotInstalled(tr::now);
+	} else if (status.updateAvailable) {
+		return tr::fresh_PluginsComponentsUpdate(tr::now);
+	}
+	return tr::fresh_PluginsComponentsInstalled(tr::now);
+}
+
+[[nodiscard]] QString ComponentsStatusText(
+		const FreshPlugins::RuntimeStatus &status) {
+	if (status.stage != FreshPlugins::RuntimeStage::Idle
+		|| !status.error.isEmpty()
+		|| (status.installed && status.updateAvailable)) {
+		return RuntimeLabel(status);
+	} else if (!status.installed) {
+		return tr::fresh_PluginsNoRuntime(tr::now);
+	}
+	return status.remoteKnown
+		? tr::fresh_PluginsUpToDate(tr::now)
+		: tr::fresh_PluginsComponentsInstalled(tr::now);
+}
+
+[[nodiscard]] QString VersionText(const QString &installed, const QString &remote) {
+	const auto now = installed.isEmpty()
+		? tr::fresh_PluginsNotInstalled(tr::now)
+		: installed;
+	return (remote.isEmpty() || remote == installed)
+		? now
+		: (now + u" → "_q + remote);
+}
+
 void ReportInstall(
 		base::weak_ptr<Window::SessionController> weak,
 		Fn<void()> ready,
@@ -255,11 +293,33 @@ void FillComponentsBox(
 	box->setTitle(tr::fresh_PluginsComponents());
 	box->setWidth(st::boxWideWidth);
 	const auto container = box->verticalLayout();
+	const auto version = [&](const QString &name, auto installed, auto remote) {
+		const auto row = Settings::AddButtonWithLabel(
+			container,
+			rpl::single(name),
+			FreshPlugins::RuntimeStatusValue(
+			) | rpl::map([=](const FreshPlugins::RuntimeStatus &status) {
+				return VersionText(status.*installed, status.updateAvailable
+					? status.*remote
+					: QString());
+			}),
+			st::settingsButtonNoIcon);
+		row->setAttribute(Qt::WA_TransparentForMouseEvents);
+	};
+	version(
+		u"Wasmtime"_q,
+		&FreshPlugins::RuntimeStatus::wasmtime,
+		&FreshPlugins::RuntimeStatus::remoteWasmtime);
+	version(
+		u"Python"_q,
+		&FreshPlugins::RuntimeStatus::python,
+		&FreshPlugins::RuntimeStatus::remotePython);
 	box->addRow(
 		object_ptr<Ui::FlatLabel>(
 			box,
-			FreshPlugins::RuntimeStatusValue() | rpl::map(RuntimeLabel),
-			st::boxLabel));
+			FreshPlugins::RuntimeStatusValue() | rpl::map(ComponentsStatusText),
+			st::boxDividerLabel),
+		st::boxRowPadding + QMargins(0, st::defaultVerticalListSkip, 0, 0));
 	Ui::AddSkip(container);
 
 	Settings::AddButtonWithIcon(
@@ -370,12 +430,22 @@ void AddPluginsSettings(
 	Ui::AddSubsectionTitle(inner, tr::fresh_PluginsInstalled());
 	const auto list = inner->add(object_ptr<Ui::VerticalLayout>(inner));
 	const auto empty = std::make_shared<rpl::variable<bool>>(true);
+	const auto shown = std::make_shared<std::optional<QString>>();
 	const auto rebuild = [=] {
-		list->clear();
 		const auto snapshot = FreshPlugins::Snapshot();
 		const auto plugins = snapshot
 			? snapshot->plugins
 			: std::vector<fgpl::PluginInfo>();
+		auto key = QStringList();
+		for (const auto &info : plugins) {
+			key.push_back(QString::fromStdString(info.id) + ' ' + StatusLine(info)
+				+ ' ' + QString::number(int(info.enabled)));
+		}
+		if (*shown == key.join('\n')) {
+			return;
+		}
+		*shown = key.join('\n');
+		list->clear();
 		for (const auto &info : plugins) {
 			AddPluginRow(list, controller, info);
 		}
@@ -418,7 +488,7 @@ void AddPluginsSettings(
 	Settings::AddButtonWithLabel(
 		container,
 		tr::fresh_PluginsComponents(),
-		FreshPlugins::RuntimeStatusValue() | rpl::map(RuntimeLabel),
+		FreshPlugins::RuntimeStatusValue() | rpl::map(RuntimeShortLabel),
 		st::settingsButton,
 		{ &st::menuIconDownload }
 	)->addClickHandler([=] {
