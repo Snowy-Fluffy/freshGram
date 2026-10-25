@@ -35,6 +35,7 @@
 #include "ui/effects/path_shift_gradient.h"
 #include "ui/layers/box_content.h"
 #include "window/themes/window_theme.h"
+#include "window/window_session_controller.h"
 
 namespace AyuFeatures::MessageShot {
 
@@ -65,7 +66,9 @@ bool ignoreRender(RenderPart part) {
 		&& ((part == RenderPart::Date && !s.showDate())
 			|| (part == RenderPart::Reactions && !s.showReactions())
 			|| (part == RenderPart::HeaderDecorations
-				&& !s.showHeaderDecorations()));
+				&& !s.showHeaderDecorations())
+			|| (part == RenderPart::Avatars && !s.showAvatars())
+			|| (part == RenderPart::Names && !s.showNames()));
 }
 
 bool isTakingShot() {
@@ -150,23 +153,37 @@ QImage removeEmptySpaceAround(const QImage &original) {
 		return {};
 	}
 
-	int minX = original.width();
-	int minY = original.height();
-	int maxX = 0;
-	int maxY = 0;
+	const auto image = (original.format() == QImage::Format_ARGB32_Premultiplied)
+		? original
+		: original.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+	const auto width = image.width();
+	const auto height = image.height();
 
-	for (int x = 0; x < original.width(); ++x) {
-		for (int y = 0; y < original.height(); ++y) {
-			if (qAlpha(original.pixel(x, y)) != 0) {
-				minX = std::min(minX, x);
-				minY = std::min(minY, y);
-				maxX = std::max(maxX, x);
-				maxY = std::max(maxY, y);
-			}
+	auto minX = width;
+	auto minY = height;
+	auto maxX = -1;
+	auto maxY = -1;
+
+	for (auto y = 0; y < height; ++y) {
+		const auto line = reinterpret_cast<const QRgb*>(image.constScanLine(y));
+		auto left = 0;
+		while (left < width && !qAlpha(line[left])) {
+			++left;
 		}
+		if (left == width) {
+			continue;
+		}
+		auto right = width - 1;
+		while (right > left && !qAlpha(line[right])) {
+			--right;
+		}
+		minX = std::min(minX, left);
+		maxX = std::max(maxX, right);
+		minY = std::min(minY, y);
+		maxY = y;
 	}
 
-	if (minX > maxX || minY > maxY) {
+	if (maxX < 0 || maxY < 0) {
 		LOG(("Image is fully transparent ?"));
 		return {};
 	}
@@ -175,24 +192,54 @@ QImage removeEmptySpaceAround(const QImage &original) {
 	return original.copy(bounds);
 }
 
-QImage addPadding(const QImage &original) {
+QImage addPadding(const QImage &original, int padding, int ratio) {
 	if (original.isNull()) {
 		return {};
 	}
 
 	QImage paddedImage(
-		original.width() + 2 * st::messageShotPadding * style::DevicePixelRatio(),
-		original.height() + 2 * st::messageShotPadding * style::DevicePixelRatio(),
+		original.width() + 2 * padding * ratio,
+		original.height() + 2 * padding * ratio,
 		QImage::Format_ARGB32_Premultiplied
 	);
-	paddedImage.setDevicePixelRatio(style::DevicePixelRatio());
+	paddedImage.setDevicePixelRatio(ratio);
 	paddedImage.fill(Qt::transparent);
 
 	Painter painter(&paddedImage);
-	painter.drawImage(st::messageShotPadding, st::messageShotPadding, original);
+	painter.drawImage(padding, padding, original);
 	painter.end();
 
 	return paddedImage;
+}
+
+void paintWallpaper(
+		QPainter &p,
+		not_null<Ui::ChatTheme*> theme,
+		QSize size) {
+	const auto &background = theme->background();
+	if (background.colorForFill) {
+		p.fillRect(QRect(QPoint(), size), *background.colorForFill);
+		return;
+	}
+	const auto request = theme->cacheBackgroundRequest(size);
+	if (!request) {
+		p.fillRect(QRect(QPoint(), size), makeDefaultBackgroundColor());
+		return;
+	}
+	if (background.isPattern && background.patternOpacity < 0.) {
+		p.fillRect(QRect(QPoint(), size), Qt::black);
+	}
+	const auto cached = Ui::CacheBackground(request);
+	if (cached.image.isNull()) {
+		p.fillRect(QRect(QPoint(), size), makeDefaultBackgroundColor());
+		return;
+	}
+	auto hq = PainterHighQualityEnabler(p);
+	p.drawImage(
+		QRect(
+			QPoint(cached.x, cached.y),
+			cached.image.size() / cached.image.devicePixelRatio()),
+		cached.image);
 }
 
 QColor makeDefaultBackgroundColor() {
@@ -203,7 +250,24 @@ QColor makeDefaultBackgroundColor() {
 	return st::boxBg->c.darker(110);
 }
 
-void Make(not_null<QWidget*> box, const ShotConfig &config, const Fn<void(QImage&,bool)>& callback) {
+int paddingValue(int index) {
+	constexpr auto kMultipliers = std::array{ 0, 1, 3, 6 };
+	return st::messageShotPadding
+		* kMultipliers[std::clamp(index, 0, int(kMultipliers.size()) - 1)];
+}
+
+int contentWidth(int index) {
+	constexpr auto kFactors = std::array{ 0.6, 0.8, 1. };
+	const auto factor = kFactors[std::clamp(index, 0, int(kFactors.size()) - 1)];
+	return int(std::round(st::msgMaxWidth * factor))
+		+ (st::boxPadding.left() + st::boxPadding.right());
+}
+
+void Make(
+		not_null<QWidget*> box,
+		const ShotConfig &config,
+		const Fn<void(QImage&,bool)>& callback,
+		int pixelRatio) {
 	const auto controller = config.controller;
 	const auto st = config.st;
 	auto messages = config.messages;
@@ -302,13 +366,17 @@ void Make(not_null<QWidget*> box, const ShotConfig &config, const Fn<void(QImage
 		}
 	}
 
-	const auto showBackground = AyuSettings::getInstance().messageShotSettings().showBackground();
+	const auto &shotSettings = AyuSettings::getInstance().messageShotSettings();
+	const auto background = shotSettings.background();
+	const auto padding = paddingValue(shotSettings.padding());
+	const auto contentWidthValue = contentWidth(shotSettings.width());
+	const auto ratio = (pixelRatio > 0) ? pixelRatio : style::DevicePixelRatio();
 	auto render = [=, messages = std::move(messages), delegate = std::move(delegate)](bool final)
 	{
 		takingShot = true;
 
 		// calculate the size of the image
-		int width = st::msgMaxWidth + (st::boxPadding.left() + st::boxPadding.right());
+		int width = contentWidthValue;
 		int height = 0;
 
 		for (int i = 0; i < messages.size(); i++) {
@@ -322,12 +390,12 @@ void Make(not_null<QWidget*> box, const ShotConfig &config, const Fn<void(QImage
 			}
 		}
 
-		width *= style::DevicePixelRatio();
-		height *= style::DevicePixelRatio();
+		width *= ratio;
+		height *= ratio;
 
 		// create the image
 		QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
-		image.setDevicePixelRatio(style::DevicePixelRatio());
+		image.setDevicePixelRatio(ratio);
 		image.fill(Qt::transparent);
 
 		const auto viewport = QRect(0, 0, width, height);
@@ -343,7 +411,8 @@ void Make(not_null<QWidget*> box, const ShotConfig &config, const Fn<void(QImage
 			const auto &message = messages[i];
 			const auto view = getView(message);
 
-			const auto displayUserpic = view->displayFromPhoto() || message->isPost();
+			const auto displayUserpic = !ignoreRender(RenderPart::Avatars)
+				&& (view->displayFromPhoto() || message->isPost());
 
 			const auto rect = QRect(0, 0, width, view->height());
 
@@ -390,18 +459,26 @@ void Make(not_null<QWidget*> box, const ShotConfig &config, const Fn<void(QImage
 
 		takingShot = false;
 
-		auto result = addPadding(removeEmptySpaceAround(image));
-		if (!showBackground) {
+		auto result = addPadding(removeEmptySpaceAround(image), padding, ratio);
+		if (result.isNull()
+			|| background == MessageShotSettings::Background::Transparent) {
 			callback(result, final);
 			return;
 		}
 
 		auto newResult = QImage(result.size(), QImage::Format_ARGB32_Premultiplied);
-		newResult.setDevicePixelRatio(style::DevicePixelRatio());
+		newResult.setDevicePixelRatio(ratio);
 		newResult.fill(makeDefaultBackgroundColor());
 
 		Painter painter(&newResult);
+		if (background == MessageShotSettings::Background::Wallpaper) {
+			paintWallpaper(
+				painter,
+				controller->currentChatTheme(),
+				result.size() / ratio);
+		}
 		painter.drawImage(0, 0, result);
+		painter.end();
 
 		callback(newResult, final);
 	};

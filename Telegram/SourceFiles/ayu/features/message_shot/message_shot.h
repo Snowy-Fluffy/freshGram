@@ -27,6 +27,8 @@ enum RenderPart
 	Date,
 	Reactions,
 	HeaderDecorations,
+	Avatars,
+	Names,
 };
 
 void setShotConfig(ShotConfig &config);
@@ -42,7 +44,12 @@ bool setChoosingTheme(bool val);
 // util
 QColor makeDefaultBackgroundColor();
 
-void Make(not_null<QWidget*> box, const ShotConfig &config, const Fn<void(QImage&,bool)>& callback);
+// pixelRatio <= 0 renders with the screen device pixel ratio.
+void Make(
+	not_null<QWidget*> box,
+	const ShotConfig &config,
+	const Fn<void(QImage&,bool)>& callback,
+	int pixelRatio = 0);
 
 void Wrapper(not_null<HistoryView::ListWidget*> widget, Fn<void()> clearSelected);
 void Wrapper(not_null<HistoryInner*> widget, Fn<void()> clearSelected);

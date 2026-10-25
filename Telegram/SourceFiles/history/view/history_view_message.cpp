@@ -3931,7 +3931,9 @@ void Message::unloadHeavyPart() {
 }
 
 bool Message::hasFromPhoto() const {
-	if (isHidden()) {
+	if (isHidden()
+		|| AyuFeatures::MessageShot::ignoreRender(
+			AyuFeatures::MessageShot::RenderPart::Avatars)) {
 		return false;
 	}
 	switch (context()) {
@@ -5931,6 +5933,9 @@ bool Message::hasFromName() const {
 
 bool Message::displayFromName() const {
 	if (!hasFromName() || isAttachedToPrevious() || data()->isSponsored()) {
+		return false;
+	} else if (AyuFeatures::MessageShot::ignoreRender(
+			AyuFeatures::MessageShot::RenderPart::Names)) {
 		return false;
 	}
 	return !Has<PsaTooltipState>();

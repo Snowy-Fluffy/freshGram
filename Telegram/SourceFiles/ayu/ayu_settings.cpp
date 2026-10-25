@@ -279,9 +279,51 @@ void from_json(const nlohmann::json &j, GhostModeAccountSettings &s) {
 	s._markReadAfterActionLocked = j.value("markReadAfterActionLocked", false);
 }
 
-void MessageShotSettings::setShowBackground(bool val) {
-	if (_showBackground.current() == val) return;
-	_showBackground = val;
+void MessageShotSettings::setBackground(Background val) {
+	if (_background.current() == int(val)) return;
+	_background = int(val);
+	AyuSettings::save();
+}
+
+void MessageShotSettings::setShowAvatars(bool val) {
+	if (_showAvatars.current() == val) return;
+	_showAvatars = val;
+	AyuSettings::save();
+}
+
+void MessageShotSettings::setShowNames(bool val) {
+	if (_showNames.current() == val) return;
+	_showNames = val;
+	AyuSettings::save();
+}
+
+void MessageShotSettings::setPadding(int val) {
+	if (_padding.current() == val) return;
+	_padding = val;
+	AyuSettings::save();
+}
+
+void MessageShotSettings::setWidth(int val) {
+	if (_width.current() == val) return;
+	_width = val;
+	AyuSettings::save();
+}
+
+void MessageShotSettings::setScale(int val) {
+	if (_scale.current() == val) return;
+	_scale = val;
+	AyuSettings::save();
+}
+
+void MessageShotSettings::setFormat(Format val) {
+	if (_format.current() == int(val)) return;
+	_format = int(val);
+	AyuSettings::save();
+}
+
+void MessageShotSettings::setLastSaveFolder(const QString &val) {
+	if (_lastSaveFolder.current() == val) return;
+	_lastSaveFolder = val;
 	AyuSettings::save();
 }
 
@@ -376,7 +418,14 @@ void MessageShotSettings::clearTheme() {
 
 void to_json(nlohmann::json &j, const MessageShotSettings &s) {
 	j = nlohmann::json{
-		{"showBackground", s._showBackground.current()},
+		{"background", s._background.current()},
+		{"showAvatars", s._showAvatars.current()},
+		{"showNames", s._showNames.current()},
+		{"padding", s._padding.current()},
+		{"width", s._width.current()},
+		{"scale", s._scale.current()},
+		{"format", s._format.current()},
+		{"lastSaveFolder", s._lastSaveFolder.current()},
 		{"showDate", s._showDate.current()},
 		{"showReactions", s._showReactions.current()},
 		{"showHeaderDecorations", s._showHeaderDecorations.current()},
@@ -393,7 +442,25 @@ void to_json(nlohmann::json &j, const MessageShotSettings &s) {
 }
 
 void from_json(const nlohmann::json &j, MessageShotSettings &s) {
-	s._showBackground = j.value("showBackground", true);
+	using Background = MessageShotSettings::Background;
+	using Format = MessageShotSettings::Format;
+	const auto legacyBackground = j.value("showBackground", true)
+		? Background::Color
+		: Background::Transparent;
+	s._background = std::clamp(
+		j.value("background", int(legacyBackground)),
+		int(Background::Transparent),
+		int(Background::Wallpaper));
+	s._showAvatars = j.value("showAvatars", true);
+	s._showNames = j.value("showNames", true);
+	s._padding = std::clamp(j.value("padding", 1), 0, 3);
+	s._width = std::clamp(j.value("width", 2), 0, 2);
+	s._scale = std::clamp(j.value("scale", 0), 0, 3);
+	s._format = std::clamp(
+		j.value("format", int(Format::Png)),
+		int(Format::Png),
+		int(Format::Jpeg));
+	s._lastSaveFolder = j.value("lastSaveFolder", QString());
 	s._showDate = j.value("showDate", false);
 	s._showReactions = j.value("showReactions", false);
 	s._showHeaderDecorations = j.value("showHeaderDecorations", true);

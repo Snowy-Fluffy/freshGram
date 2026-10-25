@@ -12,6 +12,7 @@
 #include "ayu/ui/components/image_view.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "boxes/abstract_box.h"
+#include "core/file_utilities.h"
 #include "data/data_chat.h"
 #include "data/data_channel.h"
 #include "data/data_todo_list.h"
@@ -20,17 +21,59 @@
 #include "history/history_item_components.h"
 #include "history/history_item.h"
 #include "main/main_session.h"
+#include "mainwidget.h"
 #include "settings/settings_common.h"
 #include "styles/style_ayu_styles.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
+#include "ui/boxes/single_choice_box.h"
+#include "ui/layers/generic_box.h"
+#include "ui/painter.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/vertical_layout.h"
+#include "window/window_peer_menu.h"
+#include "window/window_session_controller.h"
 
 #include <memory>
-#include <QFileDialog>
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
+#include <QMimeData>
+#include <QRegularExpression>
+
+namespace {
+
+constexpr auto kJpegQuality = 95;
+constexpr auto kFileNameLimit = 32;
+
+[[nodiscard]] QString DefaultFileNamePrefix(
+		const AyuFeatures::MessageShot::ShotConfig &config) {
+	auto name = config.messages.empty()
+		? QString()
+		: config.messages.front()->history()->peer->name();
+	static const auto kForbidden = QRegularExpression(
+		u"[\\\\/:*?\"<>|\\x00-\\x1F]"_q);
+	name.replace(kForbidden, QString());
+	name = name.simplified();
+	name.replace(QChar(' '), QChar('_'));
+	if (name.size() > kFileNameLimit) {
+		name = name.left(kFileNameLimit);
+	}
+	return name.isEmpty() ? u"shot"_q : (u"shot_"_q + name);
+}
+
+[[nodiscard]] QImage FlattenForJpeg(const QImage &image) {
+	auto result = QImage(image.size(), QImage::Format_RGB32);
+	result.setDevicePixelRatio(image.devicePixelRatio());
+	result.fill(AyuFeatures::MessageShot::makeDefaultBackgroundColor());
+	auto p = QPainter(&result);
+	p.drawImage(0, 0, image);
+	p.end();
+	return result;
+}
+
+} // namespace
 
 MessageShotBox::MessageShotBox(
 	QWidget *parent,
@@ -206,6 +249,13 @@ void MessageShotBox::setupContent() {
 	const auto firstPreviewLatch = std::make_shared<TimedCountDownLatch>(1);
 	const auto generation = content->lifetime().make_state<int>(0);
 	const auto weak = base::make_weak(this);
+	const auto boxWidth = content->lifetime().make_state<rpl::variable<int>>(
+		st::boxWidth);
+	const auto boxWidthFor = [=](const QImage &image)
+	{
+		return image.width() / style::DevicePixelRatio()
+			+ (st::boxPadding.left() + st::boxPadding.right()) * 4;
+	};
 
 	const auto updatePreview = [=]
 	{
@@ -220,6 +270,9 @@ void MessageShotBox::setupContent() {
 				imageView->setImage(image);
 			}
 			firstPreviewLatch->countDown();
+			if (const auto width = boxWidthFor(image); width > boxWidth->current()) {
+				*boxWidth = width;
+			}
 		});
 	};
 
@@ -293,16 +346,108 @@ void MessageShotBox::setupContent() {
 
 			Ui::show(std::move(box), Ui::LayerOption::KeepOther);
 		});
+	const auto addChoice = [=](
+			tr::phrase<> title,
+			std::vector<QString> options,
+			int current,
+			Fn<void(int)> apply) {
+		const auto selected = content->lifetime().make_state<int>(
+			std::clamp(current, 0, int(options.size()) - 1));
+		const auto label = content->lifetime().make_state<
+			rpl::variable<QString>>(options[*selected]);
+		const auto titleText = title(tr::now);
+		const auto button = AddButtonWithLabel(
+			content,
+			title(),
+			label->value(),
+			st::settingsButtonNoIcon);
+		button->addClickHandler([=]
+		{
+			Ui::show(Box([=](not_null<Ui::GenericBox*> box)
+			{
+				SingleChoiceBox(box, {
+					.title = rpl::single(titleText),
+					.options = options,
+					.initialSelection = *selected,
+					.callback = [=](int index)
+					{
+						*selected = index;
+						*label = options[index];
+						apply(index);
+					},
+				});
+			}), Ui::LayerOption::KeepOther);
+		});
+		return button;
+	};
+
+	using Background = MessageShotSettings::Background;
+	addChoice(
+		tr::fresh_MessageShotBackground,
+		{
+			tr::fresh_MessageShotBackgroundNone(tr::now),
+			tr::fresh_MessageShotBackgroundColor(tr::now),
+			tr::fresh_MessageShotBackgroundWallpaper(tr::now),
+		},
+		int(shotSettings.background()),
+		[=](int index)
+		{
+			AyuSettings::getInstance().messageShotSettings().setBackground(
+				Background(index));
+			updatePreview();
+		});
+	addChoice(
+		tr::fresh_MessageShotPadding,
+		{
+			tr::fresh_MessageShotPaddingNone(tr::now),
+			tr::fresh_MessageShotPaddingSmall(tr::now),
+			tr::fresh_MessageShotPaddingMedium(tr::now),
+			tr::fresh_MessageShotPaddingLarge(tr::now),
+		},
+		shotSettings.padding(),
+		[=](int index)
+		{
+			AyuSettings::getInstance().messageShotSettings().setPadding(index);
+			updatePreview();
+		});
+	addChoice(
+		tr::fresh_MessageShotWidth,
+		{
+			tr::fresh_MessageShotWidthNarrow(tr::now),
+			tr::fresh_MessageShotWidthMedium(tr::now),
+			tr::fresh_MessageShotWidthStandard(tr::now),
+		},
+		shotSettings.width(),
+		[=](int index)
+		{
+			AyuSettings::getInstance().messageShotSettings().setWidth(index);
+			updatePreview();
+		});
+
 	AddButtonWithIcon(
 		content,
-		tr::ayu_MessageShotShowBackground(),
+		tr::fresh_MessageShotShowAvatars(),
 		st::settingsButtonNoIcon
-	)->toggleOn(rpl::single(shotSettings.showBackground())
+	)->toggleOn(rpl::single(shotSettings.showAvatars())
 	)->toggledValue(
 	) | rpl::skip(1) | on_next(
 		[=](bool enabled)
 		{
-			AyuSettings::getInstance().messageShotSettings().setShowBackground(enabled);
+			AyuSettings::getInstance().messageShotSettings().setShowAvatars(enabled);
+			updatePreview();
+		},
+		content->lifetime());
+
+	AddButtonWithIcon(
+		content,
+		tr::fresh_MessageShotShowNames(),
+		st::settingsButtonNoIcon
+	)->toggleOn(rpl::single(shotSettings.showNames())
+	)->toggledValue(
+	) | rpl::skip(1) | on_next(
+		[=](bool enabled)
+		{
+			AyuSettings::getInstance().messageShotSettings().setShowNames(enabled);
 			updatePreview();
 		},
 		content->lifetime());
@@ -395,37 +540,183 @@ void MessageShotBox::setupContent() {
 	}
 
 	AddSkip(content);
+	AddDivider(content);
+	AddSkip(content);
+	AddSubsectionTitle(content, tr::fresh_MessageShotExport());
+
+	using Format = MessageShotSettings::Format;
+	addChoice(
+		tr::fresh_MessageShotFormat,
+		{ u"PNG"_q, u"JPEG"_q },
+		int(shotSettings.format()),
+		[=](int index)
+		{
+			AyuSettings::getInstance().messageShotSettings().setFormat(
+				Format(index));
+		});
+	latestToggle = addChoice(
+		tr::fresh_MessageShotScale,
+		{
+			tr::fresh_MessageShotScaleScreen(tr::now),
+			u"1x"_q,
+			u"2x"_q,
+			u"3x"_q,
+		},
+		shotSettings.scale(),
+		[=](int index)
+		{
+			AyuSettings::getInstance().messageShotSettings().setScale(index);
+		});
+
+	AddSkip(content);
+
+	const auto exporting = content->lifetime().make_state<bool>(false);
+	const auto exportImage = [=](Fn<void(QImage)> done)
+	{
+		if (*exporting) {
+			return;
+		}
+		const auto scale = AyuSettings::getInstance().messageShotSettings().scale();
+		if (scale <= 0 || scale == style::DevicePixelRatio()) {
+			done(imageView->getImage());
+			return;
+		}
+		*exporting = true;
+		AyuFeatures::MessageShot::Make(this, _config, [=](const QImage &image, bool final)
+		{
+			if (!weak || !final) {
+				return;
+			}
+			*exporting = false;
+			done(image);
+		}, scale);
+	};
+
+	const auto saveImage = [=](const QImage &image, const QString &chosen)
+	{
+		const auto jpegByDefault = AyuSettings::getInstance()
+			.messageShotSettings().format() == Format::Jpeg;
+		auto path = chosen;
+		auto jpeg = jpegByDefault;
+		const auto suffix = QFileInfo(path).suffix().toLower();
+		if (suffix == u"jpg"_q || suffix == u"jpeg"_q) {
+			jpeg = true;
+		} else if (suffix == u"png"_q) {
+			jpeg = false;
+		} else {
+			path += jpeg ? u".jpg"_q : u".png"_q;
+		}
+
+		const auto saved = jpeg
+			? FlattenForJpeg(image).save(path, "JPG", kJpegQuality)
+			: image.save(path, "PNG");
+		if (!saved) {
+			showToast(tr::fresh_MessageShotSaveFailed(tr::now));
+			return;
+		}
+		AyuSettings::getInstance().messageShotSettings().setLastSaveFolder(
+			QFileInfo(path).absolutePath());
+		_config.controller->showToast(tr::fresh_MessageShotSaved(tr::now));
+
+		_tookShot = true;
+		closeBox();
+	};
 
 	addButton(tr::ayu_MessageShotSave(),
 			  [=]
 			  {
-				  const auto image = imageView->getImage();
-				  const auto path = QFileDialog::getSaveFileName(
-					  this,
-					  tr::lng_save_file(tr::now),
-					  QString(),
-					  "*.png");
-
-				  if (!path.isEmpty()) {
-					  image.save(path);
-				  }
-
-			  	  _tookShot = true;
-				  closeBox();
+				  exportImage([=](QImage image)
+				  {
+					  if (image.isNull()) {
+						  return;
+					  }
+					  const auto &shot = AyuSettings::getInstance().messageShotSettings();
+					  const auto jpeg = (shot.format() == Format::Jpeg);
+					  const auto png = u"PNG Image (*.png)"_q;
+					  const auto jpg = u"JPEG Image (*.jpg *.jpeg)"_q;
+					  const auto filter = (jpeg ? (jpg + u";;"_q + png) : (png + u";;"_q + jpg))
+						  + u";;"_q
+						  + FileDialog::AllFilesFilter();
+					  auto folder = shot.lastSaveFolder();
+					  if (!folder.isEmpty() && !QDir(folder).exists()) {
+						  folder = QString();
+					  }
+					  FileDialog::GetWritePath(
+						  this,
+						  tr::lng_save_file(tr::now),
+						  filter,
+						  filedialogDefaultName(
+							  DefaultFileNamePrefix(_config),
+							  jpeg ? u".jpg"_q : u".png"_q,
+							  folder),
+						  crl::guard(this, [=](QString &&result)
+						  {
+							  if (!result.isEmpty()) {
+								  saveImage(image, result);
+							  }
+						  }));
+				  });
 			  });
 	addButton(tr::ayu_MessageShotCopy(),
 			  [=]
 			  {
-				  QGuiApplication::clipboard()->setImage(imageView->getImage());
+				  exportImage([=](QImage image)
+				  {
+					  if (image.isNull()) {
+						  return;
+					  }
+					  QGuiApplication::clipboard()->setImage(image);
+					  _config.controller->showToast(tr::fresh_MessageShotCopied(tr::now));
 
-			  	  _tookShot = true;
-				  closeBox();
+					  _tookShot = true;
+					  closeBox();
+				  });
+			  });
+	addLeftButton(tr::fresh_MessageShotSend(),
+			  [=]
+			  {
+				  exportImage([=](QImage image)
+				  {
+					  if (image.isNull()) {
+						  return;
+					  }
+					  const auto controller = _config.controller;
+					  auto chosen = [=](not_null<Data::Thread*> thread)
+					  {
+						  const auto weakThread = base::make_weak(thread);
+						  const auto weakController = base::make_weak(controller);
+						  crl::on_main([=]
+						  {
+							  const auto strongController = weakController.get();
+							  const auto strong = weakThread.get();
+							  if (!strongController || !strong) {
+								  return;
+							  }
+							  // open the chat and its send files box with the shot
+							  auto data = std::make_unique<QMimeData>();
+							  data->setImageData(image);
+							  strongController->content()->filesOrForwardDrop(
+								  strong,
+								  data.get(),
+								  true);
+						  });
+						  if (weak) {
+							  _tookShot = true;
+							  closeBox();
+						  }
+						  return true;
+					  };
+					  controller->show(
+						  Window::PrepareChooseRecipientBox(
+							  &controller->session(),
+							  std::move(chosen),
+							  tr::fresh_MessageShotSend()),
+						  Ui::LayerOption::KeepOther);
+				  });
 			  });
 
 	updatePreview();
 	firstPreviewLatch->await(std::chrono::seconds(1));
-
-	const auto boxWidth = imageView->getImage().width() / style::DevicePixelRatio() + (st::boxPadding.left() + st::boxPadding.right()) * 4;
 
 	boxClosing() | rpl::on_next(
 		[=]
@@ -438,7 +729,18 @@ void MessageShotBox::setupContent() {
 		},
 		content->lifetime());
 
-	setDimensionsToContent(boxWidth, content);
+	boxWidth->value(
+	) | rpl::on_next([=](int width)
+	{
+		content->resizeToWidth(width);
+	}, content->lifetime());
+	rpl::combine(
+		boxWidth->value(),
+		content->heightValue()
+	) | rpl::on_next([=](int width, int height)
+	{
+		setDimensions(width, height);
+	}, content->lifetime());
 
 	scrollToWidget(latestToggle);
 }

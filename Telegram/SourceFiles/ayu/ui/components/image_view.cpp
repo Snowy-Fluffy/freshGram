@@ -37,7 +37,12 @@ void ImageView::setImage(const QImage &image) {
 		}
 
 		const auto size = image.size() / style::DevicePixelRatio();
-		setMinimumSize(size.grownBy(st::imageViewInnerPadding));
+		const auto grown = size.grownBy(st::imageViewInnerPadding);
+		setMinimumSize(grown);
+		if (height() != grown.height()) {
+			// shrink back when the new preview is smaller
+			resize(std::max(width(), grown.width()), grown.height());
+		}
 
 		if (this->animation.animating()) {
 			this->animation.stop();
