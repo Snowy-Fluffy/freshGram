@@ -1009,8 +1009,7 @@
 "fresh_MessageShotWidthNarrow" = "Étroite";
 "fresh_MessageShotWidthMedium" = "Moyenne";
 "fresh_MessageShotWidthStandard" = "Standard";
-"fresh_MessageShotShowAvatars" = "Afficher les avatars";
-"fresh_MessageShotShowNames" = "Afficher les noms";
+"fresh_MessageShotPrivacyMode" = "Mode confidentialité";
 "fresh_MessageShotExport" = "Exporter";
 "fresh_MessageShotFormat" = "Format";
 "fresh_MessageShotScale" = "Échelle";

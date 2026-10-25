@@ -8,6 +8,7 @@
 
 #include "qguiapplication.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/ui/boxes/message_shot_box.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "boxes/abstract_box.h"
@@ -34,6 +35,7 @@
 #include "ui/chat/chat_theme.h"
 #include "ui/effects/path_shift_gradient.h"
 #include "ui/layers/box_content.h"
+#include "ui/text/text.h"
 #include "window/themes/window_theme.h"
 #include "window/window_session_controller.h"
 
@@ -66,9 +68,7 @@ bool ignoreRender(RenderPart part) {
 		&& ((part == RenderPart::Date && !s.showDate())
 			|| (part == RenderPart::Reactions && !s.showReactions())
 			|| (part == RenderPart::HeaderDecorations
-				&& !s.showHeaderDecorations())
-			|| (part == RenderPart::Avatars && !s.showAvatars())
-			|| (part == RenderPart::Names && !s.showNames()));
+				&& !s.showHeaderDecorations()));
 }
 
 bool isTakingShot() {
@@ -242,6 +242,37 @@ void paintWallpaper(
 		cached.image);
 }
 
+[[nodiscard]] auto spoilerNamesWhile(bool privacy) {
+	const auto was = Ui::Text::NamesSpoilered();
+	Ui::Text::SetNamesSpoilered(was || privacy);
+	return gsl::finally([=] { Ui::Text::SetNamesSpoilered(was); });
+}
+
+void paintUserpic(
+		Painter &p,
+		int x,
+		int y,
+		int ratio,
+		bool privacy,
+		Fn<void(Painter&, int, int)> paint) {
+	if (!privacy || AyuFeatures::StreamerMode::spoilersActive()) {
+		paint(p, x, y);
+		return;
+	}
+	const auto size = st::msgPhotoSize;
+	auto userpic = QImage(
+		QSize(size, size) * ratio,
+		QImage::Format_ARGB32_Premultiplied);
+	userpic.setDevicePixelRatio(ratio);
+	userpic.fill(Qt::transparent);
+	{
+		auto q = Painter(&userpic);
+		paint(q, 0, 0);
+	}
+	AyuFeatures::StreamerMode::spoilerImage(userpic);
+	p.drawImage(x, y, userpic);
+}
+
 QColor makeDefaultBackgroundColor() {
 	if (Window::Theme::IsNightMode()) {
 		return st::boxBg->c.lighter(175);
@@ -299,6 +330,10 @@ void Make(
 	if (messages.empty()) {
 		return;
 	}
+
+	const auto &shotSettings = AyuSettings::getInstance().messageShotSettings();
+	const auto privacy = shotSettings.privacyMode();
+	const auto restoreNames = spoilerNamesWhile(privacy);
 
 	auto createdViews = std::make_shared<std::unordered_map<not_null<HistoryItem*>, std::shared_ptr<HistoryView::Element>>>();
 	createdViews->reserve(messages.size());
@@ -366,7 +401,6 @@ void Make(
 		}
 	}
 
-	const auto &shotSettings = AyuSettings::getInstance().messageShotSettings();
 	const auto background = shotSettings.background();
 	const auto padding = paddingValue(shotSettings.padding());
 	const auto contentWidthValue = contentWidth(shotSettings.width());
@@ -374,6 +408,7 @@ void Make(
 	auto render = [=, messages = std::move(messages), delegate = std::move(delegate)](bool final)
 	{
 		takingShot = true;
+		const auto restoreNames = spoilerNamesWhile(privacy);
 
 		// calculate the size of the image
 		int width = contentWidthValue;
@@ -411,8 +446,8 @@ void Make(
 			const auto &message = messages[i];
 			const auto view = getView(message);
 
-			const auto displayUserpic = !ignoreRender(RenderPart::Avatars)
-				&& (view->displayFromPhoto() || message->isPost());
+			const auto displayUserpic = view->displayFromPhoto()
+				|| message->isPost();
 
 			const auto rect = QRect(0, 0, width, view->height());
 
@@ -432,24 +467,34 @@ void Make(
 				const auto picY = y + view->height() - st::msgPhotoSize;
 
 				if (const auto from = message->displayFrom()) {
-					Dialogs::Ui::PaintUserpic(
-						p,
-						from,
-						nullptr,
-						userpics[from],
-						picX,
-						picY,
-						width,
-						st::msgPhotoSize,
-						context.paused);
+					paintUserpic(p, picX, picY, ratio, privacy, [&](
+							Painter &q,
+							int left,
+							int top) {
+						Dialogs::Ui::PaintUserpic(
+							q,
+							from,
+							nullptr,
+							userpics[from],
+							left,
+							top,
+							width,
+							st::msgPhotoSize,
+							context.paused);
+					});
 				} else if (const auto info = message->displayHiddenSenderInfo()) {
 					if (info->customUserpic.empty()) {
-						info->emptyUserpic.paintCircle(
-							p,
-							picX,
-							picY,
-							width,
-							st::msgPhotoSize);
+						paintUserpic(p, picX, picY, ratio, privacy, [&](
+								Painter &q,
+								int left,
+								int top) {
+							info->emptyUserpic.paintCircle(
+								q,
+								left,
+								top,
+								width,
+								st::msgPhotoSize);
+						});
 					}
 				}
 			}

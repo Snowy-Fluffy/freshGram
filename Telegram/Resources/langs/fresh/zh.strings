@@ -988,8 +988,7 @@
 "fresh_MessageShotWidthNarrow" = "窄";
 "fresh_MessageShotWidthMedium" = "中等";
 "fresh_MessageShotWidthStandard" = "标准";
-"fresh_MessageShotShowAvatars" = "显示头像";
-"fresh_MessageShotShowNames" = "显示名称";
+"fresh_MessageShotPrivacyMode" = "隐私模式";
 "fresh_MessageShotExport" = "导出";
 "fresh_MessageShotFormat" = "格式";
 "fresh_MessageShotScale" = "缩放";

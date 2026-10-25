@@ -1001,8 +1001,7 @@
 "fresh_MessageShotWidthNarrow" = "Schmal";
 "fresh_MessageShotWidthMedium" = "Mittel";
 "fresh_MessageShotWidthStandard" = "Standard";
-"fresh_MessageShotShowAvatars" = "Profilbilder anzeigen";
-"fresh_MessageShotShowNames" = "Namen anzeigen";
+"fresh_MessageShotPrivacyMode" = "Privatsphäre-Modus";
 "fresh_MessageShotExport" = "Export";
 "fresh_MessageShotFormat" = "Format";
 "fresh_MessageShotScale" = "Skalierung";

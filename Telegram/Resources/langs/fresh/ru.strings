@@ -1027,8 +1027,7 @@
 "fresh_MessageShotWidthNarrow" = "Узкая";
 "fresh_MessageShotWidthMedium" = "Средняя";
 "fresh_MessageShotWidthStandard" = "Стандартная";
-"fresh_MessageShotShowAvatars" = "Показывать аватары";
-"fresh_MessageShotShowNames" = "Показывать имена";
+"fresh_MessageShotPrivacyMode" = "Режим приватности";
 "fresh_MessageShotExport" = "Экспорт";
 "fresh_MessageShotFormat" = "Формат";
 "fresh_MessageShotScale" = "Масштаб";

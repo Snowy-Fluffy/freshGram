@@ -426,28 +426,14 @@ void MessageShotBox::setupContent() {
 
 	AddButtonWithIcon(
 		content,
-		tr::fresh_MessageShotShowAvatars(),
+		tr::fresh_MessageShotPrivacyMode(),
 		st::settingsButtonNoIcon
-	)->toggleOn(rpl::single(shotSettings.showAvatars())
+	)->toggleOn(rpl::single(shotSettings.privacyMode())
 	)->toggledValue(
 	) | rpl::skip(1) | on_next(
 		[=](bool enabled)
 		{
-			AyuSettings::getInstance().messageShotSettings().setShowAvatars(enabled);
-			updatePreview();
-		},
-		content->lifetime());
-
-	AddButtonWithIcon(
-		content,
-		tr::fresh_MessageShotShowNames(),
-		st::settingsButtonNoIcon
-	)->toggleOn(rpl::single(shotSettings.showNames())
-	)->toggledValue(
-	) | rpl::skip(1) | on_next(
-		[=](bool enabled)
-		{
-			AyuSettings::getInstance().messageShotSettings().setShowNames(enabled);
+			AyuSettings::getInstance().messageShotSettings().setPrivacyMode(enabled);
 			updatePreview();
 		},
 		content->lifetime());
