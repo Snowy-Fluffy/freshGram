@@ -250,52 +250,15 @@ void FillInstallBox(
 			st::boxDividerLabel));
 	}
 
-	auto requested = std::set<std::string>();
-	auto boxes = std::make_shared<std::vector<std::pair<std::string, Ui::Checkbox*>>>();
 	if (!manifest.permissions.empty()) {
 		Ui::AddSubsectionTitle(box->verticalLayout(), tr::fresh_PluginPermissions());
-		box->addRow(object_ptr<Ui::FlatLabel>(
-			box,
-			tr::fresh_PluginPermissionsAllAccounts(tr::now),
-			st::boxDividerLabel));
 	}
-	for (const auto &request : manifest.permissions) {
-		requested.insert(request.id);
-		auto label = FreshPlugins::PermissionLabel(request.id);
-		if (request.required) {
-			label = tr::fresh_PluginPermissionRequired(
-				tr::now,
-				lt_permission,
-				label);
-		}
-		const auto fresh = std::find(added.begin(), added.end(), request.id) != added.end();
-		if (fresh) {
-			label = tr::fresh_PluginPermissionNew(tr::now, lt_permission, label);
-		}
-		const auto checked = request.required
-			|| !granted
-			|| fresh
-			|| granted->granted.contains(request.id);
-		const auto check = box->addRow(object_ptr<Ui::Checkbox>(
-			box,
-			label,
-			checked));
-		if (request.required) {
-			check->setDisabled(true);
-		}
-		boxes->emplace_back(request.id, check);
-		FreshPlugins::AddPermissionDanger(
-			box->verticalLayout(),
-			request.id,
-			request.scope,
-			Pick(request.reason));
-	}
-	for (const auto &note : fgpl::RiskNotes(requested)) {
-		box->addRow(object_ptr<Ui::FlatLabel>(
-			box,
-			QString::fromStdString(note.text),
-			st::boxDividerLabel));
-	}
+	const auto decision = FreshPlugins::AddPermissionsEditor(
+		box,
+		controller,
+		manifest,
+		granted,
+		added);
 
 	const auto weak = base::make_weak(box);
 	const auto downgrade = installed && (order < 0);
@@ -304,16 +267,14 @@ void FillInstallBox(
 		: downgrade
 		? tr::fresh_PluginInstallOlder()
 		: tr::fresh_PluginUpdate(), [=] {
-		auto decision = fgpl::GrantDecision();
-		for (const auto &[id, check] : *boxes) {
-			if (check->checked()) {
-				decision.granted.insert(id);
-			}
+		const auto chosen = decision();
+		if (!chosen) {
+			return;
 		}
 		auto options = fgpl::InstallOptions();
 		options.acceptUnsigned = !signedPackage;
 		options.allowDowngrade = downgrade;
-		Install(controller, archive, std::move(decision), options, [=] {
+		Install(controller, archive, *chosen, options, [=] {
 			if (const auto strong = weak.get()) {
 				strong->closeBox();
 			}

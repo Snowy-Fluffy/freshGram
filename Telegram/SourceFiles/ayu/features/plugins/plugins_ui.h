@@ -10,11 +10,17 @@ namespace Main {
 class Session;
 } // namespace Main
 
+namespace fgpl {
+struct GrantDecision;
+struct Manifest;
+} // namespace fgpl
+
 namespace fgpl::cbor {
 class Value;
 } // namespace fgpl::cbor
 
 namespace Ui {
+class GenericBox;
 class PopupMenu;
 class VerticalLayout;
 } // namespace Ui
@@ -37,13 +43,18 @@ void ShowPluginDialog(
 	const std::string &account,
 	const fgpl::cbor::Value *page);
 
+[[nodiscard]] QString PermissionTitle(
+	const std::string &id,
+	const std::string &scope);
 [[nodiscard]] QString PermissionLabel(const std::string &id);
 [[nodiscard]] QString AcceptsFrom(const std::vector<std::string> &senders);
-void AddPermissionDanger(
-	not_null<Ui::VerticalLayout*> layout,
-	const std::string &id,
-	const std::string &scope,
-	const QString &reason);
+// Returns the choice, or nothing after telling the user what is missing.
+[[nodiscard]] Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller,
+	const fgpl::Manifest &manifest,
+	const std::optional<fgpl::GrantDecision> &current,
+	const std::vector<std::string> &added);
 [[nodiscard]] bool HasComposerItems(not_null<Main::Session*> session);
 void ShowComposerMenu(
 	not_null<Window::SessionController*> controller,

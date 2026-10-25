@@ -1349,9 +1349,12 @@ HistoryWidget::HistoryWidget(
 	setupScheduledToggle();
 	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
+		const auto had = (_pluginsToggle.data() != nullptr);
 		refreshPluginsToggle();
-		updateControlsVisibility();
-		updateControlsGeometry();
+		if (had != (_pluginsToggle.data() != nullptr)) {
+			updateControlsVisibility();
+			updateControlsGeometry();
+		}
 	}, lifetime());
 	setupSendAsToggle();
 	orderWidgets();
