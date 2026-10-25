@@ -100,7 +100,6 @@
 "fresh_PluginUpdateFrom" = "Installiert: {from}, diese Datei: {to}";
 "fresh_PluginSameVersion" = "Version {version} ist bereits installiert.";
 "fresh_PluginNewerInstalled" = "Die neuere Version {from} ist installiert, diese Datei enthält die ältere {to}.";
-"fresh_PluginPermissionNew" = "{permission} (neu)";
 "fresh_PluginUpdate" = "Aktualisieren";
 "fresh_PluginInstallOlder" = "Ältere Version installieren";
 "fresh_PluginOutdatedShort" = "veraltet";
@@ -133,7 +132,6 @@
 "fresh_PluginUnsigned" = "Dieses Plugin ist nicht signiert. Installiere es nur, wenn du der Quelle vertraust.";
 "fresh_PluginIncompatible" = "Dieses Plugin kann hier nicht laufen: {reason}";
 "fresh_PluginPermissions" = "Berechtigungen";
-"fresh_PluginPermissionRequired" = "{permission} (erforderlich)";
 "fresh_PluginInstalledToast" = "Plugin installiert.";
 "fresh_PluginInstallFailed" = "Das Plugin konnte nicht installiert werden: {reason}";
 "fresh_PluginPublisherChanged" = "Der Herausgeber dieses Plugins hat sich geändert. Trotzdem installieren?";
@@ -180,12 +178,19 @@
 "fresh_PluginsListAbout" = "Tippe auf ein Plugin, um seine Einstellungen, Berechtigungen und sein Protokoll zu öffnen.";
 "fresh_PluginsAdvanced" = "Erweitert";
 "fresh_PluginId" = "ID: {id}";
-"fresh_PluginVersion" = "Version {version} · {publisher}";
-"fresh_PluginUnsignedShort" = "nicht signiert";
 "fresh_PluginEnabled" = "Aktiviert";
 "fresh_PluginPermissionsCount" = "{allowed} von {total}";
 "fresh_PluginRemove" = "Plugin entfernen";
 "fresh_PluginsAdd" = "Plugin installieren";
+"fresh_PluginVersionShort" = "Version {version}";
+"fresh_PluginBy" = "von {author}";
+"fresh_PluginNotSigned" = "Nicht signiert";
+"fresh_PluginHomepage" = "Website";
+"fresh_PluginRepository" = "Quellcode";
+"fresh_PluginSupport" = "Support";
+"fresh_PluginLicense" = "Lizenz: {license}";
+"fresh_PluginPermissionRequiredShort" = "Erforderlich";
+"fresh_PluginPermissionNewShort" = "Neu";
 "fresh_PluginLogOnlyProblems" = "Nur Probleme";
 "fresh_PluginLogNoProblems" = "Keine Probleme aufgezeichnet.";
 "fresh_PluginLogCopy" = "Kopieren";

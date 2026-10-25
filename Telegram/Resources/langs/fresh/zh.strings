@@ -100,7 +100,6 @@
 "fresh_PluginUpdateFrom" = "已安装：{from}，此文件：{to}";
 "fresh_PluginSameVersion" = "版本 {version} 已安装。";
 "fresh_PluginNewerInstalled" = "已安装更新的版本 {from}，此文件为旧版本 {to}。";
-"fresh_PluginPermissionNew" = "{permission}（新）";
 "fresh_PluginUpdate" = "更新";
 "fresh_PluginInstallOlder" = "安装旧版本";
 "fresh_PluginOutdatedShort" = "已过时";
@@ -133,7 +132,6 @@
 "fresh_PluginUnsigned" = "此插件未签名。仅在信任来源时安装。";
 "fresh_PluginIncompatible" = "此插件无法在此运行：{reason}";
 "fresh_PluginPermissions" = "权限";
-"fresh_PluginPermissionRequired" = "{permission}（必需）";
 "fresh_PluginInstalledToast" = "插件已安装。";
 "fresh_PluginInstallFailed" = "无法安装插件：{reason}";
 "fresh_PluginPublisherChanged" = "此插件的发布者已更改。仍要安装吗？";
@@ -180,12 +178,19 @@
 "fresh_PluginsListAbout" = "点击插件可打开其设置、权限和日志。";
 "fresh_PluginsAdvanced" = "高级";
 "fresh_PluginId" = "ID：{id}";
-"fresh_PluginVersion" = "版本 {version} · {publisher}";
-"fresh_PluginUnsignedShort" = "未签名";
 "fresh_PluginEnabled" = "已启用";
 "fresh_PluginPermissionsCount" = "{allowed} / {total}";
 "fresh_PluginRemove" = "移除插件";
 "fresh_PluginsAdd" = "安装插件";
+"fresh_PluginVersionShort" = "版本 {version}";
+"fresh_PluginBy" = "作者：{author}";
+"fresh_PluginNotSigned" = "未签名";
+"fresh_PluginHomepage" = "网站";
+"fresh_PluginRepository" = "源代码";
+"fresh_PluginSupport" = "支持";
+"fresh_PluginLicense" = "许可证：{license}";
+"fresh_PluginPermissionRequiredShort" = "必需";
+"fresh_PluginPermissionNewShort" = "新增";
 "fresh_PluginLogOnlyProblems" = "仅显示问题";
 "fresh_PluginLogNoProblems" = "没有记录到问题。";
 "fresh_PluginLogCopy" = "复制";

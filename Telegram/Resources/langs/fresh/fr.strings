@@ -100,7 +100,6 @@
 "fresh_PluginUpdateFrom" = "Installé : {from}, ce fichier : {to}";
 "fresh_PluginSameVersion" = "La version {version} est déjà installée.";
 "fresh_PluginNewerInstalled" = "La version plus récente {from} est installée, ce fichier contient l’ancienne {to}.";
-"fresh_PluginPermissionNew" = "{permission} (nouveau)";
 "fresh_PluginUpdate" = "Mettre à jour";
 "fresh_PluginInstallOlder" = "Installer l’ancienne version";
 "fresh_PluginOutdatedShort" = "obsolète";
@@ -133,7 +132,6 @@
 "fresh_PluginUnsigned" = "Ce plugin n'est pas signé. Ne l'installez que si vous faites confiance à sa source.";
 "fresh_PluginIncompatible" = "Ce plugin ne peut pas fonctionner ici : {reason}";
 "fresh_PluginPermissions" = "Autorisations";
-"fresh_PluginPermissionRequired" = "{permission} (obligatoire)";
 "fresh_PluginInstalledToast" = "Plugin installé.";
 "fresh_PluginInstallFailed" = "Impossible d'installer le plugin : {reason}";
 "fresh_PluginPublisherChanged" = "L'éditeur de ce plugin a changé. L'installer quand même ?";
@@ -180,12 +178,19 @@
 "fresh_PluginsListAbout" = "Touchez un plugin pour ouvrir ses réglages, ses autorisations et son journal.";
 "fresh_PluginsAdvanced" = "Avancé";
 "fresh_PluginId" = "ID : {id}";
-"fresh_PluginVersion" = "Version {version} · {publisher}";
-"fresh_PluginUnsignedShort" = "non signé";
 "fresh_PluginEnabled" = "Activé";
 "fresh_PluginPermissionsCount" = "{allowed} sur {total}";
 "fresh_PluginRemove" = "Supprimer le plugin";
 "fresh_PluginsAdd" = "Installer un plugin";
+"fresh_PluginVersionShort" = "Version {version}";
+"fresh_PluginBy" = "par {author}";
+"fresh_PluginNotSigned" = "Non signé";
+"fresh_PluginHomepage" = "Site web";
+"fresh_PluginRepository" = "Code source";
+"fresh_PluginSupport" = "Assistance";
+"fresh_PluginLicense" = "Licence : {license}";
+"fresh_PluginPermissionRequiredShort" = "Obligatoire";
+"fresh_PluginPermissionNewShort" = "Nouveau";
 "fresh_PluginLogOnlyProblems" = "Problèmes seulement";
 "fresh_PluginLogNoProblems" = "Aucun problème enregistré.";
 "fresh_PluginLogCopy" = "Copier";

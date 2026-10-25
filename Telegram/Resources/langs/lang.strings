@@ -8886,7 +8886,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginUpdateFrom" = "Installed: {from}, this file: {to}";
 "fresh_PluginSameVersion" = "Version {version} is already installed.";
 "fresh_PluginNewerInstalled" = "A newer version {from} is installed; this file has the older {to}.";
-"fresh_PluginPermissionNew" = "{permission} (new)";
 "fresh_PluginUpdate" = "Update";
 "fresh_PluginInstallOlder" = "Install older version";
 "fresh_PluginOutdatedShort" = "outdated";
@@ -8919,7 +8918,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginUnsigned" = "This plugin is not signed. Install it only if you trust its source.";
 "fresh_PluginIncompatible" = "This plugin cannot run here: {reason}";
 "fresh_PluginPermissions" = "Permissions";
-"fresh_PluginPermissionRequired" = "{permission} (required)";
 "fresh_PluginInstalledToast" = "Plugin installed.";
 "fresh_PluginInstallFailed" = "Could not install the plugin: {reason}";
 "fresh_PluginPublisherChanged" = "The publisher of this plugin has changed. Install it anyway?";
@@ -8966,12 +8964,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsListAbout" = "Tap a plugin to open its settings, permissions and log.";
 "fresh_PluginsAdvanced" = "Advanced";
 "fresh_PluginId" = "ID: {id}";
-"fresh_PluginVersion" = "Version {version} · {publisher}";
-"fresh_PluginUnsignedShort" = "not signed";
 "fresh_PluginEnabled" = "Enabled";
 "fresh_PluginPermissionsCount" = "{allowed} of {total}";
 "fresh_PluginRemove" = "Remove plugin";
 "fresh_PluginsAdd" = "Install plugin";
+"fresh_PluginVersionShort" = "Version {version}";
+"fresh_PluginBy" = "by {author}";
+"fresh_PluginNotSigned" = "Not signed";
+"fresh_PluginHomepage" = "Website";
+"fresh_PluginRepository" = "Source code";
+"fresh_PluginSupport" = "Support";
+"fresh_PluginLicense" = "License: {license}";
+"fresh_PluginPermissionRequiredShort" = "Required";
+"fresh_PluginPermissionNewShort" = "New";
 "fresh_PluginLogOnlyProblems" = "Only problems";
 "fresh_PluginLogNoProblems" = "No problems recorded.";
 "fresh_PluginLogCopy" = "Copy";
