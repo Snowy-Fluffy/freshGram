@@ -182,6 +182,15 @@
 "fresh_PluginPermissionsCount" = "{allowed} из {total}";
 "fresh_PluginRemove" = "Удалить плагин";
 "fresh_PluginsAdd" = "Установить плагин";
+"fresh_PluginStatusOnDemand" = "Запустится, когда понадобится";
+"fresh_PluginStatusRetry" = "Ошибка, повтор через {seconds} с: {reason}";
+"fresh_PluginStatusFailed" = "Остановлен после ошибки: {reason}";
+"fresh_PluginStart" = "Запустить сейчас";
+"fresh_PluginStarted" = "Плагин запущен.";
+"fresh_PluginStartFailed" = "Плагин не запустился, посмотрите его журнал.";
+"fresh_PluginsNetworkLog" = "Журнал сети";
+"fresh_PluginsNetworkLogErrors" = "Только ошибки";
+"fresh_PluginsNetworkLogEmpty" = "Сетевой активности пока не было.";
 "fresh_PermMessagesEdit" = "Изменять отправленные вами сообщения";
 "fresh_PermMessagesDelete" = "Удалять отправленные вами сообщения";
 "fresh_PermMessagesReact" = "Ставить реакции на сообщения";

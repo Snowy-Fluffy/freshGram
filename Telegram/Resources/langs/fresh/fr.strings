@@ -182,6 +182,15 @@
 "fresh_PluginPermissionsCount" = "{allowed} sur {total}";
 "fresh_PluginRemove" = "Supprimer le plugin";
 "fresh_PluginsAdd" = "Installer un plugin";
+"fresh_PluginStatusOnDemand" = "Démarre au besoin";
+"fresh_PluginStatusRetry" = "Erreur, nouvel essai dans {seconds} s : {reason}";
+"fresh_PluginStatusFailed" = "Arrêté après une erreur : {reason}";
+"fresh_PluginStart" = "Démarrer maintenant";
+"fresh_PluginStarted" = "Le plugin a démarré.";
+"fresh_PluginStartFailed" = "Le plugin n’a pas pu démarrer, voir son journal.";
+"fresh_PluginsNetworkLog" = "Journal réseau";
+"fresh_PluginsNetworkLogErrors" = "Erreurs seulement";
+"fresh_PluginsNetworkLogEmpty" = "Aucune activité réseau pour l’instant.";
 "fresh_PermMessagesEdit" = "Modifier les messages que vous avez envoyés";
 "fresh_PermMessagesDelete" = "Supprimer les messages que vous avez envoyés";
 "fresh_PermMessagesReact" = "Réagir aux messages";

@@ -168,6 +168,9 @@ struct PluginInfo {
 	std::string disabledReason;
 	std::string problem;
 	PluginStatus status = PluginStatus::Stopped;
+	bool onDemand = false;
+	int64_t retryInMs = 0;
+	std::string lastFailure;
 	std::vector<PermissionRequest> requests;
 	std::vector<CompatIssue> issues;
 	std::string testedWith;
@@ -241,6 +244,7 @@ public:
 	bool uninstall(const std::string &id, bool removeData);
 
 	bool setEnabled(const std::string &id, bool enabled);
+	bool start(const std::string &id);
 	bool grant(
 		const std::string &id,
 		const std::string &account,
@@ -329,6 +333,7 @@ private:
 		std::shared_ptr<std::mutex> serial = std::make_shared<std::mutex>();
 		PluginStats stats;
 		std::deque<int64_t> failures;
+		std::string lastFailure;
 		std::shared_ptr<LogRing> log = std::make_shared<LogRing>();
 	};
 

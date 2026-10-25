@@ -1055,6 +1055,26 @@ void BuildDetails(
 				manager->setEnabled(plugin, !on);
 			});
 		});
+		if (info->enabled && info->status != fgpl::PluginStatus::Running) {
+			const auto weakBox = base::make_weak(box);
+			Settings::AddButtonWithIcon(
+				content,
+				tr::fresh_PluginStart(),
+				st::settingsButton,
+				{ &st::menuIconRestore }
+			)->addClickHandler([=] {
+				Post([=](not_null<fgpl::PluginManager*> manager) {
+					const auto started = manager->start(plugin);
+					crl::on_main([=] {
+						if (const auto strong = weakBox.get()) {
+							strong->showToast(started
+								? tr::fresh_PluginStarted(tr::now)
+								: tr::fresh_PluginStartFailed(tr::now));
+						}
+					});
+				});
+			});
+		}
 	}
 	if (parsed && parsed->settingsPage) {
 		Settings::AddButtonWithIcon(
@@ -1335,6 +1355,95 @@ void FillDialogBox(
 }
 
 
+[[nodiscard]] QString NetworkEventText(const NetworkEvent &event) {
+	auto parts = QStringList{
+		QDateTime::fromMSecsSinceEpoch(event.when).toString(u"HH:mm:ss"_q),
+		PluginName(event.plugin.toStdString()),
+		event.kind + ' ' + event.action + ' ' + event.target,
+	};
+	if (!event.result.isEmpty()) {
+		parts.push_back(u"→ "_q + event.result);
+	}
+	if (event.action != u"open"_q) {
+		parts.push_back(u"↓ "_q + Ui::FormatSizeText(qint64(event.received))
+			+ u" ↑ "_q + Ui::FormatSizeText(qint64(event.sent)));
+		parts.push_back(QString::number(event.duration) + u" ms"_q);
+	}
+	return parts.join(u"  "_q);
+}
+
+void FillNetworkLogBox(not_null<Ui::GenericBox*> box) {
+	box->setTitle(tr::fresh_PluginsNetworkLog());
+	box->setWidth(st::boxWideWidth);
+	const auto onlyErrors = box->lifetime().make_state<rpl::variable<bool>>(false);
+	const auto filter = Settings::AddButtonWithIcon(
+		box->verticalLayout(),
+		tr::fresh_PluginsNetworkLogErrors(),
+		st::settingsButtonNoIcon);
+	filter->toggleOn(rpl::single(false));
+	Ui::AddSkip(box->verticalLayout());
+	const auto lines = box->addRow(
+		object_ptr<Ui::VerticalLayout>(box),
+		style::margins());
+	const auto shown = box->lifetime().make_state<std::optional<QString>>();
+	const auto rebuild = [=] {
+		const auto errors = onlyErrors->current();
+		const auto key = QString::number(NetworkLogVersion()) + ' ' + QString::number(int(errors));
+		if (*shown == key) {
+			return;
+		}
+		*shown = key;
+		lines->clear();
+		auto added = 0;
+		for (const auto &event : NetworkLog()) {
+			if (errors && !event.failed) {
+				continue;
+			}
+			lines->add(
+				object_ptr<Ui::FlatLabel>(
+					lines,
+					NetworkEventText(event),
+					event.failed ? st::pluginDangerHigh : st::boxLabel),
+				st::boxRowPadding)->setSelectable(true);
+			++added;
+		}
+		if (!added) {
+			lines->add(
+				object_ptr<Ui::FlatLabel>(
+					lines,
+					tr::fresh_PluginsNetworkLogEmpty(tr::now),
+					st::boxDividerLabel),
+				st::boxRowPadding);
+		} else {
+			crl::on_main(box, [=] {
+				box->scrollToY(QWIDGETSIZE_MAX);
+			});
+		}
+	};
+	filter->toggledValue(
+	) | rpl::on_next([=](bool value) {
+		*onlyErrors = value;
+		rebuild();
+	}, filter->lifetime());
+	const auto timer = box->lifetime().make_state<base::Timer>(rebuild);
+	timer->callEach(1000);
+	box->addLeftButton(tr::fresh_PluginLogClear(), [=] {
+		ClearNetworkLog();
+		rebuild();
+	});
+	box->addButton(tr::fresh_PluginLogCopy(), [=] {
+		auto text = QStringList();
+		for (const auto &event : NetworkLog()) {
+			if (!onlyErrors->current() || event.failed) {
+				text.push_back(NetworkEventText(event));
+			}
+		}
+		QGuiApplication::clipboard()->setText(text.join('\n'));
+		box->showToast(tr::lng_text_copied(tr::now));
+	});
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+}
+
 void FillNetworkBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller) {
@@ -1343,10 +1452,24 @@ void FillNetworkBox(
 	const auto content = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
+	const auto shownKey = box->lifetime().make_state<QString>();
 	const auto rebuild = [=] {
-		content->clear();
 		const auto snapshot = Snapshot();
 		const auto connections = Connections();
+		auto key = QStringList();
+		for (const auto &info : snapshot ? snapshot->plugins : std::vector<fgpl::PluginInfo>()) {
+			key.push_back(Utf8(info.id) + ' ' + QString::number(info.stats.netReceived)
+				+ ' ' + QString::number(info.stats.netSent));
+		}
+		for (const auto &view : connections) {
+			key.push_back(QString::number(view.id) + ' ' + QString::number(view.received)
+				+ ' ' + QString::number(view.sent) + ' ' + Age(view.opened));
+		}
+		if (*shownKey == key.join('\n')) {
+			return;
+		}
+		*shownKey = key.join('\n');
+		content->clear();
 		auto shown = 0;
 		for (const auto &info : snapshot ? snapshot->plugins : std::vector<fgpl::PluginInfo>()) {
 			const auto id = Utf8(info.id);
@@ -1416,6 +1539,9 @@ void FillNetworkBox(
 		rebuild();
 	});
 	timer->callEach(1000);
+	box->addLeftButton(tr::fresh_PluginsNetworkLog(), [=] {
+		controller->show(Box(FillNetworkLogBox));
+	});
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -1999,6 +2125,10 @@ void ShowPluginDialog(
 	controller->show(std::move(box));
 }
 
+void ShowNetworkLog(not_null<Window::SessionController*> controller) {
+	controller->show(Box(FillNetworkLogBox));
+}
+
 void ShowNetworkPanel(not_null<Window::SessionController*> controller) {
 	controller->show(Box(FillNetworkBox, controller));
 }
@@ -2325,6 +2455,9 @@ void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)>) {
 
 QString TrayItemsKey() {
 	return QString();
+}
+
+void ShowNetworkLog(not_null<Window::SessionController*>) {
 }
 
 void ShowNetworkPanel(not_null<Window::SessionController*>) {

@@ -8968,6 +8968,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPermissionsCount" = "{allowed} of {total}";
 "fresh_PluginRemove" = "Remove plugin";
 "fresh_PluginsAdd" = "Install plugin";
+"fresh_PluginStatusOnDemand" = "Starts when needed";
+"fresh_PluginStatusRetry" = "Failed, retry in {seconds} s: {reason}";
+"fresh_PluginStatusFailed" = "Stopped after an error: {reason}";
+"fresh_PluginStart" = "Start now";
+"fresh_PluginStarted" = "The plugin was started.";
+"fresh_PluginStartFailed" = "The plugin could not start, see its log.";
+"fresh_PluginsNetworkLog" = "Network log";
+"fresh_PluginsNetworkLogErrors" = "Only errors";
+"fresh_PluginsNetworkLogEmpty" = "No network activity yet.";
 "fresh_PermMessagesEdit" = "Edit messages you sent";
 "fresh_PermMessagesDelete" = "Delete messages you sent";
 "fresh_PermMessagesReact" = "Put reactions on messages";

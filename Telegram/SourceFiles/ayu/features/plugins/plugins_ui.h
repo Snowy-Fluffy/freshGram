@@ -88,6 +88,7 @@ void ShowComposerMenu(
 void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add);
 [[nodiscard]] QString TrayItemsKey();
 void ShowNetworkPanel(not_null<Window::SessionController*> controller);
+void ShowNetworkLog(not_null<Window::SessionController*> controller);
 
 void AddMessageMenuItems(
 	not_null<Ui::PopupMenu*> menu,

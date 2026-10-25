@@ -128,12 +128,14 @@ SplitToggle SetupSplitToggle(
 		container.get(),
 		nullptr,
 		st);
+	toggle->show();
 	const auto checkView = button->lifetime().make_state<Ui::ToggleView>(
 		st.toggle,
 		checked,
 		[=] { toggle->update(); });
 
 	const auto separator = Ui::CreateChild<Ui::RpWidget>(container.get());
+	separator->show();
 	separator->paintRequest(
 	) | rpl::on_next([=, bg = st.textBgOver] {
 		auto p = QPainter(separator);

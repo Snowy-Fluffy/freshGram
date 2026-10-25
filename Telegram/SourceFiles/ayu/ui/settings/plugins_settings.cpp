@@ -70,6 +70,20 @@ namespace {
 		parts.push_back(tr::fresh_PluginStatusRunning(tr::now));
 	} else if (!info.enabled) {
 		parts.push_back(tr::fresh_PluginStatusOff(tr::now));
+	} else if (info.retryInMs > 0) {
+		parts.push_back(tr::fresh_PluginStatusRetry(
+			tr::now,
+			lt_seconds,
+			QString::number((info.retryInMs + 999) / 1000),
+			lt_reason,
+			QString::fromStdString(info.lastFailure)));
+	} else if (!info.lastFailure.empty()) {
+		parts.push_back(tr::fresh_PluginStatusFailed(
+			tr::now,
+			lt_reason,
+			QString::fromStdString(info.lastFailure)));
+	} else if (info.onDemand) {
+		parts.push_back(tr::fresh_PluginStatusOnDemand(tr::now));
 	} else {
 		parts.push_back(tr::fresh_PluginStatusStopped(tr::now));
 	}
@@ -79,7 +93,12 @@ namespace {
 	return parts.join(u" · "_q);
 }
 
-void AddPluginRow(
+struct PluginRow {
+	std::shared_ptr<rpl::variable<QString>> status;
+	Ui::ToggleView *check = nullptr;
+};
+
+[[nodiscard]] PluginRow AddPluginRow(
 		not_null<Ui::VerticalLayout*> container,
 		not_null<Window::SessionController*> controller,
 		const fgpl::PluginInfo &info) {
@@ -89,12 +108,13 @@ void AddPluginRow(
 		? QString::fromStdString(info.id)
 		: QString::fromStdString(info.name);
 	const auto row = container->add(object_ptr<Ui::VerticalLayout>(container));
+	const auto status = std::make_shared<rpl::variable<QString>>(StatusLine(info));
 	const auto [button, toggle, checkView] = Settings::SetupSplitToggle(
 		row,
 		rpl::single(name),
 		&st::menuIconBot,
 		info.enabled && !broken,
-		rpl::single(StatusLine(info)));
+		status->value());
 	button->setClickedCallback([=] {
 		FreshPlugins::ShowPluginDetails(controller, QString::fromStdString(id));
 	});
@@ -109,6 +129,7 @@ void AddPluginRow(
 			manager->setEnabled(id, enable);
 		});
 	});
+	return { status, checkView.get() };
 }
 
 #endif
@@ -431,6 +452,7 @@ void AddPluginsSettings(
 	const auto list = inner->add(object_ptr<Ui::VerticalLayout>(inner));
 	const auto empty = std::make_shared<rpl::variable<bool>>(true);
 	const auto shown = std::make_shared<std::optional<QString>>();
+	const auto rows = list->lifetime().make_state<std::vector<PluginRow>>();
 	const auto rebuild = [=] {
 		const auto snapshot = FreshPlugins::Snapshot();
 		const auto plugins = snapshot
@@ -438,18 +460,27 @@ void AddPluginsSettings(
 			: std::vector<fgpl::PluginInfo>();
 		auto key = QStringList();
 		for (const auto &info : plugins) {
-			key.push_back(QString::fromStdString(info.id) + ' ' + StatusLine(info)
-				+ ' ' + QString::number(int(info.enabled)));
+			key.push_back(QString::fromStdString(info.id + ' ' + info.name + ' ' + info.problem));
 		}
 		if (*shown == key.join('\n')) {
+			for (auto i = size_t(0); i != plugins.size() && i != rows->size(); ++i) {
+				const auto &info = plugins[i];
+				(*rows)[i].status->force_assign(StatusLine(info));
+				const auto on = info.enabled && info.problem.empty();
+				if ((*rows)[i].check->checked() != on) {
+					(*rows)[i].check->setChecked(on, anim::type::normal);
+				}
+			}
 			return;
 		}
 		*shown = key.join('\n');
+		rows->clear();
 		list->clear();
 		for (const auto &info : plugins) {
-			AddPluginRow(list, controller, info);
+			rows->push_back(AddPluginRow(list, controller, info));
 		}
 		*empty = plugins.empty();
+		list->update();
 	};
 	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
@@ -501,6 +532,14 @@ void AddPluginsSettings(
 		{ &st::menuIconNetwork }
 	)->addClickHandler([=] {
 		FreshPlugins::ShowNetworkPanel(controller);
+	});
+	Settings::AddButtonWithIcon(
+		container,
+		tr::fresh_PluginsNetworkLog(),
+		st::settingsButton,
+		{ &st::menuIconInfo }
+	)->addClickHandler([=] {
+		FreshPlugins::ShowNetworkLog(controller);
 	});
 	Ui::AddSkip(container);
 }
