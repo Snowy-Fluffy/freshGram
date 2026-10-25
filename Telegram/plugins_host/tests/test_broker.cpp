@@ -699,8 +699,12 @@ void TestTargetedEvents() {
 		});
 	};
 	const auto inScope = broker.filterTargeted(click(1, false));
-	CHECK(inScope.find("chat") && inScope.find("message") && inScope.find("from"));
+	CHECK(inScope.find("chat") && !inScope.find("message") && !inScope.find("from"));
 	CHECK(!inScope.find("text") && !inScope.find("secret"));
+	auto readingFixture = Fixture({ "ui.menu", "messages.read" });
+	readingFixture.grants.chats = std::set<int64_t>{ 1 };
+	const auto full = readingFixture.make().filterTargeted(click(1, false));
+	CHECK(full.find("message") && full.find("from") && full.find("text"));
 	CHECK(inScope.find("id") && inScope.find("surface"));
 	const auto outside = broker.filterTargeted(click(2, false));
 	CHECK(!outside.find("chat") && !outside.find("message") && !outside.find("text"));
@@ -905,6 +909,70 @@ void TestAwaitableCalls() {
 
 } // namespace
 
+void TestRateLimits() {
+	auto fixture = Fixture({ "messages.send", "ui.toast", "ui.dialog" });
+	fixture.time = 100000;
+	auto broker = fixture.make();
+	const auto send = [&] {
+		return broker.call(Request("messages.send", { { "chat", Int(1) }, { "text", Text("hi") } }));
+	};
+	for (auto i = 0; i != 5; ++i) {
+		CHECK(IsOk(send()));
+	}
+	CHECK(Code(send()) == "limit");
+	fixture.time += 1000;
+	CHECK(IsOk(send()));
+	CHECK(Code(send()) == "limit");
+
+	const auto toast = [&] {
+		return broker.call(Request("ui.toast", { { "text", Text("hello") } }));
+	};
+	CHECK(IsOk(toast()));
+	CHECK(Code(toast()) == "limit");
+	fixture.time += 2000;
+	CHECK(IsOk(toast()));
+
+	const auto dialog = [&] {
+		return broker.call(Request("ui.dialog.show", {
+			{ "page", cbor::Value::FromMap({
+				{ "title", Text("Hello") },
+				{ "items", cbor::Value::FromArray({}) },
+			}) },
+		}));
+	};
+	CHECK(Code(dialog()) != "limit");
+	CHECK(Code(broker.call(Request("ui.dialog.close"))) != "limit");
+	CHECK(Code(dialog()) == "limit");
+	broker.noteUserAction("menu.click");
+	CHECK(Code(dialog()) != "limit");
+	CHECK(Code(dialog()) != "limit");
+}
+
+void TestClosedBrokerDropsAwaitedWork() {
+	auto fixture = Fixture({ "storage.private" });
+	auto queued = std::vector<std::function<void()>>();
+	auto results = std::map<int64_t, cbor::Value>();
+	fixture.services.post = [&](std::function<void()> work) {
+		queued.push_back(std::move(work));
+	};
+	fixture.services.after = [&](int64_t, std::function<void()> work) {
+		queued.push_back(std::move(work));
+	};
+	fixture.services.complete = [&](int64_t ticket, cbor::Value result) {
+		results.emplace(ticket, std::move(result));
+	};
+	const auto broker = std::make_shared<Broker>(fixture.grants, fixture.services);
+	auto request = Request("storage.set", { { "key", Text("k") }, { "value", Int(1) } });
+	request.asMap()->push_back({ "async", cbor::Value::FromBool(true) });
+	CHECK(IsOk(broker->call(request)));
+	broker->close();
+	for (auto &work : queued) {
+		work();
+	}
+	CHECK(results.size() == 1 && Code(results.begin()->second) == "unavailable");
+	CHECK(!fixture.storage.get("k"));
+}
+
 int main() {
 	TestUrlParsing();
 	TestEndpoints();
@@ -928,5 +996,7 @@ int main() {
 	TestAuditTrail();
 	TestEvents();
 	TestAwaitableCalls();
+	TestRateLimits();
+	TestClosedBrokerDropsAwaitedWork();
 	return Failures() ? 1 : 0;
 }

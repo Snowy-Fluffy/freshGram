@@ -20,7 +20,8 @@ namespace fs = std::filesystem;
 
 constexpr auto kMaxMail = size_t(1024);
 constexpr auto kAllAccounts = "*";
-constexpr auto kAsyncThreads = 4;
+constexpr auto kAsyncThreads = 8;
+constexpr auto kResultOverhead = size_t(1024);
 
 [[nodiscard]] size_t EncodedSize(const cbor::Value &event);
 
@@ -529,6 +530,9 @@ void PluginManager::stopMany(const std::vector<Key> &keys) {
 		{
 			const auto lock = std::scoped_lock(instance.mutex);
 			instance.closing = true;
+			if (const auto record = _records.find(key.first); record != _records.end()) {
+				record->second.stats.dropped += instance.queue.size();
+			}
 			instance.queue.clear();
 			instance.queuedBytes = 0;
 			for (const auto &pending : instance.outgoing) {
@@ -539,6 +543,7 @@ void PluginManager::stopMany(const std::vector<Key> &keys) {
 			instance.outgoing.clear();
 		}
 		instance.cancel.store(true);
+		instance.broker->close();
 		instance.wake.notify_all();
 		if (const auto client = instance.live.load()) {
 			client->abort();
@@ -782,7 +787,14 @@ bool PluginManager::setEnabled(const std::string &id, bool enabled) {
 		i = (i->first.first == id) ? _notBefore.erase(i) : std::next(i);
 	}
 	saveState();
+	startEverywhere(record);
 	return true;
+}
+
+void PluginManager::startEverywhere(Record &record) {
+	for (const auto &account : _accounts) {
+		(void)ensure(record, account, "startup");
+	}
 }
 
 bool PluginManager::grant(
@@ -807,8 +819,9 @@ bool PluginManager::grant(
 	stored.chats = decision.chats;
 	record.grants.clear();
 	record.grants[kAllAccounts] = std::move(stored);
-	stop({ id, account });
+	stopPlugin(id);
 	saveState();
+	startEverywhere(record);
 	return true;
 }
 
@@ -1063,6 +1076,47 @@ bool PluginManager::send(
 	if (!record.enabled || grant == record.grants.end() || !type) {
 		return false;
 	}
+	const auto parsed = manifest(id);
+	if (!parsed) {
+		return false;
+	}
+	const auto has = [&](const char *name) {
+		return grant->second.granted.contains(name);
+	};
+	const auto text = [&](const char *name) -> std::string {
+		const auto field = event.find(name);
+		return field && field->asText() ? *field->asText() : std::string();
+	};
+	if (*type == "menu.click") {
+		const auto surface = text("surface");
+		const auto declared = std::any_of(parsed->menus.begin(), parsed->menus.end(), [&](const auto &menu) {
+			return menu.surface == surface && menu.id == text("id");
+		});
+		if (!has("ui.menu")
+			|| !declared
+			|| (surface == "composer" && !has("ui.composer_button"))) {
+			return false;
+		}
+	} else if (*type == "command") {
+		const auto declared = std::any_of(parsed->commands.begin(), parsed->commands.end(), [&](const auto &command) {
+			return command.name == text("name");
+		});
+		if (!has("ui.command") || !declared) {
+			return false;
+		}
+	} else if (*type == "settings.change"
+		|| *type == "settings.click"
+		|| *type == "settings.open") {
+		if (!has("ui.settings_page") || !parsed->settingsPage) {
+			return false;
+		}
+	} else if (*type == "dialog.click" || *type == "dialog.change" || *type == "dialog.close") {
+		if (!has("ui.dialog")) {
+			return false;
+		}
+	} else {
+		return false;
+	}
 	pump();
 	const auto trigger = (*type == "menu.click")
 		? "menu"
@@ -1078,32 +1132,7 @@ bool PluginManager::send(
 		++record.stats.dropped;
 		return false;
 	}
-	const auto has = [&](const char *name) {
-		return grant->second.granted.contains(name);
-	};
-	const auto text = [&](const char *name) -> std::string {
-		const auto field = event.find(name);
-		return field && field->asText() ? *field->asText() : std::string();
-	};
-	if (*type == "menu.click") {
-		if (!has("ui.menu") || !instance->declared.menus.contains(text("surface") + "/" + text("id"))) {
-			return false;
-		}
-	} else if (*type == "command") {
-		if (!has("ui.command") || !instance->declared.commands.contains(text("name"))) {
-			return false;
-		}
-	} else if (*type == "settings.change" || *type == "settings.click") {
-		if (!has("ui.settings_page") || !instance->declared.settingsPage) {
-			return false;
-		}
-	} else if (*type == "dialog.click" || *type == "dialog.change" || *type == "dialog.close") {
-		if (!has("ui.dialog")) {
-			return false;
-		}
-	} else {
-		return false;
-	}
+	instance->broker->noteUserAction(*type);
 	const auto filtered = instance->broker->filterTargeted(event);
 	const auto size = EncodedSize(filtered);
 	{
@@ -1247,6 +1276,7 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	instance->serial = record.serial;
 	auto services = BrokerServices();
 	services.storage = instance->storage.get();
+	services.keepAlive = instance->storage;
 	services.data = _config.services.dataFor
 		? _config.services.dataFor(account)
 		: _config.services.data;
@@ -1256,6 +1286,9 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	const auto maxLines = _config.logLines;
 	services.log = [ring, maxLines](std::string_view line) {
 		AppendLog(*ring, maxLines, line, false);
+	};
+	instance->appLog = [ring, maxLines](std::string_view line) {
+		AppendLog(*ring, maxLines, line, true);
 	};
 	for (const auto &menu : manifest.menus) {
 		instance->declared.menus.insert(menu.surface + "/" + menu.id);
@@ -1304,6 +1337,9 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		const auto strong = weak.lock();
 		if (!strong) {
 			return;
+		}
+		if (EncodedSize(result) + kResultOverhead > RuntimeLimits().maxMessageBytes) {
+			result = api::Fail(api::error::kLimit, "the answer is too large");
 		}
 		auto event = cbor::Map{
 			{ "type", Text("call.result") },
@@ -1430,6 +1466,9 @@ void PluginManager::run(Instance &instance) {
 					*instance.broker);
 				if (!init.ok()) {
 					problem = "the plugin failed to start: " + init.error().detail;
+				} else if (init.value() != 0 && instance.appLog) {
+					instance.appLog("failure: the start handler returned "
+						+ std::to_string(init.value()));
 				}
 			}
 		}
@@ -1493,7 +1532,7 @@ void PluginManager::run(Instance &instance) {
 		if (outgoing) {
 			const auto text = instance.broker->finishOutgoing();
 			const auto lock = std::scoped_lock(outgoing->mutex);
-			outgoing->ok = result.ok();
+			outgoing->ok = result.ok() && result.value() == 0;
 			outgoing->text = text;
 			outgoing->finished = true;
 			outgoing->done.notify_all();
@@ -1637,7 +1676,11 @@ bool PluginManager::activatedBy(const Record &record, const char *trigger) const
 			&& std::any_of(record.grants.begin(), record.grants.end(), [](const auto &entry) {
 				return entry.second.granted.contains("messages.transform_outgoing");
 			});
-		return parsed->activation.contains("startup") || parsed->background || transforms;
+		const auto background = parsed->background
+			&& std::any_of(record.grants.begin(), record.grants.end(), [](const auto &entry) {
+				return entry.second.granted.contains("background");
+			});
+		return parsed->activation.contains("startup") || background || transforms;
 	}
 	return parsed->activation.contains(trigger);
 }
@@ -1868,6 +1911,11 @@ DispatchReport PluginManager::dispatch(
 			++report.skipped;
 			continue;
 		}
+		const auto grant = record.grants.find(kAllAccounts);
+		if (!FilterEvent(MakeGrants(*parsed, { grant->second.granted, grant->second.chats }), event)) {
+			++report.skipped;
+			continue;
+		}
 		const auto before = _instances.size();
 		auto *instance = ensure(record, account, "event");
 		if (!instance) {
@@ -1922,7 +1970,11 @@ DispatchReport PluginManager::dispatchAndWait(
 
 DispatchReport PluginManager::startEnabled(const std::string &account) {
 	auto report = DispatchReport();
-	if (!ValidAccount(account) || !mayRun()) {
+	if (!ValidAccount(account)) {
+		return report;
+	}
+	_accounts.insert(account);
+	if (!mayRun()) {
 		return report;
 	}
 	auto ids = std::vector<std::string>();
@@ -2098,6 +2150,9 @@ void PluginManager::onLock() {
 
 void PluginManager::onUnlock() {
 	_locked = false;
+	for (const auto &account : std::set<std::string>(_accounts)) {
+		startEnabled(account);
+	}
 }
 
 void PluginManager::setHidden(bool hidden) {
@@ -2108,6 +2163,7 @@ void PluginManager::setHidden(bool hidden) {
 }
 
 void PluginManager::onLogout(const std::string &account) {
+	_accounts.erase(account);
 	auto keys = std::vector<Key>();
 	for (const auto &item : _instances) {
 		if (item.first.second == account) {

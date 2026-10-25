@@ -78,7 +78,7 @@ struct Entry {
 
 struct Pages {
 	std::map<std::pair<std::string, std::string>, cbor::Value> pages;
-	rpl::event_stream<std::string> changes;
+	rpl::event_stream<std::pair<std::string, std::string>> changes;
 };
 
 [[nodiscard]] Pages &GetPages() {
@@ -112,13 +112,26 @@ struct Pages {
 
 [[nodiscard]] std::vector<Entry> EntriesFor(
 		not_null<Main::Session*> session,
-		const char *surface) {
+		const char *surface,
+		PeerData *peer = nullptr) {
 	auto result = std::vector<Entry>();
 	const auto snapshot = Snapshot();
 	if (!snapshot) {
 		return result;
+	} else if (peer
+		&& (FreshSecret::IsSecretPeerId(peer->id)
+			|| int64_t(peer->id.value) == fgpl::api::kServiceChat)) {
+		return result;
 	}
 	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
+		if (peer) {
+			const auto grant = snapshot->grantsOf(plugin.id);
+			if (grant
+				&& grant->chats
+				&& !grant->chats->contains(int64_t(peer->id.value))) {
+				continue;
+			}
+		}
 		for (const auto &menu : plugin.menus) {
 			if (menu.surface != surface) {
 				continue;
@@ -170,6 +183,9 @@ void Send(
 		map.push_back({ "secret", Flag(FreshSecret::IsSecretPeerId(peer->id)) });
 	}
 	if (item) {
+		if (const auto topic = item->topicRootId()) {
+			map.push_back({ "topic", Number(topic.bare) });
+		}
 		map.push_back({ "message", Number(item->id.bare) });
 		map.push_back({ "from", Number(int64_t(item->from()->id.value)) });
 		map.push_back({ "text", Text(item->originalText().text) });
@@ -181,15 +197,8 @@ void Send(
 		const std::string &id,
 		const std::string &account) {
 	const auto &pages = GetPages().pages;
-	if (const auto i = pages.find({ id, account }); i != pages.end()) {
-		return &i->second;
-	}
-	for (const auto &[key, page] : pages) {
-		if (key.first == id) {
-			return &page;
-		}
-	}
-	return nullptr;
+	const auto i = pages.find({ id, account });
+	return (i != pages.end()) ? &i->second : nullptr;
 }
 
 [[nodiscard]] QString TextOf(const cbor::Value &item, const char *name) {
@@ -212,34 +221,69 @@ void SendSetting(
 	Send(session, plugin, cbor::Value::FromMap(std::move(map)));
 }
 
-void BuildSettingsContent(
+struct Page {
+	QString structure;
+	std::vector<Fn<void(const cbor::Value &item)>> update;
+	std::vector<Fn<void()>> flush;
+
+	void apply(const cbor::Value &page) {
+		const auto items = page.find("items");
+		const auto list = (items && items->asArray()) ? *items->asArray() : cbor::Array();
+		for (auto i = size_t(0); i != list.size() && i != update.size(); ++i) {
+			if (update[i]) {
+				update[i](list[i]);
+			}
+		}
+	}
+	void flushAll() {
+		for (const auto &callback : flush) {
+			callback();
+		}
+	}
+};
+
+[[nodiscard]] QString StructureOf(const cbor::Value &page) {
+	const auto items = page.find("items");
+	auto result = QStringList();
+	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
+		result.push_back(TextOf(item, "type") + '/' + TextOf(item, "id"));
+	}
+	return result.join('\n');
+}
+
+[[nodiscard]] std::shared_ptr<Page> BuildSettingsContent(
 		not_null<Ui::VerticalLayout*> content,
 		not_null<Window::SessionController*> controller,
-		not_null<Main::Session*> session,
+		base::weak_ptr<Main::Session> weak,
 		const std::string &plugin,
 		const cbor::Value &page,
 		bool dialog) {
-	const auto weak = base::make_weak(session);
+	auto result = std::make_shared<Page>();
+	result->structure = StructureOf(page);
+	const auto raw = result.get();
 	const auto change = dialog ? "dialog.change" : "settings.change";
 	const auto click = dialog ? "dialog.click" : "settings.click";
 	const auto items = page.find("items");
-	for (const auto &item : items ? *items->asArray() : cbor::Array()) {
+	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
 		const auto type = TextOf(item, "type");
-		const auto itemId = item.find("id") && item.find("id")->asText()
-			? *item.find("id")->asText()
-			: std::string();
-		const auto label = TextOf(item, "label");
+		const auto itemId = TextOf(item, "id").toStdString();
+		const auto label = content->lifetime().make_state<rpl::variable<QString>>(
+			TextOf(item, "label"));
+		auto update = Fn<void(const cbor::Value &)>();
 		if (type == u"text"_q) {
-			content->add(
+			const auto text = content->add(
 				object_ptr<Ui::FlatLabel>(content, TextOf(item, "text"), st::boxLabel),
 				st::boxRowPadding);
 			Ui::AddSkip(content);
+			update = [=](const cbor::Value &now) {
+				text->setText(TextOf(now, "text"));
+			};
 		} else if (type == u"divider"_q) {
 			Ui::AddDivider(content);
 		} else if (type == u"toggle"_q) {
 			const auto button = Settings::AddButtonWithIcon(
 				content,
-				rpl::single(label),
+				label->value(),
 				st::settingsButtonNoIcon);
 			const auto on = button->lifetime().make_state<rpl::variable<bool>>(
 				item.find("value") && item.find("value")->asBool().value_or(false));
@@ -250,26 +294,37 @@ void BuildSettingsContent(
 					SendSetting(strong, plugin, change, itemId, Flag(on->current()));
 				}
 			});
+			update = crl::guard(button, [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+				*on = now.find("value") && now.find("value")->asBool().value_or(false);
+			});
 		} else if (type == u"button"_q) {
 			const auto button = Settings::AddButtonWithIcon(
 				content,
-				rpl::single(label),
+				label->value(),
 				st::settingsButtonNoIcon);
 			button->addClickHandler([=] {
 				if (const auto strong = weak.get()) {
 					SendSetting(strong, plugin, click, itemId, std::nullopt);
 				}
 			});
+			update = [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+			};
 		} else if (type == u"input"_q) {
 			const auto field = content->add(
 				object_ptr<Ui::InputField>(
 					content,
 					st::defaultInputField,
-					rpl::single(label),
+					label->value(),
 					TextOf(item, "value")),
 				st::boxRowPadding);
-			const auto timer = field->lifetime().make_state<base::Timer>();
-			timer->setCallback([=] {
+			const auto pending = field->lifetime().make_state<bool>(false);
+			const auto sendNow = crl::guard(field, [=] {
+				if (!*pending) {
+					return;
+				}
+				*pending = false;
 				if (const auto strong = weak.get()) {
 					SendSetting(
 						strong,
@@ -279,58 +334,119 @@ void BuildSettingsContent(
 						Text(field->getLastText()));
 				}
 			});
+			const auto timer = field->lifetime().make_state<base::Timer>(sendNow);
 			field->changes() | rpl::on_next([=] {
+				*pending = true;
 				timer->callOnce(600);
 			}, field->lifetime());
+			field->focusedChanges(
+			) | rpl::filter(!rpl::mappers::_1) | rpl::on_next([=] {
+				sendNow();
+			}, field->lifetime());
+			raw->flush.push_back(sendNow);
 			Ui::AddSkip(content);
+			update = crl::guard(field, [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+				const auto value = TextOf(now, "value");
+				if (!field->hasFocus() && !*pending && field->getLastText() != value) {
+					field->setText(value);
+				}
+			});
 		} else if (type == u"select"_q) {
-			auto values = std::vector<std::string>();
-			auto labels = std::vector<QString>();
-			const auto current = std::make_shared<rpl::variable<QString>>();
-			const auto selected = std::make_shared<int>(0);
-			const auto chosen = TextOf(item, "value").toStdString();
-			const auto options = item.find("options");
-			for (const auto &option : options ? *options->asArray() : cbor::Array()) {
-				const auto value = option.find("value");
-				if (!value || !value->asText()) {
-					continue;
+			struct Choice {
+				std::vector<std::string> values;
+				std::vector<QString> labels;
+				int selected = 0;
+			};
+			const auto choice = std::make_shared<Choice>();
+			const auto current = content->lifetime().make_state<rpl::variable<QString>>();
+			const auto read = [=](const cbor::Value &now) {
+				choice->values.clear();
+				choice->labels.clear();
+				choice->selected = 0;
+				const auto chosen = TextOf(now, "value").toStdString();
+				const auto options = now.find("options");
+				for (const auto &option : (options && options->asArray()) ? *options->asArray() : cbor::Array()) {
+					const auto value = option.find("value");
+					if (!value || !value->asText()) {
+						continue;
+					}
+					if (*value->asText() == chosen) {
+						choice->selected = int(choice->values.size());
+					}
+					choice->values.push_back(*value->asText());
+					choice->labels.push_back(TextOf(option, "label"));
 				}
-				if (*value->asText() == chosen) {
-					*selected = int(values.size());
-				}
-				values.push_back(*value->asText());
-				labels.push_back(TextOf(option, "label"));
-			}
-			if (labels.empty()) {
+				*current = choice->labels.empty()
+					? QString()
+					: choice->labels[choice->selected];
+			};
+			read(item);
+			if (choice->labels.empty()) {
+				result->update.push_back(nullptr);
 				continue;
 			}
-			*current = labels[*selected];
 			const auto button = Settings::AddButtonWithLabel(
 				content,
-				rpl::single(label),
+				label->value(),
 				current->value(),
 				st::settingsButtonNoIcon);
 			button->addClickHandler([=] {
 				controller->show(Box(SingleChoiceBox, SingleChoiceBoxArgs{
-					.title = rpl::single(label),
-					.options = labels,
-					.initialSelection = *selected,
+					.title = label->value(),
+					.options = choice->labels,
+					.initialSelection = choice->selected,
 					.callback = crl::guard(button, [=](int index) {
-						*selected = index;
-						*current = labels[index];
+						if (index < 0 || index >= int(choice->values.size())) {
+							return;
+						}
+						choice->selected = index;
+						*current = choice->labels[index];
 						if (const auto strong = weak.get()) {
 							SendSetting(
 								strong,
 								plugin,
 								change,
 								itemId,
-								cbor::Value::FromText(values[index]));
+								cbor::Value::FromText(choice->values[index]));
 						}
 					}),
 				}));
 			});
+			update = crl::guard(button, [=](const cbor::Value &now) {
+				*label = TextOf(now, "label");
+				read(now);
+			});
 		}
+		result->update.push_back(std::move(update));
 	}
+	return result;
+}
+
+void ShowPage(
+		not_null<Ui::VerticalLayout*> content,
+		not_null<Window::SessionController*> controller,
+		base::weak_ptr<Main::Session> weak,
+		const std::string &plugin,
+		const cbor::Value *page,
+		bool dialog,
+		std::shared_ptr<Page> &shown) {
+	if (!page) {
+		if (shown) {
+			shown->flushAll();
+		}
+		shown = nullptr;
+		content->clear();
+		return;
+	} else if (shown && shown->structure == StructureOf(*page)) {
+		shown->apply(*page);
+		return;
+	}
+	if (shown) {
+		shown->flushAll();
+	}
+	content->clear();
+	shown = BuildSettingsContent(content, controller, weak, plugin, *page, dialog);
 }
 
 void FillSettingsBox(
@@ -340,30 +456,32 @@ void FillSettingsBox(
 		std::string account,
 		QString pluginName) {
 	box->setWidth(st::boxWideWidth);
-	const auto page = PageOf(plugin, account);
-	const auto title = page ? TextOf(*page, "title") : QString();
-	box->setTitle(rpl::single(tr::fresh_PluginBadge(
-		tr::now,
-		lt_title,
-		title,
-		lt_plugin,
-		pluginName)));
+	const auto title = box->lifetime().make_state<rpl::variable<QString>>();
+	box->setTitle(title->value() | rpl::map([=](const QString &text) {
+		return tr::fresh_PluginBadge(tr::now, lt_title, text, lt_plugin, pluginName);
+	}));
 	const auto content = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
+	const auto shown = box->lifetime().make_state<std::shared_ptr<Page>>();
+	const auto weak = base::make_weak(&controller->session());
 	const auto rebuild = [=] {
-		content->clear();
-		if (const auto current = PageOf(plugin, account)) {
-			BuildSettingsContent(content, controller, &controller->session(), plugin, *current, false);
-		}
+		const auto page = PageOf(plugin, account);
+		*title = page ? TextOf(*page, "title") : QString();
+		ShowPage(content, controller, weak, plugin, page, false, *shown);
 	};
 	rebuild();
 	GetPages().changes.events(
-	) | rpl::filter([=](const std::string &id) {
-		return id == plugin;
-	}) | rpl::on_next([=](const std::string &) {
+	) | rpl::filter([=](const std::pair<std::string, std::string> &key) {
+		return key.first == plugin && key.second == account;
+	}) | rpl::on_next([=] {
 		Ui::PostponeCall(content, rebuild);
 	}, content->lifetime());
+	box->boxClosing() | rpl::on_next([=] {
+		if (*shown) {
+			(*shown)->flushAll();
+		}
+	}, box->lifetime());
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -826,6 +944,12 @@ struct Dialogs {
 	return parsed ? Utf8(parsed->name.get(Language())) : Utf8(id);
 }
 
+[[nodiscard]] QString AccountSuffix(not_null<Main::Session*> session) {
+	return (Core::App().domain().accounts().size() > 1)
+		? (u" · "_q + session->user()->name())
+		: QString();
+}
+
 void FillDialogBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller,
@@ -833,16 +957,18 @@ void FillDialogBox(
 		std::string account) {
 	const auto key = std::make_pair(plugin, account);
 	const auto session = SessionFor(account);
+	const auto weak = session ? base::make_weak(session) : base::weak_ptr<Main::Session>();
+	const auto suffix = session ? AccountSuffix(session) : QString();
 	box->setWidth(st::boxWideWidth);
 	const auto content = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
 	const auto closedByPlugin = box->lifetime().make_state<bool>(false);
+	const auto shown = box->lifetime().make_state<std::shared_ptr<Page>>();
 	const auto rebuild = [=] {
-		content->clear();
 		const auto &pages = GetDialogs().pages;
 		const auto i = pages.find(key);
-		if (i == pages.end() || !session) {
+		if (i == pages.end() || !weak) {
 			return;
 		}
 		box->setTitle(rpl::single(tr::fresh_PluginBadge(
@@ -850,25 +976,44 @@ void FillDialogBox(
 			lt_title,
 			TextOf(i->second, "title"),
 			lt_plugin,
-			PluginName(plugin))));
-		BuildSettingsContent(content, controller, session, plugin, i->second, true);
+			PluginName(plugin)) + suffix));
+		ShowPage(content, controller, weak, plugin, &i->second, true, *shown);
 	};
 	rebuild();
+	const auto closeByPlugin = [=] {
+		*closedByPlugin = true;
+		box->closeBox();
+	};
 	GetDialogs().changes.events(
 	) | rpl::filter([=](const auto &changed) {
 		return changed == key;
 	}) | rpl::on_next([=] {
 		if (!GetDialogs().pages.contains(key)) {
-			*closedByPlugin = true;
-			box->closeBox();
+			closeByPlugin();
 		} else {
 			Ui::PostponeCall(content, rebuild);
 		}
 	}, content->lifetime());
-	box->boxClosing() | rpl::on_next([=] {
-		if (!*closedByPlugin) {
+	ListChanges(
+	) | rpl::on_next([=] {
+		const auto snapshot = Snapshot();
+		const auto info = snapshot ? snapshot->plugin(plugin) : nullptr;
+		if (!info || !info->enabled || info->status != fgpl::PluginStatus::Running) {
 			GetDialogs().pages.erase(key);
-			if (SessionFor(account)) {
+			closeByPlugin();
+		}
+	}, content->lifetime());
+	box->boxClosing() | rpl::on_next([=] {
+		if (*shown) {
+			(*shown)->flushAll();
+		}
+		auto &dialogs = GetDialogs();
+		if (dialogs.boxes[key].data() == box.get()) {
+			dialogs.boxes.erase(key);
+		}
+		if (!*closedByPlugin) {
+			dialogs.pages.erase(key);
+			if (weak) {
 				Post([=](not_null<fgpl::PluginManager*> manager) {
 					manager->send(plugin, account, cbor::Value::FromMap({
 						{ "type", cbor::Value::FromText("dialog.close") },
@@ -1438,8 +1583,10 @@ QString PermissionLabel(const std::string &id) {
 	return PermissionTitle(id, std::string());
 }
 
-bool HasComposerItems(not_null<Main::Session*> session) {
-	return !EntriesFor(session, "composer").empty();
+bool HasComposerItems(
+		not_null<Main::Session*> session,
+		not_null<PeerData*> peer) {
+	return !EntriesFor(session, "composer", peer).empty();
 }
 
 void ShowComposerMenu(
@@ -1451,7 +1598,7 @@ void ShowComposerMenu(
 	const auto weak = base::make_weak(session);
 	const auto peerId = peer->id;
 	menu = base::make_unique_q<Ui::PopupMenu>(button, st::popupMenuWithIcons);
-	for (const auto &entry : EntriesFor(session, "composer")) {
+	for (const auto &entry : EntriesFor(session, "composer", peer)) {
 		menu->addAction(entry.text, [=] {
 			const auto strong = weak.get();
 			const auto found = strong ? strong->data().peerLoaded(peerId) : nullptr;
@@ -1463,6 +1610,17 @@ void ShowComposerMenu(
 	if (!menu->empty()) {
 		menu->popup(QCursor::pos());
 	}
+}
+
+QString TrayItemsKey() {
+	const auto session = Core::App().domain().started()
+		? Core::App().activeAccount().maybeSession()
+		: nullptr;
+	auto key = QStringList();
+	for (const auto &entry : session ? EntriesFor(session, "tray") : std::vector<Entry>()) {
+		key.push_back(Utf8(entry.plugin + '/' + entry.menuId) + ' ' + entry.text);
+	}
+	return key.join('\n');
 }
 
 void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add) {
@@ -1493,15 +1651,33 @@ void ShowPluginDialog(
 		dialogs.changes.fire_copy(key);
 		return;
 	}
-	dialogs.pages[key] = *page;
-	if (const auto open = dialogs.boxes[key].data()) {
-		dialogs.changes.fire_copy(key);
+	const auto refuse = [&] {
+		dialogs.pages.erase(key);
+		Post([=](not_null<fgpl::PluginManager*> manager) {
+			manager->send(id, account, cbor::Value::FromMap({
+				{ "type", cbor::Value::FromText("dialog.close") },
+			}));
+		}, false);
+	};
+	const auto session = SessionFor(account);
+	if (!session || Core::App().passcodeLocked()) {
+		refuse();
 		return;
 	}
-	const auto window = Core::App().activePrimaryWindow();
+	if (const auto open = dialogs.boxes[key].data()) {
+		if (dialogs.pages[key] != *page) {
+			dialogs.pages[key] = *page;
+			dialogs.changes.fire_copy(key);
+		}
+		return;
+	}
+	dialogs.pages[key] = *page;
+	const auto separate = Core::App().windowFor(
+		Window::SeparateId(&session->account()));
+	const auto window = separate ? separate : Core::App().activePrimaryWindow();
 	const auto controller = window ? window->sessionController() : nullptr;
-	if (!controller || !SessionFor(account)) {
-		dialogs.pages.erase(key);
+	if (!controller) {
+		refuse();
 		return;
 	}
 	auto box = Box(FillDialogBox, controller, id, account);
@@ -1531,19 +1707,23 @@ void StoreSettingsPage(
 		const std::string &account,
 		const cbor::Value &page) {
 	auto &pages = GetPages();
-	pages.pages[{ id, account }] = page;
-	pages.changes.fire_copy(id);
+	const auto key = std::make_pair(id, account);
+	if (const auto i = pages.pages.find(key); i != pages.pages.end() && i->second == page) {
+		return;
+	}
+	pages.pages[key] = page;
+	pages.changes.fire_copy(key);
 }
 
 void AddMessageMenuItems(
 		not_null<Ui::PopupMenu*> menu,
 		not_null<HistoryItem*> item) {
 	const auto peer = item->history()->peer;
-	if (item->isService() || FreshSecret::IsSecretPeerId(peer->id)) {
+	if (item->isService() || !item->isRegular() || !IsServerMsgId(item->id)) {
 		return;
 	}
 	const auto session = &item->history()->session();
-	const auto entries = EntriesFor(session, "message");
+	const auto entries = EntriesFor(session, "message", peer);
 	if (entries.empty()) {
 		return;
 	}
@@ -1562,7 +1742,7 @@ void AddMessageMenuItems(
 				entry.menuId,
 				found->history()->peer,
 				found));
-		});
+		}, &st::menuIconBot);
 	}
 }
 
@@ -1578,7 +1758,7 @@ void AddPeerMenuItems(
 	const auto session = &controller->session();
 	const auto weak = base::make_weak(session);
 	const auto peerId = peer->id;
-	for (const auto &entry : EntriesFor(session, surface)) {
+	for (const auto &entry : EntriesFor(session, surface, peer)) {
 		add(entry.text, [=] {
 			const auto strong = weak.get();
 			const auto found = strong ? strong->data().peerLoaded(peerId) : nullptr;
@@ -1729,7 +1909,7 @@ QString AcceptsFrom(const std::vector<std::string> &) {
 	return QString();
 }
 
-bool HasComposerItems(not_null<Main::Session*>) {
+bool HasComposerItems(not_null<Main::Session*>, not_null<PeerData*>) {
 	return false;
 }
 
@@ -1740,6 +1920,10 @@ void ShowComposerMenu(
 }
 
 void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)>) {
+}
+
+QString TrayItemsKey() {
+	return QString();
 }
 
 void ShowNetworkPanel(not_null<Window::SessionController*>) {

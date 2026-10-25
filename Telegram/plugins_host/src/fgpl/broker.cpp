@@ -42,6 +42,11 @@ constexpr auto kMaxHeaders = size_t(32);
 constexpr auto kMaxHeaderValue = size_t(4096);
 constexpr auto kMaxToast = size_t(200);
 constexpr auto kMaxSleepMs = int64_t(60000);
+constexpr auto kSendBurst = 5.;
+constexpr auto kSendEachMs = 1000.;
+constexpr auto kToastEachMs = int64_t(2000);
+constexpr auto kDialogEachMs = int64_t(60000);
+constexpr auto kUserActionWindowMs = int64_t(10000);
 constexpr auto kMaxMessage = size_t(4096);
 constexpr auto kMaxSocketsPerKind = 16;
 constexpr auto kMaxSocketChunk = size_t(1) << 20;
@@ -408,6 +413,9 @@ cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
 	++_pending;
 	const auto copy = args ? std::make_optional(*args) : std::nullopt;
 	const auto finish = [self, ticket](cbor::Value result) {
+		if (self->_closed) {
+			result = api::Fail(api::error::kUnavailable, "the plugin stopped");
+		}
 		self->_services.complete(ticket, std::move(result));
 		--self->_pending;
 	};
@@ -417,17 +425,66 @@ cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
 		});
 	} else if (IsSocketCall(op)) {
 		sockets().post([self, op, copy, finish] {
-			finish(self->socketCall(op, copy ? &*copy : nullptr));
+			finish(self->_closed
+				? cbor::Value()
+				: self->socketCall(op, copy ? &*copy : nullptr));
 		});
 	} else {
 		_services.post([self, op, copy, finish] {
-			finish(self->dispatch(op, copy ? &*copy : nullptr));
+			finish(self->_closed
+				? cbor::Value()
+				: self->dispatch(op, copy ? &*copy : nullptr));
 		});
 	}
 	return api::Ok(cbor::Value::FromMap({ { "ticket", Int(ticket) } }));
 }
 
+void Broker::noteUserAction(std::string_view type) {
+	const auto lock = std::scoped_lock(_limitsMutex);
+	_lastUserAction = _services.clockMs();
+	if (type == "dialog.close") {
+		_dialogOpen = false;
+	}
+}
+
+std::optional<cbor::Value> Broker::throttle(const std::string &op) {
+	const auto lock = std::scoped_lock(_limitsMutex);
+	const auto now = _services.clockMs();
+	if (op == "messages.send") {
+		_sendTokens = std::min(
+			kSendBurst,
+			_sendTokens + double(now - _sendRefilled) / kSendEachMs);
+		_sendRefilled = now;
+		if (_sendTokens < 1.) {
+			return api::Fail(api::error::kLimit, "messages are sent too often");
+		}
+		_sendTokens -= 1.;
+	} else if (op == "ui.toast") {
+		if (_lastToast && now - _lastToast < kToastEachMs) {
+			return api::Fail(api::error::kLimit, "toasts are shown too often");
+		}
+		_lastToast = now;
+	} else if (op == "ui.dialog.show") {
+		const auto userAction = _lastUserAction
+			&& (now - _lastUserAction < kUserActionWindowMs);
+		if (!_dialogOpen
+			&& !userAction
+			&& _lastDialog
+			&& now - _lastDialog < kDialogEachMs) {
+			return api::Fail(api::error::kLimit, "dialogs open after a user action");
+		}
+		_lastDialog = now;
+		_dialogOpen = true;
+	} else if (op == "ui.dialog.close") {
+		_dialogOpen = false;
+	}
+	return std::nullopt;
+}
+
 cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
+	if (auto refused = throttle(op)) {
+		return std::move(*refused);
+	}
 	if (op == "messages.set_outgoing") {
 		if (!has("messages.transform_outgoing")) {
 			return api::Fail(api::error::kDenied, "messages.transform_outgoing");
@@ -878,8 +935,11 @@ cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {
 			return api::Ok(Text(data->draft(*id)));
 		}
 		const auto text = TextArg(args, "text", kMaxMessage);
-		if (!text) {
-			return api::Fail(api::error::kInvalid, "text");
+		const auto replace = Arg(args, "replace");
+		if (!text || (replace && !replace->asBool())) {
+			return api::Fail(api::error::kInvalid, "text or replace");
+		} else if (!(replace && *replace->asBool()) && !data->draft(*id).empty()) {
+			return api::Fail(api::error::kInvalid, "the draft is not empty, pass replace");
 		}
 		return data->setDraft(*id, *text)
 			? api::Ok()
@@ -1009,8 +1069,12 @@ cbor::Value Broker::filterTargeted(const cbor::Value &event) const {
 	const auto reading = has("messages.read");
 	auto reduced = cbor::Map();
 	for (const auto &entry : *event.asMap()) {
-		if (entry.key == "chat" || entry.key == "message" || entry.key == "from") {
+		if (entry.key == "chat" || entry.key == "topic") {
 			if (!visible) {
+				continue;
+			}
+		} else if (entry.key == "message" || entry.key == "from") {
+			if (!visible || !reading) {
 				continue;
 			}
 		} else if (entry.key == "text" || entry.key == "old_text") {
@@ -1026,11 +1090,18 @@ cbor::Value Broker::filterTargeted(const cbor::Value &event) const {
 }
 
 std::optional<cbor::Value> Broker::filterEvent(const cbor::Value &event) const {
+	return FilterEvent(_grants, event);
+}
+
+std::optional<cbor::Value> FilterEvent(const Grants &grants, const cbor::Value &event) {
 	const auto type = event.find("type");
 	const auto name = type ? type->asText() : nullptr;
 	if (!name) {
 		return std::nullopt;
 	}
+	const auto has = [&](const char *permission) {
+		return grants.permissions.contains(permission);
+	};
 	const auto chat = event.find("chat");
 	const auto id = chat ? chat->asInt() : std::nullopt;
 	const auto secret = event.find("secret");
@@ -1039,7 +1110,9 @@ std::optional<cbor::Value> Broker::filterEvent(const cbor::Value &event) const {
 			return std::nullopt;
 		}
 		const auto isSecret = secret && secret->asBool().value_or(false);
-		if (!chatVisible(*id, isSecret)) {
+		if (isSecret
+			|| *id == api::kServiceChat
+			|| (grants.chats && !grants.chats->contains(*id))) {
 			return std::nullopt;
 		}
 		if (*name == "message.deleted" && !has("messages.read_deleted")) {

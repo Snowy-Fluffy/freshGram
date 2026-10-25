@@ -17,6 +17,8 @@
 #include "data/data_session.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "history/history_item_components.h"
+#include "base/unixtime.h"
 #include "lang/lang_keys.h"
 #include "ui/toast/toast.h"
 #include "base/flat_set.h"
@@ -28,6 +30,7 @@
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "settings.h"
+#include "storage/storage_account.h"
 #include "storage/storage_domain.h"
 
 #include <QtCore/QDir>
@@ -50,8 +53,24 @@ namespace FreshPlugins {
 namespace {
 
 constexpr auto kOutgoingTimeoutMs = 1000;
+constexpr auto kRememberedMessages = size_t(20000);
+constexpr auto kFreshEditSeconds = TimeId(300);
 
 #ifdef FRESHGRAM_PLUGINS
+
+struct Seen {
+	TimeId editDate = 0;
+	size_t textHash = 0;
+};
+
+struct Events {
+	base::flat_set<FullMsgId> sending;
+	base::flat_set<FullMsgId> byPlugin;
+	std::map<FullMsgId, Seen> seen;
+	std::deque<FullMsgId> seenOrder;
+	base::flat_set<FullMsgId> deleted;
+	std::deque<FullMsgId> deletedOrder;
+};
 
 struct Watched {
 	std::string id;
@@ -62,6 +81,7 @@ struct Watched {
 struct Outgoing {
 	Api::MessageToSend message;
 	std::optional<MsgId> localMessageId;
+	bool byPlugin = false;
 };
 
 struct Service {
@@ -204,6 +224,7 @@ void Refresh() {
 	}
 	if (wanted == State::Ready && !service.control) {
 		if (auto config = MakeConfig(service)) {
+			OpenData();
 			service.control = std::make_unique<Control>(std::move(*config), [] {
 				GetService().list.fire({});
 			});
@@ -230,6 +251,111 @@ void ForgetAccount(Service &service, Main::Account *account) {
 			manager->onLogout(id);
 		});
 	}
+}
+
+[[nodiscard]] bool Reportable(not_null<const HistoryItem*> item) {
+	return item->isRegular() && IsServerMsgId(item->id) && !item->isService();
+}
+
+[[nodiscard]] Seen SeenOf(not_null<const HistoryItem*> item) {
+	const auto edited = item->Get<HistoryMessageEdited>();
+	return {
+		.editDate = edited ? edited->date : TimeId(0),
+		.textHash = size_t(qHash(item->originalText().text)),
+	};
+}
+
+template <typename Set>
+void Remember(
+		Set &set,
+		std::deque<FullMsgId> &order,
+		FullMsgId id) {
+	order.push_back(id);
+	while (order.size() > kRememberedMessages) {
+		set.erase(order.front());
+		order.pop_front();
+	}
+}
+
+void Note(Events &events, not_null<const HistoryItem*> item) {
+	const auto id = item->fullId();
+	if (!events.seen.contains(id)) {
+		Remember(events.seen, events.seenOrder, id);
+	}
+	events.seen[id] = SeenOf(item);
+}
+
+void WatchEvents(
+		not_null<Main::Session*> session,
+		const std::string &id,
+		rpl::lifetime &lifetime) {
+	const auto events = lifetime.make_state<Events>();
+	const auto data = &session->data();
+	data->newItemAdded(
+	) | rpl::on_next([=](not_null<HistoryItem*> item) {
+		if (!IsServerMsgId(item->id)) {
+			if (item->out() && item->isLocal()) {
+				events->sending.emplace(item->fullId());
+				if (PluginSending()) {
+					events->byPlugin.emplace(item->fullId());
+				}
+			}
+			return;
+		} else if (!WantsEvents() || !Reportable(item)) {
+			return;
+		}
+		Note(*events, item);
+		SendMessageEvent("message.new", item, id);
+	}, lifetime);
+	data->itemIdChanged(
+	) | rpl::on_next([=](const Data::Session::IdChange &change) {
+		const auto old = FullMsgId(change.newId.peer, change.oldId);
+		const auto sent = events->sending.remove(old);
+		const auto byPlugin = events->byPlugin.remove(old);
+		const auto item = data->message(change.newId);
+		if (!sent || !item || !WantsEvents() || !Reportable(item)) {
+			return;
+		}
+		Note(*events, item);
+		SendMessageEvent("message.new", item, id, change.oldId, byPlugin);
+	}, lifetime);
+	session->changes().messageUpdates(
+		Data::MessageUpdate::Flag::Edited | Data::MessageUpdate::Flag::Deleted
+	) | rpl::on_next([=](const Data::MessageUpdate &update) {
+		const auto item = update.item;
+		if (!WantsEvents() || !Reportable(item)) {
+			return;
+		} else if (update.flags & Data::MessageUpdate::Flag::Deleted) {
+			if (events->deleted.emplace(item->fullId()).second) {
+				Remember(events->deleted, events->deletedOrder, item->fullId());
+				SendMessageEvent("message.deleted", item, id);
+			}
+			return;
+		}
+		const auto now = SeenOf(item);
+		const auto known = events->seen.find(item->fullId());
+		const auto changed = (known != end(events->seen))
+			? (known->second.editDate != now.editDate
+				|| known->second.textHash != now.textHash)
+			: (now.editDate > base::unixtime::now() - kFreshEditSeconds);
+		if (changed) {
+			Note(*events, item);
+			SendMessageEvent("message.edited", item, id);
+		}
+	}, lifetime);
+	data->itemRemoved(
+	) | rpl::on_next([=](not_null<const HistoryItem*> item) {
+		const auto fullId = item->fullId();
+		events->seen.erase(fullId);
+		events->sending.remove(fullId);
+		events->byPlugin.remove(fullId);
+		if (!WantsEvents() || !Reportable(item) || item->isDeleted()) {
+			return;
+		} else if (events->deleted.emplace(fullId).second) {
+			Remember(events->deleted, events->deletedOrder, fullId);
+			SendMessageEvent("message.deleted", item, id);
+		}
+	}, lifetime);
 }
 
 void WatchAccount(Service &service, not_null<Main::Account*> account) {
@@ -259,25 +385,7 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 		Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->startEnabled(id);
 		});
-		session->data().newItemAdded(
-		) | rpl::on_next([=](not_null<HistoryItem*> item) {
-			if (WantsEvents()) {
-				SendMessageEvent("message.new", item, id);
-			}
-		}, i->second.events);
-		session->changes().messageUpdates(
-			Data::MessageUpdate::Flag::Edited
-		) | rpl::on_next([=](const Data::MessageUpdate &update) {
-			if (WantsEvents()) {
-				SendMessageEvent("message.edited", update.item, id);
-			}
-		}, i->second.events);
-		session->data().itemRemoved(
-		) | rpl::on_next([=](not_null<const HistoryItem*> item) {
-			if (WantsEvents()) {
-				SendMessageEvent("message.deleted", item, id);
-			}
-		}, i->second.events);
+		WatchEvents(session, id, i->second.events);
 	}, entry.lifetime);
 }
 
@@ -341,12 +449,24 @@ void Start() {
 #endif
 }
 
+#ifdef FRESHGRAM_PLUGINS
+namespace {
+void RestoreDraft(const Api::MessageToSend &message);
+} // namespace
+#endif
+
 void Stop() {
 #ifdef FRESHGRAM_PLUGINS
 	auto &service = GetService();
 	service.lifetime.destroy();
 	service.watched.clear();
-	service.outgoing.clear();
+	for (auto &[history, queue] : base::take(service.outgoing)) {
+		for (const auto &outgoing : queue) {
+			if (!outgoing.byPlugin) {
+				RestoreDraft(outgoing.message);
+			}
+		}
+	}
 	DropManager(service);
 	service.state = State::Disabled;
 	service.started = false;
@@ -377,15 +497,8 @@ void SendNow(Outgoing &&outgoing) {
 	service.sending = false;
 }
 
-void Refuse(
-		const Api::MessageToSend &message,
-		const fgpl::OutgoingResult &result) {
+void RestoreDraft(const Api::MessageToSend &message) {
 	const auto history = message.action.history;
-	const auto snapshot = Snapshot();
-	const auto parsed = snapshot ? snapshot->manifest(result.plugin) : nullptr;
-	const auto name = parsed
-		? QString::fromStdString(parsed->name.get(Lang::Id().toStdString()))
-		: QString::fromStdString(result.plugin);
 	const auto &replyTo = message.action.replyTo;
 	const auto current = history->localDraft(
 		replyTo.topicRootId,
@@ -403,9 +516,22 @@ void Refuse(
 			SuggestOptions(),
 			cursor,
 			Data::WebPageDraft()));
-		history->session().changes().entryUpdated(
+		history->updateChatListSortPosition();
+		history->session().changes().historyUpdated(
 			history,
-			Data::EntryUpdate::Flag::LocalDraftSet);
+			Data::HistoryUpdate::Flag::CloudDraft);
+		history->session().local().writeDrafts(history);
+	}
+}
+
+void Refuse(const Outgoing &outgoing, const fgpl::OutgoingResult &result) {
+	const auto snapshot = Snapshot();
+	const auto parsed = snapshot ? snapshot->manifest(result.plugin) : nullptr;
+	const auto name = parsed
+		? QString::fromStdString(parsed->name.get(Lang::Id().toStdString()))
+		: QString::fromStdString(result.plugin);
+	if (!outgoing.byPlugin) {
+		RestoreDraft(outgoing.message);
 	}
 	Ui::Toast::Show(tr::fresh_PluginOutgoingBlocked(
 		tr::now,
@@ -432,7 +558,7 @@ void Finish(
 	auto outgoing = std::move(i->second.front());
 	i->second.pop_front();
 	if (result.blocked) {
-		Refuse(outgoing.message, result);
+		Refuse(outgoing, result);
 	} else {
 		const auto changed = QString::fromStdString(result.text);
 		if (changed != outgoing.message.textWithTags.text) {
@@ -461,7 +587,7 @@ void Next(not_null<History*> history) {
 		const auto secret = FreshSecret::IsSecretPeerId(peer->id);
 		const auto text = message.textWithTags.text.toStdString();
 		const auto weak = base::make_weak(&history->session());
-		Post([=](not_null<fgpl::PluginManager*> manager) {
+		const auto posted = Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->transformOutgoingAsync(
 				account,
 				chat,
@@ -474,7 +600,13 @@ void Next(not_null<History*> history) {
 					});
 				});
 		}, false);
-		return;
+		if (posted) {
+			return;
+		}
+		auto outgoing = std::move(i->second.front());
+		i->second.pop_front();
+		SendNow(std::move(outgoing));
+		i = service.outgoing.find(history);
 	}
 	if (i != end(service.outgoing)) {
 		service.outgoing.erase(i);
@@ -501,7 +633,7 @@ bool ApplyOutgoing(
 		return false;
 	}
 	auto &queue = service.outgoing[history];
-	queue.push_back({ std::move(message), localMessageId });
+	queue.push_back({ std::move(message), localMessageId, PluginSending() });
 	if (!waiting) {
 		Next(history);
 	}
@@ -567,14 +699,15 @@ std::shared_ptr<const fgpl::ManagerSnapshot> Snapshot() {
 #endif
 }
 
-void Post(
+bool Post(
 		Fn<void(not_null<fgpl::PluginManager*>)> work,
 		bool changesState) {
 #ifdef FRESHGRAM_PLUGINS
 	if (const auto &control = GetService().control) {
-		control->post(std::move(work), changesState);
+		return control->post(std::move(work), changesState);
 	}
 #endif
+	return false;
 }
 
 QString StorePath() {

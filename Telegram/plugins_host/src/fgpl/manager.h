@@ -380,6 +380,7 @@ private:
 		std::atomic<bool> unload{ false };
 		std::atomic<HostClient*> live{ nullptr };
 		std::atomic<int> pid{ -1 };
+		std::function<void(std::string_view)> appLog;
 		bool committed = false;
 	};
 
@@ -457,6 +458,7 @@ private:
 	void stopMany(const std::vector<Key> &keys);
 	void stopPlugin(const std::string &id);
 	void stopAll();
+	void startEverywhere(Record &record);
 	void noteFailure(Record &record, const std::string &account, const std::string &why);
 	void commitUpdate(Record &record);
 	void addLog(Record &record, std::string_view line);
@@ -499,6 +501,7 @@ private:
 	std::mutex _mailMutex;
 	std::deque<Mail> _mail;
 	std::map<Key, int> _streak;
+	std::set<std::string> _accounts;
 	bool _locked = false;
 	bool _hidden = false;
 	bool _closed = false;

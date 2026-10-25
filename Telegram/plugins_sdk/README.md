@@ -53,13 +53,19 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `messages.send` `{chat, text}` | `messages.send` | |
 | `account.info` | `account.info` | no phone number |
 | `stars.balance` | `stars.balance` | read only |
-| `composer.draft`, `composer.set_draft` | `composer.draft` | |
+| `composer.draft`, `composer.set_draft` `{chat, text, replace}` | `composer.draft` | setting a draft never switches the chat; a non-empty draft is kept unless `replace: true` |
 | `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
 | `ui.toast` `{text}` | `ui.toast` | the plugin name is prefixed |
 | `time.sleep` `{ms}` | none | awaitable only; up to 60000 ms |
 
-Every call counts against a per-second budget; a plugin may make at most 256
-calls while handling one event. `runtime.limits.eventTimeoutMs` is the plugin's
+Every call counts against a budget of 200 calls a second; a plugin may make at
+most 256 calls while handling one event. Some calls have limits of their own:
+`messages.send` allows 5 messages at once and then one a second, `ui.toast` one
+toast every 2 seconds, and `ui.dialog.show` opens a dialog only within 10
+seconds of a user action (a menu click, a command, a settings or dialog event)
+or while the plugin's dialog is already open. A call over a limit fails with
+`limit`. A request or an answer may be up to 12 MiB; a larger answer fails with
+`limit` instead of stopping the plugin. `runtime.limits.eventTimeoutMs` is the plugin's
 own time for an event: time spent waiting for the app (a download, a socket
 read) does not count, but all the calls of one event together may wait at most
 60 seconds. Network connections show up in the app's Network
@@ -84,6 +90,21 @@ only delivered with `messages.read`, only for chats in scope, never for secret
 chats or chat 777000; `message.deleted` loses its text without
 `messages.read_deleted`. A plugin only receives the `message.*` events it lists
 in `contributes.events`.
+
+Every `message.*` event carries `id`, `chat`, `chat_title`, `chat_type`, `from`,
+`sender_name`, `date`, `text`, `out` and `forwarded`, and when they apply
+`reply_to`, `topic`, `grouped` (album id), `media` (`photo`, `video`, `round`,
+`gif`, `voice`, `audio`, `sticker`, `file`, `poll`, `contact`, `location`,
+`webpage`, `other`), `edit_date` and `via_bot`.
+- `message.new` comes once per message, with its server id. Your own outgoing
+  messages come when the server accepts them, with `local_id` set, and with
+  `by_plugin: true` when a plugin sent them, so a plugin can ignore its own
+  messages. Scheduled, sponsored and "Recent actions" items never come.
+- `message.edited` comes only when the text or the edit date changes.
+- `message.deleted` comes once, also when the app keeps deleted messages.
+
+Chat ids are the app's peer ids: users are their user id, basic groups and
+channels have a type in the high bits. Use them as they are.
 
 `message.outgoing` `{chat, text}` comes to plugins with
 `messages.transform_outgoing` and `contributes.outgoing` before a text message is

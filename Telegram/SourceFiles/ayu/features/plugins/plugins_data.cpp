@@ -14,6 +14,8 @@
 #include "data/data_document_media.h"
 #include "data/data_drafts.h"
 #include "data/data_media_types.h"
+#include "data/data_chat_participant_status.h"
+#include "history/history_item_components.h"
 #include "data/data_peer.h"
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
@@ -183,6 +185,40 @@ template <typename T>
 	return result;
 }
 
+int PluginSendDepth = 0;
+
+[[nodiscard]] std::string MediaKindOf(not_null<const HistoryItem*> item) {
+	const auto media = item->media();
+	if (!media) {
+		return std::string();
+	} else if (media->photo()) {
+		return "photo";
+	} else if (const auto document = media->document()) {
+		return document->sticker()
+			? "sticker"
+			: document->isVideoMessage()
+			? "round"
+			: document->isAnimation()
+			? "gif"
+			: document->isVideoFile()
+			? "video"
+			: document->isVoiceMessage()
+			? "voice"
+			: document->isAudioFile()
+			? "audio"
+			: "file";
+	} else if (media->poll()) {
+		return "poll";
+	} else if (media->sharedContact()) {
+		return "contact";
+	} else if (media->location()) {
+		return "location";
+	} else if (media->webpage()) {
+		return "webpage";
+	}
+	return "other";
+}
+
 class AppData final : public fgpl::DataProvider {
 public:
 	explicit AppData(std::string account) : _account(std::move(account)) {
@@ -290,16 +326,17 @@ public:
 				int(textWithTags.text.size()),
 				Ui::kQFixedMax
 			};
+			const auto previous = history->localDraft({}, {});
 			history->setLocalDraft(std::make_unique<Data::Draft>(
 				textWithTags,
-				FullReplyTo(),
-				SuggestOptions(),
+				previous ? previous->reply : FullReplyTo(),
+				previous ? previous->suggest : SuggestOptions(),
 				cursor,
 				Data::WebPageDraft()));
-			history->clearLocalEditDraft({}, {});
-			history->session().changes().entryUpdated(
+			history->updateChatListSortPosition();
+			history->session().changes().historyUpdated(
 				history,
-				Data::EntryUpdate::Flag::LocalDraftSet);
+				Data::HistoryUpdate::Flag::CloudDraft);
 			return true;
 		}, false);
 	}
@@ -312,9 +349,17 @@ public:
 				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
 				return false;
 			}
-			auto message = Api::MessageToSend(Api::SendAction(history));
+			if (!Data::CanSendTexts(history->peer)
+				|| history->peer->slowmodeSecondsLeft() > 0) {
+				return false;
+			}
+			auto action = Api::SendAction(history);
+			action.clearDraft = false;
+			auto message = Api::MessageToSend(action);
 			message.textWithTags = TextWithTags{ QString::fromStdString(text) };
+			++PluginSendDepth;
 			session->api().sendMessage(std::move(message));
+			--PluginSendDepth;
 			return true;
 		}, false);
 	}
@@ -478,12 +523,15 @@ struct DataState {
 
 fgpl::DataProvider *DataFor(const std::string &account) {
 	auto &state = GetData();
-	GetGate().closed = false;
 	auto &entry = state.providers[account];
 	if (!entry) {
 		entry = std::make_unique<AppData>(account);
 	}
 	return entry.get();
+}
+
+void OpenData() {
+	GetGate().closed = false;
 }
 
 void CloseData() {
@@ -499,25 +547,58 @@ bool WantsEvents() {
 	return snapshot && snapshot->wantsEvents;
 }
 
+bool PluginSending() {
+	return PluginSendDepth > 0;
+}
+
 void SendMessageEvent(
 		const char *type,
 		not_null<const HistoryItem*> item,
-		const std::string &account) {
+		const std::string &account,
+		MsgId localId,
+		bool byPlugin) {
 	if (!Running() || item->isService()) {
 		return;
 	}
+	using Value = fgpl::cbor::Value;
 	const auto peer = item->history()->peer;
 	const auto message = MessageOf(item);
-	auto event = fgpl::cbor::Value::FromMap({
-		{ "type", fgpl::cbor::Value::FromText(type) },
-		{ "id", fgpl::cbor::Value::FromInt(message.id) },
-		{ "chat", fgpl::cbor::Value::FromInt(message.chat) },
-		{ "from", fgpl::cbor::Value::FromInt(message.from) },
-		{ "date", fgpl::cbor::Value::FromInt(message.date) },
-		{ "text", fgpl::cbor::Value::FromText(message.text) },
-		{ "secret", fgpl::cbor::Value::FromBool(
-			FreshSecret::IsSecretPeerId(peer->id)) },
-	});
+	auto map = fgpl::cbor::Map{
+		{ "type", Value::FromText(type) },
+		{ "id", Value::FromInt(message.id) },
+		{ "chat", Value::FromInt(message.chat) },
+		{ "chat_title", Value::FromText(Utf8(peer->name())) },
+		{ "chat_type", Value::FromText(KindOf(peer)) },
+		{ "from", Value::FromInt(message.from) },
+		{ "sender_name", Value::FromText(Utf8(item->from()->name())) },
+		{ "date", Value::FromInt(message.date) },
+		{ "text", Value::FromText(message.text) },
+		{ "out", Value::FromBool(item->out()) },
+		{ "forwarded", Value::FromBool(item->Has<HistoryMessageForwarded>()) },
+		{ "secret", Value::FromBool(FreshSecret::IsSecretPeerId(peer->id)) },
+	};
+	const auto optionalInt = [&](const char *key, int64_t value) {
+		if (value) {
+			map.push_back({ key, Value::FromInt(value) });
+		}
+	};
+	optionalInt("reply_to", item->replyToId().bare);
+	optionalInt("topic", item->topicRootId().bare);
+	optionalInt("grouped", int64_t(item->groupId().value));
+	optionalInt("local_id", localId.bare);
+	if (const auto edited = item->Get<HistoryMessageEdited>()) {
+		optionalInt("edit_date", edited->date);
+	}
+	if (const auto media = MediaKindOf(item); !media.empty()) {
+		map.push_back({ "media", Value::FromText(media) });
+	}
+	if (const auto bot = item->viaBot()) {
+		map.push_back({ "via_bot", Value::FromText(Utf8(bot->username())) });
+	}
+	if (byPlugin) {
+		map.push_back({ "by_plugin", Value::FromBool(true) });
+	}
+	auto event = Value::FromMap(std::move(map));
 	Post([=, event = std::move(event)](not_null<fgpl::PluginManager*> manager) {
 		manager->dispatch(account, event);
 	}, false);
@@ -527,6 +608,9 @@ void SendMessageEvent(
 
 fgpl::DataProvider *DataFor(const std::string &) {
 	return nullptr;
+}
+
+void OpenData() {
 }
 
 void CloseData() {
@@ -539,10 +623,16 @@ bool WantsEvents() {
 	return false;
 }
 
+bool PluginSending() {
+	return false;
+}
+
 void SendMessageEvent(
 	const char *,
 	not_null<const HistoryItem*>,
-	const std::string &) {
+	const std::string &,
+	MsgId,
+	bool) {
 }
 
 #endif

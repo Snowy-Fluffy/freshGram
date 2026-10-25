@@ -4224,7 +4224,7 @@ void HistoryWidget::refreshScheduledToggle() {
 void HistoryWidget::refreshPluginsToggle() {
 	const auto has = _history
 		&& _canSendMessages
-		&& FreshPlugins::HasComposerItems(&session());
+		&& FreshPlugins::HasComposerItems(&session(), _history->peer);
 	if (!_pluginsToggle && has) {
 		_pluginsToggle.create(this, st::historyPluginsToggle);
 		_pluginsToggle->setAccessibleName(tr::fresh_Plugins(tr::now));

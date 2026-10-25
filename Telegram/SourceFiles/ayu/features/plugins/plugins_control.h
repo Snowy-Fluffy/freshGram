@@ -24,7 +24,7 @@ public:
 	Control(fgpl::ManagerConfig config, Fn<void()> published);
 	~Control();
 
-	void post(Work work, bool changesState);
+	bool post(Work work, bool changesState);
 	[[nodiscard]] std::shared_ptr<const fgpl::ManagerSnapshot> snapshot() const;
 
 private:

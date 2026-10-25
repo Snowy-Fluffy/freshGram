@@ -54,7 +54,7 @@ def handle(kind, value):
         errors = 0
         for i in range(1000):
             reply = freshgram.call({"i": i})
-            if isinstance(reply, dict) and "error" in reply:
+            if isinstance(reply, dict) and reply.get("ok") is False:
                 errors += 1
         return errors
     elif attack == "escape":

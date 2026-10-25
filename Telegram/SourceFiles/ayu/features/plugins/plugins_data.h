@@ -12,13 +12,17 @@ class DataProvider;
 namespace FreshPlugins {
 
 [[nodiscard]] fgpl::DataProvider *DataFor(const std::string &account);
+void OpenData();
 void CloseData();
 void ReleaseData();
 
 [[nodiscard]] bool WantsEvents();
+[[nodiscard]] bool PluginSending();
 void SendMessageEvent(
 	const char *type,
 	not_null<const HistoryItem*> item,
-	const std::string &account);
+	const std::string &account,
+	MsgId localId = 0,
+	bool byPlugin = false);
 
 } // namespace FreshPlugins
