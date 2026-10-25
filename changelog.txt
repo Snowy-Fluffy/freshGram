@@ -1,3 +1,16 @@
+7.5.10 beta (25.10.26)
+
+- Add plugins in Python and C running in a sandbox with granted permissions.
+- Add the Plugins settings section, the plugin details window and .fgpl installs.
+- Let plugins add menus, slash commands and settings pages.
+- Let plugins use HTTPS, TCP and UDP with a Network permissions panel.
+- Download the plugin runtime from the Telegram channel and keep it updated.
+- Move the freshGram data files in tdata to the new fresh names.
+- Show Clear metadata for pasted images.
+- Let the lock screen card opacity show through the passcode field.
+- Drop the separate Read on interact toggle from the ghost mode settings.
+- Fix the checkbox hover cursor.
+
 7.5.9 beta (20.10.26)
 
 - Add offline translation with downloadable models.
