@@ -182,6 +182,13 @@
 "fresh_PluginPermissionsCount" = "{allowed} из {total}";
 "fresh_PluginRemove" = "Удалить плагин";
 "fresh_PluginsAdd" = "Установить плагин";
+"fresh_PermMessagesEdit" = "Изменять отправленные вами сообщения";
+"fresh_PermMessagesDelete" = "Удалять отправленные вами сообщения";
+"fresh_PermMessagesReact" = "Ставить реакции на сообщения";
+"fresh_PermUsersInfo" = "Видеть профили пользователей и статус в сети";
+"fresh_PermChatsActive" = "Знать, какой чат вы открыли";
+"fresh_RiskChangesMessages" = "Может изменять и удалять отправленные вами сообщения";
+"fresh_PluginChatNone" = "Не выбран";
 "fresh_PluginSettingsLoading" = "Загрузка настроек…";
 "fresh_PluginCommandTaken" = "{command} уже использует {plugin}; чтобы вызвать этот плагин, напишите /команда@id.плагина.";
 "fresh_PluginVersionShort" = "Версия {version}";
@@ -225,7 +232,7 @@
 "fresh_PermNetUdp" = "Открывать UDP-соединения";
 "fresh_PermStorage" = "Хранить свои данные";
 "fresh_PermPluginsMessage" = "Обмениваться сообщениями с другими плагинами";
-"fresh_PermFiles" = "Читать выбранные вами файлы";
+"fresh_PermFiles" = "Открывать и сохранять выбранные вами файлы";
 "fresh_PermClipboard" = "Пользоваться буфером обмена";
 "fresh_PermBackground" = "Работать в фоне";
 "fresh_RiskExfiltration" = "Может прочитать ваши данные и отправить их в интернет";
@@ -236,7 +243,7 @@
 "fresh_RiskOutgoing" = "Может изменять то, что вы отправляете";
 "fresh_RiskBackground" = "Продолжает работать в фоне";
 "fresh_RiskClipboard" = "Может пользоваться буфером обмена";
-"fresh_RiskFiles" = "Может читать выбранные вами файлы";
+"fresh_RiskFiles" = "Может читать и сохранять выбранные вами файлы";
 "fresh_RiskPlugins" = "Может обмениваться данными с другими плагинами, которые это принимают";
 "fresh_PluginChats" = "Чаты";
 "fresh_PluginChatsAll" = "Все чаты";

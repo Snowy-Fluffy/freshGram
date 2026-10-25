@@ -5,6 +5,14 @@
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/secret/secret_peer.h"
 #include "api/api_common.h"
+#include "api/api_editing.h"
+#include "api/api_send_progress.h"
+#include "base/unixtime.h"
+#include "core/file_utilities.h"
+#include "data/data_forum_topic.h"
+#include "data/data_histories.h"
+#include "data/data_message_reaction_id.h"
+#include "window/notifications_manager.h"
 #include "apiwrap.h"
 #include "core/application.h"
 #include "crl/crl_on_main.h"
@@ -23,6 +31,9 @@
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "lang/lang_instance.h"
+#include "lang/lang_keys.h"
+#include "core/core_settings.h"
+#include "core/version.h"
 #include "ui/image/image.h"
 #include "window/themes/window_theme.h"
 #include "dialogs/dialogs_entry.h"
@@ -45,6 +56,10 @@
 
 #include <QtCore/QBuffer>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
+#include <QtCore/QStandardPaths>
+#include <QtGui/QClipboard>
+#include <QtGui/QGuiApplication>
 
 #include <atomic>
 #include <condition_variable>
@@ -60,7 +75,9 @@ namespace {
 constexpr auto kWaitSlice = std::chrono::milliseconds(20);
 constexpr auto kWaitTotal = std::chrono::milliseconds(1500);
 constexpr auto kWaitServer = std::chrono::milliseconds(10000);
+constexpr auto kWaitUser = std::chrono::minutes(5);
 constexpr auto kMaxHistory = size_t(200);
+constexpr auto kMaxScheduleSeconds = TimeId(365 * 24 * 3600);
 
 thread_local bool TimedOut = false;
 
@@ -133,7 +150,10 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] T OnMainAsync(Fn<void(Fn<void(T)> done)> start, T fallback) {
+[[nodiscard]] T OnMainAsync(
+		Fn<void(Fn<void(T)> done)> start,
+		T fallback,
+		std::chrono::milliseconds wait = kWaitServer) {
 	auto &gate = GetGate();
 	if (gate.closed.load()) {
 		TimedOut = true;
@@ -163,7 +183,7 @@ template <typename T>
 	});
 
 	auto lock = std::unique_lock(call->mutex);
-	const auto until = std::chrono::steady_clock::now() + kWaitServer;
+	const auto until = std::chrono::steady_clock::now() + wait;
 	while (call->stage != Stage::Finished) {
 		if (gate.closed.load() || std::chrono::steady_clock::now() >= until) {
 			call->stage = Stage::Abandoned;
@@ -304,6 +324,52 @@ template <typename T>
 }
 
 int PluginSendDepth = 0;
+
+[[nodiscard]] TextWithEntities Formatted(const std::string &text, bool markdown) {
+	auto result = TextWithEntities{ QString::fromStdString(text) };
+	if (markdown) {
+		TextUtilities::ParseEntities(result, TextParseMarkdown);
+	}
+	return result;
+}
+
+[[nodiscard]] std::optional<Api::SendProgressType> ProgressOf(const std::string &kind) {
+	using Type = Api::SendProgressType;
+	static const auto kinds = std::map<std::string, Type>{
+		{ "typing", Type::Typing },
+		{ "upload_photo", Type::UploadPhoto },
+		{ "upload_video", Type::UploadVideo },
+		{ "upload_file", Type::UploadFile },
+		{ "record_voice", Type::RecordVoice },
+		{ "upload_voice", Type::UploadVoice },
+		{ "record_video", Type::RecordVideo },
+		{ "record_round", Type::RecordRound },
+		{ "choose_sticker", Type::ChooseSticker },
+	};
+	const auto i = kinds.find(kind);
+	return (i != kinds.end()) ? std::make_optional(i->second) : std::nullopt;
+}
+
+[[nodiscard]] std::string StatusOf(not_null<UserData*> user, int64_t &lastSeen) {
+	const auto status = user->lastseen();
+	const auto now = base::unixtime::now();
+	lastSeen = status.onlineTill();
+	return user->isBot()
+		? "bot"
+		: status.isOnline(now)
+		? "online"
+		: status.isRecently()
+		? "recently"
+		: status.isWithinWeek()
+		? "week"
+		: status.isWithinMonth()
+		? "month"
+		: status.isLongAgo()
+		? "long_ago"
+		: lastSeen
+		? "offline"
+		: "hidden";
+}
 
 [[nodiscard]] std::string MediaKindOf(not_null<const HistoryItem*> item) {
 	const auto media = item->media();
@@ -564,6 +630,383 @@ public:
 		}, false);
 	}
 
+	std::string sendMessage(const fgpl::OutgoingMessage &outgoing) override {
+		return OnMain<std::string>([=]() -> std::string {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(outgoing.chat);
+			if (!session || !history
+				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				return fgpl::api::error::kNotFound;
+			}
+			const auto topic = outgoing.topic
+				? history->peer->forumTopicFor(MsgId(outgoing.topic))
+				: nullptr;
+			const auto thread = topic
+				? not_null<Data::Thread*>(topic)
+				: not_null<Data::Thread*>(history);
+			if (!Data::CanSendTexts(thread)) {
+				return fgpl::api::error::kDenied;
+			} else if (history->peer->slowmodeSecondsLeft() > 0) {
+				return fgpl::api::error::kLimit;
+			}
+			const auto now = base::unixtime::now();
+			if (outgoing.schedule
+				&& (outgoing.schedule <= now + 10
+					|| outgoing.schedule > now + kMaxScheduleSeconds)) {
+				return fgpl::api::error::kInvalid;
+			}
+			auto action = Api::SendAction(thread);
+			action.clearDraft = false;
+			action.options.silent = outgoing.silent;
+			action.options.scheduled = TimeId(outgoing.schedule);
+			if (outgoing.topic && !topic) {
+				action.replyTo.topicRootId = MsgId(outgoing.topic);
+			}
+			if (outgoing.replyTo) {
+				const auto replied = session->data().message(
+					history->peer->id,
+					MsgId(outgoing.replyTo));
+				if (!replied) {
+					return fgpl::api::error::kNotFound;
+				}
+				action.replyTo.messageId = replied->fullId();
+				action.replyTo.topicRootId = replied->topicRootId();
+			}
+			const auto text = Formatted(outgoing.text, outgoing.markdown);
+			auto message = Api::MessageToSend(action);
+			message.textWithTags = TextWithTags{
+				text.text,
+				TextUtilities::ConvertEntitiesToTextTags(text.entities),
+			};
+			++PluginSendDepth;
+			session->api().sendMessage(std::move(message));
+			--PluginSendDepth;
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::string edit(
+			int64_t chat,
+			int64_t id,
+			const std::string &text,
+			bool markdown) override {
+		return OnMainAsync<std::string>([=](Fn<void(std::string)> done) {
+			const auto item = messageOf(chat, id);
+			if (!item) {
+				done(fgpl::api::error::kNotFound);
+				return;
+			} else if (!item->out() || !item->allowsEdit(base::unixtime::now())) {
+				done(fgpl::api::error::kDenied);
+				return;
+			}
+			Api::EditTextMessage(
+				item,
+				Formatted(text, markdown),
+				Data::WebPageDraft(),
+				Api::SendOptions(),
+				[=](mtpRequestId) { done({}); },
+				[=](const QString &, mtpRequestId) {
+					done(fgpl::api::error::kFailed);
+				},
+				false);
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::string remove(
+			int64_t chat,
+			const std::vector<int64_t> &ids,
+			bool everyone) override {
+		return OnMain<std::string>([=]() -> std::string {
+			const auto session = FindSession(_account);
+			if (!session) {
+				return fgpl::api::error::kNotFound;
+			}
+			const auto now = base::unixtime::now();
+			auto list = MessageIdsList();
+			auto revoke = everyone;
+			for (const auto id : ids) {
+				const auto item = messageOf(chat, id);
+				if (!item) {
+					return fgpl::api::error::kNotFound;
+				} else if (!item->out() || !item->canDelete()) {
+					return fgpl::api::error::kDenied;
+				}
+				revoke = revoke && item->canDeleteForEveryone(now);
+				list.push_back(item->fullId());
+			}
+			session->data().histories().deleteMessages(list, revoke);
+			session->data().sendHistoryChangeNotifications();
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::string react(
+			int64_t chat,
+			int64_t id,
+			const std::string &emoji) override {
+		return OnMain<std::string>([=]() -> std::string {
+			const auto item = messageOf(chat, id);
+			if (!item) {
+				return fgpl::api::error::kNotFound;
+			} else if (!item->canReact()) {
+				return fgpl::api::error::kDenied;
+			}
+			const auto chosen = item->chosenReactions();
+			const auto wanted = Data::ReactionId{ QString::fromStdString(emoji) };
+			if (emoji.empty()) {
+				for (const auto &reaction : chosen) {
+					if (!reaction.paid()) {
+						item->toggleReaction(reaction, HistoryReactionSource::Existing);
+					}
+				}
+			} else if (!ranges::contains(chosen, wanted)) {
+				item->toggleReaction(wanted, HistoryReactionSource::Selector);
+			}
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::string forward(
+			int64_t from,
+			const std::vector<int64_t> &ids,
+			int64_t to,
+			bool silent) override {
+		return OnMain<std::string>([=]() -> std::string {
+			const auto session = FindSession(_account);
+			const auto target = historyOf(to);
+			if (!session || !target
+				|| FreshSecret::IsSecretPeerId(target->peer->id)) {
+				return fgpl::api::error::kNotFound;
+			} else if (!Data::CanSendTexts(target)) {
+				return fgpl::api::error::kDenied;
+			}
+			auto items = HistoryItemsList();
+			for (const auto id : ids) {
+				const auto item = messageOf(from, id);
+				if (!item) {
+					return fgpl::api::error::kNotFound;
+				} else if (!item->allowsForward() || item->isDeleted()) {
+					return fgpl::api::error::kDenied;
+				}
+				items.push_back(item);
+			}
+			auto action = Api::SendAction(target);
+			action.clearDraft = false;
+			action.options.silent = silent;
+			session->api().forwardMessages(
+				Data::ResolvedForwardDraft{ .items = std::move(items) },
+				action);
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::string markRead(int64_t chat) override {
+		return OnMain<std::string>([=]() -> std::string {
+			const auto history = historyOf(chat);
+			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
+				return fgpl::api::error::kNotFound;
+			}
+			history->owner().histories().readInbox(history);
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::string chatAction(
+			int64_t chat,
+			int64_t topic,
+			const std::string &kind) override {
+		const auto type = ProgressOf(kind);
+		if (!type && kind != "cancel") {
+			return fgpl::api::error::kInvalid;
+		}
+		return OnMain<std::string>([=]() -> std::string {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(chat);
+			if (!session || !history
+				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				return fgpl::api::error::kNotFound;
+			}
+			auto &progress = session->sendProgressManager();
+			if (type) {
+				progress.update(history, MsgId(topic), *type);
+			} else {
+				progress.cancel(history, MsgId(topic), Api::SendProgressType::Typing);
+			}
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::vector<fgpl::Message> search(
+			int64_t chat,
+			const std::string &query,
+			size_t limit) override {
+		return OnMainAsync<std::vector<fgpl::Message>>([=](
+				Fn<void(std::vector<fgpl::Message>)> done) {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(chat);
+			if (!session || !history
+				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				done({});
+				return;
+			}
+			using Flag = MTPmessages_Search::Flag;
+			session->api().request(MTPmessages_Search(
+				MTP_flags(Flag()),
+				history->peer->input(),
+				MTP_string(QString::fromStdString(query)),
+				MTP_inputPeerEmpty(),
+				MTP_inputPeerEmpty(),
+				MTPVector<MTPReaction>(),
+				MTP_int(0),
+				MTP_inputMessagesFilterEmpty(),
+				MTP_int(0),
+				MTP_int(0),
+				MTP_int(0),
+				MTP_int(0),
+				MTP_int(int(std::min(limit, kMaxHistory))),
+				MTP_int(0),
+				MTP_int(0),
+				MTP_long(0)
+			)).done([=](const MTPmessages_Messages &answer) {
+				done(MessagesOf(answer, chat));
+			}).fail([=] {
+				done({});
+			}).send();
+		}, {});
+	}
+
+	std::optional<fgpl::UserInfo> user(int64_t id) override {
+		return OnMain<std::optional<fgpl::UserInfo>>([=]() -> std::optional<fgpl::UserInfo> {
+			const auto session = FindSession(_account);
+			const auto peer = session
+				? session->data().peerLoaded(PeerId(uint64(id)))
+				: nullptr;
+			const auto user = peer ? peer->asUser() : nullptr;
+			if (!user || FreshSecret::IsSecretPeerId(peer->id)) {
+				return std::nullopt;
+			}
+			auto result = fgpl::UserInfo();
+			result.id = ChatId(user);
+			result.name = Utf8(user->name());
+			result.username = Utf8(user->username());
+			result.bot = user->isBot();
+			result.premium = user->isPremium();
+			result.contact = user->isContact();
+			result.self = user->isSelf();
+			result.status = StatusOf(user, result.lastSeen);
+			return result;
+		}, std::nullopt);
+	}
+
+	std::string notify(const std::string &title, const std::string &text) override {
+		return OnMain<std::string>([=]() -> std::string {
+			const auto session = FindSession(_account);
+			if (!session) {
+				return fgpl::api::error::kNotFound;
+			}
+			const auto heading = title.empty()
+				? AppName.utf16()
+				: QString::fromStdString(title);
+			const auto body = QString::fromStdString(text);
+			auto &manager = Core::App().notifications().manager();
+			if (Core::App().settings().desktopNotify()
+				&& manager.type() == Window::Notifications::ManagerType::Native) {
+				static_cast<Window::Notifications::NativeManager&>(
+					manager).showPluginNotification(session->user(), heading, body);
+			} else {
+				Ui::Toast::Show(heading + u": "_q + body);
+			}
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::string clipboardWrite(const std::string &text) override {
+		return OnMain<std::string>([=]() -> std::string {
+			QGuiApplication::clipboard()->setText(QString::fromStdString(text));
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
+	std::optional<std::string> clipboardRead() override {
+		return OnMain<std::optional<std::string>>([] {
+			return std::make_optional(Utf8(QGuiApplication::clipboard()->text()));
+		}, std::nullopt);
+	}
+
+	fgpl::Result<fgpl::PickedFile, std::string> pickFile(
+			const std::string &title,
+			const std::string &filter,
+			size_t maxBytes) override {
+		struct Picked {
+			std::string error = fgpl::api::error::kUnavailable;
+			QString path;
+			QByteArray content;
+		};
+		const auto picked = OnMainAsync<Picked>([=](Fn<void(Picked)> done) {
+			FileDialog::GetOpenPath(
+				Core::App().getFileDialogParent(),
+				title.empty()
+					? tr::lng_choose_file(tr::now)
+					: QString::fromStdString(title),
+				filter.empty()
+					? FileDialog::AllFilesFilter()
+					: QString::fromStdString(filter),
+				[=](FileDialog::OpenResult &&result) {
+					done({
+						.error = std::string(),
+						.path = result.paths.isEmpty() ? QString() : result.paths.front(),
+						.content = result.remoteContent,
+					});
+				},
+				[=] { done({ .error = fgpl::api::error::kCancelled }); });
+		}, Picked(), kWaitUser);
+		if (!picked.error.empty()) {
+			return picked.error;
+		}
+		auto bytes = picked.content;
+		if (bytes.isEmpty() && !picked.path.isEmpty()) {
+			auto file = QFile(picked.path);
+			if (!file.open(QIODevice::ReadOnly)) {
+				return std::string(fgpl::api::error::kFailed);
+			}
+			bytes = file.read(qint64(maxBytes) + 1);
+		}
+		auto result = fgpl::PickedFile();
+		result.name = Utf8(QFileInfo(picked.path).fileName());
+		result.bytes.assign(bytes.constData(), bytes.constData() + bytes.size());
+		return result;
+	}
+
+	std::string saveFile(
+			const std::string &name,
+			const fgpl::cbor::Bytes &bytes) override {
+		const auto path = OnMainAsync<std::optional<QString>>([=](
+				Fn<void(std::optional<QString>)> done) {
+			const auto folder = QStandardPaths::writableLocation(
+				QStandardPaths::DownloadLocation);
+			FileDialog::GetWritePath(
+				Core::App().getFileDialogParent(),
+				tr::lng_save_file(tr::now),
+				FileDialog::AllFilesFilter(),
+				folder + '/' + QString::fromStdString(name),
+				[=](QString &&result) { done(std::move(result)); },
+				[=] { done(QString()); });
+		}, std::nullopt, kWaitUser);
+		if (!path) {
+			return fgpl::api::error::kUnavailable;
+		} else if (path->isEmpty()) {
+			return fgpl::api::error::kCancelled;
+		}
+		auto file = QFile(*path);
+		if (!file.open(QIODevice::WriteOnly)
+			|| file.write(
+				reinterpret_cast<const char*>(bytes.data()),
+				qint64(bytes.size())) != qint64(bytes.size())) {
+			return fgpl::api::error::kFailed;
+		}
+		return {};
+	}
+
 	void toast(const std::string &text) override {
 		OnMain<bool>([=] {
 			Ui::Toast::Show(QString::fromStdString(text));
@@ -730,6 +1173,14 @@ public:
 	}
 
 private:
+	[[nodiscard]] HistoryItem *messageOf(int64_t chat, int64_t id) const {
+		const auto session = FindSession(_account);
+		const auto peerId = PeerId(uint64(chat));
+		return (session && !FreshSecret::IsSecretPeerId(peerId))
+			? session->data().message(peerId, MsgId(id))
+			: nullptr;
+	}
+
 	[[nodiscard]] History *historyOf(int64_t id) const {
 		const auto session = FindSession(_account);
 		return session
@@ -828,6 +1279,21 @@ void SendMessageEvent(
 	}
 	if (byPlugin) {
 		map.push_back({ "by_plugin", Value::FromBool(true) });
+	}
+	if (!item->reactions().empty()) {
+		auto reactions = fgpl::cbor::Array();
+		for (const auto &reaction : item->reactions()) {
+			const auto emoji = reaction.id.emoji();
+			if (emoji.isEmpty()) {
+				continue;
+			}
+			reactions.push_back(Value::FromMap({
+				{ "emoji", Value::FromText(Utf8(emoji)) },
+				{ "count", Value::FromInt(reaction.count) },
+				{ "my", Value::FromBool(reaction.my) },
+			}));
+		}
+		map.push_back({ "reactions", Value::FromArray(std::move(reactions)) });
 	}
 	auto event = Value::FromMap(std::move(map));
 	Post([=, event = std::move(event)](not_null<fgpl::PluginManager*> manager) {

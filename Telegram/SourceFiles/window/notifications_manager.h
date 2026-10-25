@@ -399,6 +399,11 @@ public:
 		return ManagerType::Native;
 	}
 
+	void showPluginNotification(
+		not_null<PeerData*> peer,
+		const QString &title,
+		const QString &message);
+
 	using NotificationSound = Media::Audio::LocalSound;
 	struct NotificationAction {
 		QString id;

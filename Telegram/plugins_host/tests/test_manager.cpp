@@ -113,7 +113,7 @@ struct Lab {
 		fs::remove_all(root);
 		fs::create_directories(root);
 		environment.app = *ParseVersion("7.6.1");
-		environment.apiLevel = 1;
+		environment.apiLevel = 2;
 		services.data = &data;
 		services.clockMs = [this] { return time.load(); };
 		cacheSettings.directory = root / "cache";
@@ -1279,6 +1279,37 @@ void TestFailedHandlerBlocksOutgoing() {
 	manager.shutdown();
 }
 
+[[nodiscard]] std::string TimerRequest() {
+	return std::string("\xa2\x62op\x6atimers.set\x61" "a\xa2\x62id\x61t\x65" "delay\x19\x03\xe8", 32);
+}
+
+void TestTimersWakeThePlugin() {
+	auto lab = Lab("fgpl-manager-timers");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.ticker");
+	CHECK(manager.install(CustomArchive(id, CallingModule(TimerRequest()), {
+		{ "messages.read", {} },
+	})).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started == 0);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	manager.onLock();
+	manager.onUnlock();
+	CHECK(manager.runningCount() == 0);
+	lab.time += 1000;
+	manager.pump();
+	CHECK(manager.runningCount() == 1);
+	CHECK(manager.drain(20000));
+	CHECK(manager.list()[0].stats.events == 2);
+	CHECK(manager.setEnabled(id, false));
+	CHECK(manager.setEnabled(id, true));
+	lab.time += 5000;
+	manager.pump();
+	CHECK(manager.runningCount() == 0);
+	manager.shutdown();
+}
+
 int main(int argc, char **argv) {
 	const auto only = (argc > 1) ? std::string(argv[1]) : std::string();
 	const auto run = [&](const char *name, void (*test)()) {
@@ -1298,6 +1329,7 @@ int main(int argc, char **argv) {
 	run("fair", TestSlowPluginDoesNotDelayOthers);
 	run("overflow", TestQueueOverflowDropsTheOldest);
 	run("busylock", TestLockIsPromptWhileBusy);
+	run("timers", TestTimersWakeThePlugin);
 	run("stress", TestManyPluginsAndAccounts);
 	run("cancel", TestStopWhileStartingIsPrompt);
 	run("unload", TestSelfUnloadAndLazyStart);

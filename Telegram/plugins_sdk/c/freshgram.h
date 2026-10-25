@@ -568,6 +568,60 @@ static int fg_socket_close(fg_i64 id) {
 	return fg_send(&w, 0);
 }
 
+static int fg_edit_text(fg_i64 chat, fg_i64 message, const char *text) {
+	fg_writer w;
+	fg_begin(&w, "messages.edit", 3);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "id");
+	fg_w_int(&w, message);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	return fg_send(&w, 0);
+}
+
+static int fg_react(fg_i64 chat, fg_i64 message, const char *emoji) {
+	fg_writer w;
+	fg_begin(&w, "messages.react", 3);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "id");
+	fg_w_int(&w, message);
+	fg_w_text(&w, "emoji");
+	fg_w_text(&w, emoji);
+	return fg_send(&w, 0);
+}
+
+static int fg_notify(const char *title, const char *text) {
+	fg_writer w;
+	fg_begin(&w, "notify.show", 2);
+	fg_w_text(&w, "title");
+	fg_w_text(&w, title);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	return fg_send(&w, 0);
+}
+
+static int fg_timer_set(const char *id, fg_i64 delay_ms, int repeat) {
+	fg_writer w;
+	fg_begin(&w, "timers.set", 3);
+	fg_w_text(&w, "id");
+	fg_w_text(&w, id);
+	fg_w_text(&w, "delay");
+	fg_w_int(&w, delay_ms);
+	fg_w_text(&w, "repeat");
+	fg_w_bool(&w, repeat);
+	return fg_send(&w, 0);
+}
+
+static int fg_timer_clear(const char *id) {
+	fg_writer w;
+	fg_begin(&w, "timers.clear", 1);
+	fg_w_text(&w, "id");
+	fg_w_text(&w, id);
+	return fg_send(&w, 0);
+}
+
 int fg_plugin_init(fg_value info);
 int fg_plugin_event(fg_value event);
 

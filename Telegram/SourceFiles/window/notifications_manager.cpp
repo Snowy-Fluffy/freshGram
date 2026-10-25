@@ -1583,6 +1583,22 @@ void Manager::maybePlaySound(Fn<void()> playSound) {
 	}
 }
 
+void NativeManager::showPluginNotification(
+		not_null<PeerData*> peer,
+		const QString &title,
+		const QString &message) {
+	auto userpicView = peer->createUserpicView();
+	auto options = DisplayOptions();
+	options.hideMarkAsRead = true;
+	options.hideReplyButton = true;
+	doShowNativeNotification({
+		.peer = peer,
+		.title = title,
+		.message = message,
+		.options = options,
+	}, userpicView);
+}
+
 void NativeManager::doShowNotification(NotificationFields &&fields) {
 	const auto pollVote = !fields.pollVoteOption.isEmpty();
 	const auto type = fields.reactionFrom

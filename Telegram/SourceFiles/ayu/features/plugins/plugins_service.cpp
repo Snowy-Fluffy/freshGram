@@ -14,6 +14,9 @@
 #include "crl/crl_on_main.h"
 #include "data/data_changes.h"
 #include "data/data_drafts.h"
+#include "data/data_forum_topic.h"
+#include "dialogs/dialogs_key.h"
+#include "window/window_session_controller.h"
 #include "data/data_session.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -166,7 +169,7 @@ struct Service {
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
-	config.environment.apiLevel = 1;
+	config.environment.apiLevel = 2;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}
@@ -320,10 +323,15 @@ void WatchEvents(
 		SendMessageEvent("message.new", item, id, change.oldId, byPlugin);
 	}, lifetime);
 	session->changes().messageUpdates(
-		Data::MessageUpdate::Flag::Edited | Data::MessageUpdate::Flag::Deleted
+		Data::MessageUpdate::Flag::Edited
+			| Data::MessageUpdate::Flag::Deleted
+			| Data::MessageUpdate::Flag::NewUnreadReaction
 	) | rpl::on_next([=](const Data::MessageUpdate &update) {
 		const auto item = update.item;
 		if (!WantsEvents() || !Reportable(item)) {
+			return;
+		} else if (update.flags & Data::MessageUpdate::Flag::NewUnreadReaction) {
+			SendMessageEvent("message.reaction", item, id);
 			return;
 		} else if (update.flags & Data::MessageUpdate::Flag::Deleted) {
 			if (events->deleted.emplace(item->fullId()).second) {
@@ -561,7 +569,14 @@ void Finish(
 		Refuse(outgoing, result);
 	} else {
 		const auto changed = QString::fromStdString(result.text);
-		if (changed != outgoing.message.textWithTags.text) {
+		if (result.markdown) {
+			auto parsed = TextWithEntities{ changed };
+			TextUtilities::ParseEntities(parsed, TextParseMarkdown);
+			outgoing.message.textWithTags = TextWithTags{
+				parsed.text,
+				TextUtilities::ConvertEntitiesToTextTags(parsed.entities),
+			};
+		} else if (changed != outgoing.message.textWithTags.text) {
 			outgoing.message.textWithTags = TextWithTags{ changed };
 		}
 		SendNow(std::move(outgoing));
@@ -727,6 +742,37 @@ void NotifyRuntimeChanged() {
 	if (GetService().started) {
 		Refresh();
 	}
+#endif
+}
+
+void WatchActiveChat(not_null<Window::SessionController*> controller) {
+#ifdef FRESHGRAM_PLUGINS
+	const auto session = &controller->session();
+	controller->activeChatChanges(
+	) | rpl::on_next([=](Dialogs::Key key) {
+		const auto history = key.history();
+		if (!history || !WantsEvents()) {
+			return;
+		}
+		using Value = fgpl::cbor::Value;
+		const auto peer = history->peer;
+		auto map = fgpl::cbor::Map{
+			{ "type", Value::FromText("chat.opened") },
+			{ "chat", Value::FromInt(int64_t(peer->id.value)) },
+			{ "chat_title", Value::FromText(peer->name().toStdString()) },
+			{ "secret", Value::FromBool(FreshSecret::IsSecretPeerId(peer->id)) },
+		};
+		if (const auto topic = key.topic()) {
+			map.push_back({ "topic", Value::FromInt(topic->rootId().bare) });
+		}
+		const auto account = AccountId(session).toStdString();
+		Post([=, event = Value::FromMap(std::move(map))](
+				not_null<fgpl::PluginManager*> manager) {
+			manager->dispatch(account, event);
+		}, false);
+	}, controller->lifetime());
+#else
+	(void)controller;
 #endif
 }
 

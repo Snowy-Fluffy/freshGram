@@ -200,7 +200,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 1);
+	CHECK(Payload(info).find("api")->asInt() == 2);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -230,6 +230,13 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "composer.draft", Request("composer.set_draft", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "messages.send", Request("messages.send", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "ui.toast", Request("ui.toast", { { "text", Text("x") } }) },
+		{ "messages.edit", Request("messages.edit", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }) },
+		{ "messages.delete", Request("messages.delete", { { "chat", Int(1) }, { "ids", cbor::Value::FromArray({ Int(100) }) } }) },
+		{ "messages.react", Request("messages.react", { { "chat", Int(1) }, { "id", Int(100) }, { "emoji", Text("x") } }) },
+		{ "messages.send", Request("chats.mark_read", { { "chat", Int(1) } }) },
+		{ "messages.history", Request("messages.search", { { "chat", Int(1) }, { "query", Text("x") } }) },
+		{ "users.info", Request("users.info", { { "id", Int(7) } }) },
+		{ "notifications", Request("notify.show", { { "text", Text("x") } }) },
 	};
 	for (const auto &item : calls) {
 		auto fixture = Fixture({});
@@ -684,6 +691,49 @@ void TestSettingsPage() {
 	CHECK(bad(Text("not a page")));
 	CHECK(received.size() == 1);
 
+	auto rich = Page({
+		Item({ { "type", Text("header") }, { "text", Text("Section") } }),
+		Item({ { "type", Text("link") }, { "label", Text("Docs") }, { "url", Text("https://example.com/docs") } }),
+		Item({ { "type", Text("slider") }, { "id", Text("volume") }, { "label", Text("Volume") },
+			{ "min", Int(0) }, { "max", Int(100) }, { "step", Int(10) }, { "value", Int(57) },
+			{ "hint", Text("How loud") } }),
+		Item({ { "type", Text("input") }, { "id", Text("notes") }, { "label", Text("Notes") },
+			{ "multiline", cbor::Value::FromBool(true) }, { "max", Int(3000) },
+			{ "value", Text("one\ntwo") }, { "disabled", cbor::Value::FromBool(true) } }),
+		Item({ { "type", Text("input") }, { "id", Text("token") }, { "label", Text("Token") },
+			{ "password", cbor::Value::FromBool(true) } }),
+		Item({ { "type", Text("chat") }, { "id", Text("target") }, { "label", Text("Chat") }, { "value", Int(1) } }),
+		Item({ { "type", Text("progress") }, { "label", Text("Done") }, { "value", Int(40) } }),
+	});
+	auto withButtons = cbor::Map(*rich.asMap());
+	withButtons.push_back({ "buttons", cbor::Value::FromArray({
+		Item({ { "id", Text("ok") }, { "label", Text("OK") }, { "style", Text("primary") } }),
+		Item({ { "id", Text("cancel") }, { "label", Text("Cancel") } }),
+	}) });
+	CHECK(IsOk(call(cbor::Value::FromMap(std::move(withButtons)))));
+	CHECK(received.size() == 2);
+	const auto &richItems = *received[1].find("items")->asArray();
+	CHECK(*richItems[2].find("value")->asInt() == 50);
+	CHECK(*richItems[2].find("hint")->asText() == "How loud");
+	CHECK(*richItems[3].find("multiline")->asBool() && *richItems[3].find("disabled")->asBool());
+	CHECK(*richItems[3].find("max")->asInt() == 3000);
+	CHECK(*richItems[4].find("password")->asBool());
+	CHECK(received[1].find("buttons")->asArray()->size() == 2);
+	CHECK(bad(Page({ Item({ { "type", Text("link") }, { "label", Text("x") }, { "url", Text("http://example.com") } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("slider") }, { "id", Text("s") }, { "label", Text("s") },
+		{ "min", Int(5) }, { "max", Int(5) } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("slider") }, { "id", Text("s") }, { "label", Text("s") },
+		{ "min", Int(0) }, { "max", Int(100000) } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("input") }, { "id", Text("i") }, { "label", Text("i") },
+		{ "value", Text("a\nb") } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("progress") }, { "value", Int(101) } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("button") }, { "id", Text("b") }, { "label", Text("b") },
+		{ "style", Text("rainbow") } }) })));
+	auto clash = cbor::Map(*Page({ Item({ { "type", Text("button") }, { "id", Text("ok") }, { "label", Text("b") } }) }).asMap());
+	clash.push_back({ "buttons", cbor::Value::FromArray({ Item({ { "id", Text("ok") }, { "label", Text("OK") } }) }) });
+	CHECK(bad(cbor::Value::FromMap(std::move(clash))));
+	CHECK(received.size() == 2);
+
 	auto denied = Fixture({ "ui.toast" });
 	denied.services.ui = fixture.services.ui;
 	auto refused = denied.make();
@@ -954,6 +1004,190 @@ void TestRateLimits() {
 	CHECK(Code(dialog()) != "limit");
 }
 
+[[nodiscard]] cbor::Value Ids(std::initializer_list<int64_t> ids) {
+	auto list = cbor::Array();
+	for (const auto id : ids) {
+		list.push_back(Int(id));
+	}
+	return cbor::Value::FromArray(std::move(list));
+}
+
+void TestLevelTwoCalls() {
+	auto fixture = Fixture({
+		"messages.send", "messages.read", "messages.edit", "messages.delete",
+		"messages.react", "messages.history", "users.info", "notifications",
+		"clipboard", "fs.user_selected",
+	});
+	fixture.time = 100000;
+	fixture.grants.chats = std::set<int64_t>{ 1, 2, 3 };
+	auto broker = fixture.make();
+	auto &data = fixture.data;
+
+	CHECK(IsOk(broker.call(Request("messages.send", {
+		{ "chat", Int(1) },
+		{ "text", Text("**hi**") },
+		{ "format", Text("markdown") },
+		{ "reply_to", Int(100) },
+		{ "topic", Int(5) },
+		{ "silent", cbor::Value::FromBool(true) },
+		{ "schedule", Int(2000000000) },
+	}))));
+	CHECK(data.outgoing.size() == 1);
+	const auto &sent = data.outgoing.back();
+	CHECK(sent.markdown && sent.replyTo == 100 && sent.topic == 5 && sent.silent && sent.schedule == 2000000000);
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("x") }, { "format", Text("html") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(5) }, { "text", Text("x") } }))) == "denied");
+
+	CHECK(IsOk(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("new") } }))));
+	CHECK(Code(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(101) }, { "text", Text("new") } }))) == "denied");
+	CHECK(Code(broker.call(Request("messages.edit", {
+		{ "chat", Int(3) }, { "id", Int(100) }, { "text", Text("new") } }))) == "not_found");
+	CHECK(IsOk(broker.call(Request("messages.delete", {
+		{ "chat", Int(1) }, { "ids", Ids({ 100, 101, 100 }) } }))));
+	CHECK(data.actions.back() == "delete 1 2 everyone");
+	CHECK(Code(broker.call(Request("messages.delete", {
+		{ "chat", Int(1) }, { "ids", Ids({}) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.delete", {
+		{ "chat", Int(1) }, { "ids", Ids({ -1 }) } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.react", {
+		{ "chat", Int(2) }, { "id", Int(100) }, { "emoji", Text("👍") } }))));
+	CHECK(IsOk(broker.call(Request("messages.react", { { "chat", Int(2) }, { "id", Int(100) } }))));
+	CHECK(data.actions.back() == "react 2 100 ");
+
+	CHECK(IsOk(broker.call(Request("messages.forward", {
+		{ "from_chat", Int(1) }, { "ids", Ids({ 100 }) }, { "to_chat", Int(2) } }))));
+	CHECK(data.actions.back() == "forward 1 1 2");
+	CHECK(Code(broker.call(Request("messages.forward", {
+		{ "from_chat", Int(1) }, { "ids", Ids({ 100 }) }, { "to_chat", Int(5) } }))) == "denied");
+
+	CHECK(IsOk(broker.call(Request("chats.mark_read", { { "chat", Int(1) } }))));
+	CHECK(IsOk(broker.call(Request("chats.action", { { "chat", Int(1) } }))));
+	CHECK(data.actions.back() == "action 1 typing");
+	CHECK(Code(broker.call(Request("chats.action", { { "chat", Int(1) } }))) == "limit");
+	CHECK(IsOk(broker.call(Request("chats.action", { { "chat", Int(2) } }))));
+	CHECK(IsOk(broker.call(Request("chats.action", { { "chat", Int(1) }, { "kind", Text("cancel") } }))));
+
+	const auto found = broker.call(Request("messages.search", {
+		{ "chat", Int(1) }, { "query", Text("o") }, { "limit", Int(5) } }));
+	CHECK(IsOk(found));
+	const auto &messages = *Payload(found).asArray();
+	CHECK(messages.size() == 5);
+	for (const auto &message : messages) {
+		CHECK(message.find("deleted") == nullptr && *message.find("chat")->asInt() == 1);
+	}
+
+	const auto user = broker.call(Request("users.info", { { "id", Int(7) } }));
+	CHECK(IsOk(user) && *Payload(user).find("username")->asText() == "bob");
+	CHECK(*Payload(user).find("status")->asText() == "online");
+	CHECK(Code(broker.call(Request("users.info", { { "id", Int(9) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("users.info", { { "id", Int(api::kServiceChat) } }))) == "denied");
+
+	CHECK(IsOk(broker.call(Request("notify.show", { { "title", Text("T") }, { "text", Text("x") } }))));
+	CHECK(Code(broker.call(Request("notify.show", { { "text", Text("x") } }))) == "limit");
+	fixture.time += 5000;
+	CHECK(IsOk(broker.call(Request("notify.show", { { "text", Text("y") } }))));
+
+	CHECK(Code(broker.call(Request("clipboard.write", { { "text", Text("x") } }))) == "denied");
+	CHECK(Code(broker.call(Request("clipboard.read"))) == "denied");
+	broker.noteUserAction("menu.click");
+	CHECK(IsOk(broker.call(Request("clipboard.write", { { "text", Text("copied") } }))));
+	const auto pasted = broker.call(Request("clipboard.read"));
+	CHECK(IsOk(pasted) && *Payload(pasted).asText() == "copied");
+	fixture.time += 10000;
+	CHECK(Code(broker.call(Request("clipboard.read"))) == "denied");
+
+	CHECK(Code(broker.call(Request("files.pick"))) == "invalid");
+	CHECK(Code(broker.call(Request("files.save", { { "name", Text("a") }, { "data", Text("b") } }))) == "invalid");
+
+	const auto opened = [](int64_t chat, bool secret) {
+		return cbor::Value::FromMap({
+			{ "type", Text("chat.opened") },
+			{ "chat", Int(chat) },
+			{ "secret", cbor::Value::FromBool(secret) },
+		});
+	};
+	auto active = fixture.grants;
+	CHECK(!FilterEvent(active, opened(1, false)));
+	active.permissions.insert("chats.active");
+	const auto passed = FilterEvent(active, opened(1, false));
+	CHECK(passed && passed->find("secret") == nullptr && *passed->find("chat")->asInt() == 1);
+	CHECK(!FilterEvent(active, opened(5, false)));
+	CHECK(!FilterEvent(active, opened(2, true)));
+
+	const auto meta = broker.call(Request("meta.info"));
+	CHECK(Payload(meta).find("chats")->asArray()->size() == 3);
+	auto all = Fixture({});
+	CHECK(*Payload(all.make().call(Request("meta.info"))).find("chats")->asText() == "all");
+}
+
+void TestFilesAndTimers() {
+	auto fixture = Fixture({ "fs.user_selected" });
+	fixture.time = 100000;
+	auto queued = std::vector<std::function<void()>>();
+	auto results = std::map<int64_t, cbor::Value>();
+	fixture.services.post = [&](std::function<void()> work) {
+		queued.push_back(std::move(work));
+	};
+	fixture.services.after = [&](int64_t, std::function<void()> work) {
+		queued.push_back(std::move(work));
+	};
+	fixture.services.complete = [&](int64_t ticket, cbor::Value result) {
+		results.emplace(ticket, std::move(result));
+	};
+	auto timers = std::map<std::string, std::pair<int64_t, bool>>();
+	fixture.services.setTimer = [&](const std::string &id, int64_t delay, bool repeat) {
+		timers[id] = { delay, repeat };
+		return std::string();
+	};
+	fixture.services.clearTimer = [&](const std::string &id) {
+		return timers.erase(id) > 0;
+	};
+	fixture.services.timers = [&] {
+		auto result = std::vector<std::string>();
+		for (const auto &[id, timer] : timers) {
+			result.push_back(id);
+		}
+		return result;
+	};
+	const auto broker = std::make_shared<Broker>(fixture.grants, fixture.services);
+	const auto run = [&](cbor::Value request) {
+		const auto response = broker->call(request);
+		CHECK(IsOk(response));
+		for (auto &work : queued) {
+			work();
+		}
+		queued.clear();
+		return results[*Payload(response).find("ticket")->asInt()];
+	};
+
+	CHECK(Code(run(Awaited("files.pick"))) == "denied");
+	broker->noteUserAction("command");
+	const auto picked = run(Awaited("files.pick", { { "filter", Text("Text (*.txt)") } }));
+	CHECK(IsOk(picked) && *Payload(picked).find("name")->asText() == "a.txt");
+	CHECK(Payload(picked).find("data")->asBytes()->size() == 2);
+	fixture.data.cancelPick = true;
+	const auto cancelled = run(Awaited("files.pick"));
+	CHECK(IsOk(cancelled) && Payload(cancelled).isNull());
+	const auto saved = run(Awaited("files.save", { { "name", Text("out.txt") }, { "data", Text("abc") } }));
+	CHECK(IsOk(saved) && *Payload(saved).asBool());
+	CHECK(fixture.data.actions.back() == "save out.txt 3");
+	CHECK(Code(run(Awaited("files.save", { { "name", Text("../x") }, { "data", Text("a") } }))) == "invalid");
+
+	CHECK(IsOk(broker->call(Request("timers.set", {
+		{ "id", Text("tick") }, { "delay", Int(60000) }, { "repeat", cbor::Value::FromBool(true) } }))));
+	CHECK(timers["tick"] == std::make_pair(int64_t(60000), true));
+	CHECK(Code(broker->call(Request("timers.set", { { "id", Text("t") }, { "delay", Int(10) } }))) == "invalid");
+	CHECK(Code(broker->call(Request("timers.set", { { "delay", Int(5000) } }))) == "invalid");
+	const auto list = broker->call(Request("timers.list"));
+	CHECK(IsOk(list) && Payload(list).asArray()->size() == 1);
+	CHECK(*Payload(broker->call(Request("timers.clear", { { "id", Text("tick") } }))).asBool());
+	CHECK(!*Payload(broker->call(Request("timers.clear", { { "id", Text("tick") } }))).asBool());
+}
+
 void TestClosedBrokerDropsAwaitedWork() {
 	auto fixture = Fixture({ "storage.private" });
 	auto queued = std::vector<std::function<void()>>();
@@ -1004,5 +1238,7 @@ int main() {
 	TestAwaitableCalls();
 	TestRateLimits();
 	TestClosedBrokerDropsAwaitedWork();
+	TestLevelTwoCalls();
+	TestFilesAndTimers();
 	return Failures() ? 1 : 0;
 }

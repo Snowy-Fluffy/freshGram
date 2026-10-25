@@ -399,6 +399,8 @@ const std::set<std::string> &KnownPermissions() {
 		"ui.toast", "notifications", "net.https", "net.tcp", "net.udp", "storage.private",
 		"plugins.message",
 		"fs.user_selected", "clipboard", "background",
+		"messages.edit", "messages.delete", "messages.react", "users.info",
+		"chats.active",
 	};
 	return known;
 }
@@ -490,14 +492,15 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 		}
 		if (const auto api = compat->find("api")) {
 			if (const auto single = api->asInt()) {
-				manifest.apiMin = manifest.apiMax = int(std::clamp<int64_t>(*single, 0, 100000));
+				manifest.apiMin = int(std::clamp<int64_t>(*single, 0, 100000));
+				manifest.apiMax = std::max(manifest.apiMin, 1000);
 				if (*single < 1 || *single > 1000) {
 					reader.error("compat.api", "must be from 1 to 1000");
 				}
 			} else if (api->asMap()) {
 				reader.checkKeys(*api, "compat.api", { "min", "max" });
 				manifest.apiMin = int(reader.integer(*api, "min", "compat.api", 1, 1000).value_or(1));
-				manifest.apiMax = int(reader.integer(*api, "max", "compat.api", 1, 1000).value_or(manifest.apiMin));
+				manifest.apiMax = int(reader.integer(*api, "max", "compat.api", 1, 1000).value_or(1000));
 				if (manifest.apiMax < manifest.apiMin) {
 					reader.error("compat.api", "max is below min");
 				}
@@ -553,7 +556,8 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				const auto name = item.asText();
 				if (!name
 					|| (*name != "startup" && *name != "command" && *name != "event"
-						&& *name != "menu" && *name != "settings" && *name != "message")) {
+						&& *name != "menu" && *name != "settings" && *name != "message"
+						&& *name != "timer")) {
 					reader.error("activation.on", "has an unknown trigger");
 				} else {
 					manifest.activation.insert(*name);
@@ -604,7 +608,10 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 		const auto events = reader.array(*contributes, "events", "contributes", 16);
 		for (const auto &item : events ? *events : cbor::Array()) {
 			const auto name = item.asText();
-			if (!name || (*name != "message.new" && *name != "message.edited" && *name != "message.deleted")) {
+			if (!name
+				|| (*name != "message.new" && *name != "message.edited"
+					&& *name != "message.deleted" && *name != "message.reaction"
+					&& *name != "chat.opened")) {
 				reader.error("contributes.events", "has an unknown event");
 			} else {
 				manifest.events.push_back(*name);
@@ -728,8 +735,16 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			manifest.permissions.end(),
 			[&](const auto &request) { return request.id == id; });
 	};
-	if (!manifest.events.empty() && !hasPermission("messages.read")) {
-		reader.error("contributes.events", "needs the messages.read permission");
+	for (const auto &event : manifest.events) {
+		const auto opened = (event == "chat.opened");
+		if (!hasPermission(opened ? "chats.active" : "messages.read")) {
+			reader.error(
+				"contributes.events",
+				opened
+					? "chat.opened needs the chats.active permission"
+					: "needs the messages.read permission");
+			break;
+		}
 	}
 	if (!manifest.menus.empty() && !hasPermission("ui.menu")) {
 		reader.error("contributes.menus", "needs the ui.menu permission");

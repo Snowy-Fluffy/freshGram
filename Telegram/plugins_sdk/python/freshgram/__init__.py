@@ -14,7 +14,7 @@ from . import _channel
 from . import _cbor
 from . import _errors
 
-API_VERSION = 1
+API_VERSION = 2
 
 _output = _channel._output
 call = _channel.raw_call
@@ -190,19 +190,38 @@ class _Ui(_Namespace):
     def toast(self, text):
         return self._call("ui.toast", _nothing, text=text)
 
-    def settings_page(self, title, items):
+    def settings_page(self, title, items, buttons=None):
         """Describe the plugin's settings page; the app draws it.
 
-        Items are dicts: text, divider, toggle, input, select and button.
+        Items are dicts: text, header, divider, link, toggle, button, input,
+        select, slider, chat and progress. See the README for their fields.
         """
-        return self._call("ui.settings.set", _nothing, page={"title": title, "items": items})
+        return self._call("ui.settings.set", _nothing, page=_page(title, items, buttons))
 
-    def dialog(self, title, items):
-        """Show a dialog (ui.dialog); clicks arrive as dialog.* events."""
-        return self._call("ui.dialog.show", _nothing, page={"title": title, "items": items})
+    def dialog(self, title, items, buttons=None):
+        """Show a dialog (ui.dialog); clicks arrive as dialog.* events.
+
+        buttons is a list of {"id", "label", "style"} drawn at the bottom.
+        """
+        return self._call("ui.dialog.show", _nothing, page=_page(title, items, buttons))
 
     def close_dialog(self):
         return self._call("ui.dialog.close", _nothing)
+
+
+def _page(title, items, buttons):
+    page = {"title": title, "items": items}
+    if buttons:
+        page["buttons"] = buttons
+    return page
+
+
+def _given(**arguments):
+    return {key: value for key, value in arguments.items() if value}
+
+
+def _format(markdown):
+    return {"format": "markdown"} if markdown else {}
 
 
 class _Chats(_Namespace):
@@ -212,19 +231,126 @@ class _Chats(_Namespace):
     def info(self, chat):
         return self._call("chat.info", chat=chat)
 
+    def mark_read(self, chat):
+        """Mark the chat as read (messages.send)."""
+        return self._call("chats.mark_read", _nothing, chat=chat)
+
+    def action(self, chat, kind="typing", topic=0):
+        """Show "typing…" or another action in the chat, "cancel" to stop."""
+        return self._call("chats.action", _nothing, chat=chat, kind=kind, **_given(topic=topic))
+
 
 class _Messages(_Namespace):
-    def history(self, chat, limit=20, before=0):
-        return self._call("messages.history", chat=chat, limit=limit, before=before)
+    def history(self, chat, limit=20, before=0, topic=0):
+        return self._call(
+            "messages.history",
+            chat=chat,
+            limit=limit,
+            before=before,
+            **_given(topic=topic))
 
-    def send(self, chat, text):
-        return self._call("messages.send", _nothing, chat=chat, text=text)
+    def send(self, chat, text, reply_to=0, topic=0, silent=False, schedule=0, markdown=False):
+        """Send a message; schedule is a unix time, markdown parses **bold** and the like."""
+        return self._call(
+            "messages.send",
+            _nothing,
+            chat=chat,
+            text=text,
+            **_given(reply_to=reply_to, topic=topic, silent=silent, schedule=schedule),
+            **_format(markdown))
+
+    def edit(self, chat, message, text, markdown=False):
+        """Edit a message you sent (messages.edit)."""
+        return self._call(
+            "messages.edit",
+            _nothing,
+            chat=chat,
+            id=message,
+            text=text,
+            **_format(markdown))
+
+    def delete(self, chat, messages, everyone=True):
+        """Delete messages you sent (messages.delete), for everyone when possible."""
+        return self._call("messages.delete", _nothing, chat=chat, ids=list(messages), everyone=everyone)
+
+    def react(self, chat, message, emoji=""):
+        """Put an emoji reaction on a message, or remove yours with an empty emoji."""
+        return self._call("messages.react", _nothing, chat=chat, id=message, emoji=emoji)
+
+    def forward(self, from_chat, messages, to_chat, silent=False):
+        """Forward messages (messages.send and messages.read)."""
+        return self._call(
+            "messages.forward",
+            _nothing,
+            from_chat=from_chat,
+            ids=list(messages),
+            to_chat=to_chat,
+            **_given(silent=silent))
+
+    def search(self, chat, query, limit=20):
+        """Search the chat on the server (messages.history)."""
+        return self._call("messages.search", chat=chat, query=query, limit=limit)
 
 
 class _SyncMessages(_Messages):
-    def set_outgoing(self, text):
+    def set_outgoing(self, text, markdown=False):
         """Replace the text of the message being sent (message.outgoing only)."""
-        _request("messages.set_outgoing", text=text)
+        _request("messages.set_outgoing", text=text, **_format(markdown))
+
+
+class _Users(_Namespace):
+    def info(self, user):
+        """Name, username, bot, premium, contact and online status of a user."""
+        return self._call("users.info", id=user)
+
+
+class _Notify(_Namespace):
+    def show(self, text, title=""):
+        """Show a system notification (notifications), at most one in 5 seconds."""
+        return self._call("notify.show", _nothing, text=text, **_given(title=title))
+
+
+class _Clipboard(_Namespace):
+    """The clipboard (clipboard), only within 10 seconds after a user action."""
+
+    def write(self, text):
+        return self._call("clipboard.write", _nothing, text=text)
+
+    def read(self):
+        return self._call("clipboard.read")
+
+
+class _Files(_Namespace):
+    """Files the user picks (fs.user_selected); only awaitable, see freshgram.aio."""
+
+    def pick(self, title="", filter=""):
+        """Ask the user for a file: {"name", "data"}, or None if they cancel."""
+        return self._call("files.pick", **_given(title=title, filter=filter))
+
+    def save(self, name, data):
+        """Ask where to save data; True when saved, False when cancelled."""
+        return self._call("files.save", name=name, data=data)
+
+
+class _Timers(_Namespace):
+    """Timers that wake the plugin with a timer event, even after it stopped.
+
+    They live while the app runs: at most 32, from 1 second to 7 days.
+    """
+
+    def set(self, timer_id, seconds, repeat=False):
+        return self._call(
+            "timers.set",
+            _nothing,
+            id=timer_id,
+            delay=int(seconds * 1000),
+            **_given(repeat=repeat))
+
+    def clear(self, timer_id):
+        return self._call("timers.clear", id=timer_id)
+
+    def list(self):
+        return self._call("timers.list")
 
 
 class _Plugins(_Namespace):
@@ -293,6 +419,10 @@ contacts = _Contacts(_sync_call)
 folders = _Folders(_sync_call)
 settings = _Settings(_sync_call)
 media = _Media(_sync_call)
+users = _Users(_sync_call)
+notify = _Notify(_sync_call)
+clipboard = _Clipboard(_sync_call)
+timers = _Timers(_sync_call)
 
 
 def spawn(coroutine):
@@ -388,6 +518,23 @@ def on_dialog(item_id=None):
         _event_handlers.append(("dialog.*", wrapper))
         return function
     return register
+
+
+def on_timer(timer_id=None):
+    """Run when a timer set with timers.set fires."""
+    def register(function):
+        def wrapper(event):
+            if timer_id is None or event.get("id") == timer_id:
+                return function(event)
+        _event_handlers.append(("timer", wrapper))
+        return function
+    return register
+
+
+def on_chat_opened(function):
+    """Run when the user opens a chat (chats.active, contributes.events)."""
+    _event_handlers.append(("chat.opened", function))
+    return function
 
 
 def _matches(pattern, name):

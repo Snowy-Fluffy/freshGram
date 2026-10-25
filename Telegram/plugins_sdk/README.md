@@ -12,8 +12,9 @@ checked against the permissions the user granted.
   `fg_init(ptr, len)` and `fg_on_event(ptr, len)`, and import
   `freshgram.call(req_ptr, req_len, out_ptr_slot, out_len_slot) -> status`.
   `c/freshgram.h` is a freestanding C implementation of the protocol with
-  helpers for common calls (`fg_send_text`, `fg_toast`, `fg_chat_info`,
-  `fg_history`, `fg_fetch`, sockets, storage); any other call is built with
+  helpers for common calls (`fg_send_text`, `fg_edit_text`, `fg_react`,
+  `fg_toast`, `fg_notify`, `fg_chat_info`, `fg_history`, `fg_fetch`,
+  `fg_timer_set`, `fg_timer_clear`, sockets, storage); any other call is built with
   `fg_begin` and `fg_send`.
 
 ## Wire format
@@ -27,13 +28,14 @@ Response: `{"ok": true, "v": <value>}` or `{"ok": false, "e": <code>, "m": <text
 An awaitable request adds `"async": true`; see *Waiting without blocking*.
 
 Error codes: `denied` (permission or scope), `invalid` (bad arguments),
-`not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`.
+`not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`,
+`cancelled` (the user closed a file dialog).
 
-## Calls (API level 1)
+## Calls (API level 2)
 
 | Call | Permission | Notes |
 |---|---|---|
-| `meta.info` | none | API level, plugin id, granted permissions |
+| `meta.info` | none | `api` (the level), `plugin`, `granted` permissions and `chats`: `"all"` or the list of chat ids in scope |
 | `log` `{text}` | none | goes to the plugin log |
 | `storage.get/set/delete/list/usage` | `storage.private` | keys up to 128 bytes, values up to 1 MiB, 4096 keys, quota per plugin |
 | `net.fetch` `{url, method, headers, body, timeout}` | `net.https` | https only, to any public host name or public IP (`https://8.8.8.8/`, `https://[2606:4700::1]/`); local names, private, loopback and link-local addresses are refused, also after DNS; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned; returns `{status, headers, header_list, body}`, where `headers` joins repeated headers with `, ` and `header_list` keeps every `[name, value]` pair |
@@ -46,14 +48,27 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `folders.list` | `folders.list` | chat folders with the chats in scope |
 | `settings.read` | `settings.read` | `language`, `theme`, `streamerMode` |
 | `media.get` `{chat, message, thumbnail}` | `media.read` | a file already downloaded on this device, up to 8 MiB: `kind`, `mime`, `name`, `data` |
-| `messages.set_outgoing` `{text}` | `messages.transform_outgoing` | only while handling `message.outgoing` |
+| `messages.set_outgoing` `{text, format}` | `messages.transform_outgoing` | only while handling `message.outgoing`; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
 | `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `self`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
-| `messages.send` `{chat, text}` | `messages.send` | |
+| `messages.send` `{chat, text, format, reply_to, topic, silent, schedule}` | `messages.send` | `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode |
+| `messages.edit` `{chat, id, text, format}` | `messages.edit` | only messages you sent and may still edit |
+| `messages.delete` `{chat, ids, everyone}` | `messages.delete` | up to 100 of your own messages; for everyone (the default) when Telegram allows it for all of them |
+| `messages.react` `{chat, id, emoji}` | `messages.react` | sets an emoji reaction; no `emoji` removes yours |
+| `messages.forward` `{from_chat, ids, to_chat, silent}` | `messages.send` and `messages.read` | up to 100 messages; both chats must be in scope |
+| `messages.search` `{chat, query, limit}` | `messages.history` | searches the chat on the server; the same message fields as the history |
+| `chats.mark_read` `{chat}` | `messages.send` | |
+| `chats.action` `{chat, kind, topic}` | `messages.send` | `typing` (default), `upload_photo`, `upload_video`, `upload_file`, `record_voice`, `upload_voice`, `record_video`, `record_round`, `choose_sticker` or `cancel`; once per 3 seconds per chat |
+| `users.info` `{id}` | `users.info` | `id, name, username, bot, premium, contact, self, status, last_seen`; `status` is `online`, `offline` (with `last_seen`), `recently`, `week`, `month`, `long_ago`, `hidden` or `bot` |
+| `notify.show` `{title, text}` | `notifications` | a system notification (a toast when the app's notifications are off); once per 5 seconds; clicking it opens Saved Messages |
+| `clipboard.write` `{text}`, `clipboard.read` | `clipboard` | only within 10 seconds after a user action; up to 64 KiB |
+| `files.pick` `{title, filter}` | `fs.user_selected` | awaitable only, after a user action; the user picks a file in the system dialog; returns `{name, data}` (up to 8 MiB) or nothing when cancelled; `filter` is like `Images (*.png *.jpg)` |
+| `files.save` `{name, data}` | `fs.user_selected` | awaitable only, after a user action; asks where to save `data` (bytes or text, up to 8 MiB); returns `true`, or `false` when cancelled |
+| `timers.set` `{id, delay, repeat}`, `timers.clear` `{id}`, `timers.list` | none | `delay` in ms, from 1000 to 7 days; a timer sends a `timer` event and starts a stopped plugin (activation `timer`); at most 32 per plugin and account; timers live while the app runs and are dropped when the plugin is disabled |
 | `account.info` | `account.info` | no phone number |
 | `stars.balance` | `stars.balance` | read only |
 | `composer.draft`, `composer.set_draft` `{chat, text, replace}` | `composer.draft` | setting a draft never switches the chat; a non-empty draft is kept unless `replace: true` |
@@ -98,13 +113,20 @@ Every `message.*` event carries `id`, `chat`, `chat_title`, `chat_type`, `from`,
 `sender_name`, `date`, `text`, `out` and `forwarded`, and when they apply
 `reply_to`, `topic`, `grouped` (album id), `media` (`photo`, `video`, `round`,
 `gif`, `voice`, `audio`, `sticker`, `file`, `poll`, `contact`, `location`,
-`webpage`, `other`), `edit_date` and `via_bot`.
+`webpage`, `other`), `edit_date`, `via_bot` and `reactions` (a list of
+`{emoji, count, my}`).
 - `message.new` comes once per message, with its server id. Your own outgoing
   messages come when the server accepts them, with `local_id` set, and with
   `by_plugin: true` when a plugin sent them, so a plugin can ignore its own
   messages. Scheduled, sponsored and "Recent actions" items never come.
 - `message.edited` comes only when the text or the edit date changes.
 - `message.deleted` comes once, also when the app keeps deleted messages.
+- `message.reaction` comes when someone reacts to your message.
+
+`chat.opened` `{chat, chat_title, topic}` comes when the user opens a chat; it
+needs `chats.active` instead of `messages.read` and follows the same chat scope.
+`timer` `{id}` comes when a timer set with `timers.set` fires; it is not listed
+in `contributes.events`.
 
 Chat ids are the app's peer ids: users are their user id, basic groups and
 channels have a type in the high bits. Use them as they are.
@@ -186,7 +208,7 @@ one at a time, so storage updates from two accounts never interleave.
 ## Activation and unloading
 
 `activation.on` lists what may start the plugin: `startup`, `event`, `command`,
-`menu`, `settings`, `message` (the default is all of them except `startup`). Plugins that
+`menu`, `settings`, `message`, `timer` (the default is all of them except `startup`). Plugins that
 change outgoing messages or run in the background start with the app. A plugin
 calls `plugin.unload` when it has nothing to do; it is stopped after the
 current event and started again by its next activation, so it costs no memory
@@ -203,15 +225,33 @@ app draws them with the plugin's name next to the title. Activations come back a
 | `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); the `composer` surface is a button next to the input field and needs `ui.composer_button` |
 | `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope; the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
 | `settings.open` | the user opened the plugin's settings; send the page now (the plugin is started for it) |
-| `settings.change` | `id`, `value` of a toggle, input or select |
-| `settings.click` | `id` of a button |
+| `settings.change` | `id`, `value` of a toggle, input, select, slider (a number) or chat picker (a chat id) |
+| `settings.click` | `id` of a button or of one of the page's `buttons` |
 | `dialog.change`, `dialog.click` | the same for a dialog shown with `ui.dialog.show` |
 | `dialog.close` | the user closed the dialog |
 
-The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items": [...]}` with up to
-64 items of type `text`, `divider`, `toggle`, `input`, `select` and `button` (`id` is a lowercase
-token, unique within the page). The app validates it, shows it in its own window and keeps the last
-version; send it again to change it. Text cannot contain control or bidi override characters.
+The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items": [...], "buttons": [...]}` with up to
+64 items (`id` is a lowercase token, unique within the page, buttons included):
+
+| Item | Fields |
+|---|---|
+| `text` | `text` (up to 1000 bytes, new lines allowed) |
+| `header` | `text`: a section title |
+| `divider` | none |
+| `link` | `label`, `url` (`https://` only); opens in the browser |
+| `progress` | `label`, `value` from 0 to 100 |
+| `toggle` | `id`, `label`, `value` |
+| `button` | `id`, `label`, `style` (`default`, `primary`, `danger`) |
+| `input` | `id`, `label`, `value`, `placeholder`, `multiline`, `password`, `max` (up to 4096 bytes) |
+| `select` | `id`, `label`, `value`, `options: [{value, label}]` (up to 16) |
+| `slider` | `id`, `label`, `min`, `max`, `step`, `value` (at most 1000 steps) |
+| `chat` | `id`, `label`, `value` (a chat id or 0): the user picks a chat |
+
+Interactive items also take `hint` (a line of text under the item) and
+`disabled`. `buttons` (up to 3 of `{id, label, style}`) are drawn at the bottom
+of a dialog. The app validates the tree, shows it in its own window and keeps
+the last version; send it again to change it: values the user is typing are
+kept. Text cannot contain control or bidi override characters.
 
 ## Python
 
@@ -230,9 +270,15 @@ def message(event):
 freshgram.run()
 ```
 
-`freshgram.on_settings_open` and `freshgram.on_dialog(item_id)` register
-handlers for the settings page and for dialogs; one failing handler is logged
-and does not stop the others.
+`freshgram.on_settings_open`, `freshgram.on_dialog(item_id)`,
+`freshgram.on_timer(timer_id)` and `freshgram.on_chat_opened` register handlers
+for the settings page, dialogs, timers and opened chats; one failing handler is
+logged and does not stop the others. The namespaces follow the calls:
+`messages.send(chat, text, reply_to=..., markdown=True)`, `messages.edit`,
+`messages.delete`, `messages.react`, `messages.forward`, `messages.search`,
+`chats.mark_read`, `chats.action`, `users.info`, `notify.show`,
+`clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`
+and `files.save` exist only in `freshgram.aio`.
 
 Calls raise `freshgram.Denied`, `Invalid`, `NotFound`, `QuotaExceeded`,
 `LimitExceeded`, `Unavailable` or `Failed`. `print` goes to the plugin log; the

@@ -16,6 +16,10 @@ namespace Api {
 struct MessageToSend;
 } // namespace Api
 
+namespace Window {
+class SessionController;
+} // namespace Window
+
 namespace FreshPlugins {
 
 enum class State {
@@ -51,5 +55,6 @@ bool Post(
 [[nodiscard]] QString RuntimePath();
 void NotifyRuntimeChanged();
 [[nodiscard]] QString AccountId(not_null<Main::Session*> session);
+void WatchActiveChat(not_null<Window::SessionController*> controller);
 
 } // namespace FreshPlugins
