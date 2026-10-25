@@ -206,7 +206,24 @@ void from_json(const nlohmann::json &j, GhostModeAccountSettings &s);
 
 class MessageShotSettings {
 public:
-	[[nodiscard]] bool showBackground() const { return _showBackground.current(); }
+	enum class Background {
+		Transparent = 0,
+		Color = 1,
+		Wallpaper = 2,
+	};
+	enum class Format {
+		Png = 0,
+		Jpeg = 1,
+	};
+
+	[[nodiscard]] Background background() const { return Background(_background.current()); }
+	[[nodiscard]] bool showAvatars() const { return _showAvatars.current(); }
+	[[nodiscard]] bool showNames() const { return _showNames.current(); }
+	[[nodiscard]] int padding() const { return _padding.current(); }
+	[[nodiscard]] int width() const { return _width.current(); }
+	[[nodiscard]] int scale() const { return _scale.current(); }
+	[[nodiscard]] Format format() const { return Format(_format.current()); }
+	[[nodiscard]] const QString &lastSaveFolder() const { return _lastSaveFolder.current(); }
 	[[nodiscard]] bool showDate() const { return _showDate.current(); }
 	[[nodiscard]] bool showReactions() const { return _showReactions.current(); }
 	[[nodiscard]] bool showHeaderDecorations() const { return _showHeaderDecorations.current(); }
@@ -220,7 +237,14 @@ public:
 	[[nodiscard]] const QString &cloudThemeTitle() const { return _cloudThemeTitle.current(); }
 	[[nodiscard]] uint64 cloudThemeAccountId() const { return _cloudThemeAccountId.current(); }
 
-	void setShowBackground(bool val);
+	void setBackground(Background val);
+	void setShowAvatars(bool val);
+	void setShowNames(bool val);
+	void setPadding(int val);
+	void setWidth(int val);
+	void setScale(int val);
+	void setFormat(Format val);
+	void setLastSaveFolder(const QString &val);
 	void setShowDate(bool val);
 	void setShowReactions(bool val);
 	void setShowHeaderDecorations(bool val);
@@ -239,7 +263,14 @@ private:
 	[[nodiscard]] bool isCloudThemeEmpty() const;
 	void clearCloudThemeData();
 
-	rpl::variable<bool> _showBackground = true;
+	rpl::variable<int> _background = int(Background::Color);
+	rpl::variable<bool> _showAvatars = true;
+	rpl::variable<bool> _showNames = true;
+	rpl::variable<int> _padding = 1;
+	rpl::variable<int> _width = 2;
+	rpl::variable<int> _scale = 0;
+	rpl::variable<int> _format = int(Format::Png);
+	rpl::variable<QString> _lastSaveFolder;
 	rpl::variable<bool> _showDate = false;
 	rpl::variable<bool> _showReactions = false;
 	rpl::variable<bool> _showHeaderDecorations = true;
