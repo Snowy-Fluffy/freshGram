@@ -33,13 +33,13 @@
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 
-#include <unistd.h>
-
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
 #include "fgpl/runtime_bundle.h"
 #include "fgpl/sandbox_linux.h"
 #include "fgpl/semver.h"
+
+#include <unistd.h>
 #endif
 
 #include <cctype>
