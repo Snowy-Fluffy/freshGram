@@ -121,8 +121,9 @@ jobs:
             -e CMAKE_BUILD_PARALLEL_LEVEL=2 \
             -e CCACHE_MAXSIZE=3G \
             -e CCACHE_SLOPPINESS=pch_defines,time_macros \
+            -e BUILD_TIMEOUT=55m \
             "$IMAGE" \
-            env -u CCACHE_DISABLE nice -n 10 timeout 55m /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            env -u CCACHE_DISABLE nice -n 10 /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
             -D CMAKE_CONFIGURATION_TYPES="$BUILD_CONFIG" \
             -D CMAKE_BUILD_TYPE="$BUILD_CONFIG" \
             -D CMAKE_CXX_FLAGS_DEBUG=-g1 \
@@ -157,8 +158,9 @@ jobs:
             -e CMAKE_BUILD_PARALLEL_LEVEL=2 \
             -e CCACHE_MAXSIZE=3G \
             -e CCACHE_SLOPPINESS=pch_defines,time_macros \
+            -e BUILD_TIMEOUT=55m \
             "$IMAGE" \
-            env -u CCACHE_DISABLE nice -n 10 timeout 55m /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            env -u CCACHE_DISABLE nice -n 10 /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
             -D CMAKE_CONFIGURATION_TYPES="$BUILD_CONFIG" \
             -D CMAKE_BUILD_TYPE="$BUILD_CONFIG" \
             -D CMAKE_CXX_FLAGS_DEBUG=-g1 \
@@ -193,8 +195,9 @@ jobs:
             -e CMAKE_BUILD_PARALLEL_LEVEL=2 \
             -e CCACHE_MAXSIZE=3G \
             -e CCACHE_SLOPPINESS=pch_defines,time_macros \
+            -e BUILD_TIMEOUT=55m \
             "$IMAGE" \
-            env -u CCACHE_DISABLE nice -n 10 timeout 55m /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            env -u CCACHE_DISABLE nice -n 10 /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
             -D CMAKE_CONFIGURATION_TYPES="$BUILD_CONFIG" \
             -D CMAKE_BUILD_TYPE="$BUILD_CONFIG" \
             -D CMAKE_CXX_FLAGS_DEBUG=-g1 \
@@ -229,8 +232,9 @@ jobs:
             -e CMAKE_BUILD_PARALLEL_LEVEL=2 \
             -e CCACHE_MAXSIZE=3G \
             -e CCACHE_SLOPPINESS=pch_defines,time_macros \
+            -e BUILD_TIMEOUT=55m \
             "$IMAGE" \
-            env -u CCACHE_DISABLE nice -n 10 timeout 55m /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            env -u CCACHE_DISABLE nice -n 10 /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
             -D CMAKE_CONFIGURATION_TYPES="$BUILD_CONFIG" \
             -D CMAKE_BUILD_TYPE="$BUILD_CONFIG" \
             -D CMAKE_CXX_FLAGS_DEBUG=-g1 \
@@ -265,8 +269,9 @@ jobs:
             -e CMAKE_BUILD_PARALLEL_LEVEL=2 \
             -e CCACHE_MAXSIZE=3G \
             -e CCACHE_SLOPPINESS=pch_defines,time_macros \
+            -e BUILD_TIMEOUT=55m \
             "$IMAGE" \
-            env -u CCACHE_DISABLE nice -n 10 timeout 55m /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            env -u CCACHE_DISABLE nice -n 10 /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
             -D CMAKE_CONFIGURATION_TYPES="$BUILD_CONFIG" \
             -D CMAKE_BUILD_TYPE="$BUILD_CONFIG" \
             -D CMAKE_CXX_FLAGS_DEBUG=-g1 \

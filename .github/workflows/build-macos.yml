@@ -184,6 +184,7 @@ jobs:
               exit 0
             fi
             echo "::warning::Build attempt $attempt failed, trying again"
+            python3 .github/scripts/drop_broken_objects.py out > /dev/null
           done
           exit 1
 
