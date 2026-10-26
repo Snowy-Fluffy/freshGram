@@ -194,7 +194,7 @@
 "fresh_PluginStarted" = "Плагин запущен.";
 "fresh_PluginStartFailed" = "Плагин не запустился, посмотрите его журнал.";
 "fresh_PluginsNetworkLog" = "Журнал сети";
-"fresh_PluginsNetworkLogErrors" = "Только ошибки";
+"fresh_PluginsNetworkLogTabErrors" = "Ошибки";
 "fresh_PluginsNetworkLogEmpty" = "Сетевой активности пока не было.";
 "fresh_PermMessagesEdit" = "Изменять отправленные вами сообщения";
 "fresh_PermMessagesDelete" = "Удалять отправленные вами сообщения";
@@ -216,8 +216,10 @@
 "fresh_PluginPermissionNewShort" = "Новое";
 "fresh_PluginPermissionsRequiredAbout" = "Без этих прав плагин не работает, поэтому они всегда включены.";
 "fresh_PluginPermissionRequiredToast" = "«{permission}» обязательно: без этого плагин не работает.";
-"fresh_PluginLogOnlyProblems" = "Только проблемы";
-"fresh_PluginLogNoProblems" = "Проблем не записано.";
+"fresh_PluginLogTabAll" = "Все";
+"fresh_PluginLogTabProblems" = "Проблемы";
+"fresh_PluginLogSearch" = "Поиск";
+"fresh_PluginLogNothingFound" = "Ничего не найдено.";
 "fresh_PluginLogCopy" = "Копировать";
 "fresh_PluginLogClear" = "Очистить";
 "fresh_PermMessagesRead" = "Читать сообщения";

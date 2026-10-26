@@ -194,7 +194,7 @@
 "fresh_PluginStarted" = "Il plugin è stato avviato.";
 "fresh_PluginStartFailed" = "Il plugin non si è avviato, vedi il suo registro.";
 "fresh_PluginsNetworkLog" = "Registro di rete";
-"fresh_PluginsNetworkLogErrors" = "Solo errori";
+"fresh_PluginsNetworkLogTabErrors" = "Errori";
 "fresh_PluginsNetworkLogEmpty" = "Ancora nessuna attività di rete.";
 "fresh_PermMessagesEdit" = "Modificare i messaggi che hai inviato";
 "fresh_PermMessagesDelete" = "Eliminare i messaggi che hai inviato";
@@ -216,8 +216,10 @@
 "fresh_PluginPermissionNewShort" = "Nuovo";
 "fresh_PluginPermissionsRequiredAbout" = "Il plugin non può funzionare senza questi permessi, quindi sono sempre attivi.";
 "fresh_PluginPermissionRequiredToast" = "«{permission}» è obbligatorio: il plugin non può funzionare senza.";
-"fresh_PluginLogOnlyProblems" = "Solo problemi";
-"fresh_PluginLogNoProblems" = "Nessun problema registrato.";
+"fresh_PluginLogTabAll" = "Tutti";
+"fresh_PluginLogTabProblems" = "Problemi";
+"fresh_PluginLogSearch" = "Cerca";
+"fresh_PluginLogNothingFound" = "Nessun risultato.";
 "fresh_PluginLogCopy" = "Copia";
 "fresh_PluginLogClear" = "Svuota";
 "fresh_PermMessagesRead" = "Leggere i messaggi";

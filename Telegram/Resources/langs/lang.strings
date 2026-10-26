@@ -8980,7 +8980,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginStarted" = "The plugin was started.";
 "fresh_PluginStartFailed" = "The plugin could not start, see its log.";
 "fresh_PluginsNetworkLog" = "Network log";
-"fresh_PluginsNetworkLogErrors" = "Only errors";
+"fresh_PluginsNetworkLogTabErrors" = "Errors";
 "fresh_PluginsNetworkLogEmpty" = "No network activity yet.";
 "fresh_PermMessagesEdit" = "Edit messages you sent";
 "fresh_PermMessagesDelete" = "Delete messages you sent";
@@ -9002,8 +9002,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPermissionNewShort" = "New";
 "fresh_PluginPermissionsRequiredAbout" = "The plugin cannot work without these permissions, so they are always on.";
 "fresh_PluginPermissionRequiredToast" = "{permission} is required: the plugin cannot work without it.";
-"fresh_PluginLogOnlyProblems" = "Only problems";
-"fresh_PluginLogNoProblems" = "No problems recorded.";
+"fresh_PluginLogTabAll" = "All";
+"fresh_PluginLogTabProblems" = "Problems";
+"fresh_PluginLogSearch" = "Search";
+"fresh_PluginLogNothingFound" = "Nothing found.";
 "fresh_PluginLogCopy" = "Copy";
 "fresh_PluginLogClear" = "Clear";
 "fresh_PermMessagesRead" = "Read messages";
