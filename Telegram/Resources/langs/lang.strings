@@ -8916,8 +8916,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginInstallTitle" = "Install plugin";
 "fresh_PluginInstall" = "Install";
 "fresh_PluginInstallUpdate" = "Update";
-"fresh_PluginSignedBy" = "Signed by {publisher}";
-"fresh_PluginUnsigned" = "This plugin is not signed. Install it only if you trust its source.";
+"fresh_PluginOfficial" = "Official plugin";
+"fresh_PluginUnofficialWarning" = "Unofficial plugin. Install it only if you trust its source.";
 "fresh_PluginIncompatible" = "This plugin cannot run here: {reason}";
 "fresh_PluginPermissions" = "Permissions";
 "fresh_PluginInstalledToast" = "Plugin installed.";
@@ -8993,7 +8993,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginCommandTaken" = "{command} is also used by {plugin}; type /command@plugin.id to call this one.";
 "fresh_PluginVersionShort" = "Version {version}";
 "fresh_PluginBy" = "by {author}";
-"fresh_PluginNotSigned" = "Not signed";
+"fresh_PluginUnofficial" = "Unofficial plugin";
 "fresh_PluginHomepage" = "Website";
 "fresh_PluginRepository" = "Source code";
 "fresh_PluginSupport" = "Support";

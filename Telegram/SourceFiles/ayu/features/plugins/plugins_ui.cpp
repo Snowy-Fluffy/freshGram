@@ -3,6 +3,7 @@
 
 #include "lang/lang_keys.h"
 #include "ayu/features/plugins/plugins_log_view.h"
+#include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/secret/secret_peer.h"
@@ -1378,7 +1379,6 @@ void BuildDetails(
 			? HeaderFor(
 				*parsed,
 				info->publisher,
-				info->signedPackage,
 				icon
 					? QByteArray(
 						reinterpret_cast<const char*>(icon->data()),
@@ -1387,8 +1387,7 @@ void BuildDetails(
 			: PluginHeader{
 				.name = name,
 				.version = Utf8(info->version),
-				.publisher = Utf8(info->publisher),
-				.signedPackage = info->signedPackage,
+				.official = IsOfficialPublisher(info->publisher),
 			});
 	Ui::AddSkip(content);
 	if (broken) {
@@ -1561,7 +1560,6 @@ void BuildDetails(
 		QString::number(int(info->enabled)),
 		QString::number(int(info->pendingUpdate)),
 		QString::number(int(info->outdated)),
-		QString::number(int(info->signedPackage)),
 		Utf8(info->publisher),
 		permissions.join(','),
 	}.join('\n');
@@ -2276,7 +2274,6 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 PluginHeader HeaderFor(
 		const fgpl::Manifest &manifest,
 		const std::string &publisher,
-		bool signedPackage,
 		QByteArray icon) {
 	return {
 		.name = Utf8(manifest.name.get(Language())),
@@ -2287,8 +2284,7 @@ PluginHeader HeaderFor(
 		.homepage = Utf8(manifest.homepage.empty() ? manifest.authorUrl : manifest.homepage),
 		.repository = Utf8(manifest.repository),
 		.support = Utf8(manifest.support),
-		.publisher = Utf8(publisher),
-		.signedPackage = signedPackage,
+		.official = IsOfficialPublisher(publisher),
 		.icon = std::move(icon),
 	};
 }
@@ -2349,10 +2345,10 @@ void AddPluginHeader(
 		st::pluginHeaderSubtitle);
 	const auto badge = Ui::CreateChild<Ui::FlatLabel>(
 		row,
-		data.signedPackage
-			? (u"✓ "_q + tr::fresh_PluginSignedBy(tr::now, lt_publisher, data.publisher))
-			: (u"⚠ "_q + tr::fresh_PluginNotSigned(tr::now)),
-		data.signedPackage ? st::pluginHeaderSigned : st::pluginHeaderUnsigned);
+		data.official
+			? (u"✓ "_q + tr::fresh_PluginOfficial(tr::now))
+			: (u"⚠ "_q + tr::fresh_PluginUnofficial(tr::now)),
+		data.official ? st::pluginHeaderOfficial : st::pluginHeaderUnofficial);
 	for (const auto label : { title, subtitle, badge }) {
 		label->show();
 	}

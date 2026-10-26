@@ -130,8 +130,8 @@
 "fresh_PluginInstallTitle" = "安装插件";
 "fresh_PluginInstall" = "安装";
 "fresh_PluginInstallUpdate" = "更新";
-"fresh_PluginSignedBy" = "签名者：{publisher}";
-"fresh_PluginUnsigned" = "此插件未签名。仅在信任来源时安装。";
+"fresh_PluginOfficial" = "官方插件";
+"fresh_PluginUnofficialWarning" = "非官方插件。仅在信任来源时安装。";
 "fresh_PluginIncompatible" = "此插件无法在此运行：{reason}";
 "fresh_PluginPermissions" = "权限";
 "fresh_PluginInstalledToast" = "插件已安装。";
@@ -207,7 +207,7 @@
 "fresh_PluginCommandTaken" = "{command} 已被 {plugin} 使用；输入 /命令@插件id 来调用此插件。";
 "fresh_PluginVersionShort" = "版本 {version}";
 "fresh_PluginBy" = "作者：{author}";
-"fresh_PluginNotSigned" = "未签名";
+"fresh_PluginUnofficial" = "非官方插件";
 "fresh_PluginHomepage" = "网站";
 "fresh_PluginRepository" = "源代码";
 "fresh_PluginSupport" = "支持";

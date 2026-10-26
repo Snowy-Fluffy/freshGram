@@ -57,15 +57,13 @@ struct PluginHeader {
 	QString homepage;
 	QString repository;
 	QString support;
-	QString publisher;
-	bool signedPackage = false;
+	bool official = false;
 	QByteArray icon;
 };
 
 [[nodiscard]] PluginHeader HeaderFor(
 	const fgpl::Manifest &manifest,
 	const std::string &publisher,
-	bool signedPackage,
 	QByteArray icon);
 void AddPluginHeader(
 	not_null<Ui::VerticalLayout*> container,

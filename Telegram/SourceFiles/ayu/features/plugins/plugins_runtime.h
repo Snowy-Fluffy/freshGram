@@ -36,6 +36,7 @@ struct RuntimeStatus {
 
 [[nodiscard]] bool RuntimeCanBeVerified();
 [[nodiscard]] QString RuntimeChannel();
+[[nodiscard]] bool IsOfficialPublisher(const std::string &publisher);
 #ifdef FRESHGRAM_PLUGINS
 [[nodiscard]] std::optional<fgpl::InstalledRuntime> TrustedRuntime();
 #endif
