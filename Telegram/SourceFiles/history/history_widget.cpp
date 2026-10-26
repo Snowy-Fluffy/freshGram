@@ -639,9 +639,6 @@ HistoryWidget::HistoryWidget(
 		if (_scheduled) {
 			_scheduled->setVisible(!hide);
 		}
-		if (_pluginsToggle) {
-			_pluginsToggle->setVisible(!hide && !_editMsgId);
-		}
 		updateFieldSize();
 		moveFieldControls();
 	}, lifetime());
@@ -4664,7 +4661,8 @@ void HistoryWidget::updateControlsVisibility() {
 			}
 			if (_pluginsToggle) {
 				const auto was = _pluginsToggle->isVisible();
-				const auto now = (!_editMsgId) && (!hideExtra);
+				const auto now = (!_editMsgId)
+					&& (!shouldShowRichDraftPreview());
 				if (was != now) {
 					_pluginsToggle->setVisible(now);
 					rightButtonsChanged = true;
