@@ -782,7 +782,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 				}
 			}
 		}
-		const auto shortcuts = (_user && !_user->isBot())
+		const auto shortcuts = (_user && !_user->isBot() && !_user->starsPerMessageChecked())
 			? _user->owner().shortcutMessages().shortcuts().list
 			: base::flat_map<BusinessShortcutId, Data::Shortcut>();
 		if (!hasUsername && brows.empty() && !shortcuts.empty()) {
@@ -2139,7 +2139,8 @@ void InitFieldAutocomplete(
 			&& !peer->asUser()->isBot()
 			&& (!shortcutMessages
 				|| shortcutMessages->shortcuts().list.empty()
-				|| peer->starsPerMessageChecked() != 0)) {
+				|| peer->starsPerMessageChecked() != 0)
+			&& FreshPlugins::CommandsFor(&peer->session(), peer).empty()) {
 			parsed = {};
 		}
 		if (!parsed.query.isEmpty() && parsed.query[0] == '@') {

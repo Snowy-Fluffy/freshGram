@@ -151,6 +151,15 @@ struct OutgoingMessage {
 	int64_t schedule = 0;
 };
 
+struct OutgoingMedia {
+	OutgoingMessage message;
+	std::string name;
+	std::string kind;
+	cbor::Bytes bytes;
+	bool spoiler = false;
+	int64_t duration = 0;
+};
+
 struct UserInfo {
 	int64_t id = 0;
 	std::string name;
@@ -209,6 +218,33 @@ public:
 		(void)thumbnail;
 		(void)maxBytes;
 		return std::nullopt;
+	}
+
+	[[nodiscard]] virtual Result<Media, std::string> downloadMedia(
+			int64_t chat,
+			int64_t message,
+			bool thumbnail,
+			size_t maxBytes) {
+		(void)chat;
+		(void)message;
+		(void)thumbnail;
+		(void)maxBytes;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual std::vector<Message> mediaMessages(
+			int64_t chat,
+			const std::string &kind,
+			size_t limit,
+			int64_t before) {
+		(void)chat;
+		(void)kind;
+		(void)limit;
+		(void)before;
+		return {};
+	}
+	[[nodiscard]] virtual std::string sendMedia(const OutgoingMedia &media) {
+		(void)media;
+		return api::error::kUnavailable;
 	}
 
 	// The calls below answer an error code, or an empty string on success.

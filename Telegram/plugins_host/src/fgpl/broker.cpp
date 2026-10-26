@@ -67,6 +67,8 @@ constexpr auto kChatActionEachMs = int64_t(3000);
 constexpr auto kMaxClipboard = size_t(64) << 10;
 constexpr auto kMaxFile = size_t(8) << 20;
 constexpr auto kMaxFileName = size_t(128);
+constexpr auto kMaxSentMedia = size_t(10) << 20;
+constexpr auto kMaxCaption = size_t(4096);
 constexpr auto kMinTimerMs = int64_t(1000);
 constexpr auto kMaxTimerMs = int64_t(7) * 24 * 3600 * 1000;
 
@@ -527,7 +529,7 @@ void Broker::noteUserAction(std::string_view type) {
 std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 	const auto lock = std::scoped_lock(_limitsMutex);
 	const auto now = _services.clockMs();
-	if (op == "messages.send" || op == "messages.forward") {
+	if (op == "messages.send" || op == "messages.forward" || op == "messages.send_media") {
 		_sendTokens = std::min(
 			kSendBurst,
 			_sendTokens + double(now - _sendRefilled) / kSendEachMs);
@@ -1156,9 +1158,10 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		}
 		const auto chat = IntArg(args, "chat");
 		const auto message = IntArg(args, "message");
-		const auto thumbnail = Arg(args, "thumbnail");
-		if (!chat || !message || (thumbnail && !thumbnail->asBool())) {
-			return api::Fail(api::error::kInvalid, "chat, message or thumbnail");
+		const auto thumbnail = BoolArg(args, "thumbnail", false);
+		const auto download = BoolArg(args, "download", false);
+		if (!chat || !message || !thumbnail || !download) {
+			return api::Fail(api::error::kInvalid, "chat, message, thumbnail or download");
 		} else if (*chat == api::kServiceChat || !chatInScope(*chat)) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
@@ -1166,11 +1169,14 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		if (!info || info->secret) {
 			return api::Fail(api::error::kNotFound, "chat");
 		}
-		const auto media = data->media(
-			*chat,
-			*message,
-			thumbnail && thumbnail->asBool().value_or(false),
-			kMaxMedia);
+		auto media = data->media(*chat, *message, *thumbnail, kMaxMedia);
+		if (!media && *download) {
+			auto loaded = data->downloadMedia(*chat, *message, *thumbnail, kMaxMedia);
+			if (!loaded.ok()) {
+				return api::Fail(loaded.error(), "the media was not downloaded");
+			}
+			media = std::move(loaded.value());
+		}
 		if (media && media->deleted && !has("messages.read_deleted")) {
 			return api::Fail(api::error::kDenied, "messages.read_deleted");
 		} else if (!media) {
@@ -1184,6 +1190,41 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			{ "name", Text(media->name) },
 			{ "data", cbor::Value::FromBytes(media->bytes) },
 		}));
+	} else if (op == "media.list") {
+		if (const auto refused = need("media.read")) {
+			return *refused;
+		}
+		static const auto kinds = std::set<std::string>{
+			"any", "photo", "video", "photo_video", "file", "voice",
+			"round", "audio", "gif",
+		};
+		const auto chat = IntArg(args, "chat");
+		const auto kind = TextArg(args, "kind", 16).value_or("any");
+		const auto before = IntArg(args, "before").value_or(0);
+		if (!chat || !kinds.contains(kind) || before < 0) {
+			return api::Fail(api::error::kInvalid, "chat, kind or before");
+		} else if (*chat == api::kServiceChat || !chatInScope(*chat)) {
+			return api::Fail(api::error::kDenied, "this chat");
+		}
+		const auto info = data->chat(*chat);
+		if (!info || info->secret) {
+			return api::Fail(api::error::kNotFound, "chat");
+		}
+		const auto limit = size_t(std::clamp<int64_t>(
+			IntArg(args, "limit").value_or(20),
+			1,
+			int64_t(kMaxHistory)));
+		const auto deleted = has("messages.read_deleted");
+		auto result = cbor::Array();
+		for (const auto &message : data->mediaMessages(*chat, kind, limit, before)) {
+			if (message.chat == *chat
+				&& !message.media.empty()
+				&& (deleted || !message.deleted)
+				&& result.size() < limit) {
+				result.push_back(MessageValue(message));
+			}
+		}
+		return api::Ok(cbor::Value::FromArray(std::move(result)));
 	} else if (op == "ui.toast") {
 		if (const auto refused = need("ui.toast")) {
 			return *refused;
@@ -1224,7 +1265,63 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		}
 		return *id;
 	};
-	if (op == "messages.edit") {
+	if (op == "messages.send_media") {
+		if (const auto refused = need({ "messages.send" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		if (!chat.ok()) {
+			return chat.error();
+		}
+		static const auto kinds = std::set<std::string>{ "auto", "file", "voice" };
+		const auto bytes = Arg(args, "data");
+		const auto raw = bytes ? bytes->asBytes() : nullptr;
+		const auto name = TextArg(args, "name", kMaxFileName);
+		const auto kind = TextArg(args, "kind", 16).value_or("auto");
+		const auto caption = Arg(args, "caption")
+			? TextArg(args, "caption", kMaxCaption)
+			: std::optional<std::string>(std::string());
+		const auto markdown = MarkdownArg(args);
+		const auto silent = BoolArg(args, "silent", false);
+		const auto spoiler = BoolArg(args, "spoiler", false);
+		const auto replyTo = IntArg(args, "reply_to").value_or(0);
+		const auto topic = IntArg(args, "topic").value_or(0);
+		const auto when = IntArg(args, "schedule").value_or(0);
+		const auto duration = IntArg(args, "duration").value_or(0);
+		if (!raw || raw->empty()) {
+			return api::Fail(api::error::kInvalid, "data");
+		} else if (raw->size() > kMaxSentMedia) {
+			return api::Fail(api::error::kLimit, "the file is too large");
+		} else if (!name
+			|| name->empty()
+			|| name->find_first_of("/\\") != std::string::npos
+			|| !kinds.contains(kind)
+			|| !caption
+			|| !markdown
+			|| !silent
+			|| !spoiler
+			|| replyTo < 0 || topic < 0 || when < 0
+			|| duration < 0 || duration > 3600
+			|| (kind == "voice" && !duration)) {
+			return api::Fail(api::error::kInvalid, "name, kind, caption or options");
+		}
+		return Done(data->sendMedia({
+			.message = {
+				.chat = chat.value(),
+				.text = *caption,
+				.markdown = *markdown,
+				.replyTo = replyTo,
+				.topic = topic,
+				.silent = *silent,
+				.schedule = when,
+			},
+			.name = *name,
+			.kind = kind,
+			.bytes = *raw,
+			.spoiler = *spoiler,
+			.duration = duration,
+		}), "the media was not sent");
+	} else if (op == "messages.edit") {
 		if (const auto refused = need({ "messages.edit" })) {
 			return *refused;
 		}

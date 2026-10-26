@@ -7,8 +7,14 @@
 #include "api/api_common.h"
 #include "api/api_editing.h"
 #include "api/api_send_progress.h"
+#include "base/call_delayed.h"
+#include "base/random.h"
 #include "base/unixtime.h"
 #include "core/file_utilities.h"
+#include "storage/localimageloader.h"
+#include "storage/storage_media_prepare.h"
+#include "ui/chat/attach/attach_prepare.h"
+#include "styles/style_boxes.h"
 #include "data/data_forum_topic.h"
 #include "data/data_histories.h"
 #include "data/data_message_reaction_id.h"
@@ -56,6 +62,8 @@
 
 #include <QtCore/QBuffer>
 #include <QtCore/QFile>
+#include <QtCore/QDir>
+#include <QtCore/QDirIterator>
 #include <QtCore/QFileInfo>
 #include <QtCore/QStandardPaths>
 #include <QtGui/QClipboard>
@@ -76,6 +84,8 @@ constexpr auto kWaitSlice = std::chrono::milliseconds(20);
 constexpr auto kWaitTotal = std::chrono::milliseconds(1500);
 constexpr auto kWaitServer = std::chrono::milliseconds(10000);
 constexpr auto kWaitUser = std::chrono::minutes(5);
+constexpr auto kWaitDownload = std::chrono::seconds(60);
+constexpr auto kOutboxLifetime = std::chrono::hours(1);
 constexpr auto kMaxHistory = size_t(200);
 constexpr auto kMaxScheduleSeconds = TimeId(365 * 24 * 3600);
 
@@ -348,6 +358,52 @@ int PluginSendDepth = 0;
 	};
 	const auto i = kinds.find(kind);
 	return (i != kinds.end()) ? std::make_optional(i->second) : std::nullopt;
+}
+
+[[nodiscard]] QString OutboxPath() {
+	return cWorkingDir() + u"tdata/plugins/outbox/"_q;
+}
+
+void CleanOutbox() {
+	const auto old = QDateTime::currentDateTime().addSecs(
+		-std::chrono::duration_cast<std::chrono::seconds>(kOutboxLifetime).count());
+	auto entries = QDirIterator(OutboxPath(), QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+	while (entries.hasNext()) {
+		const auto path = entries.next();
+		if (QFileInfo(path).lastModified() < old) {
+			QFile::remove(path);
+		}
+	}
+}
+
+[[nodiscard]] std::optional<ChatRestriction> RestrictionFor(Ui::PreparedFile::Type type) {
+	using Type = Ui::PreparedFile::Type;
+	switch (type) {
+	case Type::Photo: return ChatRestriction::SendPhotos;
+	case Type::Video: return ChatRestriction::SendVideos;
+	case Type::Music: return ChatRestriction::SendMusic;
+	case Type::File: return ChatRestriction::SendFiles;
+	case Type::None: break;
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] MTPMessagesFilter MediaFilter(const std::string &kind) {
+	return (kind == "photo")
+		? MTP_inputMessagesFilterPhotos()
+		: (kind == "video")
+		? MTP_inputMessagesFilterVideo()
+		: (kind == "file")
+		? MTP_inputMessagesFilterDocument()
+		: (kind == "voice")
+		? MTP_inputMessagesFilterVoice()
+		: (kind == "round")
+		? MTP_inputMessagesFilterRoundVideo()
+		: (kind == "audio")
+		? MTP_inputMessagesFilterMusic()
+		: (kind == "gif")
+		? MTP_inputMessagesFilterGif()
+		: MTP_inputMessagesFilterPhotoVideo();
 }
 
 [[nodiscard]] std::string StatusOf(not_null<UserData*> user, int64_t &lastSeen) {
@@ -873,6 +929,285 @@ public:
 				done({});
 			}).send();
 		}, {});
+	}
+
+	fgpl::Result<fgpl::Media, std::string> downloadMedia(
+			int64_t chat,
+			int64_t message,
+			bool thumbnail,
+			size_t maxBytes) override {
+		struct Loaded {
+			std::string error;
+			fgpl::Media media;
+			QByteArray bytes;
+		};
+		const auto loaded = OnMainAsync<Loaded>([=](Fn<void(Loaded)> done) {
+			const auto session = FindSession(_account);
+			const auto item = messageOf(chat, message);
+			const auto media = item ? item->media() : nullptr;
+			if (!session || !media || media->ttlSeconds()) {
+				done({ .error = fgpl::api::error::kNotFound });
+				return;
+			}
+			const auto base = std::make_shared<fgpl::Media>();
+			base->deleted = item->isDeleted();
+			base->kind = thumbnail ? "thumbnail" : MediaKindOf(item);
+			const auto origin = Data::FileOrigin(item->fullId());
+			const auto finish = [=](QByteArray bytes) {
+				done({ .media = *base, .bytes = std::move(bytes) });
+			};
+			const auto fail = [=](const char *error) {
+				done({ .error = error });
+			};
+			auto check = Fn<bool()>();
+			if (const auto photo = media->photo()) {
+				const auto view = photo->createMediaView();
+				const auto size = thumbnail
+					? Data::PhotoSize::Thumbnail
+					: Data::PhotoSize::Large;
+				base->mime = "image/jpeg";
+				check = [=] {
+					if (const auto image = view->image(size)) {
+						auto bytes = view->imageBytes(size);
+						finish(bytes.isEmpty() ? Jpeg(image->original()) : bytes);
+					} else if (photo->failed(size)) {
+						fail(fgpl::api::error::kFailed);
+					} else {
+						return false;
+					}
+					return true;
+				};
+				if (!check()) {
+					photo->load(size, origin);
+				}
+			} else if (const auto document = media->document()) {
+				if (!thumbnail && document->size > int64(maxBytes)) {
+					fail(fgpl::api::error::kLimit);
+					return;
+				}
+				base->mime = thumbnail ? "image/jpeg" : Utf8(document->mimeString());
+				base->name = thumbnail ? std::string() : Utf8(document->filename());
+				const auto view = document->createMediaView();
+				check = [=] {
+					if (thumbnail) {
+						if (const auto image = view->thumbnail()) {
+							finish(Jpeg(image->original()));
+							return true;
+						}
+					} else if (!view->bytes().isEmpty()) {
+						finish(view->bytes());
+						return true;
+					} else if (!document->loading()
+						&& (!document->filepath(true).isEmpty()
+							|| document->loadedInMediaCache())) {
+						finish(QByteArray());
+						return true;
+					}
+					if (!document->loading()
+						&& (document->status == FileDownloadFailed
+							|| document->cancelled())) {
+						fail(fgpl::api::error::kFailed);
+						return true;
+					}
+					return false;
+				};
+				if (!check()) {
+					if (thumbnail) {
+						document->loadThumbnail(origin);
+					} else {
+						document->save(origin, QString());
+					}
+				}
+			} else {
+				fail(fgpl::api::error::kNotFound);
+				return;
+			}
+			const auto lifetime = std::make_shared<rpl::lifetime>();
+			session->downloaderTaskFinished(
+			) | rpl::on_next([=] {
+				if (check()) {
+					lifetime->destroy();
+				}
+			}, *lifetime);
+			base::call_delayed(
+				std::chrono::duration_cast<std::chrono::milliseconds>(kWaitDownload).count(),
+				[=] { lifetime->destroy(); });
+		}, Loaded{ .error = fgpl::api::error::kUnavailable }, kWaitDownload);
+		if (!loaded.error.empty()) {
+			return loaded.error;
+		} else if (loaded.bytes.isEmpty()) {
+			auto result = media(chat, message, thumbnail, maxBytes);
+			if (!result) {
+				return std::string(fgpl::api::error::kNotFound);
+			}
+			return std::move(*result);
+		} else if (size_t(loaded.bytes.size()) > maxBytes) {
+			return std::string(fgpl::api::error::kLimit);
+		}
+		auto result = loaded.media;
+		result.bytes.assign(loaded.bytes.constData(), loaded.bytes.constData() + loaded.bytes.size());
+		return result;
+	}
+
+	std::vector<fgpl::Message> mediaMessages(
+			int64_t chat,
+			const std::string &kind,
+			size_t limit,
+			int64_t before) override {
+		if (kind == "any") {
+			auto result = history(chat, kMaxHistory, before, 0);
+			std::erase_if(result, [](const fgpl::Message &message) {
+				return message.media.empty();
+			});
+			if (result.size() > limit) {
+				result.resize(limit);
+			}
+			return result;
+		}
+		return OnMainAsync<std::vector<fgpl::Message>>([=](
+				Fn<void(std::vector<fgpl::Message>)> done) {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(chat);
+			if (!session || !history
+				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				done({});
+				return;
+			}
+			const auto peer = history->peer;
+			using Flag = MTPmessages_Search::Flag;
+			session->api().request(MTPmessages_Search(
+				MTP_flags(Flag()),
+				peer->input(),
+				MTP_string(),
+				MTP_inputPeerEmpty(),
+				MTP_inputPeerEmpty(),
+				MTPVector<MTPReaction>(),
+				MTP_int(0),
+				MediaFilter(kind),
+				MTP_int(0),
+				MTP_int(0),
+				MTP_int(int(before)),
+				MTP_int(0),
+				MTP_int(int(std::min(limit, kMaxHistory))),
+				MTP_int(0),
+				MTP_int(0),
+				MTP_long(0)
+			)).done([=](const MTPmessages_Messages &answer) {
+				session->data().processExistingMessages(peer->asChannel(), answer);
+				auto result = std::vector<fgpl::Message>();
+				for (const auto &message : MessagesOf(answer, chat)) {
+					const auto item = session->data().message(peer->id, MsgId(message.id));
+					result.push_back(item ? MessageOf(item) : message);
+				}
+				done(std::move(result));
+			}).fail([=] {
+				done({});
+			}).send();
+		}, {});
+	}
+
+	std::string sendMedia(const fgpl::OutgoingMedia &outgoing) override {
+		const auto name = QString::fromStdString(outgoing.name);
+		const auto folder = QString(OutboxPath() + QString::number(base::RandomValue<uint64>(), 16) + '/');
+		const auto path = QString(folder + name);
+		{
+			CleanOutbox();
+			QDir().mkpath(folder);
+			auto file = QFile(path);
+			if (!file.open(QIODevice::WriteOnly)
+				|| file.write(
+					reinterpret_cast<const char*>(outgoing.bytes.data()),
+					qint64(outgoing.bytes.size())) != qint64(outgoing.bytes.size())) {
+				return fgpl::api::error::kFailed;
+			}
+		}
+		const auto &message = outgoing.message;
+		return OnMain<std::string>([=]() -> std::string {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(message.chat);
+			if (!session || !history
+				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				return fgpl::api::error::kNotFound;
+			} else if (history->peer->starsPerMessageChecked() > 0) {
+				return fgpl::api::error::kDenied;
+			}
+			const auto topic = message.topic
+				? history->peer->forumTopicFor(MsgId(message.topic))
+				: nullptr;
+			const auto thread = topic
+				? not_null<Data::Thread*>(topic)
+				: not_null<Data::Thread*>(history);
+			if (history->peer->slowmodeSecondsLeft() > 0) {
+				return fgpl::api::error::kLimit;
+			}
+			const auto now = base::unixtime::now();
+			if (message.schedule
+				&& (message.schedule <= now + 10
+					|| message.schedule > now + kMaxScheduleSeconds)) {
+				return fgpl::api::error::kInvalid;
+			}
+			auto action = Api::SendAction(thread);
+			action.clearDraft = false;
+			action.options.silent = message.silent;
+			action.options.scheduled = TimeId(message.schedule);
+			if (message.topic && !topic) {
+				action.replyTo.topicRootId = MsgId(message.topic);
+			}
+			if (message.replyTo) {
+				const auto replied = session->data().message(
+					history->peer->id,
+					MsgId(message.replyTo));
+				if (!replied) {
+					return fgpl::api::error::kNotFound;
+				}
+				action.replyTo.messageId = replied->fullId();
+				action.replyTo.topicRootId = replied->topicRootId();
+			}
+			if (outgoing.kind == "voice") {
+				if (!Data::CanSend(thread, ChatRestriction::SendVoiceMessages)) {
+					return fgpl::api::error::kDenied;
+				}
+				auto file = QFile(path);
+				if (!file.open(QIODevice::ReadOnly)) {
+					return fgpl::api::error::kFailed;
+				}
+				session->api().sendVoiceMessage(
+					file.readAll(),
+					VoiceWaveform(),
+					crl::time(outgoing.duration) * 1000,
+					false,
+					action);
+				return {};
+			}
+			auto list = Storage::PrepareMediaList(
+				QStringList{ path },
+				st::sendMediaPreviewSize,
+				session->premium());
+			if (list.error != Ui::PreparedList::Error::None || list.files.empty()) {
+				return fgpl::api::error::kInvalid;
+			}
+			auto &file = list.files.front();
+			const auto asFile = (outgoing.kind == "file");
+			const auto restriction = asFile
+				? std::make_optional(ChatRestriction::SendFiles)
+				: RestrictionFor(file.type);
+			if (!restriction || !Data::CanSend(thread, *restriction)) {
+				return fgpl::api::error::kDenied;
+			}
+			const auto caption = Formatted(message.text, message.markdown);
+			file.caption = TextWithTags{
+				caption.text,
+				TextUtilities::ConvertEntitiesToTextTags(caption.entities),
+			};
+			file.spoiler = outgoing.spoiler;
+			const auto type = (asFile || file.type == Ui::PreparedFile::Type::File)
+				? SendMediaType::File
+				: SendMediaType::Photo;
+			++PluginSendDepth;
+			session->api().sendFiles(std::move(list), type, nullptr, action);
+			--PluginSendDepth;
+			return {};
+		}, fgpl::api::error::kUnavailable);
 	}
 
 	std::optional<fgpl::UserInfo> user(int64_t id) override {
