@@ -151,6 +151,9 @@ public:
 	void setTryMakeSimilarLines(bool tryMakeSimilarLines);
 	void setSkipBlock(int width, int height);
 	void setColors(std::span<Text::SpecialColor> colors);
+	[[nodiscard]] bool hasSelection() const {
+		return !_selection.empty() || (_dragAction == Selecting);
+	}
 	enum class WhichAnimationsPaused {
 		None,
 		CustomEmoji,

@@ -194,7 +194,7 @@
 "fresh_PluginStarted" = "插件已启动。";
 "fresh_PluginStartFailed" = "插件无法启动，请查看其日志。";
 "fresh_PluginsNetworkLog" = "网络日志";
-"fresh_PluginsNetworkLogErrors" = "仅错误";
+"fresh_PluginsNetworkLogTabErrors" = "错误";
 "fresh_PluginsNetworkLogEmpty" = "暂无网络活动。";
 "fresh_PermMessagesEdit" = "编辑你发送的消息";
 "fresh_PermMessagesDelete" = "删除你发送的消息";
@@ -216,8 +216,10 @@
 "fresh_PluginPermissionNewShort" = "新增";
 "fresh_PluginPermissionsRequiredAbout" = "没有这些权限插件无法运行，因此它们始终开启。";
 "fresh_PluginPermissionRequiredToast" = "“{permission}”为必需权限：没有它插件无法运行。";
-"fresh_PluginLogOnlyProblems" = "仅显示问题";
-"fresh_PluginLogNoProblems" = "没有记录到问题。";
+"fresh_PluginLogTabAll" = "全部";
+"fresh_PluginLogTabProblems" = "问题";
+"fresh_PluginLogSearch" = "搜索";
+"fresh_PluginLogNothingFound" = "未找到结果。";
 "fresh_PluginLogCopy" = "复制";
 "fresh_PluginLogClear" = "清空";
 "fresh_PermMessagesRead" = "读取消息";

@@ -2,6 +2,7 @@
 #include "ayu/features/plugins/plugins_ui.h"
 
 #include "lang/lang_keys.h"
+#include "ayu/features/plugins/plugins_log_view.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/secret/secret_peer.h"
@@ -1177,156 +1178,61 @@ void FillSettingsBox(
 		|| error.match(text).hasMatch();
 }
 
-[[nodiscard]] QString LogText(const fgpl::LogLine &line) {
-	return QDateTime::fromMSecsSinceEpoch(line.unixMs).toString(u"HH:mm:ss"_q)
-		+ u"  "_q
-		+ Utf8(line.text);
-}
-
-struct LogRow {
-	QString key;
-	QString text;
-	const style::FlatLabel *st = nullptr;
-};
-
-struct LogView {
-	std::optional<QString> last;
-	bool empty = false;
-	bool filled = false;
-};
-
-void ShowLogRows(
-		not_null<Ui::GenericBox*> box,
-		not_null<Ui::VerticalLayout*> lines,
-		not_null<LogView*> view,
-		const std::vector<LogRow> &rows,
-		bool reset,
-		const QString &emptyText) {
-	const auto atBottom = !view->filled
-		|| (box->scrollTop() + box->scrollHeight()
-			>= box->verticalLayout()->height() - st::defaultVerticalListSkip);
-	auto from = size_t(0);
-	if (!view->filled || (view->empty != rows.empty())) {
-		reset = true;
-	} else if (rows.empty() && !reset) {
-		return;
-	} else if (!reset) {
-		const auto i = std::find_if(rows.rbegin(), rows.rend(), [&](const LogRow &row) {
-			return view->last && (row.key == *view->last);
-		});
-		if (i == rows.rend()) {
-			reset = true;
-		} else {
-			from = size_t(rows.rend() - i);
-			if (from == rows.size()) {
-				return;
-			}
-		}
+[[nodiscard]] ConsoleLine LogLineOf(const fgpl::LogLine &line) {
+	const auto problem = IsProblemLine(line);
+	const auto time = QDateTime::fromMSecsSinceEpoch(
+		line.unixMs).toString(u"HH:mm:ss.zzz"_q) + u"  "_q;
+	auto text = Utf8(line.text);
+	text.remove('\r');
+	while (text.endsWith('\n')) {
+		text.chop(1);
 	}
-	if (reset) {
-		lines->clear();
-		from = 0;
-	}
-	for (auto i = from; i != rows.size(); ++i) {
-		lines->add(
-			object_ptr<Ui::FlatLabel>(lines, rows[i].text, *rows[i].st),
-			st::boxRowPadding)->setSelectable(true);
-	}
-	view->empty = rows.empty();
-	if (view->empty) {
-		lines->add(
-			object_ptr<Ui::FlatLabel>(lines, emptyText, st::boxDividerLabel),
-			st::boxRowPadding);
-	}
-	view->last = rows.empty() ? std::nullopt : std::make_optional(rows.back().key);
-	view->filled = true;
-	if (atBottom) {
-		crl::on_main(box, [=] {
-			box->scrollToY(QWIDGETSIZE_MAX);
-		});
-	}
+	text.replace('\n', u"\n"_q + QString(time.size(), ' '));
+	return {
+		.parts = {
+			{ time, ConsoleColor::Dim },
+			{
+				text,
+				problem
+					? ConsoleColor::Bad
+					: line.fromApp
+					? ConsoleColor::Dim
+					: ConsoleColor::Normal,
+			},
+		},
+		.problem = problem,
+	};
 }
 
 void FillLogBox(
 		not_null<Ui::GenericBox*> box,
 		std::string plugin,
 		QString name) {
-	box->setTitle(rpl::single(tr::fresh_PluginBadge(
-		tr::now,
-		lt_title,
-		tr::fresh_PluginLog(tr::now),
-		lt_plugin,
-		name)));
-	box->setWidth(st::boxWideWidth);
-	const auto onlyProblems = box->lifetime().make_state<rpl::variable<bool>>(false);
-	const auto filter = Settings::AddButtonWithIcon(
-		box->verticalLayout(),
-		tr::fresh_PluginLogOnlyProblems(),
-		st::settingsButtonNoIcon);
-	filter->toggleOn(rpl::single(false));
-	Ui::AddSkip(box->verticalLayout());
-	const auto lines = box->addRow(
-		object_ptr<Ui::VerticalLayout>(box),
-		style::margins());
-	const auto view = box->lifetime().make_state<LogView>();
-	const auto show = [=](bool reset) {
-		const auto snapshot = Snapshot();
-		const auto all = snapshot
-			? snapshot->logLines(plugin)
-			: std::vector<fgpl::LogLine>();
-		const auto problems = onlyProblems->current();
-		auto rows = std::vector<LogRow>();
-		for (const auto &line : all) {
-			const auto problem = IsProblemLine(line);
-			if (problems && !problem) {
-				continue;
+	FillConsoleBox(box, {
+		.title = rpl::single(tr::fresh_PluginBadge(
+			tr::now,
+			lt_title,
+			tr::fresh_PluginLog(tr::now),
+			lt_plugin,
+			name)),
+		.problemsTab = tr::fresh_PluginLogTabProblems(tr::now),
+		.empty = tr::fresh_PluginLogEmpty(tr::now),
+		.lines = [=] {
+			const auto snapshot = Snapshot();
+			auto result = std::vector<ConsoleLine>();
+			for (const auto &line : snapshot
+					? snapshot->logLines(plugin)
+					: std::vector<fgpl::LogLine>()) {
+				result.push_back(LogLineOf(line));
 			}
-			rows.push_back({
-				.key = QString::number(line.unixMs) + ' ' + Utf8(line.text),
-				.text = LogText(line),
-				.st = problem
-					? &st::pluginDangerHigh
-					: line.fromApp
-					? &st::boxDividerLabel
-					: &st::boxLabel,
-			});
-		}
-		ShowLogRows(
-			box,
-			lines,
-			view,
-			rows,
-			reset,
-			problems
-				? tr::fresh_PluginLogNoProblems(tr::now)
-				: tr::fresh_PluginLogEmpty(tr::now));
-	};
-	const auto rebuild = [=] { show(false); };
-	filter->toggledValue(
-	) | rpl::on_next([=](bool value) {
-		*onlyProblems = value;
-		show(true);
-	}, filter->lifetime());
-	const auto timer = box->lifetime().make_state<base::Timer>(rebuild);
-	timer->callEach(1000);
-
-	box->addLeftButton(tr::fresh_PluginLogClear(), [=] {
-		Post([=](not_null<fgpl::PluginManager*> manager) {
-			manager->clearLog(plugin);
-		}, false);
+			return result;
+		},
+		.clear = [=] {
+			Post([=](not_null<fgpl::PluginManager*> manager) {
+				manager->clearLog(plugin);
+			}, false);
+		},
 	});
-	box->addButton(tr::fresh_PluginLogCopy(), [=] {
-		const auto snapshot = Snapshot();
-		auto text = QStringList();
-		for (const auto &line : snapshot ? snapshot->logLines(plugin) : std::vector<fgpl::LogLine>()) {
-			if (!onlyProblems->current() || IsProblemLine(line)) {
-				text.push_back(LogText(line));
-			}
-		}
-		QGuiApplication::clipboard()->setText(text.join('\n'));
-		box->showToast(tr::lng_text_copied(tr::now));
-	});
-	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
 [[nodiscard]] QString ContributionSummary(const fgpl::Contribution &entry) {
@@ -1827,81 +1733,74 @@ void FillDialogBox(
 }
 
 
-[[nodiscard]] QString NetworkEventText(const NetworkEvent &event) {
-	auto parts = QStringList{
-		QDateTime::fromMSecsSinceEpoch(event.when).toString(u"HH:mm:ss"_q),
-		PluginName(event.plugin.toStdString()),
-		event.kind + ' ' + event.action + ' ' + event.target,
+[[nodiscard]] QString DurationText(crl::time duration) {
+	return (duration < 10000)
+		? (QString::number(duration) + u" ms"_q)
+		: (QString::number(duration / 1000., 'f', 1) + u" s"_q);
+}
+
+[[nodiscard]] ConsoleLine NetworkLineOf(const NetworkEvent &event) {
+	const auto https = (event.kind == u"HTTPS"_q);
+	const auto open = (event.action == u"open"_q);
+	const auto code = https ? event.result.toInt() : 0;
+	const auto numeric = (code > 0);
+	const auto status = numeric
+		? event.result
+		: event.failed
+		? u"ERR"_q
+		: open
+		? u"OK"_q
+		: QString();
+	const auto statusColor = (event.failed || code >= 400)
+		? ConsoleColor::Bad
+		: (code >= 300)
+		? ConsoleColor::Normal
+		: ConsoleColor::Good;
+	const auto details = numeric ? QString() : event.result;
+	const auto gap = u"  "_q;
+	auto parts = std::vector<ConsolePart>{
+		{ QDateTime::fromMSecsSinceEpoch(event.when).toString(u"HH:mm:ss"_q)
+			+ gap, ConsoleColor::Dim },
+		{ PadRight(PluginName(event.plugin.toStdString()), 12) + gap },
+		{ PadRight(https ? event.action : (event.kind + ' ' + event.action), 9)
+			+ gap },
+		{ PadRight(status, 3), statusColor },
+		{ gap + (open
+			? QString(19, ' ')
+			: (PadLeft(Ui::FormatSizeText(qint64(event.received)), 8)
+				+ u"↓ "_q
+				+ PadLeft(Ui::FormatSizeText(qint64(event.sent)), 8)
+				+ u"↑"_q))
+			+ gap
+			+ PadLeft(open ? QString() : DurationText(event.duration), 7)
+			+ gap, ConsoleColor::Dim },
+		{ event.target },
 	};
-	if (!event.result.isEmpty()) {
-		parts.push_back(u"→ "_q + event.result);
+	if (!details.isEmpty()) {
+		parts.push_back({
+			(open && !event.failed ? u" → "_q : u"  "_q) + details,
+			event.failed ? ConsoleColor::Bad : ConsoleColor::Dim,
+		});
 	}
-	if (event.action != u"open"_q) {
-		parts.push_back(u"↓ "_q + Ui::FormatSizeText(qint64(event.received))
-			+ u" ↑ "_q + Ui::FormatSizeText(qint64(event.sent)));
-		parts.push_back(QString::number(event.duration) + u" ms"_q);
-	}
-	return parts.join(u"  "_q);
+	return { .parts = std::move(parts), .problem = event.failed };
 }
 
 void FillNetworkLogBox(not_null<Ui::GenericBox*> box) {
-	box->setTitle(tr::fresh_PluginsNetworkLog());
-	box->setWidth(st::boxWideWidth);
-	const auto onlyErrors = box->lifetime().make_state<rpl::variable<bool>>(false);
-	const auto filter = Settings::AddButtonWithIcon(
-		box->verticalLayout(),
-		tr::fresh_PluginsNetworkLogErrors(),
-		st::settingsButtonNoIcon);
-	filter->toggleOn(rpl::single(false));
-	Ui::AddSkip(box->verticalLayout());
-	const auto lines = box->addRow(
-		object_ptr<Ui::VerticalLayout>(box),
-		style::margins());
-	const auto view = box->lifetime().make_state<LogView>();
-	const auto version = box->lifetime().make_state<std::optional<uint64>>();
-	const auto show = [=](bool reset) {
-		const auto now = NetworkLogVersion();
-		if (!reset && *version == now) {
-			return;
-		}
-		*version = now;
-		const auto errors = onlyErrors->current();
-		auto rows = std::vector<LogRow>();
-		for (const auto &event : NetworkLog()) {
-			if (errors && !event.failed) {
-				continue;
+	FillConsoleBox(box, {
+		.title = tr::fresh_PluginsNetworkLog(),
+		.problemsTab = tr::fresh_PluginsNetworkLogTabErrors(tr::now),
+		.empty = tr::fresh_PluginsNetworkLogEmpty(tr::now),
+		.lines = [] {
+			auto result = std::vector<ConsoleLine>();
+			for (const auto &event : NetworkLog()) {
+				result.push_back(NetworkLineOf(event));
 			}
-			const auto text = NetworkEventText(event);
-			rows.push_back({
-				.key = QString::number(event.when) + ' ' + text,
-				.text = text,
-				.st = event.failed ? &st::pluginDangerHigh : &st::boxLabel,
-			});
-		}
-		ShowLogRows(box, lines, view, rows, reset, tr::fresh_PluginsNetworkLogEmpty(tr::now));
-	};
-	filter->toggledValue(
-	) | rpl::on_next([=](bool value) {
-		*onlyErrors = value;
-		show(true);
-	}, filter->lifetime());
-	const auto timer = box->lifetime().make_state<base::Timer>([=] { show(false); });
-	timer->callEach(1000);
-	box->addLeftButton(tr::fresh_PluginLogClear(), [=] {
-		ClearNetworkLog();
-		show(true);
+			return result;
+		},
+		.clear = [] {
+			ClearNetworkLog();
+		},
 	});
-	box->addButton(tr::fresh_PluginLogCopy(), [=] {
-		auto text = QStringList();
-		for (const auto &event : NetworkLog()) {
-			if (!onlyErrors->current() || event.failed) {
-				text.push_back(NetworkEventText(event));
-			}
-		}
-		QGuiApplication::clipboard()->setText(text.join('\n'));
-		box->showToast(tr::lng_text_copied(tr::now));
-	});
-	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
 [[nodiscard]] QString NetworkTotalText(const fgpl::PluginInfo &info) {
