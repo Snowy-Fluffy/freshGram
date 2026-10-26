@@ -198,6 +198,8 @@ struct LinePostprocess {
 [[nodiscard]] bool IsSpoilerLink(const ClickHandlerPtr &link);
 void SetNamesSpoilered(bool spoilered);
 [[nodiscard]] bool NamesSpoilered();
+void SetNamesUniform(bool uniform);
+[[nodiscard]] bool NamesUniform();
 
 [[nodiscard]] GeometryDescriptor SimpleGeometry(
 	int availableWidth,

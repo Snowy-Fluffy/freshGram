@@ -233,7 +233,10 @@ HiddenSenderInfo::HiddenSenderInfo(
 }
 
 const Ui::Text::String &HiddenSenderInfo::nameText() const {
-	if (_nameText.isEmpty()) {
+	const auto hiding = (Ui::Text::NamesSpoilered() ? 1 : 0)
+		| (Ui::Text::NamesUniform() ? 2 : 0);
+	if (_nameText.isEmpty() || _nameTextHiding != hiding) {
+		_nameTextHiding = hiding;
 		_nameText.setText(st::msgNameStyle, name, Ui::NameTextOptions());
 	}
 	return _nameText;

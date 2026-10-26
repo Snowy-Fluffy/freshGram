@@ -9302,7 +9302,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_InvertSwipeGestures" = "Invert swipe gestures";
 "fresh_InvertSwipeGesturesDescription" = "Follow the scroll direction of the touchpad instead of the finger direction for swipes: opening and closing chats, replying to messages, quick actions.";
 "fresh_StreamerSpoilers" = "Hide photos, avatars and personal data";
-"fresh_StreamerSpoilersDescription" = "Photos, videos, avatars, usernames, IDs, phone numbers and registration dates are hidden behind spoilers while Streamer Mode is on.";
+"fresh_StreamerSpoilersDescription" = "Photos, videos, avatars, usernames, IDs, phone numbers and registration dates are hidden behind spoilers, and Premium badges and tag colors are hidden, while Streamer Mode is on.";
 "ayu_EditsHistoryTitle" = "Edits History";
 "ayu_EditsHistoryMenuText" = "History";
 "ayu_PeekOnlineMenuText" = "Peek Online";
