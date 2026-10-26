@@ -113,6 +113,8 @@
 "fresh_PluginsNetworkSeconds" = "{seconds} s";
 "fresh_PluginsNetworkMinutes" = "{minutes} min";
 "fresh_PluginStats" = "CPU {cpu} s · memoria {memory} · ricevuti {received} · inviati {sent}";
+"fresh_PluginLimits" = "Limiti: memoria {memory} · tempo evento {time} · archivio {storage}";
+"fresh_PluginNoStorage" = "nessuno";
 "fresh_PluginUnloads" = "Si è scaricato: {times}";
 "fresh_PluginOutgoingBlocked" = "{plugin} ha fermato l’invio: {reason}";
 "fresh_PluginsNoKey" = "I plugin si avviano dopo lo sblocco dell'app.";

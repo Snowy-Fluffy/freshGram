@@ -76,6 +76,7 @@ void AddPluginHeader(
 	const std::string &scope);
 [[nodiscard]] QString PermissionLabel(const std::string &id);
 [[nodiscard]] QString AcceptsFrom(const std::vector<std::string> &senders);
+[[nodiscard]] QString LimitsText(const fgpl::Manifest &manifest);
 // Returns the choice, or nothing after telling the user what is missing.
 [[nodiscard]] Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 	not_null<Ui::GenericBox*> box,

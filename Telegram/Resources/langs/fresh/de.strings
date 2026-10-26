@@ -113,6 +113,8 @@
 "fresh_PluginsNetworkSeconds" = "{seconds} s";
 "fresh_PluginsNetworkMinutes" = "{minutes} min";
 "fresh_PluginStats" = "CPU {cpu} s · Speicher {memory} · empfangen {received} · gesendet {sent}";
+"fresh_PluginLimits" = "Limits: Speicher {memory} · Ereigniszeit {time} · Ablage {storage}";
+"fresh_PluginNoStorage" = "keine";
 "fresh_PluginUnloads" = "Hat sich selbst entladen: {times}";
 "fresh_PluginOutgoingBlocked" = "{plugin} hat das Senden gestoppt: {reason}";
 "fresh_PluginsNoKey" = "Plugins starten, sobald die App entsperrt ist.";

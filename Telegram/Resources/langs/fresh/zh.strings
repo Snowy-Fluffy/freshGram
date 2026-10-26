@@ -113,6 +113,8 @@
 "fresh_PluginsNetworkSeconds" = "{seconds} 秒";
 "fresh_PluginsNetworkMinutes" = "{minutes} 分钟";
 "fresh_PluginStats" = "CPU {cpu} 秒 · 内存 {memory} · 已接收 {received} · 已发送 {sent}";
+"fresh_PluginLimits" = "限制：内存 {memory} · 事件时间 {time} · 存储 {storage}";
+"fresh_PluginNoStorage" = "无";
 "fresh_PluginUnloads" = "自行卸载次数：{times}";
 "fresh_PluginOutgoingBlocked" = "{plugin} 阻止了发送：{reason}";
 "fresh_PluginsNoKey" = "解锁应用后插件才会启动。";

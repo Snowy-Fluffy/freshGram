@@ -113,6 +113,8 @@
 "fresh_PluginsNetworkSeconds" = "{seconds} s";
 "fresh_PluginsNetworkMinutes" = "{minutes} min";
 "fresh_PluginStats" = "CPU {cpu} s · mémoire {memory} · reçu {received} · envoyé {sent}";
+"fresh_PluginLimits" = "Limites : mémoire {memory} · durée d’événement {time} · stockage {storage}";
+"fresh_PluginNoStorage" = "aucun";
 "fresh_PluginUnloads" = "S’est déchargé : {times}";
 "fresh_PluginOutgoingBlocked" = "{plugin} a arrêté l’envoi : {reason}";
 "fresh_PluginsNoKey" = "Les plugins démarrent une fois l'application déverrouillée.";

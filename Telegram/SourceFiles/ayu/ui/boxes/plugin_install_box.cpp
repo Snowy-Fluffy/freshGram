@@ -284,6 +284,10 @@ void FillInstallBox(
 			tr::fresh_PluginContributes(tr::now, lt_list, contributes.join(u", "_q)),
 			st::boxDividerLabel));
 	}
+	box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		FreshPlugins::LimitsText(manifest),
+		st::boxDividerLabel));
 
 	Ui::AddSkip(box->verticalLayout());
 	Ui::AddDivider(box->verticalLayout());
