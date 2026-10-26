@@ -896,7 +896,7 @@ void AddProgress(
 		} else if (type == u"input"_q) {
 			space(Last::Block);
 			const auto max = int(std::max<int64_t>(IntOf(item, "max"), 1));
-			auto getText = Fn<QString()>();
+			const auto getText = std::make_shared<Fn<QString()>>();
 			auto setText = Fn<void(const QString &)>();
 			auto focused = Fn<bool()>();
 			auto setEnabled = Fn<void(bool)>();
@@ -918,7 +918,7 @@ void AddProgress(
 			const auto sendNow = crl::guard(content, [=] {
 				if (*pending) {
 					*pending = false;
-					send(change, Text(getText()));
+					send(change, Text((*getText)()));
 				}
 			});
 			const auto timer = raw->lifetime.make_state<base::Timer>(sendNow);
@@ -949,7 +949,7 @@ void AddProgress(
 				field->setMaxLength(max);
 				QObject::connect(field, &Ui::MaskedInputField::changed, edited);
 				QObject::connect(field, &Ui::MaskedInputField::blurred, sendNow);
-				getText = [=] { return field->getLastText(); };
+				*getText = [=] { return field->getLastText(); };
 				setText = [=](const QString &text) { field->setText(text); };
 				focused = [=] { return field->hasFocus(); };
 				setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
@@ -971,7 +971,7 @@ void AddProgress(
 				) | rpl::filter(!rpl::mappers::_1) | rpl::on_next([=] {
 					sendNow();
 				}, field->lifetime());
-				getText = [=] { return field->getLastText(); };
+				*getText = [=] { return field->getLastText(); };
 				setText = [=](const QString &text) {
 					*suppress = true;
 					field->setText(text);
@@ -987,7 +987,7 @@ void AddProgress(
 				*label = TextOf(now, "label");
 				*placeholder = TextOf(now, "placeholder");
 				const auto value = TextOf(now, "value");
-				if (!focused() && !*pending && getText() != value) {
+				if (!focused() && !*pending && (*getText)() != value) {
 					setText(value);
 				}
 				setEnabled(!FlagOf(now, "disabled"));
