@@ -25,10 +25,12 @@ struct RuntimeStatus {
 	bool installed = false;
 	QString wasmtime;
 	QString python;
+	int revision = 0;
 	bool remoteKnown = false;
 	bool updateAvailable = false;
 	QString remoteWasmtime;
 	QString remotePython;
+	int remoteRevision = 0;
 	qint64 remoteSize = 0;
 };
 

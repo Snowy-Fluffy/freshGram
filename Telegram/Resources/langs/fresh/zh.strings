@@ -137,6 +137,7 @@
 "fresh_PluginPublisherChanged" = "此插件的发布者已更改。仍要安装吗？";
 "fresh_PluginsEnableFirst" = "请先在设置中启用插件。";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
+"fresh_PluginsRevision" = "修订版本";
 "fresh_PluginsNotInstalled" = "未安装";
 "fresh_PluginsCheckUpdates" = "检查更新";
 "fresh_PluginsAutoUpdate" = "自动更新组件";
