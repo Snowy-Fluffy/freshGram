@@ -33,6 +33,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> toggledChanges() const;
 	[[nodiscard]] rpl::producer<not_null<QEvent*>> clickAreaEvents() const;
 	void setToggleLocked(bool locked);
+	void setIconColor(const style::color *color);
 	void finishAnimating();
 
 protected:
@@ -60,6 +61,7 @@ private:
 	std::unique_ptr<Ui::ToggleView> _toggle;
 	const style::icon *_iconForeground = nullptr;
 	const style::color *_iconBackground = nullptr;
+	const style::color *_iconColor = nullptr;
 	const std::optional<QBrush> _iconBackgroundBrush;
 	int _titleWidth = 0;
 	int _descriptionWidth = 0;

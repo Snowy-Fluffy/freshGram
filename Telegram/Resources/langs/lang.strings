@@ -9000,6 +9000,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginLicense" = "License: {license}";
 "fresh_PluginPermissionRequiredShort" = "Required";
 "fresh_PluginPermissionNewShort" = "New";
+"fresh_PluginPermissionsRequiredAbout" = "The plugin cannot work without these permissions, so they are always on.";
+"fresh_PluginPermissionRequiredToast" = "{permission} is required: the plugin cannot work without it.";
 "fresh_PluginLogOnlyProblems" = "Only problems";
 "fresh_PluginLogNoProblems" = "No problems recorded.";
 "fresh_PluginLogCopy" = "Copy";
