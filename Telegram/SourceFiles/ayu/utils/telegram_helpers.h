@@ -68,7 +68,7 @@ bool isMessageHidden(not_null<HistoryItem*> item);
 void MarkAsReadChatList(not_null<Dialogs::MainList*> list);
 void MarkAsReadThread(not_null<Data::Thread*> thread);
 
-void markReadAfterAction(not_null<History*> history);
+void markReadAfterAction(not_null<History*> history, MsgId topicRootId = 0);
 void readHistory(not_null<HistoryItem*> message);
 
 QString formatTTL(int time, bool isDoc);
