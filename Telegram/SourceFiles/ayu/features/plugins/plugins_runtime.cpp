@@ -17,6 +17,7 @@
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/base64.h"
 #include "fgpl/runtime_bundle.h"
+#include "fgpl/signature.h"
 #endif
 
 #include <QtCore/QDir>
@@ -26,6 +27,10 @@
 
 #ifndef FRESHGRAM_RUNTIME_KEY
 #define FRESHGRAM_RUNTIME_KEY ""
+#endif
+
+#ifndef FRESHGRAM_PLUGINS_KEY
+#define FRESHGRAM_PLUGINS_KEY ""
 #endif
 
 #ifndef FRESHGRAM_RUNTIME_CHANNEL
@@ -111,14 +116,18 @@ void ReadLocal(
 	return RuntimeRootPath() + u"/download"_q;
 }
 
-[[nodiscard]] std::optional<fgpl::PublicKey> TrustedKey() {
-	const auto decoded = fgpl::Base64Decode(FRESHGRAM_RUNTIME_KEY);
+[[nodiscard]] std::optional<fgpl::PublicKey> ParseKey(const char *base64) {
+	const auto decoded = fgpl::Base64Decode(base64);
 	if (!decoded || decoded->size() != 32) {
 		return std::nullopt;
 	}
 	auto key = fgpl::PublicKey();
 	std::copy(decoded->begin(), decoded->end(), key.begin());
 	return key;
+}
+
+[[nodiscard]] std::optional<fgpl::PublicKey> TrustedKey() {
+	return ParseKey(FRESHGRAM_RUNTIME_KEY);
 }
 
 [[nodiscard]] QString SizeText(qint64 bytes) {
@@ -300,6 +309,14 @@ bool RuntimeCanBeVerified() {
 
 QString RuntimeChannel() {
 	return ChannelName();
+}
+
+bool IsOfficialPublisher(const std::string &publisher) {
+	static const auto official = [] {
+		const auto key = ParseKey(FRESHGRAM_PLUGINS_KEY);
+		return key ? fgpl::Fingerprint(*key) : std::string();
+	}();
+	return !official.empty() && (publisher == official);
 }
 
 std::optional<fgpl::InstalledRuntime> TrustedRuntime() {
@@ -562,6 +579,10 @@ bool RuntimeCanBeVerified() {
 
 QString RuntimeChannel() {
 	return QString();
+}
+
+bool IsOfficialPublisher(const std::string &) {
+	return false;
 }
 
 RuntimeStatus CurrentRuntimeStatus() {

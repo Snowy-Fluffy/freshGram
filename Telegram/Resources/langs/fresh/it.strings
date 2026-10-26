@@ -130,8 +130,8 @@
 "fresh_PluginInstallTitle" = "Installa plugin";
 "fresh_PluginInstall" = "Installa";
 "fresh_PluginInstallUpdate" = "Aggiorna";
-"fresh_PluginSignedBy" = "Firmato da {publisher}";
-"fresh_PluginUnsigned" = "Questo plugin non è firmato. Installalo solo se ti fidi della fonte.";
+"fresh_PluginOfficial" = "Plugin ufficiale";
+"fresh_PluginUnofficialWarning" = "Plugin non ufficiale. Installalo solo se ti fidi della fonte.";
 "fresh_PluginIncompatible" = "Questo plugin non può essere eseguito qui: {reason}";
 "fresh_PluginPermissions" = "Permessi";
 "fresh_PluginInstalledToast" = "Plugin installato.";
@@ -207,7 +207,7 @@
 "fresh_PluginCommandTaken" = "{command} è già usato da {plugin}; scrivi /comando@id.plugin per chiamare questo.";
 "fresh_PluginVersionShort" = "Versione {version}";
 "fresh_PluginBy" = "di {author}";
-"fresh_PluginNotSigned" = "Non firmato";
+"fresh_PluginUnofficial" = "Plugin non ufficiale";
 "fresh_PluginHomepage" = "Sito web";
 "fresh_PluginRepository" = "Codice sorgente";
 "fresh_PluginSupport" = "Supporto";

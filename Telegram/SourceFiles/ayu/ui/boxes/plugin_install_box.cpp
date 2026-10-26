@@ -2,6 +2,7 @@
 #include "ayu/ui/boxes/plugin_install_box.h"
 
 #include "lang/lang_keys.h"
+#include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_ui.h"
 #include "core/file_utilities.h"
@@ -178,23 +179,23 @@ void FillInstallBox(
 	box->setWidth(st::boxWideWidth);
 
 	const auto signedPackage = (package->signature == fgpl::SignatureState::Valid);
+	const auto official = FreshPlugins::IsOfficialPublisher(package->publisher);
 	const auto icon = package->files.find(manifest.icon);
 	FreshPlugins::AddPluginHeader(
 		box->verticalLayout(),
 		FreshPlugins::HeaderFor(
 			manifest,
 			package->publisher,
-			signedPackage,
 			(icon != end(package->files))
 				? QByteArray(
 					reinterpret_cast<const char*>(icon->second.data()),
 					qsizetype(icon->second.size()))
 				: QByteArray()));
 	Ui::AddSkip(box->verticalLayout());
-	if (!signedPackage) {
+	if (!official) {
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
-			tr::fresh_PluginUnsigned(tr::now),
+			tr::fresh_PluginUnofficialWarning(tr::now),
 			st::pluginDangerHigh));
 	}
 	auto environment = fgpl::HostEnvironment();

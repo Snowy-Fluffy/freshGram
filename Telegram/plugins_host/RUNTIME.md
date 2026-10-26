@@ -87,3 +87,15 @@ updates the runtime only from this directory and never contacts the channel.
 Build the app with
 `-DFRESHGRAM_RUNTIME_KEY=<public key printed by keygen>`; without it the app refuses every
 download. Keep `runtime.key` offline.
+
+## Official plugins
+
+Plugins signed with the freshGram plugins key show as official; any other plugin, signed by
+someone else or not signed, shows as unofficial. The key is separate from the runtime one:
+
+```
+fgpl_tool keygen plugins
+fgpl_tool pack <directory> <output.fgpl> --key plugins.key
+```
+
+Its public part is the default of `-DFRESHGRAM_PLUGINS_KEY`. Keep `plugins.key` offline.

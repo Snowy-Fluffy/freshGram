@@ -130,8 +130,8 @@
 "fresh_PluginInstallTitle" = "Установка плагина";
 "fresh_PluginInstall" = "Установить";
 "fresh_PluginInstallUpdate" = "Обновить";
-"fresh_PluginSignedBy" = "Подписан: {publisher}";
-"fresh_PluginUnsigned" = "Этот плагин не подписан. Устанавливайте его, только если доверяете источнику.";
+"fresh_PluginOfficial" = "Официальный плагин";
+"fresh_PluginUnofficialWarning" = "Неофициальный плагин. Устанавливайте его, только если доверяете источнику.";
 "fresh_PluginIncompatible" = "Этот плагин не может работать здесь: {reason}";
 "fresh_PluginPermissions" = "Разрешения";
 "fresh_PluginInstalledToast" = "Плагин установлен.";
@@ -207,7 +207,7 @@
 "fresh_PluginCommandTaken" = "{command} уже использует {plugin}; чтобы вызвать этот плагин, напишите /команда@id.плагина.";
 "fresh_PluginVersionShort" = "Версия {version}";
 "fresh_PluginBy" = "автор: {author}";
-"fresh_PluginNotSigned" = "Без подписи";
+"fresh_PluginUnofficial" = "Неофициальный плагин";
 "fresh_PluginHomepage" = "Сайт";
 "fresh_PluginRepository" = "Исходный код";
 "fresh_PluginSupport" = "Поддержка";

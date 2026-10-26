@@ -242,9 +242,9 @@ pluginHeaderTitle: FlatLabel(boxTitle) {
 pluginHeaderSubtitle: FlatLabel(boxDividerLabel) {
 	minWidth: 120px;
 }
-pluginHeaderSigned: FlatLabel(pluginHeaderSubtitle) {
+pluginHeaderOfficial: FlatLabel(pluginHeaderSubtitle) {
 	textFg: boxTextFgGood;
 }
-pluginHeaderUnsigned: FlatLabel(pluginHeaderSubtitle) {
+pluginHeaderUnofficial: FlatLabel(pluginHeaderSubtitle) {
 	textFg: attentionButtonFg;
 }
