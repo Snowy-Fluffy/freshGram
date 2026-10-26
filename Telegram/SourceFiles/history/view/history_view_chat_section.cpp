@@ -2388,14 +2388,22 @@ void ChatWidget::sendVoice(const ComposeControls::VoiceToSend &data) {
 }
 
 void ChatWidget::send(Api::SendOptions options) {
-	if (!_composeControls->isEditingMessage()) {
+	if (!_composeControls->isEditingMessage()
+		&& !options.scheduled
+		&& !options.silent) {
+		const auto reply = _composeControls->replyingToMessage();
+		const auto replyToId = (reply.messageId.peer == _history->peer->id)
+			? reply.messageId.msg
+			: MsgId();
 		const auto command = FreshPlugins::RunCommand(
 			controller(),
 			_history->peer,
 			_repliesRootId,
+			replyToId,
 			_composeControls->getTextWithAppliedMarkdown().text);
 		if (command == FreshPlugins::CommandResult::Sent) {
-			_composeControls->clear(true);
+			// The plugin answers to the reply, like a sent message would.
+			_composeControls->clear(!replyToId);
 			return;
 		} else if (command == FreshPlugins::CommandResult::Refused) {
 			return;

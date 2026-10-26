@@ -182,6 +182,8 @@
 "fresh_PluginPermissionsCount" = "{allowed} sur {total}";
 "fresh_PluginRemove" = "Supprimer le plugin";
 "fresh_PluginsAdd" = "Installer un plugin";
+"fresh_PluginFileTooLarge" = "le fichier est trop volumineux";
+"fresh_PluginSource" = "Du plugin {plugin}";
 "fresh_PluginStatusOnDemand" = "Démarre au besoin";
 "fresh_PluginStatusRetry" = "Erreur, nouvel essai dans {seconds} s : {reason}";
 "fresh_PluginStatusFailed" = "Arrêté après une erreur : {reason}";

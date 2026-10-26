@@ -1507,7 +1507,7 @@ cbor::Value Broker::filterTargeted(const cbor::Value &event) const {
 	const auto reading = has("messages.read");
 	auto reduced = cbor::Map();
 	for (const auto &entry : *event.asMap()) {
-		if (entry.key == "chat" || entry.key == "topic") {
+		if (entry.key == "chat" || entry.key == "topic" || entry.key == "reply_to") {
 			if (!visible) {
 				continue;
 			}

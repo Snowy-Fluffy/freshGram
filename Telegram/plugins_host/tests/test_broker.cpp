@@ -724,9 +724,17 @@ void TestSettingsPage() {
 		{ "min", Int(5) }, { "max", Int(5) } }) })));
 	CHECK(bad(Page({ Item({ { "type", Text("slider") }, { "id", Text("s") }, { "label", Text("s") },
 		{ "min", Int(0) }, { "max", Int(100000) } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("slider") }, { "id", Text("s") }, { "label", Text("s") },
+		{ "min", Int(0) }, { "max", Int(5) }, { "step", Int(10) } }) })));
 	CHECK(bad(Page({ Item({ { "type", Text("input") }, { "id", Text("i") }, { "label", Text("i") },
 		{ "value", Text("a\nb") } }) })));
 	CHECK(bad(Page({ Item({ { "type", Text("progress") }, { "value", Int(101) } }) })));
+	CHECK(bad(Page({ Item({ { "type", Text("button") }, { "id", Text("b") }, { "label", Text("b") },
+		{ "icon", Text("Not Valid") } }) })));
+	CHECK(IsOk(call(Page({ Item({ { "type", Text("button") }, { "id", Text("b") }, { "label", Text("b") },
+		{ "icon", Text("star") } }) }))));
+	CHECK(*received.back().find("items")->asArray()->front().find("icon")->asText() == "star");
+	received.pop_back();
 	CHECK(bad(Page({ Item({ { "type", Text("button") }, { "id", Text("b") }, { "label", Text("b") },
 		{ "style", Text("rainbow") } }) })));
 	auto clash = cbor::Map(*Page({ Item({ { "type", Text("button") }, { "id", Text("ok") }, { "label", Text("b") } }) }).asMap());

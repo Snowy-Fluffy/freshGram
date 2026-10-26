@@ -3,6 +3,7 @@
 #include "fgpl/cbor.h"
 #include "fgpl/result.h"
 
+#include <set>
 #include <string>
 
 namespace fgpl::ui {
@@ -21,6 +22,8 @@ constexpr auto kMaxSliderValue = int64_t(1000000000);
 constexpr auto kMaxSliderSteps = int64_t(1000);
 
 [[nodiscard]] bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines);
+[[nodiscard]] bool ValidIconName(const std::string &name);
+[[nodiscard]] const std::set<std::string> &BuiltinIcons();
 
 [[nodiscard]] Result<cbor::Value, std::string> ValidatePage(
 	const cbor::Value &page);

@@ -182,6 +182,8 @@
 "fresh_PluginPermissionsCount" = "{allowed} из {total}";
 "fresh_PluginRemove" = "Удалить плагин";
 "fresh_PluginsAdd" = "Установить плагин";
+"fresh_PluginFileTooLarge" = "файл слишком большой";
+"fresh_PluginSource" = "Плагин «{plugin}»";
 "fresh_PluginStatusOnDemand" = "Запустится, когда понадобится";
 "fresh_PluginStatusRetry" = "Ошибка, повтор через {seconds} с: {reason}";
 "fresh_PluginStatusFailed" = "Остановлен после ошибки: {reason}";

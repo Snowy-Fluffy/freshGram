@@ -246,6 +246,7 @@ struct FieldAutocomplete::BotCommandRow {
 	Ui::Text::String descriptionText;
 	bool ephemeral = false;
 	QString plugin;
+	bool pluginAmbiguous = false;
 };
 
 FieldAutocomplete::FieldAutocomplete(
@@ -823,6 +824,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 						.description = command.description,
 						.userpic = self->activeUserpicView(),
 						.plugin = command.plugin,
+						.pluginAmbiguous = command.ambiguous,
 					});
 				}
 			}
@@ -1640,10 +1642,12 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 		if (index < _brows->size()) {
 			const auto user = _brows->at(index).user;
 			const auto &command = _brows->at(index).command;
-			if (!_brows->at(index).plugin.isEmpty()) {
+			if (const auto &row = _brows->at(index); !row.plugin.isEmpty()) {
 				_botCommandChosen.fire({
 					user,
-					u"/%1 "_q.arg(command),
+					row.pluginAmbiguous
+						? u"/%1@%2 "_q.arg(command, row.plugin)
+						: u"/%1 "_q.arg(command),
 					FieldAutocompleteChooseMethod::ByTab,
 				});
 				return true;

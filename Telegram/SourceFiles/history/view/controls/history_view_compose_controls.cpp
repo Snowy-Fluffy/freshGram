@@ -1512,6 +1512,7 @@ void ComposeControls::updateTopicRootId(MsgId topicRootId) {
 	updateFieldVisibility();
 	updateSendButtonType();
 	updateFieldPlaceholder();
+	refreshPluginsToggle();
 }
 
 void ComposeControls::updateShortcutId(BusinessShortcutId shortcutId) {
@@ -2863,24 +2864,22 @@ void ComposeControls::refreshPluginsToggle() {
 		&& _regularWindow
 		&& (_mode == Mode::Normal)
 		&& FreshPlugins::HasComposerItems(&_history->session(), _history->peer);
+	auto changed = false;
 	if (has && !_pluginsToggle) {
-		_pluginsToggle = base::make_unique_q<Ui::IconButton>(
+		_pluginsToggle = base::make_unique_q<FreshPlugins::ComposerButtons>(
 			_wrap.get(),
-			st::historyPluginsToggle);
-		_pluginsToggle->setAccessibleName(tr::fresh_Plugins(tr::now));
+			_regularWindow);
 		_pluginsToggle->show();
-		_pluginsToggle->setClickedCallback([=] {
-			if (_history && _pluginsToggle) {
-				FreshPlugins::ShowComposerMenu(
-					_regularWindow,
-					_history->peer,
-					_pluginsToggle.get());
-			}
-		});
 		orderControls();
+		changed = true;
 	} else if (!has && _pluginsToggle) {
 		_pluginsToggle = nullptr;
-	} else {
+		changed = true;
+	}
+	if (_pluginsToggle && _pluginsToggle->refresh(_history->peer, _topicRootId)) {
+		changed = true;
+	}
+	if (!changed) {
 		return;
 	}
 	updateControlsVisibility();

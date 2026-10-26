@@ -54,6 +54,10 @@
 #include "styles/style_chat_helpers.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/widgets/menu/menu_action.h"
+#include "ui/widgets/menu/menu_add_action_callback.h"
+#include "ui/widgets/menu/menu_add_action_callback_factory.h"
+#include "ui/widgets/tooltip.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
@@ -68,6 +72,7 @@
 #include <QtCore/QUrl>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
+#include <QtSvg/QSvgRenderer>
 
 #include <map>
 
@@ -82,10 +87,14 @@ namespace cbor = fgpl::cbor;
 constexpr auto kMaxPluginChats = 100;
 constexpr auto kSettingsWaitMs = crl::time(5000);
 
+constexpr auto kMaxComposerButtons = 3;
+constexpr auto kNavDrawerIconLeft = 28;
+
 struct Entry {
 	std::string plugin;
 	std::string menuId;
 	QString text;
+	std::string icon;
 };
 
 struct Pages {
@@ -120,6 +129,267 @@ struct Pages {
 
 [[nodiscard]] cbor::Value Flag(bool value) {
 	return cbor::Value::FromBool(value);
+}
+
+[[nodiscard]] const style::icon *BuiltinIcon(const std::string &name) {
+	static const auto icons = std::map<std::string, const style::icon*>{
+		{ "add", &st::menuIconAdd },
+		{ "archive", &st::menuIconArchive },
+		{ "block", &st::menuIconBlock },
+		{ "bot", &st::menuIconBot },
+		{ "cancel", &st::menuIconCancel },
+		{ "chat", &st::menuIconChatBubble },
+		{ "chats", &st::menuIconChats },
+		{ "clear", &st::menuIconClear },
+		{ "collapse", &st::menuIconCollapse },
+		{ "commands", &st::menuIconBotCommands },
+		{ "copy", &st::menuIconCopy },
+		{ "customize", &st::menuIconCustomize },
+		{ "delete", &st::menuIconDelete },
+		{ "devices", &st::menuIconDevices },
+		{ "download", &st::menuIconDownload },
+		{ "edit", &st::menuIconEdit },
+		{ "emoji", &st::menuIconEmoji },
+		{ "expand", &st::menuIconExpand },
+		{ "export", &st::menuIconExport },
+		{ "file", &st::menuIconFile },
+		{ "folder", &st::menuIconShowInFolder },
+		{ "font", &st::menuIconFont },
+		{ "forward", &st::menuIconForward },
+		{ "gif", &st::menuIconGif },
+		{ "hide", &st::menuIconUserHide },
+		{ "hourglass", &st::menuIconHourglass },
+		{ "info", &st::menuIconInfo },
+		{ "like", &st::menuIconLike },
+		{ "link", &st::menuIconLink },
+		{ "lock", &st::menuIconLock },
+		{ "mark_read", &st::menuIconMarkRead },
+		{ "mute", &st::menuIconMute },
+		{ "network", &st::menuIconNetwork },
+		{ "night", &st::menuIconNightMode },
+		{ "notifications", &st::menuIconNotifications },
+		{ "palette", &st::menuIconPalette },
+		{ "permissions", &st::menuIconPermissions },
+		{ "phone", &st::menuIconPhone },
+		{ "photo", &st::menuIconPhoto },
+		{ "pin", &st::menuIconPin },
+		{ "premium", &st::menuIconPremium },
+		{ "profile", &st::menuIconProfile },
+		{ "qr", &st::menuIconQrCode },
+		{ "reactions", &st::menuIconReactions },
+		{ "remove", &st::menuIconRemove },
+		{ "reply", &st::menuIconReply },
+		{ "report", &st::menuIconReport },
+		{ "restore", &st::menuIconRestore },
+		{ "schedule", &st::menuIconSchedule },
+		{ "search", &st::menuIconSearch },
+		{ "select", &st::menuIconSelect },
+		{ "send", &st::menuIconSend },
+		{ "settings", &st::menuIconSettings },
+		{ "share", &st::menuIconShare },
+		{ "show", &st::menuIconUserShow },
+		{ "silent", &st::menuIconSilent },
+		{ "sound_off", &st::menuIconSoundOff },
+		{ "sound_on", &st::menuIconSoundOn },
+		{ "spoiler", &st::menuIconSpoiler },
+		{ "star", &st::menuIconStar },
+		{ "stats", &st::menuIconStats },
+		{ "stickers", &st::menuIconStickers },
+		{ "storage", &st::menuIconStorage },
+		{ "timer", &st::menuIconTimer },
+		{ "translate", &st::menuIconTranslate },
+		{ "unmute", &st::menuIconUnmute },
+		{ "unpin", &st::menuIconUnpin },
+		{ "users", &st::menuIconGroups },
+		{ "zoom_in", &st::menuIconZoomIn },
+		{ "zoom_out", &st::menuIconZoomOut },
+	};
+	const auto i = icons.find(name);
+	return (i != icons.end()) ? i->second : nullptr;
+}
+
+[[nodiscard]] QImage IconMask(
+		const std::string &plugin,
+		const std::string &name,
+		QSize size) {
+	const auto snapshot = Snapshot();
+	const auto bytes = (snapshot && !name.empty())
+		? snapshot->customIcon(plugin, name)
+		: nullptr;
+	if (!bytes) {
+		return QImage();
+	}
+	struct Cached {
+		std::shared_ptr<const fgpl::cbor::Bytes> bytes;
+		QImage mask;
+	};
+	using Key = std::tuple<std::string, std::string, int, int, int>;
+	static auto cache = std::map<Key, Cached>();
+	const auto ratio = style::DevicePixelRatio();
+	const auto key = Key{ plugin, name, size.width(), size.height(), ratio };
+	if (const auto i = cache.find(key); i != cache.end() && i->second.bytes == bytes) {
+		return i->second.mask;
+	}
+	auto image = QImage(size * ratio, QImage::Format_ARGB32_Premultiplied);
+	image.fill(Qt::transparent);
+	const auto data = QByteArray(
+		reinterpret_cast<const char*>(bytes->data()),
+		qsizetype(bytes->size()));
+	auto valid = true;
+	{
+		auto p = QPainter(&image);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		auto svg = QSvgRenderer(data);
+		if (svg.isValid()) {
+			const auto box = svg.viewBoxF().isEmpty()
+				? QSizeF(svg.defaultSize())
+				: svg.viewBoxF().size();
+			const auto fitted = box.isEmpty()
+				? QSizeF(image.size())
+				: box.scaled(QSizeF(image.size()), Qt::KeepAspectRatio);
+			svg.render(&p, QRectF(
+				QPointF(
+					(image.width() - fitted.width()) / 2.,
+					(image.height() - fitted.height()) / 2.),
+				fitted));
+		} else {
+			const auto source = QImage::fromData(data).scaled(
+				image.size(),
+				Qt::KeepAspectRatio,
+				Qt::SmoothTransformation);
+			valid = !source.isNull();
+			if (valid) {
+				p.drawImage(
+					(image.width() - source.width()) / 2,
+					(image.height() - source.height()) / 2,
+					source);
+			}
+		}
+	}
+	if (!valid) {
+		image = QImage();
+	} else {
+		image.setDevicePixelRatio(ratio);
+	}
+	if (cache.size() > 256) {
+		cache.clear();
+	}
+	cache[key] = Cached{ bytes, image };
+	return image;
+}
+
+[[nodiscard]] bool HasCustomIcon(const std::string &plugin, const std::string &name) {
+	return !IconMask(plugin, name, st::menuIconBot.size()).isNull();
+}
+
+void PaintPluginIcon(
+		QPainter &p,
+		QPoint position,
+		int outerWidth,
+		const std::string &plugin,
+		const std::string &name,
+		const style::icon &fallback,
+		QColor color) {
+	if (const auto builtin = BuiltinIcon(name)) {
+		builtin->paint(p, position, outerWidth, color);
+		return;
+	}
+	const auto mask = IconMask(plugin, name, fallback.size());
+	if (mask.isNull()) {
+		fallback.paint(p, position, outerWidth, color);
+		return;
+	}
+	auto tinted = QImage(mask.size(), QImage::Format_ARGB32_Premultiplied);
+	tinted.fill(color);
+	{
+		auto q = QPainter(&tinted);
+		q.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+		q.drawImage(0, 0, mask);
+	}
+	tinted.setDevicePixelRatio(mask.devicePixelRatio());
+	p.drawImage(style::rtlrect(QRect(position, fallback.size()), outerWidth).topLeft(), tinted);
+}
+
+class PluginMenuAction final : public Ui::Menu::Action {
+public:
+	PluginMenuAction(
+		not_null<Ui::Menu::Menu*> menu,
+		const style::Menu &st,
+		not_null<QAction*> action,
+		std::string plugin,
+		std::string icon)
+	: Action(menu, st, action, nullptr, nullptr)
+	, _st(st)
+	, _plugin(std::move(plugin))
+	, _icon(std::move(icon)) {
+	}
+
+protected:
+	void paintEvent(QPaintEvent *e) override {
+		Action::paintEvent(e);
+		auto p = QPainter(this);
+		PaintPluginIcon(
+			p,
+			_st.itemIconPosition,
+			width(),
+			_plugin,
+			_icon,
+			st::menuIconBot,
+			st::menuIconColor->c);
+	}
+
+private:
+	const style::Menu &_st;
+	const std::string _plugin;
+	const std::string _icon;
+
+};
+
+void AddPluginAction(
+		const Ui::Menu::MenuCallback &add,
+		const Entry &entry,
+		Fn<void()> handler) {
+	if (const auto builtin = BuiltinIcon(entry.icon)) {
+		add(entry.text, std::move(handler), builtin);
+	} else if (HasCustomIcon(entry.plugin, entry.icon)) {
+		add({
+			.text = entry.text,
+			.handler = handler,
+			.icon = &st::menuIconBot,
+			.make = [=](not_null<Ui::PopupMenu*> menu) {
+				return base::unique_qptr<Ui::Menu::ItemBase>(
+					base::make_unique_q<PluginMenuAction>(
+						menu->menu(),
+						menu->st().menu,
+						Ui::Menu::CreateAction(
+							menu->menu().get(),
+							entry.text,
+							Fn<void()>(handler)),
+						entry.plugin,
+						entry.icon));
+			},
+		});
+	} else {
+		add(entry.text, std::move(handler), &st::menuIconBot);
+	}
+}
+
+void AddButtonIcon(
+		not_null<Ui::RpWidget*> button,
+		const style::SettingsButton &st,
+		const std::string &plugin,
+		const std::string &name,
+		std::optional<int> left = std::nullopt) {
+	const auto icon = Ui::CreateChild<Ui::RpWidget>(button.get());
+	icon->setAttribute(Qt::WA_TransparentForMouseEvents);
+	icon->resize(st::menuIconBot.size());
+	button->sizeValue() | rpl::on_next([=](QSize size) {
+		icon->moveToLeft(left.value_or(st.iconLeft), (size.height() - icon->height()) / 2);
+	}, icon->lifetime());
+	icon->paintOn([=](QPainter &p) {
+		PaintPluginIcon(p, QPoint(), icon->width(), plugin, name, st::menuIconBot, st::menuIconColor->c);
+	});
+	icon->show();
 }
 
 [[nodiscard]] std::vector<Entry> EntriesFor(
@@ -157,6 +427,7 @@ struct Pages {
 					Utf8(menu.title),
 					lt_plugin,
 					Utf8(plugin.name)),
+				menu.icon,
 			});
 		}
 	}
@@ -241,6 +512,7 @@ struct Page {
 	QString structure;
 	std::vector<Fn<void(const cbor::Value &item)>> update;
 	std::vector<Fn<void()>> flush;
+	rpl::lifetime lifetime;
 
 	void apply(const cbor::Value &page) {
 		const auto items = page.find("items");
@@ -268,17 +540,26 @@ struct Page {
 	return (field && field->asInt()) ? *field->asInt() : 0;
 }
 
-[[nodiscard]] QString StructureOf(const cbor::Value &page) {
+[[nodiscard]] QString StructureOf(const cbor::Value &page, bool withButtons = true) {
 	const auto items = page.find("items");
 	auto result = QStringList();
 	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
-		result.push_back(TextOf(item, "type")
+		const auto type = TextOf(item, "type");
+		result.push_back(type
 			+ '/' + TextOf(item, "id")
 			+ (FlagOf(item, "multiline") ? u"/m"_q : QString())
 			+ (FlagOf(item, "password") ? u"/p"_q : QString())
-			+ (item.find("hint") ? u"/h"_q : QString()));
+			+ (TextOf(item, "placeholder").isEmpty() ? QString() : u"/ph"_q)
+			+ '/' + TextOf(item, "icon")
+			+ '/' + TextOf(item, "style")
+			+ ((type == u"slider"_q)
+				? (u"/%1/%2/%3"_q
+					.arg(IntOf(item, "min"))
+					.arg(IntOf(item, "max"))
+					.arg(IntOf(item, "step")))
+				: QString()));
 	}
-	const auto buttons = page.find("buttons");
+	const auto buttons = withButtons ? page.find("buttons") : nullptr;
 	for (const auto &button : (buttons && buttons->asArray()) ? *buttons->asArray() : cbor::Array()) {
 		result.push_back(u"buttons/"_q + TextOf(button, "id") + '/' + TextOf(button, "label")
 			+ '/' + TextOf(button, "style"));
@@ -327,6 +608,21 @@ void AddProgress(
 	Ui::AddSkip(content);
 }
 
+[[nodiscard]] const style::SettingsButton &RowStyle(
+		const QString &icon,
+		const QString &style) {
+	const auto withIcon = !icon.isEmpty();
+	return (style == u"danger"_q)
+		? (withIcon ? st::settingsAttentionButtonWithIcon : st::settingsAttentionButton)
+		: (style == u"primary"_q)
+		? (withIcon ? st::settingsButtonLight : st::settingsButtonLightNoIcon)
+		: (withIcon ? st::settingsButton : st::settingsButtonNoIcon);
+}
+
+[[nodiscard]] style::margins TextPadding(const style::SettingsButton &st) {
+	return style::margins(st.padding.left(), 0, st.padding.right(), 0);
+}
+
 [[nodiscard]] std::shared_ptr<Page> BuildSettingsContent(
 		not_null<Ui::VerticalLayout*> content,
 		not_null<Window::SessionController*> controller,
@@ -334,22 +630,73 @@ void AddProgress(
 		const std::string &plugin,
 		const cbor::Value &page,
 		bool dialog) {
+	enum class Last {
+		None,
+		Row,
+		Block,
+		Section,
+	};
 	auto result = std::make_shared<Page>();
-	result->structure = StructureOf(page);
+	result->structure = StructureOf(page, !dialog);
 	const auto raw = result.get();
 	const auto change = dialog ? "dialog.change" : "settings.change";
 	const auto click = dialog ? "dialog.click" : "settings.click";
 	const auto items = page.find("items");
-	const auto addHint = [&](const cbor::Value &item) -> Fn<void(const cbor::Value &)> {
-		if (!item.find("hint")) {
+	auto last = Last::None;
+	const auto space = [&](Last next) {
+		if (last == Last::None) {
+			Ui::AddSkip(content, st::defaultVerticalListSkip);
+		} else if (last != next || next == Last::Block) {
+			Ui::AddSkip(content);
+		}
+		last = next;
+	};
+	const auto addRow = [&](
+			rpl::producer<QString> text,
+			const QString &icon,
+			const QString &style,
+			std::optional<rpl::producer<QString>> right = std::nullopt) {
+		space(Last::Row);
+		const auto &st = RowStyle(icon, style);
+		const auto name = icon.toStdString();
+		const auto builtin = BuiltinIcon(name);
+		auto descriptor = Settings::IconDescriptor{ builtin };
+		const auto button = right
+			? Settings::AddButtonWithLabel(
+				content,
+				std::move(text),
+				std::move(*right),
+				st,
+				std::move(descriptor))
+			: Settings::AddButtonWithIcon(
+				content,
+				std::move(text),
+				st,
+				std::move(descriptor));
+		if (!icon.isEmpty() && !builtin) {
+			AddButtonIcon(button, st, plugin, name);
+		}
+		return button;
+	};
+	const auto addHint = [&](
+			const cbor::Value &item,
+			const style::SettingsButton &st) -> Fn<void(const cbor::Value &)> {
+		static const auto interactive = std::set<QString>{
+			u"toggle"_q, u"button"_q, u"input"_q, u"slider"_q, u"chat"_q, u"select"_q,
+		};
+		if (!interactive.contains(TextOf(item, "type"))) {
 			return nullptr;
 		}
-		const auto hint = content->add(
-			object_ptr<Ui::FlatLabel>(content, TextOf(item, "hint"), st::boxDividerLabel),
-			st::boxRowPadding);
-		Ui::AddSkip(content);
-		return crl::guard(hint, [=](const cbor::Value &now) {
-			hint->setText(TextOf(now, "hint"));
+		const auto wrap = content->add(
+			object_ptr<Ui::SlideWrap<Ui::FlatLabel>>(
+				content,
+				object_ptr<Ui::FlatLabel>(content, TextOf(item, "hint"), st::boxDividerLabel),
+				TextPadding(st) + style::margins(0, 0, 0, st::defaultVerticalListSkip)));
+		wrap->toggle(!TextOf(item, "hint").isEmpty(), anim::type::instant);
+		return crl::guard(wrap, [=](const cbor::Value &now) {
+			const auto text = TextOf(now, "hint");
+			wrap->entity()->setText(text);
+			wrap->toggle(!text.isEmpty(), anim::type::instant);
 		});
 	};
 	const auto withHint = [](
@@ -365,22 +712,18 @@ void AddProgress(
 			hint(now);
 		};
 	};
-	const auto addButton = [&](
-			rpl::producer<QString> text,
-			const QString &style) {
-		return Settings::AddButtonWithIcon(
-			content,
-			std::move(text),
-			(style == u"danger"_q)
-				? st::settingsAttentionButton
-				: (style == u"primary"_q)
-				? st::settingsButtonLightNoIcon
-				: st::settingsButtonNoIcon);
-	};
 	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
 		const auto type = TextOf(item, "type");
 		const auto itemId = TextOf(item, "id").toStdString();
-		const auto label = content->lifetime().make_state<rpl::variable<QString>>(
+		const auto icon = TextOf(item, "icon").isEmpty()
+			? ((type == u"link"_q)
+				? u"link"_q
+				: (type == u"chat"_q)
+				? u"chats"_q
+				: QString())
+			: TextOf(item, "icon");
+		const auto &rowSt = RowStyle(icon, TextOf(item, "style"));
+		const auto label = raw->lifetime.make_state<rpl::variable<QString>>(
 			TextOf(item, "label"));
 		const auto send = [=](const char *kind, std::optional<cbor::Value> value) {
 			if (const auto strong = weak.get()) {
@@ -389,30 +732,39 @@ void AddProgress(
 		};
 		auto update = Fn<void(const cbor::Value &)>();
 		if (type == u"text"_q) {
+			space(Last::Block);
 			const auto text = content->add(
 				object_ptr<Ui::FlatLabel>(content, TextOf(item, "text"), st::boxLabel),
-				st::boxRowPadding);
-			Ui::AddSkip(content);
+				TextPadding(st::settingsButtonNoIcon));
+			text->setSelectable(true);
 			update = crl::guard(text, [=](const cbor::Value &now) {
 				text->setText(TextOf(now, "text"));
 			});
 		} else if (type == u"header"_q) {
+			if (last != Last::None) {
+				Ui::AddSkip(content);
+			}
+			last = Last::Section;
 			*label = TextOf(item, "text");
 			Ui::AddSubsectionTitle(content, label->value());
 			update = [=](const cbor::Value &now) {
 				*label = TextOf(now, "text");
 			};
 		} else if (type == u"divider"_q) {
-			Ui::AddDivider(content);
+			if (last != Last::None) {
+				Ui::AddSkip(content);
+				Ui::AddDivider(content);
+			}
+			last = Last::Section;
 		} else if (type == u"link"_q) {
-			const auto url = content->lifetime().make_state<QString>(TextOf(item, "url"));
-			const auto host = content->lifetime().make_state<rpl::variable<QString>>(
+			const auto url = raw->lifetime.make_state<QString>(TextOf(item, "url"));
+			const auto host = raw->lifetime.make_state<rpl::variable<QString>>(
 				QUrl(*url).host());
-			const auto button = Settings::AddButtonWithLabel(
-				content,
+			const auto button = addRow(
 				label->value(),
-				host->value(),
-				st::settingsButtonNoIcon);
+				icon,
+				QString(),
+				host->value());
 			button->addClickHandler([=] {
 				UrlClickHandler::Open(*url);
 			});
@@ -422,21 +774,24 @@ void AddProgress(
 				*host = QUrl(*url).host();
 			});
 		} else if (type == u"progress"_q) {
-			if (!label->current().isEmpty()) {
-				Ui::AddSubsectionTitle(content, label->value());
-			}
-			const auto percent = content->lifetime().make_state<rpl::variable<int>>(
+			space(Last::Block);
+			const auto percent = raw->lifetime.make_state<rpl::variable<int>>(
 				int(IntOf(item, "value")));
+			const auto title = Settings::AddButtonWithLabel(
+				content,
+				label->value(),
+				percent->value() | rpl::map([](int value) {
+					return (value < 0) ? QString() : (QString::number(value) + '%');
+				}),
+				st::settingsButtonNoIcon);
+			title->setAttribute(Qt::WA_TransparentForMouseEvents);
 			AddProgress(content, percent->value());
 			update = [=](const cbor::Value &now) {
 				*label = TextOf(now, "label");
 				*percent = int(IntOf(now, "value"));
 			};
 		} else if (type == u"toggle"_q) {
-			const auto button = Settings::AddButtonWithIcon(
-				content,
-				label->value(),
-				st::settingsButtonNoIcon);
+			const auto button = addRow(label->value(), icon, QString());
 			const auto on = button->lifetime().make_state<rpl::variable<bool>>(
 				FlagOf(item, "value"));
 			button->toggleOn(on->value(), true);
@@ -451,7 +806,7 @@ void AddProgress(
 				button->setDisabled(FlagOf(now, "disabled"));
 			});
 		} else if (type == u"button"_q) {
-			const auto button = addButton(label->value(), TextOf(item, "style"));
+			const auto button = addRow(label->value(), icon, TextOf(item, "style"));
 			button->setDisabled(FlagOf(item, "disabled"));
 			button->addClickHandler([=] {
 				send(click, std::nullopt);
@@ -461,14 +816,14 @@ void AddProgress(
 				button->setDisabled(FlagOf(now, "disabled"));
 			});
 		} else if (type == u"chat"_q) {
-			const auto chosen = content->lifetime().make_state<int64_t>(IntOf(item, "value"));
-			const auto name = content->lifetime().make_state<rpl::variable<QString>>(
+			const auto chosen = raw->lifetime.make_state<int64_t>(IntOf(item, "value"));
+			const auto name = raw->lifetime.make_state<rpl::variable<QString>>(
 				ChatName(weak, *chosen));
-			const auto button = Settings::AddButtonWithLabel(
-				content,
+			const auto button = addRow(
 				label->value(),
-				name->value(),
-				st::settingsButtonNoIcon);
+				icon,
+				QString(),
+				name->value());
 			button->setDisabled(FlagOf(item, "disabled"));
 			button->addClickHandler([=] {
 				Window::ShowChooseRecipientBox(
@@ -492,10 +847,15 @@ void AddProgress(
 				button->setDisabled(FlagOf(now, "disabled"));
 			});
 		} else if (type == u"slider"_q) {
+			space(Last::Block);
 			const auto min = IntOf(item, "min");
 			const auto step = std::max<int64_t>(IntOf(item, "step"), 1);
-			const auto count = int((IntOf(item, "max") - min) / step) + 1;
-			Ui::AddSubsectionTitle(content, label->value());
+			const auto count = std::max(int((IntOf(item, "max") - min) / step) + 1, 2);
+			const auto title = Settings::AddButtonWithIcon(
+				content,
+				label->value(),
+				st::settingsButtonNoIcon);
+			title->setAttribute(Qt::WA_TransparentForMouseEvents);
 			auto made = Settings::MakeSliderWithLabel(
 				content,
 				st::autoDownloadLimitSlider,
@@ -530,20 +890,38 @@ void AddProgress(
 				slider->setDisabled(FlagOf(now, "disabled"));
 			});
 		} else if (type == u"input"_q) {
+			space(Last::Block);
 			const auto max = int(std::max<int64_t>(IntOf(item, "max"), 1));
 			auto getText = Fn<QString()>();
 			auto setText = Fn<void(const QString &)>();
 			auto focused = Fn<bool()>();
 			auto setEnabled = Fn<void(bool)>();
-			const auto pending = content->lifetime().make_state<bool>(false);
+			const auto pending = raw->lifetime.make_state<bool>(false);
+			const auto suppress = raw->lifetime.make_state<bool>(false);
+			const auto placeholder = raw->lifetime.make_state<rpl::variable<QString>>(
+				TextOf(item, "placeholder"));
+			if (!placeholder->current().isEmpty()) {
+				content->add(
+					object_ptr<Ui::FlatLabel>(content, label->value(), st::boxDividerLabel),
+					st::boxRowPadding);
+			}
+			auto fieldPlaceholder = rpl::combine(
+				label->value(),
+				placeholder->value()
+			) | rpl::map([](const QString &label, const QString &placeholder) {
+				return placeholder.isEmpty() ? label : placeholder;
+			});
 			const auto sendNow = crl::guard(content, [=] {
 				if (*pending) {
 					*pending = false;
 					send(change, Text(getText()));
 				}
 			});
-			const auto timer = content->lifetime().make_state<base::Timer>(sendNow);
+			const auto timer = raw->lifetime.make_state<base::Timer>(sendNow);
 			const auto edited = [=] {
+				if (*suppress) {
+					return;
+				}
 				*pending = true;
 				timer->callOnce(600);
 			};
@@ -554,8 +932,9 @@ void AddProgress(
 				const auto field = Ui::CreateChild<Ui::PasswordInput>(
 					wrap,
 					st::defaultInputField,
-					label->value(),
+					std::move(fieldPlaceholder),
 					TextOf(item, "value"));
+				field->show();
 				field->heightValue() | rpl::on_next([=](int height) {
 					wrap->resize(wrap->width(), height);
 				}, field->lifetime());
@@ -579,7 +958,7 @@ void AddProgress(
 						multiline
 							? Ui::InputField::Mode::MultiLine
 							: Ui::InputField::Mode::SingleLine,
-						label->value(),
+						std::move(fieldPlaceholder),
 						TextOf(item, "value")),
 					st::boxRowPadding);
 				field->setMaxLength(max);
@@ -589,15 +968,20 @@ void AddProgress(
 					sendNow();
 				}, field->lifetime());
 				getText = [=] { return field->getLastText(); };
-				setText = [=](const QString &text) { field->setText(text); };
+				setText = [=](const QString &text) {
+					*suppress = true;
+					field->setText(text);
+					*suppress = false;
+				};
 				focused = [=] { return field->hasFocus(); };
 				setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
 			}
 			setEnabled(!FlagOf(item, "disabled"));
 			raw->flush.push_back(sendNow);
-			Ui::AddSkip(content);
+			Ui::AddSkip(content, st::defaultVerticalListSkip);
 			update = crl::guard(content, [=](const cbor::Value &now) {
 				*label = TextOf(now, "label");
+				*placeholder = TextOf(now, "placeholder");
 				const auto value = TextOf(now, "value");
 				if (!focused() && !*pending && getText() != value) {
 					setText(value);
@@ -611,7 +995,7 @@ void AddProgress(
 				int selected = 0;
 			};
 			const auto choice = std::make_shared<Choice>();
-			const auto current = content->lifetime().make_state<rpl::variable<QString>>();
+			const auto current = raw->lifetime.make_state<rpl::variable<QString>>();
 			const auto read = [=](const cbor::Value &now) {
 				choice->values.clear();
 				choice->labels.clear();
@@ -638,24 +1022,23 @@ void AddProgress(
 				result->update.push_back(nullptr);
 				continue;
 			}
-			const auto button = Settings::AddButtonWithLabel(
-				content,
-				label->value(),
-				current->value(),
-				st::settingsButtonNoIcon);
+			const auto button = addRow(label->value(), icon, QString(), current->value());
 			button->setDisabled(FlagOf(item, "disabled"));
 			button->addClickHandler([=] {
+				const auto values = choice->values;
+				const auto labels = choice->labels;
 				controller->show(Box(SingleChoiceBox, SingleChoiceBoxArgs{
 					.title = label->value(),
-					.options = choice->labels,
+					.options = labels,
 					.initialSelection = choice->selected,
 					.callback = crl::guard(button, [=](int index) {
-						if (index < 0 || index >= int(choice->values.size())) {
+						if (index < 0 || index >= int(values.size())) {
 							return;
 						}
-						choice->selected = index;
-						*current = choice->labels[index];
-						send(change, cbor::Value::FromText(choice->values[index]));
+						const auto now = ranges::find(choice->values, values[index]);
+						choice->selected = int(now - begin(choice->values));
+						*current = labels[index];
+						send(change, cbor::Value::FromText(values[index]));
 					}),
 				}));
 			});
@@ -665,20 +1048,25 @@ void AddProgress(
 				button->setDisabled(FlagOf(now, "disabled"));
 			});
 		}
-		result->update.push_back(withHint(std::move(update), addHint(item)));
+		result->update.push_back(withHint(std::move(update), addHint(item, rowSt)));
 	}
 	const auto buttons = page.find("buttons");
 	if (!dialog && buttons && buttons->asArray() && !buttons->asArray()->empty()) {
-		Ui::AddDivider(content);
+		if (last != Last::None) {
+			Ui::AddSkip(content);
+			Ui::AddDivider(content);
+		}
+		last = Last::None;
 		for (const auto &button : *buttons->asArray()) {
 			const auto buttonId = TextOf(button, "id").toStdString();
-			addButton(rpl::single(TextOf(button, "label")), TextOf(button, "style"))->addClickHandler([=] {
+			addRow(rpl::single(TextOf(button, "label")), QString(), TextOf(button, "style"))->addClickHandler([=] {
 				if (const auto strong = weak.get()) {
 					SendSetting(strong, plugin, click, buttonId, std::nullopt);
 				}
 			});
 		}
 	}
+	Ui::AddSkip(content);
 	return result;
 }
 
@@ -697,7 +1085,7 @@ void ShowPage(
 		shown = nullptr;
 		content->clear();
 		return;
-	} else if (shown && shown->structure == StructureOf(*page)) {
+	} else if (shown && shown->structure == StructureOf(*page, !dialog)) {
 		shown->apply(*page);
 		return;
 	}
@@ -706,6 +1094,19 @@ void ShowPage(
 	}
 	content->clear();
 	shown = BuildSettingsContent(content, controller, weak, plugin, *page, dialog);
+}
+
+void AddSourceRow(
+		not_null<Ui::GenericBox*> box,
+		const QString &pluginName,
+		const QString &suffix) {
+	box->addRow(
+		object_ptr<Ui::FlatLabel>(
+			box,
+			tr::fresh_PluginSource(tr::now, lt_plugin, pluginName) + suffix,
+			st::boxDividerLabel),
+		TextPadding(st::settingsButtonNoIcon)
+			+ style::margins(0, st::defaultVerticalListSkip, 0, 0));
 }
 
 void FillSettingsBox(
@@ -717,8 +1118,9 @@ void FillSettingsBox(
 	box->setWidth(st::boxWideWidth);
 	const auto title = box->lifetime().make_state<rpl::variable<QString>>();
 	box->setTitle(title->value() | rpl::map([=](const QString &text) {
-		return tr::fresh_PluginBadge(tr::now, lt_title, text, lt_plugin, pluginName);
+		return text.isEmpty() ? pluginName : text;
 	}));
+	AddSourceRow(box, pluginName, QString());
 	const auto content = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
@@ -777,6 +1179,70 @@ void FillSettingsBox(
 		+ Utf8(line.text);
 }
 
+struct LogRow {
+	QString key;
+	QString text;
+	const style::FlatLabel *st = nullptr;
+};
+
+struct LogView {
+	std::optional<QString> last;
+	bool empty = false;
+	bool filled = false;
+};
+
+void ShowLogRows(
+		not_null<Ui::GenericBox*> box,
+		not_null<Ui::VerticalLayout*> lines,
+		not_null<LogView*> view,
+		const std::vector<LogRow> &rows,
+		bool reset,
+		const QString &emptyText) {
+	const auto atBottom = !view->filled
+		|| (box->scrollTop() + box->scrollHeight()
+			>= box->verticalLayout()->height() - st::defaultVerticalListSkip);
+	auto from = size_t(0);
+	if (!view->filled || (view->empty != rows.empty())) {
+		reset = true;
+	} else if (rows.empty() && !reset) {
+		return;
+	} else if (!reset) {
+		const auto i = std::find_if(rows.rbegin(), rows.rend(), [&](const LogRow &row) {
+			return view->last && (row.key == *view->last);
+		});
+		if (i == rows.rend()) {
+			reset = true;
+		} else {
+			from = size_t(rows.rend() - i);
+			if (from == rows.size()) {
+				return;
+			}
+		}
+	}
+	if (reset) {
+		lines->clear();
+		from = 0;
+	}
+	for (auto i = from; i != rows.size(); ++i) {
+		lines->add(
+			object_ptr<Ui::FlatLabel>(lines, rows[i].text, *rows[i].st),
+			st::boxRowPadding)->setSelectable(true);
+	}
+	view->empty = rows.empty();
+	if (view->empty) {
+		lines->add(
+			object_ptr<Ui::FlatLabel>(lines, emptyText, st::boxDividerLabel),
+			st::boxRowPadding);
+	}
+	view->last = rows.empty() ? std::nullopt : std::make_optional(rows.back().key);
+	view->filled = true;
+	if (atBottom) {
+		crl::on_main(box, [=] {
+			box->scrollToY(QWIDGETSIZE_MAX);
+		});
+	}
+}
+
 void FillLogBox(
 		not_null<Ui::GenericBox*> box,
 		std::string plugin,
@@ -798,60 +1264,44 @@ void FillLogBox(
 	const auto lines = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
-	const auto shown = box->lifetime().make_state<std::optional<QString>>();
-	const auto rebuild = [=] {
+	const auto view = box->lifetime().make_state<LogView>();
+	const auto show = [=](bool reset) {
 		const auto snapshot = Snapshot();
 		const auto all = snapshot
 			? snapshot->logLines(plugin)
 			: std::vector<fgpl::LogLine>();
 		const auto problems = onlyProblems->current();
-		const auto key = QString::number(all.size())
-			+ ' ' + QString::number(all.empty() ? 0 : all.back().unixMs)
-			+ ' ' + QString::number(int(problems));
-		if (*shown == key) {
-			return;
-		}
-		const auto grew = shown->has_value();
-		*shown = key;
-		lines->clear();
-		auto added = 0;
+		auto rows = std::vector<LogRow>();
 		for (const auto &line : all) {
 			const auto problem = IsProblemLine(line);
 			if (problems && !problem) {
 				continue;
 			}
-			lines->add(
-				object_ptr<Ui::FlatLabel>(
-					lines,
-					LogText(line),
-					problem
-						? st::pluginDangerHigh
-						: line.fromApp
-						? st::boxDividerLabel
-						: st::boxLabel),
-				st::boxRowPadding)->setSelectable(true);
-			++added;
-		}
-		if (!added) {
-			lines->add(
-				object_ptr<Ui::FlatLabel>(
-					lines,
-					problems
-						? tr::fresh_PluginLogNoProblems(tr::now)
-						: tr::fresh_PluginLogEmpty(tr::now),
-					st::boxDividerLabel),
-				st::boxRowPadding);
-		}
-		if (grew || added) {
-			crl::on_main(box, [=] {
-				box->scrollToY(QWIDGETSIZE_MAX);
+			rows.push_back({
+				.key = QString::number(line.unixMs) + ' ' + Utf8(line.text),
+				.text = LogText(line),
+				.st = problem
+					? &st::pluginDangerHigh
+					: line.fromApp
+					? &st::boxDividerLabel
+					: &st::boxLabel,
 			});
 		}
+		ShowLogRows(
+			box,
+			lines,
+			view,
+			rows,
+			reset,
+			problems
+				? tr::fresh_PluginLogNoProblems(tr::now)
+				: tr::fresh_PluginLogEmpty(tr::now));
 	};
+	const auto rebuild = [=] { show(false); };
 	filter->toggledValue(
 	) | rpl::on_next([=](bool value) {
 		*onlyProblems = value;
-		rebuild();
+		show(true);
 	}, filter->lifetime());
 	const auto timer = box->lifetime().make_state<base::Timer>(rebuild);
 	timer->callEach(1000);
@@ -912,7 +1362,7 @@ void FillPermissionsBox(
 	const auto snapshot = Snapshot();
 	const auto parsed = snapshot ? snapshot->manifest(plugin) : nullptr;
 	if (!parsed) {
-		box->closeBox();
+		crl::on_main(box, [=] { box->closeBox(); });
 		return;
 	}
 	const auto account = AccountOf(&controller->session());
@@ -990,7 +1440,7 @@ void BuildDetails(
 	const auto snapshot = Snapshot();
 	const auto info = snapshot ? snapshot->plugin(plugin) : nullptr;
 	if (!info) {
-		box->closeBox();
+		crl::on_main(box, [=] { box->closeBox(); });
 		return;
 	}
 	const auto parsed = snapshot->manifest(plugin);
@@ -1042,6 +1492,8 @@ void BuildDetails(
 		label(tr::fresh_PluginOutdated(tr::now, lt_version, Utf8(info->testedWith)), st::pluginDangerMedium);
 	}
 	Ui::AddSkip(content);
+	Ui::AddDivider(content);
+	Ui::AddSkip(content);
 
 	if (!broken) {
 		const auto enabled = Settings::AddButtonWithIcon(
@@ -1085,6 +1537,11 @@ void BuildDetails(
 		)->addClickHandler([=] {
 			ShowPluginSettings(controller, Utf8(plugin));
 		});
+	}
+	if (!broken || (parsed && parsed->settingsPage)) {
+		Ui::AddSkip(content);
+		Ui::AddDivider(content);
+		Ui::AddSkip(content);
 	}
 	if (parsed) {
 		const auto granted = snapshot->grantsOf(plugin);
@@ -1176,6 +1633,15 @@ void BuildDetails(
 		return std::nullopt;
 	}
 	const auto granted = snapshot->grantsOf(plugin);
+	auto permissions = QStringList();
+	if (granted) {
+		for (const auto &id : granted->granted) {
+			permissions.push_back(Utf8(id));
+		}
+		permissions.push_back(granted->chats
+			? QString::number(granted->chats->size())
+			: u"all"_q);
+	}
 	return QStringList{
 		Utf8(info->version),
 		Utf8(info->problem),
@@ -1183,7 +1649,10 @@ void BuildDetails(
 		QString::number(int(info->status)),
 		QString::number(int(info->enabled)),
 		QString::number(int(info->pendingUpdate)),
-		QString::number(granted ? int(granted->granted.size()) : -1),
+		QString::number(int(info->outdated)),
+		QString::number(int(info->signedPackage)),
+		Utf8(info->publisher),
+		permissions.join(','),
 	}.join('\n');
 }
 
@@ -1257,6 +1726,7 @@ void FillDialogBox(
 	const auto weak = session ? base::make_weak(session) : base::weak_ptr<Main::Session>();
 	const auto suffix = session ? AccountSuffix(session) : QString();
 	box->setWidth(st::boxWideWidth);
+	AddSourceRow(box, PluginName(plugin), suffix);
 	const auto content = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
@@ -1269,12 +1739,8 @@ void FillDialogBox(
 		if (i == pages.end() || !weak) {
 			return;
 		}
-		box->setTitle(rpl::single(tr::fresh_PluginBadge(
-			tr::now,
-			lt_title,
-			TextOf(i->second, "title"),
-			lt_plugin,
-			PluginName(plugin)) + suffix));
+		const auto title = TextOf(i->second, "title");
+		box->setTitle(rpl::single(title.isEmpty() ? PluginName(plugin) : title));
 		ShowPage(content, controller, weak, plugin, &i->second, true, *shown);
 		const auto signature = StructureOf(cbor::Value::FromMap({
 			{ "buttons", i->second.find("buttons") ? *i->second.find("buttons") : cbor::Value() },
@@ -1328,8 +1794,9 @@ void FillDialogBox(
 			(*shown)->flushAll();
 		}
 		auto &dialogs = GetDialogs();
-		if (dialogs.boxes[key].data() == box.get()) {
-			dialogs.boxes.erase(key);
+		if (const auto i = dialogs.boxes.find(key);
+			i != dialogs.boxes.end() && i->second.data() == box.get()) {
+			dialogs.boxes.erase(i);
 		}
 		if (!*closedByPlugin) {
 			dialogs.pages.erase(key);
@@ -1342,7 +1809,7 @@ void FillDialogBox(
 			}
 		}
 	}, box->lifetime());
-	if (!*buttonsShown) {
+	if (!buttonsShown->has_value()) {
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	}
 }
@@ -1385,51 +1852,39 @@ void FillNetworkLogBox(not_null<Ui::GenericBox*> box) {
 	const auto lines = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
-	const auto shown = box->lifetime().make_state<std::optional<QString>>();
-	const auto rebuild = [=] {
-		const auto errors = onlyErrors->current();
-		const auto key = QString::number(NetworkLogVersion()) + ' ' + QString::number(int(errors));
-		if (*shown == key) {
+	const auto view = box->lifetime().make_state<LogView>();
+	const auto version = box->lifetime().make_state<std::optional<uint64>>();
+	const auto show = [=](bool reset) {
+		const auto now = NetworkLogVersion();
+		if (!reset && *version == now) {
 			return;
 		}
-		*shown = key;
-		lines->clear();
-		auto added = 0;
+		*version = now;
+		const auto errors = onlyErrors->current();
+		auto rows = std::vector<LogRow>();
 		for (const auto &event : NetworkLog()) {
 			if (errors && !event.failed) {
 				continue;
 			}
-			lines->add(
-				object_ptr<Ui::FlatLabel>(
-					lines,
-					NetworkEventText(event),
-					event.failed ? st::pluginDangerHigh : st::boxLabel),
-				st::boxRowPadding)->setSelectable(true);
-			++added;
-		}
-		if (!added) {
-			lines->add(
-				object_ptr<Ui::FlatLabel>(
-					lines,
-					tr::fresh_PluginsNetworkLogEmpty(tr::now),
-					st::boxDividerLabel),
-				st::boxRowPadding);
-		} else {
-			crl::on_main(box, [=] {
-				box->scrollToY(QWIDGETSIZE_MAX);
+			const auto text = NetworkEventText(event);
+			rows.push_back({
+				.key = QString::number(event.when) + ' ' + text,
+				.text = text,
+				.st = event.failed ? &st::pluginDangerHigh : &st::boxLabel,
 			});
 		}
+		ShowLogRows(box, lines, view, rows, reset, tr::fresh_PluginsNetworkLogEmpty(tr::now));
 	};
 	filter->toggledValue(
 	) | rpl::on_next([=](bool value) {
 		*onlyErrors = value;
-		rebuild();
+		show(true);
 	}, filter->lifetime());
-	const auto timer = box->lifetime().make_state<base::Timer>(rebuild);
+	const auto timer = box->lifetime().make_state<base::Timer>([=] { show(false); });
 	timer->callEach(1000);
 	box->addLeftButton(tr::fresh_PluginLogClear(), [=] {
 		ClearNetworkLog();
-		rebuild();
+		show(true);
 	});
 	box->addButton(tr::fresh_PluginLogCopy(), [=] {
 		auto text = QStringList();
@@ -1444,100 +1899,133 @@ void FillNetworkLogBox(not_null<Ui::GenericBox*> box) {
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
+[[nodiscard]] QString NetworkTotalText(const fgpl::PluginInfo &info) {
+	return tr::fresh_PluginsNetworkTotal(
+		tr::now,
+		lt_received,
+		Ui::FormatSizeText(qint64(info.stats.netReceived)),
+		lt_sent,
+		Ui::FormatSizeText(qint64(info.stats.netSent)));
+}
+
+[[nodiscard]] QString ConnectionText(const ConnectionView &view) {
+	const auto endpoint = view.host + ':' + QString::number(view.port)
+		+ ((view.address.isEmpty() || view.address == view.host)
+			? QString()
+			: u" ("_q + view.address + ')');
+	return tr::fresh_PluginsNetworkRow(
+		tr::now,
+		lt_kind,
+		view.kind,
+		lt_endpoint,
+		endpoint,
+		lt_received,
+		Ui::FormatSizeText(qint64(view.received)),
+		lt_sent,
+		Ui::FormatSizeText(qint64(view.sent)),
+		lt_age,
+		Age(view.opened));
+}
+
 void FillNetworkBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller) {
+	struct State {
+		QString layout;
+		bool built = false;
+		std::map<QString, std::unique_ptr<rpl::variable<QString>>> totals;
+		std::map<int64, std::unique_ptr<rpl::variable<QString>>> rows;
+	};
 	box->setTitle(tr::fresh_PluginsNetwork());
 	box->setWidth(st::boxWideWidth);
 	const auto content = box->addRow(
 		object_ptr<Ui::VerticalLayout>(box),
 		style::margins());
-	const auto shownKey = box->lifetime().make_state<QString>();
-	const auto rebuild = [=] {
+	const auto state = box->lifetime().make_state<State>();
+	const auto refresh = [=] {
 		const auto snapshot = Snapshot();
+		const auto plugins = snapshot ? snapshot->plugins : std::vector<fgpl::PluginInfo>();
 		const auto connections = Connections();
-		auto key = QStringList();
-		for (const auto &info : snapshot ? snapshot->plugins : std::vector<fgpl::PluginInfo>()) {
-			key.push_back(Utf8(info.id) + ' ' + QString::number(info.stats.netReceived)
-				+ ' ' + QString::number(info.stats.netSent));
-		}
-		for (const auto &view : connections) {
-			key.push_back(QString::number(view.id) + ' ' + QString::number(view.received)
-				+ ' ' + QString::number(view.sent) + ' ' + Age(view.opened));
-		}
-		if (*shownKey == key.join('\n')) {
-			return;
-		}
-		*shownKey = key.join('\n');
-		content->clear();
-		auto shown = 0;
-		for (const auto &info : snapshot ? snapshot->plugins : std::vector<fgpl::PluginInfo>()) {
+		auto shownPlugins = std::vector<const fgpl::PluginInfo*>();
+		auto layout = QStringList();
+		for (const auto &info : plugins) {
 			const auto id = Utf8(info.id);
-			const auto own = ranges::count_if(connections, [&](const ConnectionView &view) {
+			const auto own = ranges::any_of(connections, [&](const ConnectionView &view) {
 				return view.plugin == id;
 			});
 			if (!UsesNetwork(info) && !own) {
 				continue;
 			}
-			++shown;
-			Ui::AddSubsectionTitle(content, rpl::single(PluginName(info.id)));
+			shownPlugins.push_back(&info);
+			layout.push_back(id);
+			for (const auto &view : connections) {
+				if (view.plugin == id) {
+					layout.push_back(QString::number(view.id));
+				}
+			}
+		}
+		if (state->built && state->layout == layout.join('\n')) {
+			for (const auto info : shownPlugins) {
+				if (const auto i = state->totals.find(Utf8(info->id)); i != state->totals.end()) {
+					*i->second = NetworkTotalText(*info);
+				}
+			}
+			for (const auto &view : connections) {
+				if (const auto i = state->rows.find(view.id); i != state->rows.end()) {
+					*i->second = ConnectionText(view);
+				}
+			}
+			return;
+		}
+		state->layout = layout.join('\n');
+		state->built = true;
+		content->clear();
+		state->totals.clear();
+		state->rows.clear();
+		for (const auto info : shownPlugins) {
+			const auto id = Utf8(info->id);
+			Ui::AddSubsectionTitle(content, rpl::single(PluginName(info->id)));
+			auto &total = state->totals[id];
+			total = std::make_unique<rpl::variable<QString>>(NetworkTotalText(*info));
 			content->add(object_ptr<Ui::FlatLabel>(
 				content,
-				tr::fresh_PluginsNetworkTotal(
-					tr::now,
-					lt_received,
-					Ui::FormatSizeText(qint64(info.stats.netReceived)),
-					lt_sent,
-					Ui::FormatSizeText(qint64(info.stats.netSent))),
+				total->value(),
 				st::boxDividerLabel), st::boxRowPadding);
+			auto own = 0;
+			for (const auto &view : connections) {
+				if (view.plugin != id) {
+					continue;
+				}
+				++own;
+				auto &text = state->rows[view.id];
+				text = std::make_unique<rpl::variable<QString>>(ConnectionText(view));
+				const auto connection = view.id;
+				Settings::AddButtonWithLabel(
+					content,
+					text->value(),
+					rpl::single(tr::fresh_PluginsNetworkClose(tr::now)),
+					st::settingsButtonNoIcon
+				)->addClickHandler([=] {
+					CloseConnection(connection);
+				});
+			}
 			if (!own) {
 				content->add(object_ptr<Ui::FlatLabel>(
 					content,
 					tr::fresh_PluginsNetworkIdle(tr::now),
 					st::boxDividerLabel), st::boxRowPadding);
 			}
-			for (const auto &view : connections) {
-				if (view.plugin != id) {
-					continue;
-				}
-				const auto endpoint = view.host + ':' + QString::number(view.port)
-					+ ((view.address.isEmpty() || view.address == view.host)
-						? QString()
-						: u" ("_q + view.address + ')');
-				const auto row = Settings::AddButtonWithLabel(
-					content,
-					rpl::single(tr::fresh_PluginsNetworkRow(
-						tr::now,
-						lt_kind,
-						view.kind,
-						lt_endpoint,
-						endpoint,
-						lt_received,
-						Ui::FormatSizeText(qint64(view.received)),
-						lt_sent,
-						Ui::FormatSizeText(qint64(view.sent)),
-						lt_age,
-						Age(view.opened))),
-					rpl::single(tr::fresh_PluginsNetworkClose(tr::now)),
-					st::settingsButtonNoIcon);
-				const auto connection = view.id;
-				row->addClickHandler([=] {
-					CloseConnection(connection);
-				});
-			}
 			Ui::AddSkip(content);
 		}
-		if (!shown) {
+		if (shownPlugins.empty()) {
 			content->add(object_ptr<Ui::FlatLabel>(
 				content,
 				tr::fresh_PluginsNetworkEmpty(tr::now),
 				st::boxLabel), st::boxRowPadding);
 		}
 	};
-	rebuild();
-	const auto timer = box->lifetime().make_state<base::Timer>([=] {
-		rebuild();
-	});
+	refresh();
+	const auto timer = box->lifetime().make_state<base::Timer>(refresh);
 	timer->callEach(1000);
 	box->addLeftButton(tr::fresh_PluginsNetworkLog(), [=] {
 		controller->show(Box(FillNetworkLogBox));
@@ -1625,9 +2113,12 @@ void ChooseChats(
 		Fn<void(std::set<int64_t>)> done) {
 	const auto session = &controller->session();
 	auto peers = base::flat_set<not_null<History*>>();
+	auto hidden = std::set<int64_t>();
 	for (const auto id : current) {
 		if (const auto history = session->data().historyLoaded(PeerId(uint64(id)))) {
 			peers.emplace(history);
+		} else {
+			hidden.insert(id);
 		}
 	}
 	auto list = std::make_unique<EditFilterChatsListController>(
@@ -1640,7 +2131,7 @@ void ChooseChats(
 		nullptr);
 	auto initBox = [=](not_null<PeerListBox*> box) {
 		box->addButton(tr::lng_settings_save(), crl::guard(box, [=] {
-			auto chosen = std::set<int64_t>();
+			auto chosen = hidden;
 			for (const auto &peer : box->collectSelectedRows()) {
 				chosen.insert(int64_t(peer->id.value));
 			}
@@ -1747,7 +2238,7 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		(current && current->chats)
 			? 1
 			: ranges::any_of(manifest.permissions, [](const auto &request) {
-				return request.id == "messages.read" && request.scope == "selected";
+				return request.scope == "selected";
 			})
 			? 1
 			: 0);
@@ -1757,12 +2248,16 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 	if (chatsShown) {
 		Ui::AddSkip(container);
 		Ui::AddSubsectionTitle(container, tr::fresh_PluginChats());
-		box->addRow(object_ptr<Ui::Radiobutton>(
+		const auto all = box->addRow(object_ptr<Ui::Radiobutton>(
 			box,
 			chatsMode,
 			0,
 			tr::fresh_PluginChatsAll(tr::now),
 			st::defaultBoxCheckbox));
+		const auto onlySelected = ranges::any_of(manifest.permissions, [](const auto &request) {
+			return request.scope == "selected";
+		});
+		all->setDisabled(onlySelected);
 		Ui::AddSkip(container, st::defaultVerticalListSkip / 2);
 		box->addRow(object_ptr<Ui::Radiobutton>(
 			box,
@@ -1913,6 +2408,9 @@ void AddPluginHeader(
 			? (u"✓ "_q + tr::fresh_PluginSignedBy(tr::now, lt_publisher, data.publisher))
 			: (u"⚠ "_q + tr::fresh_PluginNotSigned(tr::now)),
 		data.signedPackage ? st::pluginHeaderSigned : st::pluginHeaderUnsigned);
+	for (const auto label : { title, subtitle, badge }) {
+		label->show();
+	}
 	row->widthValue() | rpl::on_next([=](int width) {
 		const auto left = size + st::pluginHeaderSkip;
 		const auto available = std::max(width - left, 1);
@@ -2029,27 +2527,152 @@ bool HasComposerItems(
 	return !EntriesFor(session, "composer", peer).empty();
 }
 
-void ShowComposerMenu(
-		not_null<Window::SessionController*> controller,
-		not_null<PeerData*> peer,
-		not_null<QWidget*> button) {
-	static auto menu = base::unique_qptr<Ui::PopupMenu>();
-	const auto session = &controller->session();
+class ComposerButton final
+	: public Ui::IconButton
+	, public Ui::AbstractTooltipShower {
+public:
+	ComposerButton(QWidget *parent, Entry entry, bool more)
+	: IconButton(parent, st::historyPluginsToggle)
+	, _entry(std::move(entry))
+	, _more(more) {
+		setAccessibleName(_more ? tr::fresh_Plugins(tr::now) : _entry.text);
+	}
+
+	[[nodiscard]] const Entry &entry() const {
+		return _entry;
+	}
+
+	QString tooltipText() const override {
+		return _more ? tr::fresh_Plugins(tr::now) : _entry.text;
+	}
+	QPoint tooltipPos() const override {
+		return QCursor::pos();
+	}
+	bool tooltipWindowActive() const override {
+		return Ui::AppInFocus() && Ui::InFocusChain(window());
+	}
+
+protected:
+	void paintEvent(QPaintEvent *e) override {
+		auto p = QPainter(this);
+		const auto &st = this->st();
+		paintRipple(p, st.rippleAreaPosition);
+		const auto color = anim::color(
+			st::historyComposeIconFg,
+			st::historyComposeIconFgOver,
+			iconOverOpacity());
+		const auto size = st::menuIconBot.size();
+		const auto position = QPoint(
+			(width() - size.width()) / 2,
+			(height() - size.height()) / 2);
+		if (_more) {
+			st::menuIconBot.paint(p, position, width(), color);
+		} else {
+			PaintPluginIcon(p, position, width(), _entry.plugin, _entry.icon, st::menuIconBot, color);
+		}
+	}
+	void enterEventHook(QEnterEvent *e) override {
+		Ui::Tooltip::Show(1000, this);
+		IconButton::enterEventHook(e);
+	}
+	void leaveEventHook(QEvent *e) override {
+		Ui::Tooltip::Hide();
+		IconButton::leaveEventHook(e);
+	}
+
+private:
+	const Entry _entry;
+	const bool _more = false;
+
+};
+
+struct ComposerButtons::State {
+	not_null<Window::SessionController*> controller;
+	std::vector<base::unique_qptr<ComposerButton>> buttons;
+	base::unique_qptr<Ui::PopupMenu> menu;
+	std::vector<Entry> overflow;
+	QString key;
+	PeerId peer = 0;
+	MsgId topicRootId = 0;
+};
+
+ComposerButtons::ComposerButtons(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: RpWidget(parent)
+, _state(std::make_unique<State>(State{ .controller = controller })) {
+	resize(0, st::historyPluginsToggle.height);
+}
+
+ComposerButtons::~ComposerButtons() = default;
+
+bool ComposerButtons::empty() const {
+	return _state->buttons.empty();
+}
+
+bool ComposerButtons::refresh(PeerData *peer, MsgId topicRootId) {
+	const auto session = &_state->controller->session();
+	const auto entries = peer
+		? EntriesFor(session, "composer", peer)
+		: std::vector<Entry>();
+	auto key = QStringList();
+	for (const auto &entry : entries) {
+		key.push_back(Utf8(entry.plugin + '/' + entry.menuId + '/' + entry.icon) + ' ' + entry.text);
+	}
+	_state->peer = peer ? peer->id : PeerId();
+	_state->topicRootId = topicRootId;
+	if (_state->key == key.join('\n')) {
+		return false;
+	}
+	_state->key = key.join('\n');
+	_state->buttons.clear();
+	_state->overflow.clear();
 	const auto weak = base::make_weak(session);
-	const auto peerId = peer->id;
-	menu = base::make_unique_q<Ui::PopupMenu>(button, st::popupMenuWithIcons);
-	for (const auto &entry : EntriesFor(session, "composer", peer)) {
-		menu->addAction(entry.text, [=] {
-			const auto strong = weak.get();
-			const auto found = strong ? strong->data().peerLoaded(peerId) : nullptr;
-			if (found) {
-				Send(strong, entry.plugin, ClickEvent("composer", entry.menuId, found, nullptr));
+	const auto click = [=](const Entry &entry) {
+		const auto strong = weak.get();
+		const auto found = strong ? strong->data().peerLoaded(_state->peer) : nullptr;
+		if (found) {
+			Send(strong, entry.plugin, ClickEvent(
+				"composer",
+				entry.menuId,
+				found,
+				nullptr,
+				_state->topicRootId));
+		}
+	};
+	const auto fits = (int(entries.size()) <= kMaxComposerButtons);
+	const auto direct = fits ? int(entries.size()) : (kMaxComposerButtons - 1);
+	for (auto i = 0; i != int(entries.size()); ++i) {
+		if (i >= direct) {
+			_state->overflow.push_back(entries[i]);
+			continue;
+		}
+		auto button = base::make_unique_q<ComposerButton>(this, entries[i], false);
+		const auto entry = entries[i];
+		button->setClickedCallback([=] { click(entry); });
+		_state->buttons.push_back(std::move(button));
+	}
+	if (!_state->overflow.empty()) {
+		auto more = base::make_unique_q<ComposerButton>(this, Entry(), true);
+		const auto raw = more.get();
+		more->setClickedCallback([=] {
+			_state->menu = base::make_unique_q<Ui::PopupMenu>(raw, st::popupMenuWithIcons);
+			const auto add = Ui::Menu::CreateAddActionCallback(_state->menu.get());
+			for (const auto &entry : _state->overflow) {
+				AddPluginAction(add, entry, [=] { click(entry); });
 			}
-		}, &st::menuIconBot);
+			_state->menu->popup(raw->mapToGlobal(QPoint(raw->width(), 0)));
+		});
+		_state->buttons.push_back(std::move(more));
 	}
-	if (!menu->empty()) {
-		menu->popup(QCursor::pos());
+	auto left = 0;
+	for (const auto &button : _state->buttons) {
+		button->moveToLeft(left, 0);
+		button->show();
+		left += button->width();
 	}
+	resize(left, st::historyPluginsToggle.height);
+	return true;
 }
 
 QString TrayItemsKey() {
@@ -2104,18 +2727,21 @@ void ShowPluginDialog(
 		refuse();
 		return;
 	}
-	if (const auto open = dialogs.boxes[key].data()) {
-		if (dialogs.pages[key] != *page) {
-			dialogs.pages[key] = *page;
-			dialogs.changes.fire_copy(key);
-		}
+	if (const auto i = dialogs.boxes.find(key); i != dialogs.boxes.end() && i->second) {
+		dialogs.pages[key] = *page;
+		dialogs.changes.fire_copy(key);
 		return;
 	}
 	dialogs.pages[key] = *page;
-	const auto separate = Core::App().windowFor(
-		Window::SeparateId(&session->account()));
-	const auto window = separate ? separate : Core::App().activePrimaryWindow();
-	const auto controller = window ? window->sessionController() : nullptr;
+	const auto ours = [&](Window::Controller *window) {
+		const auto controller = window ? window->sessionController() : nullptr;
+		return (controller && &controller->session() == session) ? controller : nullptr;
+	};
+	const auto separate = Window::SeparateId(&session->account());
+	auto controller = ours(Core::App().windowFor(separate));
+	if (!controller) {
+		controller = ours(Core::App().ensureSeparateWindowFor(separate));
+	}
 	if (!controller) {
 		refuse();
 		return;
@@ -2134,9 +2760,18 @@ void ShowNetworkPanel(not_null<Window::SessionController*> controller) {
 }
 
 void ForgetSettingsPages(const std::string &id) {
-	auto &pages = GetPages().pages;
-	for (auto i = pages.begin(); i != pages.end();) {
-		i = (i->first.first == id) ? pages.erase(i) : std::next(i);
+	auto &pages = GetPages();
+	auto removed = std::vector<std::pair<std::string, std::string>>();
+	for (auto i = pages.pages.begin(); i != pages.pages.end();) {
+		if (i->first.first == id) {
+			removed.push_back(i->first);
+			i = pages.pages.erase(i);
+		} else {
+			++i;
+		}
+	}
+	for (const auto &key : removed) {
+		pages.changes.fire_copy(key);
 	}
 }
 
@@ -2152,9 +2787,6 @@ void StoreSettingsPage(
 		const cbor::Value &page) {
 	auto &pages = GetPages();
 	const auto key = std::make_pair(id, account);
-	if (const auto i = pages.pages.find(key); i != pages.pages.end() && i->second == page) {
-		return;
-	}
 	pages.pages[key] = page;
 	pages.changes.fire_copy(key);
 }
@@ -2174,8 +2806,9 @@ void AddMessageMenuItems(
 	menu->addSeparator();
 	const auto itemId = item->fullId();
 	const auto weak = base::make_weak(session);
+	const auto add = Ui::Menu::CreateAddActionCallback(menu);
 	for (const auto &entry : entries) {
-		menu->addAction(entry.text, [=] {
+		AddPluginAction(add, entry, [=] {
 			const auto strong = weak.get();
 			const auto found = strong ? strong->data().message(itemId) : nullptr;
 			if (!found) {
@@ -2186,7 +2819,7 @@ void AddMessageMenuItems(
 				entry.menuId,
 				found->history()->peer,
 				found));
-		}, &st::menuIconBot);
+		});
 	}
 }
 
@@ -2195,7 +2828,7 @@ void AddPeerMenuItems(
 		not_null<PeerData*> peer,
 		MsgId topicRootId,
 		bool profile,
-		Fn<void(const QString &title, Fn<void()> handler)> add) {
+		const Ui::Menu::MenuCallback &add) {
 	if (FreshSecret::IsSecretPeerId(peer->id)) {
 		return;
 	}
@@ -2203,8 +2836,12 @@ void AddPeerMenuItems(
 	const auto session = &controller->session();
 	const auto weak = base::make_weak(session);
 	const auto peerId = peer->id;
-	for (const auto &entry : EntriesFor(session, surface, peer)) {
-		add(entry.text, [=] {
+	const auto entries = EntriesFor(session, surface, peer);
+	if (!entries.empty()) {
+		add({ .isSeparator = true });
+	}
+	for (const auto &entry : entries) {
+		AddPluginAction(add, entry, [=] {
 			const auto strong = weak.get();
 			const auto found = strong ? strong->data().peerLoaded(peerId) : nullptr;
 			if (found) {
@@ -2228,7 +2865,7 @@ void AddMainMenuItems(
 			: std::vector<Entry>();
 		auto key = QStringList();
 		for (const auto &entry : entries) {
-			key.push_back(Utf8(entry.plugin + '/' + entry.menuId) + ' ' + entry.text);
+			key.push_back(Utf8(entry.plugin + '/' + entry.menuId + '/' + entry.icon) + ' ' + entry.text);
 		}
 		if (*shown == key.join('\n')) {
 			return;
@@ -2236,16 +2873,29 @@ void AddMainMenuItems(
 		*shown = key.join('\n');
 		inner->clear();
 		for (const auto &entry : entries) {
-			FA::Ui::AddMainMenuButton(
+			const auto builtin = BuiltinIcon(entry.icon);
+			const auto custom = !builtin && HasCustomIcon(entry.plugin, entry.icon);
+			const auto button = FA::Ui::AddMainMenuButton(
 				inner,
 				rpl::single(entry.text),
 				st::mainMenuButton,
-				{ &st::menuIconBot }
-			)->setClickedCallback([=] {
+				{ custom ? nullptr : builtin ? builtin : &st::menuIconBot });
+			if (custom) {
+				AddButtonIcon(
+					button,
+					st::mainMenuButton,
+					entry.plugin,
+					entry.icon,
+					FA::Ui::Enabled() ? std::make_optional(kNavDrawerIconLeft) : std::nullopt);
+			}
+			button->setClickedCallback([=] {
 				if (const auto again = weak.get()) {
 					Send(again, entry.plugin, ClickEvent("main_menu", entry.menuId, nullptr, nullptr));
 				}
 			});
+		}
+		if (container->width() > 0) {
+			inner->resizeToWidth(container->width());
 		}
 	};
 	rebuild();
@@ -2279,14 +2929,22 @@ std::vector<PluginCommand> CommandsFor(
 		not_null<PeerData*> peer) {
 	auto result = std::vector<PluginCommand>();
 	const auto snapshot = Snapshot();
-	if (!snapshot || FreshSecret::IsSecretPeerId(peer->id)) {
+	if (!snapshot
+		|| FreshSecret::IsSecretPeerId(peer->id)
+		|| int64_t(peer->id.value) == fgpl::api::kServiceChat) {
 		return result;
 	}
 	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
 		const auto grant = snapshot->grantsOf(plugin.id);
-		if (grant
-			&& grant->chats
-			&& !grant->chats->contains(int64_t(peer->id.value))) {
+		const auto info = snapshot->plugin(plugin.id);
+		const auto parsed = snapshot->manifest(plugin.id);
+		const auto startable = info
+			&& (info->status == fgpl::PluginStatus::Running
+				|| (parsed && parsed->activation.contains("command")));
+		if (!startable
+			|| (grant
+				&& grant->chats
+				&& !grant->chats->contains(int64_t(peer->id.value)))) {
 			continue;
 		}
 		for (const auto &command : plugin.commands) {
@@ -2299,6 +2957,10 @@ std::vector<PluginCommand> CommandsFor(
 			});
 		}
 	}
+	for (auto &command : result) {
+		command.ambiguous = BotHasCommand(peer, command.name)
+			|| (ranges::count(result, command.name, &PluginCommand::name) > 1);
+	}
 	return result;
 }
 
@@ -2306,6 +2968,7 @@ CommandResult RunCommand(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer,
 		MsgId topicRootId,
+		MsgId replyToId,
 		const QString &text) {
 	const auto trimmed = text.trimmed();
 	const auto snapshot = Snapshot();
@@ -2358,6 +3021,9 @@ CommandResult RunCommand(
 			if (topicRootId) {
 				map.push_back({ "topic", Number(topicRootId.bare) });
 			}
+			if (replyToId) {
+				map.push_back({ "reply_to", Number(replyToId.bare) });
+			}
 			Send(session, plugin.id, cbor::Value::FromMap(std::move(map)));
 			return CommandResult::Sent;
 		}
@@ -2400,7 +3066,7 @@ void AddPeerMenuItems(
 	not_null<PeerData*>,
 	MsgId,
 	bool,
-	Fn<void(const QString &, Fn<void()>)>) {
+	const Ui::Menu::MenuCallback &) {
 }
 
 void AddMainMenuItems(
@@ -2411,6 +3077,7 @@ void AddMainMenuItems(
 CommandResult RunCommand(
 		not_null<Window::SessionController*>,
 		not_null<PeerData*>,
+		MsgId,
 		MsgId,
 		const QString &) {
 	return CommandResult::None;
@@ -2444,10 +3111,24 @@ bool HasComposerItems(not_null<Main::Session*>, not_null<PeerData*>) {
 	return false;
 }
 
-void ShowComposerMenu(
-	not_null<Window::SessionController*>,
-	not_null<PeerData*>,
-	not_null<QWidget*>) {
+struct ComposerButtons::State {
+};
+
+ComposerButtons::ComposerButtons(
+	QWidget *parent,
+	not_null<Window::SessionController*>)
+: RpWidget(parent)
+, _state(std::make_unique<State>()) {
+}
+
+ComposerButtons::~ComposerButtons() = default;
+
+bool ComposerButtons::refresh(PeerData *, MsgId) {
+	return false;
+}
+
+bool ComposerButtons::empty() const {
+	return true;
 }
 
 void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)>) {

@@ -3,6 +3,7 @@
 #include "fgpl/base64.h"
 #include "fgpl/json.h"
 #include "fgpl/net_policy.h"
+#include "fgpl/ui_tree.h"
 #include "fgpl/vfs.h"
 
 #include <algorithm>
@@ -604,7 +605,25 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
-			"events", "menus", "commands", "settingsPage", "outgoing", "messages" })) {
+			"events", "menus", "commands", "settingsPage", "outgoing", "messages", "icons" })) {
+		if (const auto icons = contributes->find("icons"); icons && !icons->asMap()) {
+			reader.error("contributes.icons", "must be an object");
+		} else if (icons) {
+			for (const auto &entry : *icons->asMap()) {
+				const auto path = entry.value.asText();
+				if (entry.key.rfind("x-", 0) == 0) {
+					continue;
+				} else if (!ui::ValidIconName(entry.key)) {
+					reader.error("contributes.icons", "has a bad icon name");
+				} else if (!path || (!ValidPath(*path, ".png") && !ValidPath(*path, ".svg"))) {
+					reader.error("contributes.icons", "needs .png or .svg paths");
+				} else if (manifest.icons.size() >= 32) {
+					reader.error("contributes.icons", "may list at most 32 icons");
+				} else {
+					manifest.icons.emplace(entry.key, *path);
+				}
+			}
+		}
 		const auto events = reader.array(*contributes, "events", "contributes", 16);
 		for (const auto &item : events ? *events : cbor::Array()) {
 			const auto name = item.asText();
@@ -623,8 +642,16 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				reader.error("contributes.menus", "entries must be objects");
 				continue;
 			}
-			reader.checkKeys(item, "contributes.menus", { "surface", "id", "title" });
+			reader.checkKeys(item, "contributes.menus", { "surface", "id", "title", "icon" });
 			auto menu = MenuItem();
+			if (const auto icon = item.find("icon")) {
+				const auto name = icon->asText();
+				if (!name || !ui::ValidIconName(*name)) {
+					reader.error("contributes.menus", "has a bad icon name");
+				} else {
+					menu.icon = *name;
+				}
+			}
 			menu.surface = reader.text(item, "surface", "contributes.menus", true, 32).value_or("");
 			menu.id = reader.text(item, "id", "contributes.menus", true, 64).value_or("");
 			if (const auto title = reader.localized(item, "title", "contributes.menus", true, 80)) {
@@ -778,6 +805,18 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	for (const auto &path : { manifest.icon, manifest.changelog }) {
 		if (!path.empty() && !manifest.files.contains(path)) {
 			reader.error("files", "does not list '" + path + "'");
+		}
+	}
+	for (const auto &[name, path] : manifest.icons) {
+		if (!manifest.files.contains(path)) {
+			reader.error("files", "does not list '" + path + "'");
+		}
+	}
+	for (const auto &menu : manifest.menus) {
+		if (!menu.icon.empty()
+			&& !manifest.icons.contains(menu.icon)
+			&& !ui::BuiltinIcons().contains(menu.icon)) {
+			reader.error("contributes.menus", "uses the unknown icon '" + menu.icon + "'");
 		}
 	}
 

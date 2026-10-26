@@ -102,6 +102,33 @@ private:
 
 } // namespace
 
+bool ValidIconName(const std::string &name) {
+	return !name.empty()
+		&& name.size() <= 32
+		&& std::all_of(name.begin(), name.end(), [](char ch) {
+			return (ch >= 'a' && ch <= 'z')
+				|| (ch >= '0' && ch <= '9')
+				|| ch == '_' || ch == '-';
+		});
+}
+
+const std::set<std::string> &BuiltinIcons() {
+	static const auto result = std::set<std::string>{
+		"add", "archive", "block", "bot", "cancel", "chat", "chats", "clear",
+		"collapse", "commands", "copy", "customize", "delete", "devices",
+		"download", "edit", "emoji", "expand", "export", "file", "folder",
+		"font", "forward", "gif", "hide", "hourglass", "info", "like", "link",
+		"lock", "mark_read", "mute", "network", "night", "notifications",
+		"palette", "permissions", "phone", "photo", "pin", "premium", "profile",
+		"qr", "reactions", "remove", "reply", "report", "restore", "schedule",
+		"search", "select", "send", "settings", "share", "show", "silent",
+		"sound_off", "sound_on", "spoiler", "star", "stats", "stickers",
+		"storage", "timer", "translate", "unmute", "unpin", "users",
+		"zoom_in", "zoom_out",
+	};
+	return result;
+}
+
 bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines) {
 	if (text.size() > maxBytes || !ValidUtf8(text)) {
 		return false;
@@ -179,6 +206,19 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 		}
 		return *value;
 	};
+	const auto takeIcon = [&](const cbor::Value &item, cbor::Map &entry) {
+		const auto field = item.find("icon");
+		if (!field) {
+			return true;
+		}
+		const auto name = field->asText();
+		if (!name || !ValidIconName(*name)) {
+			check.fail("icon must be a lowercase name");
+			return false;
+		}
+		entry.push_back({ "icon", Text(*name) });
+		return true;
+	};
 	const auto takeCommon = [&](const cbor::Value &item, cbor::Map &entry) {
 		const auto hint = check.text(item, "hint", kMaxHint, false, true);
 		if (check.failed()) {
@@ -212,7 +252,7 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				return check.error();
 			}
 		} else if (*type == "link") {
-			if (!check.keys(item, { "type", "label", "url" })) {
+			if (!check.keys(item, { "type", "label", "url", "icon" }) || !takeIcon(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);
@@ -239,8 +279,9 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			entry.push_back({ "label", Text(label.value_or("")) });
 			entry.push_back({ "value", cbor::Value::FromInt(*value) });
 		} else if (*type == "toggle") {
-			if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled" })
-				|| !takeId(item, entry)) {
+			if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled", "icon" })
+				|| !takeId(item, entry)
+				|| !takeIcon(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);
@@ -249,8 +290,9 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			}
 			entry.push_back({ "label", Text(*label) });
 		} else if (*type == "button") {
-			if (!check.keys(item, { "type", "id", "label", "hint", "disabled", "style" })
-				|| !takeId(item, entry)) {
+			if (!check.keys(item, { "type", "id", "label", "hint", "disabled", "style", "icon" })
+				|| !takeId(item, entry)
+				|| !takeIcon(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);
@@ -301,8 +343,8 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			const auto step = max ? takeInt(item, "step", 1, kMaxSliderValue, 1) : std::nullopt;
 			if (!step) {
 				return check.error();
-			} else if (*max <= *min || (*max - *min) / *step > kMaxSliderSteps) {
-				return std::string("a slider needs min below max and at most 1000 steps");
+			} else if (*max - *min < *step || (*max - *min) / *step > kMaxSliderSteps) {
+				return std::string("a slider needs at least two positions and at most 1000 steps");
 			}
 			const auto value = takeInt(item, "value", *min, *max, *min);
 			if (!value || !takeCommon(item, entry)) {
@@ -314,8 +356,9 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			entry.push_back({ "step", cbor::Value::FromInt(*step) });
 			entry.push_back({ "value", cbor::Value::FromInt(*min + (*value - *min) / *step * *step) });
 		} else if (*type == "chat") {
-			if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled" })
-				|| !takeId(item, entry)) {
+			if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled", "icon" })
+				|| !takeId(item, entry)
+				|| !takeIcon(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);
@@ -328,8 +371,9 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			entry.push_back({ "label", Text(*label) });
 			entry.push_back({ "value", cbor::Value::FromInt(*value) });
 		} else if (*type == "select") {
-			if (!check.keys(item, { "type", "id", "label", "value", "options", "hint", "disabled" })
-				|| !takeId(item, entry)) {
+			if (!check.keys(item, { "type", "id", "label", "value", "options", "hint", "disabled", "icon" })
+				|| !takeId(item, entry)
+				|| !takeIcon(item, entry)) {
 				return check.error();
 			}
 			const auto label = check.text(item, "label", kMaxLabel, true);

@@ -68,6 +68,10 @@ class Result;
 struct ResultSelected;
 } // namespace InlineBots
 
+namespace FreshPlugins {
+class ComposerButtons;
+} // namespace FreshPlugins
+
 namespace Ui {
 class AbstractButton;
 class SendButton;
@@ -610,7 +614,7 @@ private:
 	base::unique_qptr<Controls::CharactersLimitLabel> _charsLimitation;
 	FieldCharsCountManager _fieldCharsCountManager;
 	base::unique_qptr<Ui::IconButton> _scheduled;
-	base::unique_qptr<Ui::IconButton> _pluginsToggle;
+	base::unique_qptr<FreshPlugins::ComposerButtons> _pluginsToggle;
 	base::unique_qptr<Ui::IconButton> _giftToUser;
 	base::unique_qptr<Ui::IconButton> _toggleSuggestPost;
 	bool _suggestPostActive = false;

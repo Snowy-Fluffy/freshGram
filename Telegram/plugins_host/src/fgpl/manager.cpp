@@ -23,6 +23,7 @@ constexpr auto kAllAccounts = "*";
 constexpr auto kAsyncThreads = 8;
 constexpr auto kResultOverhead = size_t(1024);
 constexpr auto kMaxTimers = size_t(32);
+constexpr auto kMaxIconBytes = size_t(64) << 10;
 
 [[nodiscard]] size_t EncodedSize(const cbor::Value &event);
 
@@ -1003,6 +1004,9 @@ std::shared_ptr<const Manifest> PluginManager::manifest(const std::string &id) c
 		return cached->second.second;
 	}
 	const auto opened = openInstalled(record.id, record.current, record.archiveHash);
+	std::erase_if(_customIcons, [&](const auto &entry) {
+		return entry.first.first == id;
+	});
 	if (!opened.ok()) {
 		_manifests.erase(id);
 		_icons.erase(id);
@@ -1016,6 +1020,12 @@ std::shared_ptr<const Manifest> PluginManager::manifest(const std::string &id) c
 		_icons[id] = std::make_shared<const cbor::Bytes>(icon->second);
 	} else {
 		_icons.erase(id);
+	}
+	for (const auto &[name, path] : package.manifest.icons) {
+		const auto file = package.files.find(path);
+		if (file != package.files.end() && file->second.size() <= kMaxIconBytes) {
+			_customIcons[{ id, name }] = std::make_shared<const cbor::Bytes>(file->second);
+		}
 	}
 	return result;
 }
@@ -1040,6 +1050,11 @@ ManagerSnapshot PluginManager::snapshot() const {
 			if (const auto icon = _icons.find(id); icon != _icons.end()) {
 				result.icons.emplace(id, icon->second);
 			}
+			for (const auto &[key, bytes] : _customIcons) {
+				if (key.first == id) {
+					result.customIcons.emplace(key, bytes);
+				}
+			}
 		}
 		if (const auto grant = record.grants.find(kAllAccounts); grant != record.grants.end()) {
 			result.grants.emplace(id, GrantDecision{ grant->second.granted, grant->second.chats });
@@ -1059,6 +1074,13 @@ const PluginInfo *ManagerSnapshot::plugin(const std::string &id) const {
 std::shared_ptr<const Manifest> ManagerSnapshot::manifest(const std::string &id) const {
 	const auto i = manifests.find(id);
 	return (i == manifests.end()) ? nullptr : i->second;
+}
+
+std::shared_ptr<const cbor::Bytes> ManagerSnapshot::customIcon(
+		const std::string &id,
+		const std::string &name) const {
+	const auto i = customIcons.find({ id, name });
+	return (i == customIcons.end()) ? nullptr : i->second;
 }
 
 std::shared_ptr<const cbor::Bytes> ManagerSnapshot::icon(const std::string &id) const {
@@ -1115,7 +1137,7 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 				if (menu.surface == "composer" && !has("ui.composer_button")) {
 					continue;
 				}
-				entry.menus.push_back({ menu.surface, menu.id, menu.title.get(language) });
+				entry.menus.push_back({ menu.surface, menu.id, menu.title.get(language), menu.icon });
 			}
 		}
 		if (has("ui.command")) {

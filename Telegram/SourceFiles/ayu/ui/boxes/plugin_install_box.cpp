@@ -66,7 +66,8 @@ void Install(
 		std::shared_ptr<QByteArray> archive,
 		fgpl::GrantDecision decision,
 		fgpl::InstallOptions options,
-		Fn<void()> done);
+		Fn<void()> done,
+		Fn<void()> failed = nullptr);
 
 void Installed(
 		not_null<Window::SessionController*> controller,
@@ -108,9 +109,13 @@ void Install(
 		std::shared_ptr<QByteArray> archive,
 		fgpl::GrantDecision decision,
 		fgpl::InstallOptions options,
-		Fn<void()> done) {
+		Fn<void()> done,
+		Fn<void()> failed) {
 	if (!FreshPlugins::Running()) {
 		controller->showToast(tr::fresh_PluginsEnableFirst(tr::now));
+		if (failed) {
+			failed();
+		}
 		return;
 	}
 	const auto account = FreshPlugins::AccountId(&controller->session())
@@ -123,10 +128,15 @@ void Install(
 		if (result->ok()) {
 			const auto id = result->value().id;
 			manager->grant(id, account, decision);
-			manager->setEnabled(id, true);
+			if (!result->value().updated) {
+				manager->setEnabled(id, true);
+			}
 			manager->startEnabled(account);
 		}
 		crl::on_main([=] {
+			if (!result->ok() && failed) {
+				failed();
+			}
 			if (const auto strong = weak.get()) {
 				Installed(strong, archive, decision, options, done, *result);
 			}
@@ -291,15 +301,20 @@ void FillInstallBox(
 
 	const auto weak = base::make_weak(box);
 	const auto downgrade = installed && (order < 0);
+	const auto busy = std::make_shared<bool>(false);
 	box->addButton(!installed
 		? tr::fresh_PluginInstall()
 		: downgrade
 		? tr::fresh_PluginInstallOlder()
 		: tr::fresh_PluginUpdate(), [=] {
+		if (*busy) {
+			return;
+		}
 		const auto chosen = decision();
 		if (!chosen) {
 			return;
 		}
+		*busy = true;
 		auto options = fgpl::InstallOptions();
 		options.acceptUnsigned = !signedPackage;
 		options.allowDowngrade = downgrade;
@@ -307,6 +322,8 @@ void FillInstallBox(
 			if (const auto strong = weak.get()) {
 				strong->closeBox();
 			}
+		}, [=] {
+			*busy = false;
 		});
 	});
 	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
@@ -356,11 +373,17 @@ void ChoosePluginFile(not_null<Window::SessionController*> controller) {
 				return;
 			}
 			auto file = QFile(result.paths.front());
-			if (!file.open(QIODevice::ReadOnly) || file.size() > kMaxPackageBytes) {
+			if (!file.open(QIODevice::ReadOnly)) {
 				strong->showToast(tr::fresh_PluginInstallFailed(
 					tr::now,
 					lt_reason,
 					file.errorString()));
+				return;
+			} else if (file.size() > kMaxPackageBytes) {
+				strong->showToast(tr::fresh_PluginInstallFailed(
+					tr::now,
+					lt_reason,
+					tr::fresh_PluginFileTooLarge(tr::now)));
 				return;
 			}
 			ShowPluginInstallBox(strong, file.readAll());
