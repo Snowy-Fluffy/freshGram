@@ -457,7 +457,8 @@ void Send(
 		const std::string &menuId,
 		PeerData *peer,
 		HistoryItem *item,
-		MsgId topicRootId = MsgId()) {
+		MsgId topicRootId = MsgId(),
+		MsgId replyToId = MsgId()) {
 	auto map = cbor::Map();
 	map.push_back({ "type", cbor::Value::FromText("menu.click") });
 	map.push_back({ "surface", cbor::Value::FromText(surface) });
@@ -468,6 +469,9 @@ void Send(
 	}
 	if (topicRootId) {
 		map.push_back({ "topic", Number(topicRootId.bare) });
+	}
+	if (replyToId) {
+		map.push_back({ "reply_to", Number(replyToId.bare) });
 	}
 	if (item) {
 		if (const auto topic = item->topicRootId()) {
@@ -2594,6 +2598,8 @@ struct ComposerButtons::State {
 	QString key;
 	PeerId peer = 0;
 	MsgId topicRootId = 0;
+	Fn<MsgId()> replyTo;
+	Fn<void()> replyTaken;
 };
 
 ComposerButtons::ComposerButtons(
@@ -2608,6 +2614,11 @@ ComposerButtons::~ComposerButtons() = default;
 
 bool ComposerButtons::empty() const {
 	return _state->buttons.empty();
+}
+
+void ComposerButtons::setReply(Fn<MsgId()> current, Fn<void()> taken) {
+	_state->replyTo = std::move(current);
+	_state->replyTaken = std::move(taken);
 }
 
 bool ComposerButtons::refresh(PeerData *peer, MsgId topicRootId) {
@@ -2631,13 +2642,20 @@ bool ComposerButtons::refresh(PeerData *peer, MsgId topicRootId) {
 	const auto click = [=](const Entry &entry) {
 		const auto strong = weak.get();
 		const auto found = strong ? strong->data().peerLoaded(_state->peer) : nullptr;
-		if (found) {
-			Send(strong, entry.plugin, ClickEvent(
-				"composer",
-				entry.menuId,
-				found,
-				nullptr,
-				_state->topicRootId));
+		if (!found) {
+			return;
+		}
+		const auto replyToId = _state->replyTo ? _state->replyTo() : MsgId();
+		Send(strong, entry.plugin, ClickEvent(
+			"composer",
+			entry.menuId,
+			found,
+			nullptr,
+			_state->topicRootId,
+			replyToId));
+		if (replyToId && _state->replyTaken) {
+			// The plugin answers to it, like a sent message would.
+			_state->replyTaken();
 		}
 	};
 	const auto fits = (int(entries.size()) <= kMaxComposerButtons);
@@ -3129,6 +3147,9 @@ bool ComposerButtons::refresh(PeerData *, MsgId) {
 
 bool ComposerButtons::empty() const {
 	return true;
+}
+
+void ComposerButtons::setReply(Fn<MsgId()>, Fn<void()>) {
 }
 
 void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)>) {

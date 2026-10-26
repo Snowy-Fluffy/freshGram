@@ -4233,6 +4233,14 @@ bool HistoryWidget::refreshPluginsToggle() {
 	auto changed = false;
 	if (!_pluginsToggle) {
 		_pluginsToggle.create(this, controller());
+		_pluginsToggle->setReply([=] {
+			const auto reply = replyTo();
+			return (_history && reply.messageId.peer == _history->peer->id)
+				? reply.messageId.msg
+				: MsgId();
+		}, [=] {
+			cancelReply();
+		});
 		_pluginsToggle->show();
 		orderWidgets(); // Raise drag areas to the top.
 		changed = true;
