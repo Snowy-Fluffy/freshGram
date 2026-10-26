@@ -1885,7 +1885,7 @@ void Reactions::sendPaidRequest(
 		return;
 	}
 
-	markReadAfterAction(item->history());
+	markReadAfterAction(item->history(), item->topicRootId());
 	const auto id = item->fullId();
 	const auto randomId = base::unixtime::mtproto_msg_id();
 	auto &api = _owner->session().api();

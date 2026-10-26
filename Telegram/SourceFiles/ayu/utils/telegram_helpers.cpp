@@ -268,18 +268,34 @@ void readHistory(not_null<HistoryItem*> message) {
 						 }).send();
 					 });
 
-	if (history->unreadMentions().has()) {
-		readMentions(history->asThread());
+	// Forum mentions and reactions are read per topic only.
+	const auto topic = message->topic();
+	if (!topic && history->peer->isForum()) {
+		return;
+	}
+	const auto thread = topic
+		? static_cast<Data::Thread*>(topic)
+		: history->asThread();
+
+	if (thread->unreadMentions().has()) {
+		readMentions(base::make_weak(thread));
 	}
 
-	if (history->unreadReactions().has()) {
-		readReactions(history->asThread());
+	if (thread->unreadReactions().has()) {
+		readReactions(base::make_weak(thread));
 	}
 }
 
-void markReadAfterAction(not_null<History*> history) {
+void markReadAfterAction(not_null<History*> history, MsgId topicRootId) {
 	const auto &ghost = AyuSettings::ghost(&history->session());
 	if (ghost.sendReadMessages() || !ghost.markReadAfterAction()) {
+		return;
+	}
+	if (const auto forum = history->peer->forum()) {
+		const auto topic = topicRootId ? forum->topicFor(topicRootId) : nullptr;
+		if (const auto last = topic ? topic->lastServerMessage() : nullptr) {
+			readHistory(last);
+		}
 		return;
 	}
 	if (const auto last = history->lastServerMessage()) {
