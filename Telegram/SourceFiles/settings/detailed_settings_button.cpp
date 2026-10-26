@@ -94,6 +94,11 @@ void DetailedSettingsButton::setToggleLocked(bool locked) {
 	_toggle->setLocked(locked);
 }
 
+void DetailedSettingsButton::setIconColor(const style::color *color) {
+	_iconColor = color;
+	update();
+}
+
 void DetailedSettingsButton::finishAnimating() {
 	_toggle->finishAnimating();
 }
@@ -285,7 +290,11 @@ void DetailedSettingsButton::paintIcon(QPainter &p) const {
 			p.save();
 			p.translate(foreground.x() + shiftX, foreground.y() + shiftY);
 			p.scale(scale, scale);
-			_iconForeground->paint(p, 0, 0, source.width());
+			if (_iconColor) {
+				_iconForeground->paint(p, 0, 0, source.width(), (*_iconColor)->c);
+			} else {
+				_iconForeground->paint(p, 0, 0, source.width());
+			}
 			p.restore();
 		}
 	}

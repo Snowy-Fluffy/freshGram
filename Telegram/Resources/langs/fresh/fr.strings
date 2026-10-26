@@ -214,6 +214,8 @@
 "fresh_PluginLicense" = "Licence : {license}";
 "fresh_PluginPermissionRequiredShort" = "Obligatoire";
 "fresh_PluginPermissionNewShort" = "Nouveau";
+"fresh_PluginPermissionsRequiredAbout" = "Le plugin ne peut pas fonctionner sans ces autorisations, elles sont donc toujours activées.";
+"fresh_PluginPermissionRequiredToast" = "« {permission} » est obligatoire : le plugin ne peut pas fonctionner sans elle.";
 "fresh_PluginLogOnlyProblems" = "Problèmes seulement";
 "fresh_PluginLogNoProblems" = "Aucun problème enregistré.";
 "fresh_PluginLogCopy" = "Copier";

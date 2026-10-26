@@ -203,6 +203,19 @@ pluginDangerMedium: FlatLabel(boxDividerLabel) {
 pluginDangerHigh: FlatLabel(boxDividerLabel) {
 	textFg: attentionButtonFg;
 }
+pluginDangerTitleLow: FlatLabel(defaultSubsectionTitle) {
+	textFg: boxTextFgGood;
+}
+pluginDangerTitleMedium: FlatLabel(defaultSubsectionTitle) {
+	textFg: historyPeer8NameFg;
+}
+pluginDangerTitleHigh: FlatLabel(defaultSubsectionTitle) {
+	textFg: attentionButtonFg;
+}
+pluginPermissionButtonStyle: DetailedSettingsButtonStyle(detailedSettingsButtonStyle) {
+	iconPadding: 4px;
+	iconForegroundPadding: 2px;
+}
 
 pluginHeaderIconSize: 56px;
 pluginHeaderIconRadius: 14px;

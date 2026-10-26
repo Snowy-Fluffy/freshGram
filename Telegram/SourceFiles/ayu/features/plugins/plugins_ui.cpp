@@ -2182,10 +2182,78 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		}
 		*granted = std::move(now);
 	};
+	const auto backgroundFor = [](fgpl::Danger danger) {
+		return (danger == fgpl::Danger::High)
+			? &st::settingsIconBg1
+			: (danger == fgpl::Danger::Medium)
+			? &st::settingsIconBg3
+			: &st::settingsIconBg2;
+	};
+	const auto addRow = [&](const fgpl::PermissionRequest *request) {
+		const auto fresh = ranges::find(added, request->id) != end(added);
+		const auto checked = request->required
+			|| !current
+			|| fresh
+			|| current->granted.contains(request->id);
+		if (checked) {
+			initial.insert(request->id);
+		}
+		auto about = QStringList();
+		if (fresh) {
+			about.push_back(tr::fresh_PluginPermissionNewShort(tr::now));
+		}
+		const auto reason = Utf8(request->reason.get(Language()));
+		about.push_back(reason.isEmpty() ? Utf8(request->id) : reason);
+		const auto title = PermissionTitle(request->id, request->scope);
+		const auto button = AddDetailedSettingsButton(
+			container,
+			rpl::single(title),
+			rpl::single(about.join(u" · "_q)),
+			{
+				.icon = PermissionIcon(request->id),
+				.background = backgroundFor(
+					fgpl::PermissionDanger(request->id, request->scope)),
+			},
+			rpl::single(checked),
+			st::pluginPermissionButtonStyle);
+		button->setIconColor(&st::windowFgActive);
+		if (request->required) {
+			button->setToggleLocked(true);
+			button->addClickHandler([=] {
+				controller->showToast(tr::fresh_PluginPermissionRequiredToast(
+					tr::now,
+					lt_permission,
+					title));
+			});
+		}
+		button->finishAnimating();
+		button->toggledChanges() | rpl::on_next(refresh, button->lifetime());
+		checks->emplace_back(request->id, button.get());
+	};
+	auto required = std::vector<const fgpl::PermissionRequest*>();
+	for (const auto &request : manifest.permissions) {
+		if (request.required) {
+			required.push_back(&request);
+		}
+	}
+	if (!required.empty()) {
+		Ui::AddSkip(container);
+		Ui::AddSubsectionTitle(
+			container,
+			tr::fresh_PluginPermissionRequiredShort());
+		for (const auto request : required) {
+			addRow(request);
+		}
+		Ui::AddSkip(container);
+		Ui::AddDividerText(
+			container,
+			tr::fresh_PluginPermissionsRequiredAbout());
+	}
 	for (const auto danger : { fgpl::Danger::High, fgpl::Danger::Medium, fgpl::Danger::Low }) {
 		auto group = std::vector<const fgpl::PermissionRequest*>();
 		for (const auto &request : manifest.permissions) {
-			if (fgpl::PermissionDanger(request.id, request.scope) == danger) {
+			if (!request.required
+				&& fgpl::PermissionDanger(request.id, request.scope) == danger) {
 				group.push_back(&request);
 			}
 		}
@@ -2199,42 +2267,15 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 				? tr::fresh_PluginDangerHigh()
 				: (danger == fgpl::Danger::Medium)
 				? tr::fresh_PluginDangerMedium()
-				: tr::fresh_PluginDangerLow());
-		const auto background = (danger == fgpl::Danger::High)
-			? &st::settingsIconBg1
-			: (danger == fgpl::Danger::Medium)
-			? &st::settingsIconBg3
-			: &st::settingsIconBg2;
+				: tr::fresh_PluginDangerLow(),
+			style::margins(),
+			(danger == fgpl::Danger::High)
+				? &st::pluginDangerTitleHigh
+				: (danger == fgpl::Danger::Medium)
+				? &st::pluginDangerTitleMedium
+				: &st::pluginDangerTitleLow);
 		for (const auto request : group) {
-			const auto fresh = ranges::find(added, request->id) != end(added);
-			const auto checked = request->required
-				|| !current
-				|| fresh
-				|| current->granted.contains(request->id);
-			if (checked) {
-				initial.insert(request->id);
-			}
-			auto about = QStringList();
-			if (request->required) {
-				about.push_back(tr::fresh_PluginPermissionRequiredShort(tr::now));
-			} else if (fresh) {
-				about.push_back(tr::fresh_PluginPermissionNewShort(tr::now));
-			}
-			const auto reason = Utf8(request->reason.get(Language()));
-			about.push_back(reason.isEmpty() ? Utf8(request->id) : reason);
-			const auto button = AddDetailedSettingsButton(
-				container,
-				rpl::single(PermissionTitle(request->id, request->scope)),
-				rpl::single(about.join(u" · "_q)),
-				{ .icon = PermissionIcon(request->id), .background = background },
-				rpl::single(checked),
-				st::detailedSettingsButtonStyle);
-			if (request->required) {
-				button->setToggleLocked(true);
-			}
-			button->finishAnimating();
-			button->toggledChanges() | rpl::on_next(refresh, button->lifetime());
-			checks->emplace_back(request->id, button.get());
+			addRow(request);
 		}
 	}
 	*granted = std::move(initial);

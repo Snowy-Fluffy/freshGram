@@ -214,6 +214,8 @@
 "fresh_PluginLicense" = "许可证：{license}";
 "fresh_PluginPermissionRequiredShort" = "必需";
 "fresh_PluginPermissionNewShort" = "新增";
+"fresh_PluginPermissionsRequiredAbout" = "没有这些权限插件无法运行，因此它们始终开启。";
+"fresh_PluginPermissionRequiredToast" = "“{permission}”为必需权限：没有它插件无法运行。";
 "fresh_PluginLogOnlyProblems" = "仅显示问题";
 "fresh_PluginLogNoProblems" = "没有记录到问题。";
 "fresh_PluginLogCopy" = "复制";

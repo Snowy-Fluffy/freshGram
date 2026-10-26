@@ -214,6 +214,8 @@
 "fresh_PluginLicense" = "Lizenz: {license}";
 "fresh_PluginPermissionRequiredShort" = "Erforderlich";
 "fresh_PluginPermissionNewShort" = "Neu";
+"fresh_PluginPermissionsRequiredAbout" = "Ohne diese Berechtigungen funktioniert das Plugin nicht, deshalb sind sie immer aktiv.";
+"fresh_PluginPermissionRequiredToast" = "„{permission}“ ist erforderlich: Ohne sie funktioniert das Plugin nicht.";
 "fresh_PluginLogOnlyProblems" = "Nur Probleme";
 "fresh_PluginLogNoProblems" = "Keine Probleme aufgezeichnet.";
 "fresh_PluginLogCopy" = "Kopieren";
