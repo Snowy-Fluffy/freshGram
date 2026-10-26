@@ -1330,6 +1330,40 @@ void TestManualStartOfLazyPlugin() {
 	manager.shutdown();
 }
 
+void TestCustomIconsReachTheSnapshot() {
+	auto lab = Lab("fgpl-manager-icons");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.icons");
+	const auto key = Seed(1);
+	auto document = Document(id, "1.0.0", { { "messages.read", {} }, { "ui.menu", {} } });
+	Set(document, "contributes.icons", cbor::Value::FromMap({ { "mark", Text("mark.svg") } }));
+	Set(document, "contributes.menus", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "surface", Text("message") }, { "id", Text("go") }, { "title", Text("Go") }, { "icon", Text("mark") } }),
+	}));
+	const auto svg = std::string("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"/>");
+	const auto installed = manager.install(Build(document, {
+		{ "plugin.wasm", wat::Wasm(wat::Module("", "(i32.const 0)")) },
+		{ "mark.svg", cbor::Bytes(svg.begin(), svg.end()) },
+	}, &key).archive);
+	CHECK(installed.ok());
+	if (!installed.ok()) {
+		for (const auto &line : installed.error().details) {
+			std::fprintf(stderr, "    %s\n", line.c_str());
+		}
+	}
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read", "ui.menu" }, std::nullopt }));
+	const auto snapshot = manager.snapshot();
+	const auto icon = snapshot.customIcon(id, "mark");
+	CHECK(icon && icon->size() == svg.size());
+	CHECK(!snapshot.customIcon(id, "other"));
+	const auto contributions = snapshot.contributions("A", "en");
+	CHECK(contributions.size() == 1
+		&& contributions[0].menus.size() == 1
+		&& contributions[0].menus[0].icon == "mark");
+	manager.shutdown();
+}
+
 int main(int argc, char **argv) {
 	const auto only = (argc > 1) ? std::string(argv[1]) : std::string();
 	const auto run = [&](const char *name, void (*test)()) {
@@ -1351,6 +1385,7 @@ int main(int argc, char **argv) {
 	run("busylock", TestLockIsPromptWhileBusy);
 	run("timers", TestTimersWakeThePlugin);
 	run("manual", TestManualStartOfLazyPlugin);
+	run("icons", TestCustomIconsReachTheSnapshot);
 	run("stress", TestManyPluginsAndAccounts);
 	run("cancel", TestStopWhileStartingIsPrompt);
 	run("unload", TestSelfUnloadAndLazyStart);

@@ -35,6 +35,8 @@
 namespace AyuUi {
 namespace {
 
+constexpr auto kPendingToggleMs = crl::time(3000);
+
 [[nodiscard]] QString StateText(FreshPlugins::State state) {
 	switch (state) {
 	case FreshPlugins::State::Unavailable:
@@ -54,18 +56,26 @@ namespace {
 
 #ifdef FRESHGRAM_PLUGINS
 
+[[nodiscard]] QString ShortReason(const std::string &reason) {
+	constexpr auto kMaxReason = 48;
+	const auto text = QString::fromStdString(reason);
+	return (text.size() > kMaxReason)
+		? (text.left(kMaxReason - 1).trimmed() + QChar(0x2026))
+		: text;
+}
+
 [[nodiscard]] QString StatusLine(const fgpl::PluginInfo &info) {
 	auto parts = QStringList{ QString::fromStdString(info.version) };
 	if (!info.problem.empty()) {
 		parts.push_back(tr::fresh_PluginBroken(
 			tr::now,
 			lt_reason,
-			QString::fromStdString(info.problem)));
+			ShortReason(info.problem)));
 	} else if (!info.disabledReason.empty()) {
 		parts.push_back(tr::fresh_PluginStatusDisabled(
 			tr::now,
 			lt_reason,
-			QString::fromStdString(info.disabledReason)));
+			ShortReason(info.disabledReason)));
 	} else if (info.status == fgpl::PluginStatus::Running) {
 		parts.push_back(tr::fresh_PluginStatusRunning(tr::now));
 	} else if (!info.enabled) {
@@ -76,12 +86,12 @@ namespace {
 			lt_seconds,
 			QString::number((info.retryInMs + 999) / 1000),
 			lt_reason,
-			QString::fromStdString(info.lastFailure)));
+			ShortReason(info.lastFailure)));
 	} else if (!info.lastFailure.empty()) {
 		parts.push_back(tr::fresh_PluginStatusFailed(
 			tr::now,
 			lt_reason,
-			QString::fromStdString(info.lastFailure)));
+			ShortReason(info.lastFailure)));
 	} else if (info.onDemand) {
 		parts.push_back(tr::fresh_PluginStatusOnDemand(tr::now));
 	} else {
@@ -93,9 +103,26 @@ namespace {
 	return parts.join(u" · "_q);
 }
 
+// WHY: the card background is painted by the outer layout and does not notice rebuilt rows.
+void RepaintCards(not_null<QWidget*> widget) {
+	auto target = widget.get();
+	for (auto parent = widget->parentWidget(); parent; parent = parent->parentWidget()) {
+		if (parent->property("fa_cards").toBool()) {
+			target = parent;
+		}
+	}
+	target->update();
+}
+
+struct PendingToggle {
+	bool value = false;
+	crl::time since = 0;
+};
+
 struct PluginRow {
 	std::shared_ptr<rpl::variable<QString>> status;
 	Ui::ToggleView *check = nullptr;
+	std::shared_ptr<PendingToggle> pending;
 };
 
 [[nodiscard]] PluginRow AddPluginRow(
@@ -109,6 +136,7 @@ struct PluginRow {
 		: QString::fromStdString(info.name);
 	const auto row = container->add(object_ptr<Ui::VerticalLayout>(container));
 	const auto status = std::make_shared<rpl::variable<QString>>(StatusLine(info));
+	const auto pending = std::make_shared<PendingToggle>();
 	const auto [button, toggle, checkView] = Settings::SetupSplitToggle(
 		row,
 		rpl::single(name),
@@ -125,11 +153,12 @@ struct PluginRow {
 		}
 		const auto enable = !view->checked();
 		view->setChecked(enable, anim::type::normal);
+		*pending = { enable, crl::now() };
 		FreshPlugins::Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->setEnabled(id, enable);
 		});
 	});
-	return { status, checkView.get() };
+	return { status, checkView.get(), pending };
 }
 
 #endif
@@ -343,12 +372,19 @@ void FillComponentsBox(
 		st::boxRowPadding + QMargins(0, st::defaultVerticalListSkip, 0, 0));
 	Ui::AddSkip(container);
 
-	Settings::AddButtonWithIcon(
+	const auto idle = FreshPlugins::RuntimeStatusValue(
+	) | rpl::map([](const FreshPlugins::RuntimeStatus &status) {
+		return status.stage == FreshPlugins::RuntimeStage::Idle;
+	});
+	const auto check = Settings::AddButtonWithIcon(
 		container,
 		tr::fresh_PluginsCheckUpdates(),
 		st::settingsButton,
-		{ &st::menuIconDownload }
-	)->addClickHandler([=] {
+		{ &st::menuIconDownload });
+	rpl::duplicate(idle) | rpl::on_next([=](bool idle) {
+		check->setDisabled(!idle);
+	}, check->lifetime());
+	check->addClickHandler([=] {
 		if (FreshPlugins::CurrentRuntimeStatus().stage
 			== FreshPlugins::RuntimeStage::Idle) {
 			CheckAndOffer(controller, nullptr);
@@ -366,12 +402,15 @@ void FillComponentsBox(
 		AyuSettings::getInstance().setPluginsRuntimeAutoUpdate(enabled);
 	}, box->lifetime());
 	if (!FreshPlugins::RuntimePackaged()) {
-		Settings::AddButtonWithIcon(
+		const auto fromFile = Settings::AddButtonWithIcon(
 			container,
 			tr::fresh_PluginsInstallRuntimeFromFile(),
 			st::settingsButton,
-			{ &st::menuIconFile }
-		)->addClickHandler([=] {
+			{ &st::menuIconFile });
+		rpl::duplicate(idle) | rpl::on_next([=](bool idle) {
+			fromFile->setDisabled(!idle);
+		}, fromFile->lifetime());
+		fromFile->addClickHandler([=] {
 			if (FreshPlugins::CurrentRuntimeStatus().stage
 				== FreshPlugins::RuntimeStage::Idle) {
 				ChooseRuntimeFile(controller);
@@ -424,10 +463,14 @@ void AddPluginsSettings(
 		true);
 	toggle->addClickHandler([=] {
 		auto &settings = AyuSettings::getInstance();
+		const auto busy = (FreshPlugins::CurrentRuntimeStatus().stage
+			!= FreshPlugins::RuntimeStage::Idle);
 		if (settings.pluginsEnabled()) {
 			settings.setPluginsEnabled(false);
 		} else if (!FreshPlugins::SandboxSupported()) {
 			controller->showToast(tr::fresh_PluginsNoSandbox(tr::now));
+		} else if (busy) {
+			controller->showToast(RuntimeLabel(FreshPlugins::CurrentRuntimeStatus()));
 		} else if (FreshPlugins::CurrentRuntimeStatus().installed) {
 			settings.setPluginsEnabled(true);
 		} else {
@@ -467,6 +510,11 @@ void AddPluginsSettings(
 				const auto &info = plugins[i];
 				(*rows)[i].status->force_assign(StatusLine(info));
 				const auto on = info.enabled && info.problem.empty();
+				auto &pending = *(*rows)[i].pending;
+				if (pending.since && pending.value != on && crl::now() - pending.since < kPendingToggleMs) {
+					continue;
+				}
+				pending.since = 0;
 				if ((*rows)[i].check->checked() != on) {
 					(*rows)[i].check->setChecked(on, anim::type::normal);
 				}
@@ -480,7 +528,7 @@ void AddPluginsSettings(
 			rows->push_back(AddPluginRow(list, controller, info));
 		}
 		*empty = plugins.empty();
-		list->update();
+		RepaintCards(list);
 	};
 	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {

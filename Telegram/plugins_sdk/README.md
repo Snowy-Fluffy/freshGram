@@ -218,12 +218,41 @@ in between.
 
 A plugin never draws widgets. It declares menu items and commands in the manifest
 (`contributes.menus`, `contributes.commands`, each needing `ui.menu` / `ui.command`) and the
-app draws them with the plugin's name next to the title. Activations come back as events:
+app draws them with the plugin's name next to the title. Every `composer` item becomes its
+own button next to the message field, for every plugin; when there are more than three, the
+last button opens a menu with the rest.
+
+Icons: a menu item, and the `toggle`, `button`, `link`, `select` and `chat` items of a page,
+take `icon`, either a built-in name or one of the plugin's own icons. The plugin lists its own
+icons in `contributes.icons` as `{"name": "icons/name.svg"}` (up to 32 `.svg` or `.png` files
+from `files`, each up to 64 KiB). The app draws every icon as a mask in its own icon color, so
+draw them in one color on a transparent background, 24×24. Built-in names: `add`, `archive`,
+`block`, `bot`, `cancel`, `chat`, `chats`, `clear`, `collapse`, `commands`, `copy`,
+`customize`, `delete`, `devices`, `download`, `edit`, `emoji`, `expand`, `export`, `file`,
+`folder`, `font`, `forward`, `gif`, `hide`, `hourglass`, `info`, `like`, `link`, `lock`,
+`mark_read`, `mute`, `network`, `night`, `notifications`, `palette`, `permissions`, `phone`,
+`photo`, `pin`, `premium`, `profile`, `qr`, `reactions`, `remove`, `reply`, `report`,
+`restore`, `schedule`, `search`, `select`, `send`, `settings`, `share`, `show`, `silent`,
+`sound_off`, `sound_on`, `spoiler`, `star`, `stats`, `stickers`, `storage`, `timer`,
+`translate`, `unmute`, `unpin`, `users`, `zoom_in`, `zoom_out`. A menu item with an unknown
+icon is refused at install; a page item with an unknown icon shows the default one.
+
+```json
+"contributes": {
+  "icons": { "spark": "icons/spark.svg" },
+  "menus": [
+    { "surface": "composer", "id": "tr", "title": "Translate", "icon": "translate" },
+    { "surface": "message", "id": "save", "title": "Save note", "icon": "spark" }
+  ]
+}
+```
+
+Activations come back as events:
 
 | Event | Fields |
 |---|---|
 | `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); the `composer` surface is a button next to the input field and needs `ui.composer_button` |
-| `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope; the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
+| `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope, `reply_to` when the user was replying to a message of that chat (the reply is then taken off the input field, so answer with `messages.send` and `reply_to`); the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
 | `settings.open` | the user opened the plugin's settings; send the page now (the plugin is started for it) |
 | `settings.change` | `id`, `value` of a toggle, input, select, slider (a number) or chat picker (a chat id) |
 | `settings.click` | `id` of a button or of one of the page's `buttons` |
@@ -238,14 +267,14 @@ The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items"
 | `text` | `text` (up to 1000 bytes, new lines allowed) |
 | `header` | `text`: a section title |
 | `divider` | none |
-| `link` | `label`, `url` (`https://` only); opens in the browser |
+| `link` | `label`, `url` (`https://` only), `icon`; opens in the browser |
 | `progress` | `label`, `value` from 0 to 100 |
-| `toggle` | `id`, `label`, `value` |
-| `button` | `id`, `label`, `style` (`default`, `primary`, `danger`) |
+| `toggle` | `id`, `label`, `value`, `icon` |
+| `button` | `id`, `label`, `style` (`default`, `primary`, `danger`), `icon` |
 | `input` | `id`, `label`, `value`, `placeholder`, `multiline`, `password`, `max` (up to 4096 bytes) |
-| `select` | `id`, `label`, `value`, `options: [{value, label}]` (up to 16) |
+| `select` | `id`, `label`, `value`, `options: [{value, label}]` (up to 16), `icon` |
 | `slider` | `id`, `label`, `min`, `max`, `step`, `value` (at most 1000 steps) |
-| `chat` | `id`, `label`, `value` (a chat id or 0): the user picks a chat |
+| `chat` | `id`, `label`, `value` (a chat id or 0), `icon`: the user picks a chat |
 
 Interactive items also take `hint` (a line of text under the item) and
 `disabled`. `buttons` (up to 3 of `{id, label, style}`) are drawn at the bottom

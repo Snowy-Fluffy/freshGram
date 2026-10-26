@@ -82,6 +82,11 @@ void Tray::create() {
 
 	const auto pluginItems = _tray.lifetime().make_state<QString>(
 		FreshPlugins::TrayItemsKey());
+	Core::App().domain().activeChanges(
+	) | rpl::on_next([=] {
+		*pluginItems = FreshPlugins::TrayItemsKey();
+		rebuildMenu();
+	}, _tray.lifetime());
 	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
 		auto now = FreshPlugins::TrayItemsKey();

@@ -30,6 +30,7 @@ struct MenuItem {
 	std::string surface;
 	std::string id;
 	Localized title;
+	std::string icon;
 };
 
 struct Command {
@@ -88,6 +89,7 @@ struct Manifest {
 	std::vector<PermissionRequest> permissions;
 	std::vector<std::string> events;
 	std::vector<MenuItem> menus;
+	std::map<std::string, std::string> icons;
 	std::vector<Command> commands;
 	bool settingsPage = false;
 	std::string outgoing;

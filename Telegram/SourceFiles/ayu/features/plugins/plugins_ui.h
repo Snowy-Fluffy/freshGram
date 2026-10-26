@@ -2,6 +2,7 @@
 #pragma once
 
 #include "base/basic_types.h"
+#include "ui/rp_widget.h"
 
 class HistoryItem;
 class PeerData;
@@ -24,6 +25,10 @@ class GenericBox;
 class PopupMenu;
 class VerticalLayout;
 } // namespace Ui
+
+namespace Ui::Menu {
+struct MenuCallback;
+} // namespace Ui::Menu
 
 namespace Window {
 class SessionController;
@@ -81,10 +86,22 @@ void AddPluginHeader(
 [[nodiscard]] bool HasComposerItems(
 	not_null<Main::Session*> session,
 	not_null<PeerData*> peer);
-void ShowComposerMenu(
-	not_null<Window::SessionController*> controller,
-	not_null<PeerData*> peer,
-	not_null<QWidget*> button);
+
+class ComposerButtons final : public Ui::RpWidget {
+public:
+	ComposerButtons(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
+	~ComposerButtons();
+
+	bool refresh(PeerData *peer, MsgId topicRootId);
+	[[nodiscard]] bool empty() const;
+
+private:
+	struct State;
+	const std::unique_ptr<State> _state;
+
+};
 void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add);
 [[nodiscard]] QString TrayItemsKey();
 void ShowNetworkPanel(not_null<Window::SessionController*> controller);
@@ -99,7 +116,7 @@ void AddPeerMenuItems(
 	not_null<PeerData*> peer,
 	MsgId topicRootId,
 	bool profile,
-	Fn<void(const QString &title, Fn<void()> handler)> add);
+	const Ui::Menu::MenuCallback &add);
 
 void AddMainMenuItems(
 	not_null<Ui::VerticalLayout*> container,
@@ -109,6 +126,7 @@ struct PluginCommand {
 	QString name;
 	QString description;
 	QString plugin;
+	bool ambiguous = false;
 };
 
 [[nodiscard]] std::vector<PluginCommand> CommandsFor(
@@ -125,6 +143,7 @@ enum class CommandResult {
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
 	MsgId topicRootId,
+	MsgId replyToId,
 	const QString &text);
 
 void ShowPluginSettings(

@@ -158,6 +158,7 @@ SplitToggle SetupSplitToggle(
 	}, toggle->lifetime());
 
 	const auto checkWidget = Ui::CreateChild<Ui::RpWidget>(toggle);
+	checkWidget->show();
 	checkWidget->resize(checkView->getSize());
 	checkWidget->paintRequest(
 	) | rpl::on_next([=] {

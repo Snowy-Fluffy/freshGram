@@ -182,6 +182,7 @@ struct ContributedMenu {
 	std::string surface;
 	std::string id;
 	std::string title;
+	std::string icon;
 };
 
 struct ContributedCommand {
@@ -212,6 +213,7 @@ struct ManagerSnapshot {
 	std::map<std::string, GrantDecision> grants;
 	std::map<std::string, std::shared_ptr<LogRing>> logs;
 	std::map<std::string, std::shared_ptr<const cbor::Bytes>> icons;
+	std::map<std::pair<std::string, std::string>, std::shared_ptr<const cbor::Bytes>> customIcons;
 	HostEnvironment environment;
 	bool loaded = false;
 	bool wantsEvents = false;
@@ -223,6 +225,9 @@ struct ManagerSnapshot {
 		const std::string &id) const;
 	[[nodiscard]] std::shared_ptr<const cbor::Bytes> icon(
 		const std::string &id) const;
+	[[nodiscard]] std::shared_ptr<const cbor::Bytes> customIcon(
+		const std::string &id,
+		const std::string &name) const;
 	[[nodiscard]] std::optional<GrantDecision> grantsOf(
 		const std::string &id) const;
 	[[nodiscard]] std::vector<std::string> log(const std::string &id) const;
@@ -510,6 +515,7 @@ private:
 	ManagerConfig _config;
 	mutable std::map<std::string, std::pair<std::string, std::shared_ptr<const Manifest>>> _manifests;
 	mutable std::map<std::string, std::shared_ptr<const cbor::Bytes>> _icons;
+	mutable std::map<std::pair<std::string, std::string>, std::shared_ptr<const cbor::Bytes>> _customIcons;
 	std::map<std::string, Record> _records;
 	std::map<Key, std::shared_ptr<Instance>> _instances;
 	std::vector<std::shared_ptr<OutgoingChain>> _chains;

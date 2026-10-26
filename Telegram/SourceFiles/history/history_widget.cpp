@@ -640,7 +640,7 @@ HistoryWidget::HistoryWidget(
 			_scheduled->setVisible(!hide);
 		}
 		if (_pluginsToggle) {
-			_pluginsToggle->setVisible(!hide);
+			_pluginsToggle->setVisible(!hide && !_editMsgId);
 		}
 		updateFieldSize();
 		moveFieldControls();
@@ -1349,9 +1349,7 @@ HistoryWidget::HistoryWidget(
 	setupScheduledToggle();
 	FreshPlugins::ListChanges(
 	) | rpl::on_next([=] {
-		const auto had = (_pluginsToggle.data() != nullptr);
-		refreshPluginsToggle();
-		if (had != (_pluginsToggle.data() != nullptr)) {
+		if (refreshPluginsToggle()) {
 			updateControlsVisibility();
 			updateControlsGeometry();
 		}
@@ -4221,26 +4219,25 @@ void HistoryWidget::refreshScheduledToggle() {
 	}
 }
 
-void HistoryWidget::refreshPluginsToggle() {
+bool HistoryWidget::refreshPluginsToggle() {
 	const auto has = _history
 		&& _canSendMessages
 		&& FreshPlugins::HasComposerItems(&session(), _history->peer);
-	if (!_pluginsToggle && has) {
-		_pluginsToggle.create(this, st::historyPluginsToggle);
-		_pluginsToggle->setAccessibleName(tr::fresh_Plugins(tr::now));
-		_pluginsToggle->show();
-		_pluginsToggle->addClickHandler([=] {
-			if (_history) {
-				FreshPlugins::ShowComposerMenu(
-					controller(),
-					_history->peer,
-					_pluginsToggle.data());
-			}
-		});
-		orderWidgets(); // Raise drag areas to the top.
-	} else if (_pluginsToggle && !has) {
+	if (!has) {
+		if (!_pluginsToggle) {
+			return false;
+		}
 		_pluginsToggle.destroy();
+		return true;
 	}
+	auto changed = false;
+	if (!_pluginsToggle) {
+		_pluginsToggle.create(this, controller());
+		_pluginsToggle->show();
+		orderWidgets(); // Raise drag areas to the top.
+		changed = true;
+	}
+	return _pluginsToggle->refresh(_history->peer, MsgId()) || changed;
 }
 
 void HistoryWidget::refreshSendGiftToggle() {
@@ -6084,14 +6081,23 @@ void HistoryWidget::sendVoice(const VoiceToSend &data) {
 void HistoryWidget::send(Api::SendOptions options) {
 	if (!_history) {
 		return;
-	} else if (!_editMsgId) {
+	} else if (!_editMsgId && !options.scheduled && !options.silent) {
+		const auto reply = replyTo();
+		const auto replyToId = (reply.messageId.peer == _history->peer->id)
+			? reply.messageId.msg
+			: MsgId();
 		const auto command = FreshPlugins::RunCommand(
 			controller(),
 			_history->peer,
 			MsgId(),
+			replyToId,
 			_field->getTextWithAppliedMarkdown().text);
 		if (command == FreshPlugins::CommandResult::Sent) {
 			clearFieldText();
+			if (replyToId) {
+				// The plugin answers to it, like a sent message would.
+				cancelReply();
+			}
 			saveDraftWithTextNow();
 			return;
 		} else if (command == FreshPlugins::CommandResult::Refused) {
@@ -8020,15 +8026,21 @@ void HistoryWidget::moveFieldControls() {
 	}
 	if (_toggleSuggestPost) {
 		_toggleSuggestPost->moveToRight(right, buttonsBottom);
-		right += _toggleSuggestPost->width();
+		if (!_toggleSuggestPost->isHidden()) {
+			right += _toggleSuggestPost->width();
+		}
 	}
 	if (_giftToUser) {
 		_giftToUser->moveToRight(right, buttonsBottom);
-		right += _giftToUser->width();
+		if (!_giftToUser->isHidden()) {
+			right += _giftToUser->width();
+		}
 	}
 	if (_scheduled) {
 		_scheduled->moveToRight(right, buttonsBottom);
-		right += _scheduled->width();
+		if (!_scheduled->isHidden()) {
+			right += _scheduled->width();
+		}
 	}
 	if (_pluginsToggle) {
 		_pluginsToggle->moveToRight(right, buttonsBottom);

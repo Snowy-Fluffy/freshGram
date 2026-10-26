@@ -368,6 +368,43 @@ void TestSignedTextIgnoresTheSignature() {
 
 } // namespace
 
+void TestIcons() {
+	auto document = ValidDocument();
+	Set(document, "permissions.optional", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "id", Text("ui.menu") }, { "reason", Text("x") } }),
+	}));
+	Set(document, "contributes.icons", cbor::Value::FromMap({
+		{ "star-mark", Text("icon.png") },
+	}));
+	Set(document, "contributes.menus", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "surface", Text("message") }, { "id", Text("a") }, { "title", Text("A") }, { "icon", Text("star-mark") } }),
+		cbor::Value::FromMap({ { "surface", Text("chat") }, { "id", Text("b") }, { "title", Text("B") }, { "icon", Text("translate") } }),
+	}));
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (parsed.ok()) {
+		CHECK(parsed.value().icons.at("star-mark") == "icon.png");
+		CHECK(parsed.value().menus[0].icon == "star-mark");
+		CHECK(parsed.value().menus[1].icon == "translate");
+	}
+	const auto withMenus = [](auto &d, const char *icon) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("ui.menu") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.menus", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "surface", Text("message") }, { "id", Text("a") }, { "title", Text("A") }, { "icon", Text(icon) } }),
+		}));
+	};
+	ExpectError("unknown icon", [&](auto &d) { withMenus(d, "nope"); }, "unknown icon");
+	ExpectError("bad icon name", [&](auto &d) { withMenus(d, "Bad Name"); }, "bad icon name");
+	ExpectError("icon type", [](auto &d) {
+		Set(d, "contributes.icons", cbor::Value::FromMap({ { "a", Text("CHANGELOG.md") } }));
+	}, ".png or .svg");
+	ExpectError("icon file", [](auto &d) {
+		Set(d, "contributes.icons", cbor::Value::FromMap({ { "a", Text("missing.svg") } }));
+	}, "missing.svg");
+}
+
 int main() {
 	TestOutdated();
 	TestValidManifest();
@@ -376,5 +413,6 @@ int main() {
 	TestPythonRuntime();
 	TestCompatibility();
 	TestSignedTextIgnoresTheSignature();
+	TestIcons();
 	return Failures() ? 1 : 0;
 }
