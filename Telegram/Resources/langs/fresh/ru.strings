@@ -137,6 +137,7 @@
 "fresh_PluginPublisherChanged" = "Издатель этого плагина изменился. Всё равно установить?";
 "fresh_PluginsEnableFirst" = "Сначала включите плагины в настройках.";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
+"fresh_PluginsRevision" = "Ревизия";
 "fresh_PluginsNotInstalled" = "Не установлено";
 "fresh_PluginsCheckUpdates" = "Проверить обновления";
 "fresh_PluginsAutoUpdate" = "Обновлять компоненты автоматически";

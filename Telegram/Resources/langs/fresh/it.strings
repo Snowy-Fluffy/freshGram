@@ -137,6 +137,7 @@
 "fresh_PluginPublisherChanged" = "L'editore di questo plugin è cambiato. Installarlo comunque?";
 "fresh_PluginsEnableFirst" = "Abilita prima i plugin nelle impostazioni.";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
+"fresh_PluginsRevision" = "Revisione";
 "fresh_PluginsNotInstalled" = "Non installato";
 "fresh_PluginsCheckUpdates" = "Controlla aggiornamenti";
 "fresh_PluginsAutoUpdate" = "Aggiorna i componenti automaticamente";

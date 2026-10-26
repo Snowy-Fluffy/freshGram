@@ -137,6 +137,7 @@
 "fresh_PluginPublisherChanged" = "Der Herausgeber dieses Plugins hat sich geändert. Trotzdem installieren?";
 "fresh_PluginsEnableFirst" = "Aktiviere zuerst Plugins in den Einstellungen.";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
+"fresh_PluginsRevision" = "Revision";
 "fresh_PluginsNotInstalled" = "Nicht installiert";
 "fresh_PluginsCheckUpdates" = "Nach Updates suchen";
 "fresh_PluginsAutoUpdate" = "Komponenten automatisch aktualisieren";

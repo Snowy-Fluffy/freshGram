@@ -343,27 +343,37 @@ void FillComponentsBox(
 	box->setTitle(tr::fresh_PluginsComponents());
 	box->setWidth(st::boxWideWidth);
 	const auto container = box->verticalLayout();
-	const auto version = [&](const QString &name, auto installed, auto remote) {
+	const auto version = [&](
+			rpl::producer<QString> name,
+			auto installed,
+			auto remote) {
 		const auto row = Settings::AddButtonWithLabel(
 			container,
-			rpl::single(name),
+			std::move(name),
 			FreshPlugins::RuntimeStatusValue(
 			) | rpl::map([=](const FreshPlugins::RuntimeStatus &status) {
-				return VersionText(status.*installed, status.updateAvailable
-					? status.*remote
+				return VersionText(installed(status), status.updateAvailable
+					? remote(status)
 					: QString());
 			}),
 			st::settingsButtonNoIcon);
 		row->setAttribute(Qt::WA_TransparentForMouseEvents);
 	};
+	const auto revision = [](int value) {
+		return value ? QString::number(value) : QString();
+	};
 	version(
-		u"Wasmtime"_q,
-		&FreshPlugins::RuntimeStatus::wasmtime,
-		&FreshPlugins::RuntimeStatus::remoteWasmtime);
+		rpl::single(u"Wasmtime"_q),
+		[](const auto &status) { return status.wasmtime; },
+		[](const auto &status) { return status.remoteWasmtime; });
 	version(
-		u"Python"_q,
-		&FreshPlugins::RuntimeStatus::python,
-		&FreshPlugins::RuntimeStatus::remotePython);
+		rpl::single(u"Python"_q),
+		[](const auto &status) { return status.python; },
+		[](const auto &status) { return status.remotePython; });
+	version(
+		tr::fresh_PluginsRevision(),
+		[=](const auto &status) { return revision(status.revision); },
+		[=](const auto &status) { return revision(status.remoteRevision); });
 	box->addRow(
 		object_ptr<Ui::FlatLabel>(
 			box,

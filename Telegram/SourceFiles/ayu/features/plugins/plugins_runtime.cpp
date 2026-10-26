@@ -134,10 +134,12 @@ void Publish(State &state) {
 	state.status.python = installed
 		? QString::fromStdString(installed->python)
 		: QString();
+	state.status.revision = installed ? installed->revision : 0;
 	state.status.remoteKnown = state.index.has_value();
 	if (state.index) {
 		state.status.remoteWasmtime = QString::fromStdString(state.index->wasmtime);
 		state.status.remotePython = QString::fromStdString(state.index->python);
+		state.status.remoteRevision = state.index->revision;
 		const auto bundle = fgpl::BundleFor(*state.index, kPlatform);
 		state.status.remoteSize = bundle ? qint64(bundle->size) : 0;
 		state.status.updateAvailable = bundle

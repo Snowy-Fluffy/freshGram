@@ -8923,6 +8923,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPublisherChanged" = "The publisher of this plugin has changed. Install it anyway?";
 "fresh_PluginsEnableFirst" = "Turn on plugins in the settings first.";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
+"fresh_PluginsRevision" = "Revision";
 "fresh_PluginsNotInstalled" = "Not installed";
 "fresh_PluginsCheckUpdates" = "Check for updates";
 "fresh_PluginsAutoUpdate" = "Update components automatically";
