@@ -174,6 +174,9 @@ void SpoilerMessCache::reset() {
 namespace {
 
 bool NamesSpoileredValue = false;
+bool NamesUniformValue = false;
+
+constexpr auto kUniformNameLength = 8;
 
 } // namespace
 
@@ -187,6 +190,14 @@ void SetNamesSpoilered(bool spoilered) {
 
 bool NamesSpoilered() {
 	return NamesSpoileredValue;
+}
+
+void SetNamesUniform(bool uniform) {
+	NamesUniformValue = uniform;
+}
+
+bool NamesUniform() {
+	return NamesUniformValue;
 }
 
 not_null<SpoilerMessCache*> DefaultSpoilerCache() {
@@ -806,7 +817,9 @@ void String::setMarkedText(
 			[](const EntityInText &entity) {
 				return entity.type() == EntityType::Spoiler;
 			})) {
-		auto hidden = textWithEntities;
+		auto hidden = NamesUniform()
+			? TextWithEntities{ QString(kUniformNameLength, QChar('x')) }
+			: textWithEntities;
 		hidden.entities.insert(hidden.entities.begin(), EntityInText(
 			EntityType::Spoiler,
 			0,

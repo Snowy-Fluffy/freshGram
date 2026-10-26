@@ -1140,11 +1140,15 @@ void Message::refreshRightBadge() {
 		}
 		return { QString(), BadgeRole::User, false };
 	}();
+	const auto hideRank = Ui::Text::NamesSpoilered();
 	auto tagText = TextWithEntities{
 		(text.isEmpty()
 			? delegate()->elementAuthorRank(this)
 			: TextUtilities::RemoveEmoji(TextUtilities::SingleLine(text)))
 	};
+	if (hideRank && !tagText.empty()) {
+		tagText = TextWithEntities{ QString(5, QChar('x')) };
+	}
 	const auto boosts = item->boostsApplied();
 	const auto needBadge = !tagText.empty() || boosts;
 	if (!needBadge) {
@@ -1157,7 +1161,7 @@ void Message::refreshRightBadge() {
 		AddComponents(RightBadge::Bit());
 	}
 	const auto badge = Get<RightBadge>();
-	badge->role = role;
+	badge->role = hideRank ? BadgeRole::User : role;
 	badge->special = special || (text.isEmpty() && !tagText.empty());
 	badge->channel = drawChannelBadge;
 	badge->tagLink = nullptr;
@@ -5628,10 +5632,13 @@ void Message::validateFromNameText(PeerData *from) const {
 	if (_fromNameRevealed && !Ui::Text::NamesSpoilered()) {
 		_fromNameRevealed = false;
 	}
-	if (from->isPremium()
-		|| (from->isChannel()
-			&& from->emojiStatusId()
-			&& from != history()->peer)) {
+	const auto hideStatus = AyuSettings::getInstance().hidePremiumStatuses()
+		|| Ui::Text::NamesSpoilered();
+	if (!hideStatus
+		&& (from->isPremium()
+			|| (from->isChannel()
+				&& from->emojiStatusId()
+				&& from != history()->peer))) {
 		if (!_fromNameStatus) {
 			_fromNameStatus = std::make_unique<FromNameStatus>();
 			const auto size = st::emojiSize;

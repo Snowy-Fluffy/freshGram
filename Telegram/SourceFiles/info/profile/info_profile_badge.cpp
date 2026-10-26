@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_badge.h"
 
+#include "ayu/features/streamer_mode/streamer_mode.h"
 #include "data/data_changes.h"
 #include "data/data_emoji_statuses.h"
 #include "data/data_peer.h"
@@ -280,8 +281,18 @@ rpl::producer<Badge::Content> BadgeContentForPeer(not_null<PeerData*> peer) {
 	const auto statusOnlyForPremium = peer->isUser();
 	return rpl::combine(
 		BadgeValue(peer),
-		EmojiStatusIdValue(peer)
-	) | rpl::map([=](BadgeType badge, EmojiStatusId emojiStatusId) {
+		EmojiStatusIdValue(peer),
+		AyuFeatures::StreamerMode::spoilersActiveValue()
+	) | rpl::map([=](
+			BadgeType badge,
+			EmojiStatusId emojiStatusId,
+			bool streamer) {
+		if (streamer) {
+			emojiStatusId = EmojiStatusId();
+			if (badge == BadgeType::Premium) {
+				badge = BadgeType::None;
+			}
+		}
 		if (emojiStatusId.collectible && (badge == BadgeType::Verified)) {
 			return Badge::Content{ BadgeType::Premium, emojiStatusId };
 		}

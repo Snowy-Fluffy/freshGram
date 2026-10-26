@@ -197,6 +197,7 @@ public:
 
 private:
 	mutable Ui::Text::String _nameText;
+	mutable int _nameTextHiding = 0;
 
 };
 

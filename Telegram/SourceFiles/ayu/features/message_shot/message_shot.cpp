@@ -244,8 +244,13 @@ void paintWallpaper(
 
 [[nodiscard]] auto spoilerNamesWhile(bool privacy) {
 	const auto was = Ui::Text::NamesSpoilered();
+	const auto wasUniform = Ui::Text::NamesUniform();
 	Ui::Text::SetNamesSpoilered(was || privacy);
-	return gsl::finally([=] { Ui::Text::SetNamesSpoilered(was); });
+	Ui::Text::SetNamesUniform(wasUniform || privacy);
+	return gsl::finally([=] {
+		Ui::Text::SetNamesSpoilered(was);
+		Ui::Text::SetNamesUniform(wasUniform);
+	});
 }
 
 void paintUserpic(

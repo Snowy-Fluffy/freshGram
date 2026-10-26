@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/chat/chat_theme.h"
 #include "ui/image/image_prepare.h" // ImageRoundRadius
+#include "ui/text/text.h"
 #include "ui/text/text_custom_emoji.h"
 #include "ui/color_contrast.h"
 #include "ui/painter.h"
@@ -1508,6 +1509,9 @@ QColor FromNameFg(
 		bool selected,
 		uint8 colorIndex,
 		const std::shared_ptr<Ui::ColorCollectible> &colorCollectible) {
+	if (Ui::Text::NamesSpoilered()) {
+		return st->coloredValues(selected, 0).name;
+	}
 	return !colorCollectible
 		? st->coloredValues(selected, colorIndex).name
 		: (st->dark() && (colorCollectible->darkAccentColor.alpha() > 0))
