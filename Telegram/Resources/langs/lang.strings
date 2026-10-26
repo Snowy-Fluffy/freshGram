@@ -8899,6 +8899,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsNetworkSeconds" = "{seconds} s";
 "fresh_PluginsNetworkMinutes" = "{minutes} min";
 "fresh_PluginStats" = "CPU {cpu} s · memory {memory} · received {received} · sent {sent}";
+"fresh_PluginLimits" = "Limits: memory {memory} · event time {time} · storage {storage}";
+"fresh_PluginNoStorage" = "none";
 "fresh_PluginUnloads" = "Unloaded itself: {times}";
 "fresh_PluginOutgoingBlocked" = "{plugin} stopped the message: {reason}";
 "fresh_PluginsNoKey" = "Plugins start after the app is unlocked.";

@@ -113,6 +113,8 @@
 "fresh_PluginsNetworkSeconds" = "{seconds} с";
 "fresh_PluginsNetworkMinutes" = "{minutes} мин";
 "fresh_PluginStats" = "ЦП {cpu} с · память {memory} · получено {received} · отправлено {sent}";
+"fresh_PluginLimits" = "Лимиты: память {memory} · время события {time} · хранилище {storage}";
+"fresh_PluginNoStorage" = "нет";
 "fresh_PluginUnloads" = "Выгружал себя: {times}";
 "fresh_PluginOutgoingBlocked" = "{plugin} остановил отправку: {reason}";
 "fresh_PluginsNoKey" = "Плагины запустятся после разблокировки приложения.";

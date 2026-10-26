@@ -1415,6 +1415,7 @@ void FillPermissionsBox(
 		if (!parsed->messagesFrom.empty()) {
 			lines.push_back(AcceptsFrom(parsed->messagesFrom));
 		}
+		lines.push_back(LimitsText(*parsed));
 	}
 	lines.push_back(tr::fresh_PluginStats(
 		tr::now,
@@ -2475,6 +2476,25 @@ QString AcceptsFrom(const std::vector<std::string> &senders) {
 	return tr::fresh_PluginAcceptsFrom(tr::now, lt_list, names.join(u", "_q));
 }
 
+QString LimitsText(const fgpl::Manifest &manifest) {
+	const auto size = [](int megabytes) {
+		return Ui::FormatSizeText(qint64(megabytes) << 20);
+	};
+	const auto timeout = manifest.eventTimeoutMs;
+	return tr::fresh_PluginLimits(
+		tr::now,
+		lt_memory,
+		size(manifest.memoryMb),
+		lt_time,
+		(timeout % 1000)
+			? (QString::number(timeout) + u" ms"_q)
+			: (QString::number(timeout / 1000) + u" s"_q),
+		lt_storage,
+		manifest.storageMb
+			? size(manifest.storageMb)
+			: tr::fresh_PluginNoStorage(tr::now));
+}
+
 QString PermissionTitle(const std::string &id, const std::string &scope) {
 	if (id == "messages.read" && scope == "all") {
 		return tr::fresh_PermMessagesReadAll(tr::now);
@@ -3122,6 +3142,10 @@ QString PermissionLabel(const std::string &id) {
 }
 
 QString AcceptsFrom(const std::vector<std::string> &) {
+	return QString();
+}
+
+QString LimitsText(const fgpl::Manifest &) {
 	return QString();
 }
 
