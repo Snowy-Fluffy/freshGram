@@ -47,7 +47,8 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `contacts.list` `{limit}` | `contacts.list` | id, name, username; no phone numbers |
 | `folders.list` | `folders.list` | chat folders with the chats in scope |
 | `settings.read` | `settings.read` | `language`, `theme`, `streamerMode` |
-| `media.get` `{chat, message, thumbnail}` | `media.read` | a file already downloaded on this device, up to 8 MiB: `kind`, `mime`, `name`, `data` |
+| `media.get` `{chat, message, thumbnail, download}` | `media.read` | the file of a message, up to 8 MiB: `kind`, `mime`, `name`, `data`; without `download` only a file already on this device (`not_found` otherwise), with `download: true` the app downloads it first (up to a minute, `limit` for larger files; await it) |
+| `media.list` `{chat, kind, limit, before}` | `media.read` | messages with media, newest first, the same fields as the history; `kind` is `any` (the recent history), `photo`, `video`, `photo_video`, `file`, `voice`, `round`, `audio` or `gif` (searched on the server) |
 | `messages.set_outgoing` `{text, format}` | `messages.transform_outgoing` | only while handling `message.outgoing`; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
@@ -56,6 +57,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `self`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
 | `messages.send` `{chat, text, format, reply_to, topic, silent, schedule}` | `messages.send` | `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode |
+| `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 10 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send` |
 | `messages.edit` `{chat, id, text, format}` | `messages.edit` | only messages you sent and may still edit |
 | `messages.delete` `{chat, ids, everyone}` | `messages.delete` | up to 100 of your own messages; for everyone (the default) when Telegram allows it for all of them |
 | `messages.react` `{chat, id, emoji}` | `messages.react` | sets an emoji reaction; no `emoji` removes yours |
@@ -303,7 +305,9 @@ freshgram.run()
 `freshgram.on_timer(timer_id)` and `freshgram.on_chat_opened` register handlers
 for the settings page, dialogs, timers and opened chats; one failing handler is
 logged and does not stop the others. The namespaces follow the calls:
-`messages.send(chat, text, reply_to=..., markdown=True)`, `messages.edit`,
+`messages.send(chat, text, reply_to=..., markdown=True)`,
+`messages.send_media(chat, data, name, caption=...)`, `media.list`,
+`media.get(..., download=True)`, `messages.edit`,
 `messages.delete`, `messages.react`, `messages.forward`, `messages.search`,
 `chats.mark_read`, `chats.action`, `users.info`, `notify.show`,
 `clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`

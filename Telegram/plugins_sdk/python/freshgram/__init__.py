@@ -259,6 +259,30 @@ class _Messages(_Namespace):
             **_given(reply_to=reply_to, topic=topic, silent=silent, schedule=schedule),
             **_format(markdown))
 
+    def send_media(self, chat, data, name, caption="", kind="auto", markdown=False,
+                   reply_to=0, topic=0, silent=False, schedule=0, spoiler=False, duration=0):
+        """Send a file (messages.send), up to 10 MiB.
+
+        kind "auto" sends photos and videos as media, "file" as a document,
+        "voice" an OGG/Opus voice message (needs duration in seconds).
+        """
+        return self._call(
+            "messages.send_media",
+            _nothing,
+            chat=chat,
+            data=bytes(data),
+            name=name,
+            kind=kind,
+            **_given(
+                caption=caption,
+                reply_to=reply_to,
+                topic=topic,
+                silent=silent,
+                schedule=schedule,
+                spoiler=spoiler,
+                duration=duration),
+            **_format(markdown))
+
     def edit(self, chat, message, text, markdown=False):
         """Edit a message you sent (messages.edit)."""
         return self._call(
@@ -383,9 +407,23 @@ class _Settings(_Namespace):
 
 
 class _Media(_Namespace):
-    def get(self, chat, message, thumbnail=False):
-        """A downloaded file of a message: kind, mime, name and data."""
-        return self._call("media.get", chat=chat, message=message, thumbnail=thumbnail)
+    def get(self, chat, message, thumbnail=False, download=False):
+        """The file of a message: kind, mime, name and data (up to 8 MiB).
+
+        With download=True a file that is not on this device yet is downloaded
+        first (up to a minute; prefer freshgram.aio for that).
+        """
+        return self._call(
+            "media.get",
+            chat=chat,
+            message=message,
+            thumbnail=thumbnail,
+            **_given(download=download))
+
+    def list(self, chat, kind="any", limit=20, before=0):
+        """Messages with media, newest first: photo, video, photo_video, file,
+        voice, round, audio, gif or any."""
+        return self._call("media.list", chat=chat, kind=kind, limit=limit, **_given(before=before))
 
 
 class _Account(_Namespace):

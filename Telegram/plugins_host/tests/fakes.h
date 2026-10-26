@@ -94,6 +94,25 @@ public:
 		return std::nullopt;
 	}
 
+	Result<Media, std::string> downloadMedia(int64_t chat, int64_t message, bool, size_t) override {
+		if (chat == 1 && message == 101) {
+			return Media{ "file", "application/pdf", "a.pdf", cbor::Bytes(20, 2) };
+		} else if (message == 102) {
+			return std::string(api::error::kLimit);
+		}
+		return std::string(api::error::kNotFound);
+	}
+	std::vector<Message> mediaMessages(int64_t chat, const std::string &kind, size_t limit, int64_t) override {
+		auto result = history(chat, limit, 0, 0);
+		for (auto &message : result) {
+			message.media = (message.id == 100) ? std::string() : kind;
+		}
+		return result;
+	}
+	std::string sendMedia(const OutgoingMedia &media) override {
+		sentMedia.push_back(media);
+		return {};
+	}
 	std::string sendMessage(const OutgoingMessage &message) override {
 		outgoing.push_back(message);
 		sent.emplace_back(message.chat, message.text);
@@ -164,6 +183,7 @@ public:
 	std::map<int64_t, std::string> drafts;
 	std::vector<std::pair<int64_t, std::string>> sent;
 	std::vector<OutgoingMessage> outgoing;
+	std::vector<OutgoingMedia> sentMedia;
 	std::vector<std::string> toasts;
 	std::vector<std::string> actions;
 	std::string clipboard;

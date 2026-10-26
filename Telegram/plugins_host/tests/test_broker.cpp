@@ -1132,6 +1132,66 @@ void TestLevelTwoCalls() {
 	CHECK(*Payload(all.make().call(Request("meta.info"))).find("chats")->asText() == "all");
 }
 
+void TestMediaCalls() {
+	auto fixture = Fixture({ "media.read", "messages.send" });
+	fixture.time = 100000;
+	fixture.grants.chats = std::set<int64_t>{ 1, 2 };
+	auto broker = fixture.make();
+	auto &data = fixture.data;
+
+	CHECK(Code(broker.call(Request("media.get", { { "chat", Int(1) }, { "message", Int(101) } }))) == "not_found");
+	const auto loaded = broker.call(Request("media.get", {
+		{ "chat", Int(1) }, { "message", Int(101) }, { "download", cbor::Value::FromBool(true) } }));
+	CHECK(IsOk(loaded) && *Payload(loaded).find("name")->asText() == "a.pdf");
+	CHECK(Payload(loaded).find("data")->asBytes()->size() == 20);
+	CHECK(Code(broker.call(Request("media.get", {
+		{ "chat", Int(1) }, { "message", Int(102) }, { "download", cbor::Value::FromBool(true) } }))) == "limit");
+	CHECK(Code(broker.call(Request("media.get", {
+		{ "chat", Int(1) }, { "message", Int(101) }, { "download", Int(1) } }))) == "invalid");
+
+	const auto listed = broker.call(Request("media.list", {
+		{ "chat", Int(1) }, { "kind", Text("photo") }, { "limit", Int(5) } }));
+	CHECK(IsOk(listed));
+	for (const auto &message : *Payload(listed).asArray()) {
+		CHECK(*message.find("media")->asText() == "photo");
+		CHECK(message.find("deleted") == nullptr);
+	}
+	CHECK(Code(broker.call(Request("media.list", { { "chat", Int(1) }, { "kind", Text("sticker") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("media.list", { { "chat", Int(5) } }))) == "denied");
+
+	const auto file = cbor::Value::FromBytes(cbor::Bytes(64, 7));
+	CHECK(IsOk(broker.call(Request("messages.send_media", {
+		{ "chat", Int(1) },
+		{ "data", file },
+		{ "name", Text("cat.png") },
+		{ "caption", Text("**cat**") },
+		{ "format", Text("markdown") },
+		{ "spoiler", cbor::Value::FromBool(true) },
+		{ "reply_to", Int(100) },
+	}))));
+	CHECK(data.sentMedia.size() == 1);
+	const auto &sent = data.sentMedia.back();
+	CHECK(sent.name == "cat.png" && sent.kind == "auto" && sent.bytes.size() == 64);
+	CHECK(sent.spoiler && sent.message.markdown && sent.message.replyTo == 100);
+	CHECK(sent.message.text == "**cat**");
+	CHECK(Code(broker.call(Request("messages.send_media", {
+		{ "chat", Int(1) }, { "data", file }, { "name", Text("a/b.png") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send_media", {
+		{ "chat", Int(1) }, { "data", file }, { "name", Text("v.ogg") }, { "kind", Text("voice") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send_media", {
+		{ "chat", Int(1) }, { "data", Text("x") }, { "name", Text("a.txt") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send_media", {
+		{ "chat", Int(5) }, { "data", file }, { "name", Text("a.txt") } }))) == "denied");
+	CHECK(Code(broker.call(Request("messages.send_media", {
+		{ "chat", Int(1) },
+		{ "data", cbor::Value::FromBytes(cbor::Bytes((size_t(10) << 20) + 1, 1)) },
+		{ "name", Text("big.bin") } }))) == "limit");
+
+	auto denied = Fixture({ "media.read" });
+	CHECK(Code(denied.make().call(Request("messages.send_media", {
+		{ "chat", Int(1) }, { "data", file }, { "name", Text("a.txt") } }))) == "denied");
+}
+
 void TestFilesAndTimers() {
 	auto fixture = Fixture({ "fs.user_selected" });
 	fixture.time = 100000;
@@ -1247,6 +1307,7 @@ int main() {
 	TestRateLimits();
 	TestClosedBrokerDropsAwaitedWork();
 	TestLevelTwoCalls();
+	TestMediaCalls();
 	TestFilesAndTimers();
 	return Failures() ? 1 : 0;
 }
