@@ -5464,7 +5464,8 @@ void ComposeControls::updateControlsVisibility() {
 		_scheduled->setVisible(!hide);
 	}
 	if (_pluginsToggle) {
-		_pluginsToggle->setVisible(!hide);
+		_pluginsToggle->setVisible(
+			!isEditingMessage() && !shouldShowRichDraftPreview());
 	}
 	if (_giftToUser) {
 		_giftToUser->setVisible(showGiftToUser);
