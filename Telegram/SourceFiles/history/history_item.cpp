@@ -3722,6 +3722,9 @@ void HistoryItem::addPaidReaction(
 	Expects(count >= 0);
 	Expects(_history->peer->isBroadcast() || isDiscussionPost());
 
+	if (_deleted) {
+		return;
+	}
 	if (!_reactions) {
 		_reactions = std::make_unique<Data::MessageReactions>(this);
 	}
@@ -3758,6 +3761,9 @@ void HistoryItem::toggleReaction(
 		HistoryReactionSource source) {
 	Expects(!reaction.paid());
 
+	if (_deleted) {
+		return;
+	}
 	const auto addToRecent = (source == HistoryReactionSource::Selector);
 	if (_reactions
 		&& ranges::contains(_reactions->chosen(), reaction)) {
@@ -5562,6 +5568,10 @@ void HistoryItem::setReactions(const MTPMessageReactions *reactions) {
 }
 
 void HistoryItem::updateReactions(const MTPMessageReactions *reactions) {
+	if (_deleted) {
+		// Reactions of a deleted message are frozen.
+		return;
+	}
 	const auto wasRecentUsers = LookupRecentUnreadReactedUsers(this);
 	const auto hadUnread = hasUnreadReaction();
 	const auto changed = changeReactions(reactions);

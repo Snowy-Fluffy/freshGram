@@ -1539,7 +1539,9 @@ void Reactions::poll(not_null<HistoryItem*> item, crl::time now) {
 	// Group them by one second.
 	const auto last = item->lastReactionsRefreshTime();
 	const auto grouped = ((last + 999) / 1000) * 1000;
-	if (!grouped || item->history()->peer->isUser()) {
+	if (!grouped
+		|| item->isDeleted()
+		|| item->history()->peer->isUser()) {
 		// First reaction always edits message.
 		return;
 	} else if (const auto left = grouped + kPollEach - now; left > 0) {
@@ -1722,8 +1724,13 @@ void Reactions::repaintCollected() {
 void Reactions::pollCollected() {
 	auto toRequest = base::flat_map<not_null<PeerData*>, QVector<MTPint>>();
 	_pollingItems = std::move(_pollItems);
-	for (const auto &item : _pollingItems) {
-		toRequest[item->history()->peer].push_back(MTP_int(item->id));
+	for (auto i = _pollingItems.begin(); i != _pollingItems.end();) {
+		if ((*i)->isDeleted()) {
+			i = _pollingItems.erase(i);
+			continue;
+		}
+		toRequest[(*i)->history()->peer].push_back(MTP_int((*i)->id));
+		++i;
 	}
 	auto &api = _owner->session().api();
 	for (const auto &[peer, ids] : toRequest) {
