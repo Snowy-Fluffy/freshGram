@@ -2869,6 +2869,14 @@ void ComposeControls::refreshPluginsToggle() {
 		_pluginsToggle = base::make_unique_q<FreshPlugins::ComposerButtons>(
 			_wrap.get(),
 			_regularWindow);
+		_pluginsToggle->setReply([=] {
+			const auto reply = replyingToMessage();
+			return (_history && reply.messageId.peer == _history->peer->id)
+				? reply.messageId.msg
+				: MsgId();
+		}, [=] {
+			cancelReplyMessage();
+		});
 		_pluginsToggle->show();
 		orderControls();
 		changed = true;

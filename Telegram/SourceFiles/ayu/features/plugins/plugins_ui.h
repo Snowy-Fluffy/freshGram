@@ -96,6 +96,7 @@ public:
 
 	bool refresh(PeerData *peer, MsgId topicRootId);
 	[[nodiscard]] bool empty() const;
+	void setReply(Fn<MsgId()> current, Fn<void()> taken);
 
 private:
 	struct State;

@@ -251,7 +251,7 @@ Activations come back as events:
 
 | Event | Fields |
 |---|---|
-| `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); the `composer` surface is a button next to the input field and needs `ui.composer_button` |
+| `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); the `composer` surface is a button next to the input field and needs `ui.composer_button`, its click also has `topic` and `reply_to` like `command` (the reply is then taken off the input field) |
 | `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope, `reply_to` when the user was replying to a message of that chat (the reply is then taken off the input field, so answer with `messages.send` and `reply_to`); the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
 | `settings.open` | the user opened the plugin's settings; send the page now (the plugin is started for it) |
 | `settings.change` | `id`, `value` of a toggle, input, select, slider (a number) or chat picker (a chat id) |
