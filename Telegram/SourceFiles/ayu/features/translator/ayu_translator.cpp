@@ -32,6 +32,7 @@ BaseTranslator *translatorForProvider(TranslationProvider provider) {
 	case TranslationProvider::Telegram:
 	case TranslationProvider::Native:
 	case TranslationProvider::Local:
+	case TranslationProvider::Plugin:
 		return nullptr;
 	}
 	return nullptr;

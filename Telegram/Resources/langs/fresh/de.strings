@@ -205,6 +205,7 @@
 "fresh_PermChatsActivity" = "Tippen, Lesemarkierungen und Beitritte oder Austritte in Chats sehen";
 "fresh_PermUsersPresence" = "Sehen, wann Leute online sind";
 "fresh_PermAppActivity" = "Wissen, ob die App im Fokus ist";
+"fresh_PermTranslateProvide" = "Texte für dich übersetzen";
 "fresh_PluginMenuItems" = "Menüeinträge";
 "fresh_PluginMenuSurfaceMessage" = "Nachrichtenmenü";
 "fresh_PluginMenuSurfaceChat" = "Chatmenü";

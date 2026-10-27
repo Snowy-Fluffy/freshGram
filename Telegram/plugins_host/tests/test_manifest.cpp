@@ -371,6 +371,44 @@ void TestCompatibility() {
 	CHECK(CheckCompatibility(manifest, environment()).size() == 3);
 }
 
+void TestTranslatorManifest() {
+	const auto withTranslator = [](cbor::Value translator, bool permission = true) {
+		return [=](cbor::Value &d) {
+			if (permission) {
+				Set(d, "permissions.optional", cbor::Value::FromArray({
+					cbor::Value::FromMap({ { "id", Text("translate.provide") }, { "reason", Text("x") } }),
+				}));
+			}
+			Set(d, "contributes.translator", translator);
+		};
+	};
+	ExpectError("translator permission", withTranslator(cbor::Value::FromMap({
+		{ "name", Text("T") } }), false), "translate.provide");
+	ExpectError("translator name", withTranslator(cbor::Value::FromMap({})), "name");
+	ExpectError("translator key", withTranslator(cbor::Value::FromMap({
+		{ "name", Text("T") }, { "speed", Int(1) } })), "speed");
+	ExpectError("translator language", withTranslator(cbor::Value::FromMap({
+		{ "name", Text("T") }, { "languages", Array({ "Not A Code!" }) } })), "language");
+	ExpectError("translator limit", withTranslator(cbor::Value::FromMap({
+		{ "name", Text("T") }, { "maxChars", Int(10) } })), "maxChars");
+
+	auto document = ValidDocument();
+	withTranslator(cbor::Value::FromMap({
+		{ "name", Text("Shout") },
+		{ "languages", Array({ "en", "pt-br" }) },
+		{ "maxChars", Int(2000) },
+	}))(document);
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (parsed.ok()) {
+		const auto &decl = parsed.value().translator;
+		CHECK(decl.declared && decl.name == "Shout" && decl.languages.size() == 2);
+		CHECK(decl.maxChars == 2000);
+		CHECK(parsed.value().activation.contains("translate"));
+	}
+	CHECK(HostFeatures().contains("translate.provide"));
+}
+
 void TestMenuConditions() {
 	const auto withMenu = [](const char *surface, cbor::Value when) {
 		return [=](cbor::Value &d) {
@@ -541,5 +579,6 @@ int main() {
 	TestIcons();
 	TestOutgoingFilter();
 	TestMenuConditions();
+	TestTranslatorManifest();
 	return Failures() ? 1 : 0;
 }

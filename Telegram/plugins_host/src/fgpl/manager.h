@@ -168,6 +168,17 @@ struct OutgoingResult {
 	std::string reason;
 };
 
+struct TranslateRequest {
+	std::string to;
+	std::vector<std::string> items;
+};
+
+struct TranslateResult {
+	std::string error;
+	std::vector<std::string> items;
+	bool markdown = false;
+};
+
 struct PluginInfo {
 	std::string id;
 	std::string name;
@@ -216,6 +227,7 @@ struct Contribution {
 	std::vector<ContributedMenu> menus;
 	std::vector<ContributedCommand> commands;
 	bool settingsPage = false;
+	ContributedTranslator translator;
 };
 
 struct DispatchReport {
@@ -326,6 +338,14 @@ public:
 		int timeoutMs,
 		std::function<void(OutgoingResult)> done);
 
+	// Asks a plugin with contributes.translator; done is called exactly once,
+	// possibly from another thread.
+	void translateAsync(
+		const std::string &account,
+		const std::string &plugin,
+		TranslateRequest request,
+		int timeoutMs,
+		std::function<void(TranslateResult)> done);
 
 	[[nodiscard]] ManagerSnapshot snapshot() const;
 
@@ -527,6 +547,18 @@ private:
 		int64_t delayMs,
 		bool repeat);
 	void advanceOutgoing();
+	[[nodiscard]] std::string acceptTranslation(
+		const std::string &plugin,
+		const std::string &account,
+		int64_t ticket,
+		std::vector<std::string> items,
+		bool markdown,
+		std::string error);
+	void expireTranslations();
+	void failTranslations(
+		const std::string &plugin,
+		const std::string &account,
+		const std::string &reason);
 	[[nodiscard]] bool advance(
 		OutgoingChain &chain,
 		std::chrono::steady_clock::time_point now);
@@ -559,6 +591,16 @@ private:
 	std::deque<Mail> _mail;
 	std::map<Key, int> _streak;
 	std::mutex _timersMutex;
+	struct PendingTranslation {
+		std::string plugin;
+		std::string account;
+		size_t count = 0;
+		std::chrono::steady_clock::time_point deadline;
+		std::function<void(TranslateResult)> done;
+	};
+	std::mutex _translationsMutex;
+	std::map<int64_t, PendingTranslation> _translations;
+	int64_t _nextTranslation = 1;
 	std::map<Key, std::map<std::string, Timer>> _timers;
 	std::set<std::string> _accounts;
 	bool _locked = false;

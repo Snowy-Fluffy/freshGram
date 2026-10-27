@@ -700,7 +700,7 @@ void AyuSettings::validate() {
 	validateEnum(_showRepeatMessageInContextMenu, defaults._showRepeatMessageInContextMenu);
 	validateEnum(_showAddFilterInContextMenu, defaults._showAddFilterInContextMenu);
 
-	validateEnum(_translationProvider, defaults._translationProvider, 4);
+	validateEnum(_translationProvider, defaults._translationProvider, 5);
 	validateEnum(_transcriptionProvider, defaults._transcriptionProvider, 1);
 	if (((_translationProvider.current() == TranslationProvider::Native)
 			&& !Platform::IsTranslateProviderAvailable())
@@ -1782,6 +1782,14 @@ void AyuSettings::setTranslationProvider(TranslationProvider val) {
 	save();
 }
 
+void AyuSettings::setTranslationPlugin(const QString &id) {
+	if (_translationPlugin.current() != id) {
+		_translationPlugin = id;
+	}
+	setTranslationProvider(TranslationProvider::Plugin);
+	save();
+}
+
 void AyuSettings::setAdaptiveCoverColor(bool val) {
 	if (_adaptiveCoverColor.current() == val) return;
 	_adaptiveCoverColor = val;
@@ -1942,6 +1950,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"showGiftButtonInMessageField", s._showGiftButtonInMessageField.current()},
 		{"showTranslateButtonInMessageField", s._showTranslateButtonInMessageField.current()},
 		{"translateComposeTo", s._translateComposeTo.current()},
+		{"translationPlugin", s._translationPlugin.current()},
 		{"autoTranslateOutgoing", s._autoTranslateOutgoing.current()},
 		{"showAiEditorButtonInMessageField", s._showAiEditorButtonInMessageField.current()},
 		{"showAttachPopup", s._showAttachPopup.current()},
@@ -2132,6 +2141,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._showGiftButtonInMessageField = j.value("showGiftButtonInMessageField", defaults._showGiftButtonInMessageField.current());
 	s._showTranslateButtonInMessageField = j.value("showTranslateButtonInMessageField", defaults._showTranslateButtonInMessageField.current());
 	s._translateComposeTo = j.value("translateComposeTo", defaults._translateComposeTo.current());
+	s._translationPlugin = j.value("translationPlugin", defaults._translationPlugin.current());
 	s._autoTranslateOutgoing = j.value("autoTranslateOutgoing", defaults._autoTranslateOutgoing.current());
 	s._showAiEditorButtonInMessageField = j.value("showAiEditorButtonInMessageField", defaults._showAiEditorButtonInMessageField.current());
 	s._showAttachPopup = j.value("showAttachPopup", defaults._showAttachPopup.current());

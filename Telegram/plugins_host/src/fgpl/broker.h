@@ -506,6 +506,12 @@ struct BrokerServices {
 	std::function<std::string(const std::string &id, int64_t delayMs, bool repeat)> setTimer;
 	std::function<bool(const std::string &id)> clearTimer;
 	std::function<std::vector<std::string>()> timers;
+	// Answers an empty string, or an error code (not_found, invalid).
+	std::function<std::string(
+		int64_t ticket,
+		std::vector<std::string> items,
+		bool markdown,
+		std::string error)> translateReply;
 
 	std::function<void(std::function<void()> work)> post;
 	std::function<void(int64_t delayMs, std::function<void()> work)> after;

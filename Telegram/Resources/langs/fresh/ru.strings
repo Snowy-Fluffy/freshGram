@@ -205,6 +205,7 @@
 "fresh_PermChatsActivity" = "Видеть набор текста, отметки о прочтении и кто входит в чаты или выходит из них";
 "fresh_PermUsersPresence" = "Видеть, когда люди в сети";
 "fresh_PermAppActivity" = "Знать, находится ли приложение в фокусе";
+"fresh_PermTranslateProvide" = "Переводить тексты для вас";
 "fresh_PluginMenuItems" = "Пункты меню";
 "fresh_PluginMenuSurfaceMessage" = "Меню сообщения";
 "fresh_PluginMenuSurfaceChat" = "Меню чата";

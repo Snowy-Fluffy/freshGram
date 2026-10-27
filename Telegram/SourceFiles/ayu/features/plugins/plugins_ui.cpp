@@ -2649,6 +2649,7 @@ namespace {
 		{ "chats.activity", &st::menuIconShowInChat },
 		{ "users.presence", &st::menuIconProfile },
 		{ "app.activity", &st::menuIconInfo },
+		{ "translate.provide", &st::menuIconTranslate },
 	};
 	const auto i = icons.find(id);
 	return (i != icons.end()) ? i->second : &st::menuIconLock;
@@ -3125,6 +3126,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "chats.activity", tr::fresh_PermChatsActivity },
 		{ "users.presence", tr::fresh_PermUsersPresence },
 		{ "app.activity", tr::fresh_PermAppActivity },
+		{ "translate.provide", tr::fresh_PermTranslateProvide },
 	};
 	const auto i = titles.find(id);
 	return (i != titles.end()) ? i->second(tr::now) : Utf8(id);
