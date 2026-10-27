@@ -5415,7 +5415,7 @@ void OverlayWidget::handleStreamingUpdate(Streaming::Update &&update) {
 	}, [](MutedByOther) {
 	}, [&](Finished) {
 		updatePlaybackState();
-		if (base::take(_ttlDeferredClose)) {
+		if (base::take(_ttlDeferredClose) == _displayGeneration) {
 			close();
 		}
 	});
@@ -8027,6 +8027,7 @@ void OverlayWidget::setContext(
 		}
 	}
 	_user = _peer ? _peer->asUser() : nullptr;
+	++_displayGeneration;
 	refreshScreenshotProtection();
 }
 
@@ -8096,8 +8097,22 @@ void OverlayWidget::setSession(not_null<Main::Session*> session) {
 			setContext(v::null);
 			updateControls();
 		} else {
-			close();
-			clearSession();
+			if (!_screenshotProtected) {
+				refreshScreenshotProtection();
+			}
+			_message = nullptr;
+			if (base::take(_instantViewMedia)) {
+				_instantViewMediaData = std::nullopt;
+				findCurrent();
+			}
+			++_displayGeneration;
+			updateControls();
+			InvokeQueued(_widget, [=, generation = _displayGeneration] {
+				if (_displayGeneration == generation) {
+					close();
+					clearSession();
+				}
+			});
 		}
 	}, _sessionLifetime);
 
@@ -8116,9 +8131,15 @@ void OverlayWidget::setSession(not_null<Main::Session*> session) {
 			&& _document
 			&& !_streamed->instance.player().finished();
 		if (playing) {
-			_ttlDeferredClose = true;
+			_ttlDeferredClose = _displayGeneration;
 		} else {
-			close();
+			// WHY: a synchronous hide drains queued message destruction
+			// before the notifying model has finished using the item.
+			InvokeQueued(_widget, [=, generation = _displayGeneration] {
+				if (_displayGeneration == generation) {
+					close();
+				}
+			});
 		}
 	}, _sessionLifetime);
 
@@ -9133,7 +9154,8 @@ void OverlayWidget::clearAfterHide() {
 	_ttlBadge = nullptr;
 	_ttlBadgeItem = FullMsgId();
 	_ttlBadgeDestroyAt = 0;
-	_ttlDeferredClose = false;
+	_ttlDeferredClose = std::nullopt;
+	++_displayGeneration;
 	_ttlTimer.cancel();
 	_body->hide();
 	clearStreaming();
