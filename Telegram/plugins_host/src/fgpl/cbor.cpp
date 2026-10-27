@@ -114,7 +114,7 @@ private:
 			uint64_t length) {
 		if (info == 31) {
 			return Error::Unsupported;
-		} else if (length > _limits.maxString) {
+		} else if (length > (text ? _limits.maxString : _limits.maxBytes)) {
 			return Error::TooLarge;
 		} else if (length > remaining()) {
 			return Error::Truncated;

@@ -4,6 +4,7 @@
 #include "fgpl/sandbox_linux.h"
 
 #include <fcntl.h>
+#include <malloc.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -151,9 +152,15 @@ void RunCompiler(int fd, Runtime &runtime) {
 	std::_Exit(0);
 }
 
+void ReleaseFreedMemory() {
+#ifdef __GLIBC__
+	malloc_trim(0);
+#endif // __GLIBC__
+}
+
 void HandleLoad(
 		int fd,
-		const cbor::Value &message,
+		cbor::Value message,
 		Runtime &runtime,
 		SocketBridge &bridge,
 		std::unique_ptr<Plugin> &plugin) {
@@ -420,7 +427,9 @@ int main(int argc, char **argv) {
 		if (type == "stop") {
 			return 0;
 		} else if (type == "load") {
-			HandleLoad(fd, frame.value(), runtime, bridge, plugin);
+			HandleLoad(fd, std::move(frame.value()), runtime, bridge, plugin);
+			// The load frame is gone by now, give its heap back.
+			ReleaseFreedMemory();
 			if (plugin && plugin->isCommand()) {
 				RunCommand(fd, *plugin);
 			}

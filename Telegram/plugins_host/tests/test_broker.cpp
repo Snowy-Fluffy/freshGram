@@ -372,8 +372,14 @@ void TestNetwork() {
 
 	CHECK(Code(fetch({
 		{ "url", Text("https://api.example.com/") },
-		{ "body", cbor::Value::FromBytes(cbor::Bytes(2 << 20, 1)) },
+		{ "body", cbor::Value::FromBytes(cbor::Bytes((size_t(100) << 20) + 1, 1)) },
 	})) == "limit");
+	CHECK(IsOk(fetch({
+		{ "url", Text("https://api.example.com/") },
+		{ "method", Text("POST") },
+		{ "body", cbor::Value::FromBytes(cbor::Bytes(size_t(100) << 20, 1)) },
+	})));
+	CHECK(fixture.transport.requests.back().body.size() == (size_t(100) << 20));
 	CHECK(IsOk(fetch({
 		{ "url", Text("https://api.example.com/") },
 		{ "method", Text("POST") },
@@ -382,7 +388,9 @@ void TestNetwork() {
 	CHECK(fixture.transport.requests.back().body.size() == 7);
 	CHECK(Code(fetch({ { "url", Text("https://api.example.com/") }, { "body", Int(1) } })) == "invalid");
 
-	fixture.transport.bodySize = 9 << 20;
+	fixture.transport.bodySize = size_t(100) << 20;
+	CHECK(IsOk(fetch({ { "url", Text("https://api.example.com/") } })));
+	fixture.transport.bodySize = (size_t(100) << 20) + 1;
 	CHECK(Code(fetch({ { "url", Text("https://api.example.com/") } })) == "limit");
 	fixture.transport.bodySize = 5;
 	fixture.transport.fail = true;
@@ -394,7 +402,7 @@ void TestNetwork() {
 	fetch({ { "url", Text("https://api.example.com/") }, { "timeout", Int(1) } });
 	CHECK(fixture.transport.requests.back().timeoutMs == 100);
 	fetch({ { "url", Text("https://api.example.com/") }, { "timeout", Int(1000000) } });
-	CHECK(fixture.transport.requests.back().timeoutMs == 30000);
+	CHECK(fixture.transport.requests.back().timeoutMs == 300000);
 }
 
 void TestSockets() {
@@ -1362,8 +1370,15 @@ void TestMediaCalls() {
 		{ "chat", Int(5) }, { "data", file }, { "name", Text("a.txt") } }))) == "denied");
 	CHECK(Code(broker.call(Request("messages.send_media", {
 		{ "chat", Int(1) },
-		{ "data", cbor::Value::FromBytes(cbor::Bytes((size_t(10) << 20) + 1, 1)) },
+		{ "data", cbor::Value::FromBytes(cbor::Bytes((size_t(100) << 20) + 1, 1)) },
 		{ "name", Text("big.bin") } }))) == "limit");
+	auto large = Fixture({ "messages.send" });
+	CHECK(IsOk(large.make().call(Request("messages.send_media", {
+		{ "chat", Int(1) },
+		{ "data", cbor::Value::FromBytes(cbor::Bytes(size_t(100) << 20, 1)) },
+		{ "name", Text("big.bin") } }))));
+	CHECK(large.data.sentMedia.size() == 1
+		&& large.data.sentMedia.back().bytes.size() == (size_t(100) << 20));
 
 	auto denied = Fixture({ "media.read" });
 	CHECK(Code(denied.make().call(Request("messages.send_media", {

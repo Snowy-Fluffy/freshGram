@@ -19,10 +19,10 @@ struct RuntimeLimits {
 	uint32_t callTimeoutMs = 500;
 	uint32_t startTimeoutMs = 10000;
 	size_t maxModuleBytes = size_t(32) << 20;
-	size_t maxMessageBytes = size_t(12) << 20;
+	size_t maxMessageBytes = size_t(128) << 20;
 	size_t maxCallsPerDispatch = 256;
 	uint32_t maxHostCallMs = 60000;
-	cbor::Limits cbor;
+	cbor::Limits cbor = { .maxBytes = size_t(128) << 20 };
 };
 
 struct RuntimeOptions {

@@ -38,7 +38,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `meta.info` | none | `api` (the level), `plugin`, `granted` permissions and `chats`: `"all"` or the list of chat ids in scope |
 | `log` `{text}` | none | goes to the plugin log |
 | `storage.get/set/delete/list/usage` | `storage.private` | keys up to 128 bytes, values up to 1 MiB, 4096 keys, quota per plugin |
-| `net.fetch` `{url, method, headers, body, timeout}` | `net.https` | https only, to any public host name or public IP (`https://8.8.8.8/`, `https://[2606:4700::1]/`); local names, private, loopback and link-local addresses are refused, also after DNS; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned; returns `{status, headers, header_list, body}`, where `headers` joins repeated headers with `, ` and `header_list` keeps every `[name, value]` pair |
+| `net.fetch` `{url, method, headers, body, timeout}` | `net.https` | https only, to any public host name or public IP (`https://8.8.8.8/`, `https://[2606:4700::1]/`); local names, private, loopback and link-local addresses are refused, also after DNS; forbidden headers (`Host`, `Cookie`, ...); redirects are re-checked; `Set-Cookie` is never returned; `body` and the answer's body up to 100 MiB each, `timeout` up to 300000 ms (default 10000); returns `{status, headers, header_list, body}`, where `headers` joins repeated headers with `, ` and `header_list` keeps every `[name, value]` pair |
 | `net.tcp.connect` `{host, port, tls, timeout}` | `net.tcp` | a TCP connection, optionally TLS with certificate checks; returns `{id}`; at most 16 open |
 | `net.udp.connect` `{host, port}` | `net.udp` | a UDP socket bound to one peer, only its datagrams are received; returns `{id}`; at most 16 open, 200 datagrams per second |
 | `net.socket.send` `{id, data, timeout}` | the socket's permission | up to 1 MiB (TCP) or 65507 bytes (UDP); returns `{sent}` |
@@ -47,7 +47,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `contacts.list` `{limit}` | `contacts.list` | id, name, username; no phone numbers |
 | `folders.list` | `folders.list` | chat folders with the chats in scope |
 | `settings.read` | `settings.read` | `language`, `theme`, `streamerMode` |
-| `media.get` `{chat, message, thumbnail, download}` | `media.read` | the file of a message, up to 8 MiB: `kind`, `mime`, `name`, `data`; without `download` only a file already on this device (`not_found` otherwise), with `download: true` the app downloads it first (up to a minute, `limit` for larger files; await it) |
+| `media.get` `{chat, message, thumbnail, download}` | `media.read` | the file of a message, up to 100 MiB: `kind`, `mime`, `name`, `data`; without `download` only a file already on this device (`not_found` otherwise), with `download: true` the app downloads it first (up to five minutes, `limit` for larger files; await it) |
 | `media.list` `{chat, kind, limit, before}` | `media.read` | messages with media, newest first, the same fields as the history; `kind` is `any` (the recent history), `photo`, `video`, `photo_video`, `file`, `voice`, `round`, `audio` or `gif` (searched on the server) |
 | `messages.set_outgoing` `{text, format}` | `messages.transform_outgoing` | only while handling `message.outgoing`; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
@@ -58,7 +58,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `self`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
 | `messages.send` `{chat, text, format, reply_to, topic, silent, schedule}` | `messages.send` | `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode |
-| `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 10 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send` |
+| `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send` |
 | `messages.edit` `{chat, id, text, format}` | `messages.edit` | only messages you sent and may still edit |
 | `messages.delete` `{chat, ids, everyone}` | `messages.delete` | up to 100 of your own messages; for everyone (the default) when Telegram allows it for all of them |
 | `messages.react` `{chat, id, emoji}` | `messages.react` | sets an emoji reaction; no `emoji` removes yours |
@@ -69,8 +69,8 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `users.info` `{id}` | `users.info` | `id, name, username, bot, premium, contact, self, status, last_seen`; `status` is `online`, `offline` (with `last_seen`), `recently`, `week`, `month`, `long_ago`, `hidden` or `bot` |
 | `notify.show` `{title, text}` | `notifications` | a system notification (a toast when the app's notifications are off); once per 5 seconds; clicking it opens Saved Messages |
 | `clipboard.write` `{text}`, `clipboard.read` | `clipboard` | only within 10 seconds after a user action; up to 64 KiB |
-| `files.pick` `{title, filter}` | `fs.user_selected` | awaitable only, after a user action; the user picks a file in the system dialog; returns `{name, data}` (up to 8 MiB) or nothing when cancelled; `filter` is like `Images (*.png *.jpg)` |
-| `files.save` `{name, data}` | `fs.user_selected` | awaitable only, after a user action; asks where to save `data` (bytes or text, up to 8 MiB); returns `true`, or `false` when cancelled |
+| `files.pick` `{title, filter}` | `fs.user_selected` | awaitable only, after a user action; the user picks a file in the system dialog; returns `{name, data}` (up to 100 MiB) or nothing when cancelled; `filter` is like `Images (*.png *.jpg)` |
+| `files.save` `{name, data}` | `fs.user_selected` | awaitable only, after a user action; asks where to save `data` (bytes or text, up to 100 MiB); returns `true`, or `false` when cancelled |
 | `timers.set` `{id, delay, repeat}`, `timers.clear` `{id}`, `timers.list` | none | `delay` in ms, from 1000 to 7 days; a timer sends a `timer` event and starts a stopped plugin (activation `timer`); at most 32 per plugin and account; timers live while the app runs and are dropped when the plugin is disabled |
 | `account.info` | `account.info` | no phone number |
 | `stars.balance` | `stars.balance` | read only |
@@ -86,13 +86,20 @@ toast every 2 seconds, and `ui.dialog.show` opens a dialog only within 10
 seconds of a user action (a menu click, a command, a settings or dialog event)
 or while the plugin's dialog is already open; `ui.window.show` follows the same
 rule, and an open window can be updated at most ten times a second. A call over a limit fails with
-`limit`. A request or an answer may be up to 12 MiB; a larger answer fails with
+`limit`. A request or an answer may be up to 128 MiB; a larger answer fails with
 `limit` instead of stopping the plugin. `runtime.limits.eventTimeoutMs` is the plugin's
 own time for an event: time spent waiting for the app (a download, a socket
 read) does not count, but all the calls of one event together may wait at most
 60 seconds. Network connections show up in the app's Network
 panel, where the user can close any of them. Plugin traffic always goes directly;
 it never uses the proxy configured in the app.
+
+Files of up to 100 MiB go both ways: `net.fetch` bodies, `media.get`,
+`messages.send_media` and `files.pick/save`. Await such calls, since a plain call
+counts against the 60 seconds of its event, and give the plugin room in
+`runtime.limits.memoryMb`: a file passes through its memory about three times
+(the answer, the plugin's own copy and the next request). A C plugin built on
+`c/freshgram.h` defines `FG_HEAP_BYTES` large enough for that.
 
 A manifest has no OS or architecture fields: a plugin is Wasm and runs the same
 everywhere. If it cannot work without some capability of the app, list it in

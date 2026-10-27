@@ -7,6 +7,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 	auto limits = Limits();
 	limits.maxItems = 4096;
 	limits.maxString = 1 << 16;
+	limits.maxBytes = 1 << 16;
 	const auto decoded = Decode({ data, size }, limits);
 	if (!decoded.ok()) {
 		return 0;

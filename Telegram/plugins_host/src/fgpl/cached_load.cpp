@@ -29,11 +29,9 @@ Result<CachedLoadResult, ClientFailure> LoadWithCache(
 	key.fingerprint = Fingerprint(client, compilerConfig);
 	const auto cache = ModuleCache(settings.directory, std::move(key));
 	auto result = CachedLoadResult();
-	const auto wasm = request.wasm;
 
 	const auto direct = [&]() -> Result<CachedLoadResult, ClientFailure> {
 		request.compiled.clear();
-		request.wasm = wasm;
 		const auto loaded = client.load(request);
 		if (!loaded.ok()) {
 			return loaded.error();
@@ -42,9 +40,8 @@ Result<CachedLoadResult, ClientFailure> LoadWithCache(
 		return result;
 	};
 
-	if (auto hit = cache.find(wasm)) {
+	if (auto hit = cache.find(request.wasm)) {
 		request.compiled = std::move(*hit);
-		request.wasm.clear();
 		const auto loaded = client.load(request);
 		if (loaded.ok()) {
 			result.source = ModuleSource::Cache;
@@ -52,14 +49,14 @@ Result<CachedLoadResult, ClientFailure> LoadWithCache(
 		} else if (loaded.error().error != ClientError::LoadFailed) {
 			return loaded.error();
 		}
-		cache.erase(wasm);
+		cache.erase(request.wasm);
 		result.cacheRejected = true;
 		return direct();
 	}
 
 	auto compiled = HostClient::Compile(
 		compilerConfig,
-		wasm,
+		request.wasm,
 		size_t(128) << 20,
 		120000,
 		cancel);
@@ -69,11 +66,10 @@ Result<CachedLoadResult, ClientFailure> LoadWithCache(
 	if (!compiled.ok()) {
 		return direct();
 	}
-	if (cache.store(wasm, compiled.value())) {
+	if (cache.store(request.wasm, compiled.value())) {
 		cache.prune(settings.maxTotalBytes);
 	}
 	request.compiled = std::move(compiled.value());
-	request.wasm.clear();
 	const auto loaded = client.load(request);
 	if (loaded.ok()) {
 		result.source = ModuleSource::Compiled;
@@ -81,7 +77,7 @@ Result<CachedLoadResult, ClientFailure> LoadWithCache(
 	} else if (loaded.error().error != ClientError::LoadFailed) {
 		return loaded.error();
 	}
-	cache.erase(wasm);
+	cache.erase(request.wasm);
 	result.cacheRejected = true;
 	return direct();
 }

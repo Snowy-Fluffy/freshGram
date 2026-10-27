@@ -342,6 +342,42 @@ void TestResponseLimits() {
 	CHECK(!loaded.value()->dead());
 }
 
+void TestLargeRequests() {
+	auto runtime = Runtime();
+	auto bridge = MockBridge();
+	const auto module = R"((module
+		(import "freshgram" "call" (func $call (param i32 i32 i32 i32) (result i32)))
+		(memory (export "memory") 64)
+		(data (i32.const 64) "\a2\62op\61x\61d\5a\00\30\00\00")
+		(global $bump (mut i32) (i32.const 3200000))
+		(func (export "fg_alloc") (param $n i32) (result i32) (local $p i32)
+			(local.set $p (global.get $bump))
+			(global.set $bump (i32.add (global.get $bump) (local.get $n)))
+			(local.get $p))
+		(func (export "fg_free") (param i32 i32) (global.set $bump (i32.const 3200000)))
+		(func (export "fg_init") (param i32 i32) (result i32) (i32.const 0))
+		(func (export "fg_on_event") (param i32 i32) (result i32)
+			(call $call (i32.const 64) (i32.const 3145741) (i32.const 16) (i32.const 20)))))";
+	auto loaded = Load(runtime, bridge, module);
+	CHECK(loaded.ok());
+	if (loaded.ok()) {
+		const auto result = loaded.value()->deliver(kEvent());
+		CHECK(result.ok() && result.value() == guest_status::kOk);
+		CHECK(bridge.requests.size() == 1);
+		const auto data = bridge.requests.empty() ? nullptr : bridge.requests[0].find("d");
+		CHECK(data && data->asBytes() && data->asBytes()->size() == (size_t(3) << 20));
+	}
+
+	auto strict = RuntimeLimits();
+	strict.cbor.maxBytes = size_t(1) << 20;
+	auto refused = Load(runtime, bridge, module, strict);
+	CHECK(refused.ok());
+	if (refused.ok()) {
+		const auto result = refused.value()->deliver(kEvent());
+		CHECK(result.ok() && result.value() == guest_status::kBadRequest);
+	}
+}
+
 void TestAllocatorMisbehavior() {
 	auto runtime = Runtime();
 	auto bridge = MockBridge();
@@ -470,6 +506,7 @@ int main() {
 	TestCallValidation();
 	TestCallBudget();
 	TestResponseLimits();
+	TestLargeRequests();
 	TestAllocatorMisbehavior();
 	TestStdoutIsLogged();
 	TestClockAndRandom();

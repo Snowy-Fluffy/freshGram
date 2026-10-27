@@ -21,6 +21,7 @@ FileStorage::FileStorage(std::filesystem::path file)
 	limits.maxItems = size_t(1) << 20;
 	limits.maxContainer = size_t(1) << 20;
 	limits.maxString = size_t(64) << 20;
+	limits.maxBytes = size_t(64) << 20;
 	const auto decoded = cbor::Decode(bytes, limits);
 	const auto items = decoded.ok() ? decoded.value().find("items") : nullptr;
 	if (!items || !items->asMap()) {

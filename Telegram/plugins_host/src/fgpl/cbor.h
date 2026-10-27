@@ -90,6 +90,7 @@ struct Limits {
 	size_t maxItems = 65536;
 	size_t maxContainer = 16384;
 	size_t maxString = 1 << 20;
+	size_t maxBytes = 1 << 20;
 };
 
 enum class Error : uint8_t {
