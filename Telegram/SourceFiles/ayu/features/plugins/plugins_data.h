@@ -26,6 +26,9 @@ void ReleaseData();
 [[nodiscard]] std::string PeerKind(not_null<PeerData*> peer);
 [[nodiscard]] std::string MessageMediaKind(not_null<const HistoryItem*> item);
 [[nodiscard]] bool ValidScheduleTime(TimeId when);
+[[nodiscard]] MsgId ThreadRootOf(
+	not_null<PeerData*> peer,
+	not_null<HistoryItem*> item);
 
 [[nodiscard]] std::string UserStatus(
 	not_null<UserData*> user,
