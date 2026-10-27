@@ -33,6 +33,12 @@ void RescheduleMessage(
 	not_null<HistoryItem*> item,
 	SendOptions options);
 
+// Called once with an empty error when the media of the message was
+// replaced, or with the error. A null callback forgets the previous one.
+void SetEditMediaCompletion(
+	FullMsgId itemId,
+	Fn<void(const QString &error)> done);
+
 void EditMessageWithUploadedDocument(
 	HistoryItem *item,
 	RemoteFileInfo info,

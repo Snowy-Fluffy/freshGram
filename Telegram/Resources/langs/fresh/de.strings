@@ -201,6 +201,7 @@
 "fresh_PermMessagesReact" = "Auf Nachrichten reagieren";
 "fresh_PermUsersInfo" = "Nutzerprofile und Online-Status sehen";
 "fresh_PermChatsActive" = "Wissen, welchen Chat du öffnest";
+"fresh_PermMessagesIds" = "Die IDs deiner gesendeten Nachrichten erhalten";
 "fresh_RiskChangesMessages" = "Kann von dir gesendete Nachrichten bearbeiten oder löschen";
 "fresh_PluginChatNone" = "Nicht gewählt";
 "fresh_PluginSettingsLoading" = "Einstellungen werden geladen…";

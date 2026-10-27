@@ -108,7 +108,7 @@ struct Manifest {
 
 struct HostEnvironment {
 	Version app;
-	int apiLevel = 3;
+	int apiLevel = 4;
 	std::set<std::string> features = HostFeatures();
 	bool premium = false;
 };

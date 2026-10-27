@@ -2507,6 +2507,7 @@ namespace {
 		{ "messages.react", &st::menuIconReactions },
 		{ "users.info", &st::menuIconProfile },
 		{ "chats.active", &st::menuIconShowInChat },
+		{ "messages.ids", &st::menuIconChatBubble },
 	};
 	const auto i = icons.find(id);
 	return (i != icons.end()) ? i->second : &st::menuIconLock;
@@ -2518,6 +2519,7 @@ namespace {
 		"messages.send", "messages.transform_outgoing", "chats.list",
 		"chat.info", "media.read", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
+		"messages.ids", "chats.activity",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -2978,6 +2980,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "messages.react", tr::fresh_PermMessagesReact },
 		{ "users.info", tr::fresh_PermUsersInfo },
 		{ "chats.active", tr::fresh_PermChatsActive },
+		{ "messages.ids", tr::fresh_PermMessagesIds },
 	};
 	const auto i = titles.find(id);
 	return (i != titles.end()) ? i->second(tr::now) : Utf8(id);

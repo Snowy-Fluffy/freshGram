@@ -1188,6 +1188,8 @@ struct ConfirmedLocalFile {
 		file->to.peer,
 		(isEditing
 			? file->to.replaceMediaOf
+			: file->to.localMessageId
+			? file->to.localMessageId
 			: session->data().nextLocalMessageId()));
 	const auto welcomeTemplate = file->to.options.welcomeTemplate;
 	if (const auto album = welcomeTemplate ? nullptr : file->album.lock()) {

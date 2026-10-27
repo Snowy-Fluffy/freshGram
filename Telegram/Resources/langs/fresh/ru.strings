@@ -201,6 +201,7 @@
 "fresh_PermMessagesReact" = "Ставить реакции на сообщения";
 "fresh_PermUsersInfo" = "Видеть профили пользователей и статус в сети";
 "fresh_PermChatsActive" = "Знать, какой чат вы открыли";
+"fresh_PermMessagesIds" = "Получать идентификаторы отправляемых вами сообщений";
 "fresh_RiskChangesMessages" = "Может изменять и удалять отправленные вами сообщения";
 "fresh_PluginChatNone" = "Не выбран";
 "fresh_PluginSettingsLoading" = "Загрузка настроек…";

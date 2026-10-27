@@ -109,19 +109,25 @@ public:
 		}
 		return result;
 	}
-	std::string sendMedia(const OutgoingMedia &media) override {
+	SendResult sendMedia(const OutgoingMedia &media) override {
 		sentMedia.push_back(media);
-		return {};
+		return { .error = {}, .localId = nextLocalId--, .serverId = 500 };
 	}
-	std::string sendMessage(const OutgoingMessage &message) override {
+	SendResult sendMessage(const OutgoingMessage &message) override {
 		outgoing.push_back(message);
 		sent.emplace_back(message.chat, message.text);
-		return {};
+		return { .error = {}, .localId = nextLocalId--, .serverId = 500 };
 	}
 	std::string edit(int64_t chat, int64_t id, const std::string &text, bool markdown) override {
 		actions.push_back("edit " + std::to_string(chat) + " " + std::to_string(id)
 			+ " " + text + (markdown ? " md" : ""));
-		return (id == 100) ? std::string() : std::string(api::error::kDenied);
+		return (id == 100 || id < 0) ? std::string() : std::string(api::error::kDenied);
+	}
+	std::string editMedia(const OutgoingMediaEdit &edit) override {
+		editedMedia.push_back(edit);
+		return (edit.id == 100 || edit.id < 0)
+			? std::string()
+			: std::string(api::error::kNotFound);
 	}
 	std::string remove(int64_t chat, const std::vector<int64_t> &ids, bool everyone) override {
 		actions.push_back("delete " + std::to_string(chat) + " " + std::to_string(ids.size())
@@ -182,8 +188,10 @@ public:
 
 	std::map<int64_t, std::string> drafts;
 	std::vector<std::pair<int64_t, std::string>> sent;
+	int64_t nextLocalId = -1;
 	std::vector<OutgoingMessage> outgoing;
 	std::vector<OutgoingMedia> sentMedia;
+	std::vector<OutgoingMediaEdit> editedMedia;
 	std::vector<std::string> toasts;
 	std::vector<std::string> actions;
 	std::string clipboard;

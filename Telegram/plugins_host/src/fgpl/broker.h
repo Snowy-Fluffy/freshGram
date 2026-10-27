@@ -19,7 +19,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(3);
+constexpr auto kVersion = int64_t(4);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -149,6 +149,13 @@ struct OutgoingMessage {
 	int64_t topic = 0;
 	bool silent = false;
 	int64_t schedule = 0;
+	bool waitForServerId = false;
+};
+
+struct SendResult {
+	std::string error;
+	int64_t localId = 0;
+	int64_t serverId = 0;
 };
 
 struct OutgoingMedia {
@@ -158,6 +165,17 @@ struct OutgoingMedia {
 	cbor::Bytes bytes;
 	bool spoiler = false;
 	int64_t duration = 0;
+};
+
+struct OutgoingMediaEdit {
+	int64_t chat = 0;
+	int64_t id = 0;
+	std::string name;
+	std::string kind;
+	cbor::Bytes bytes;
+	std::string caption;
+	bool markdown = false;
+	bool spoiler = false;
 };
 
 struct UserInfo {
@@ -242,18 +260,29 @@ public:
 		(void)before;
 		return {};
 	}
-	[[nodiscard]] virtual std::string sendMedia(const OutgoingMedia &media) {
+	[[nodiscard]] virtual SendResult sendMedia(const OutgoingMedia &media) {
 		(void)media;
-		return api::error::kUnavailable;
+		return { .error = api::error::kUnavailable };
+	}
+
+	// The sends answer an error code, or an empty one on success.
+	// A message id may be a server id or a local one (negative).
+	[[nodiscard]] virtual SendResult sendMessage(const OutgoingMessage &message) {
+		if (message.markdown || message.replyTo || message.topic
+			|| message.silent || message.schedule) {
+			return { .error = api::error::kUnavailable };
+		}
+		return {
+			.error = send(message.chat, message.text)
+				? std::string()
+				: std::string(api::error::kFailed),
+		};
 	}
 
 	// The calls below answer an error code, or an empty string on success.
-	[[nodiscard]] virtual std::string sendMessage(const OutgoingMessage &message) {
-		if (message.markdown || message.replyTo || message.topic
-			|| message.silent || message.schedule) {
-			return api::error::kUnavailable;
-		}
-		return send(message.chat, message.text) ? std::string() : api::error::kFailed;
+	[[nodiscard]] virtual std::string editMedia(const OutgoingMediaEdit &edit) {
+		(void)edit;
+		return api::error::kUnavailable;
 	}
 	[[nodiscard]] virtual std::string edit(
 			int64_t chat,

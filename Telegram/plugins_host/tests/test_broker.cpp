@@ -200,7 +200,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 3);
+	CHECK(Payload(info).find("api")->asInt() == 4);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -232,6 +232,7 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "messages.send", Request("messages.send", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "ui.toast", Request("ui.toast", { { "text", Text("x") } }) },
 		{ "messages.edit", Request("messages.edit", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }) },
+		{ "messages.edit", Request("messages.edit_media", { { "chat", Int(1) }, { "id", Int(100) }, { "data", cbor::Value::FromBytes(cbor::Bytes(4, 1)) }, { "name", Text("a.png") } }) },
 		{ "messages.delete", Request("messages.delete", { { "chat", Int(1) }, { "ids", cbor::Value::FromArray({ Int(100) }) } }) },
 		{ "messages.react", Request("messages.react", { { "chat", Int(1) }, { "id", Int(100) }, { "emoji", Text("x") } }) },
 		{ "messages.send", Request("chats.mark_read", { { "chat", Int(1) } }) },
@@ -1217,7 +1218,7 @@ void TestLevelTwoCalls() {
 	auto broker = fixture.make();
 	auto &data = fixture.data;
 
-	CHECK(IsOk(broker.call(Request("messages.send", {
+	const auto first = broker.call(Request("messages.send", {
 		{ "chat", Int(1) },
 		{ "text", Text("**hi**") },
 		{ "format", Text("markdown") },
@@ -1225,10 +1226,14 @@ void TestLevelTwoCalls() {
 		{ "topic", Int(5) },
 		{ "silent", cbor::Value::FromBool(true) },
 		{ "schedule", Int(2000000000) },
-	}))));
+	}));
+	CHECK(IsOk(first));
 	CHECK(data.outgoing.size() == 1);
 	const auto &sent = data.outgoing.back();
 	CHECK(sent.markdown && sent.replyTo == 100 && sent.topic == 5 && sent.silent && sent.schedule == 2000000000);
+	CHECK(!sent.waitForServerId);
+	CHECK(Payload(first).find("local_id")->asInt() == -1);
+	CHECK(Payload(first).find("id") == nullptr);
 	CHECK(Code(broker.call(Request("messages.send", {
 		{ "chat", Int(1) }, { "text", Text("x") }, { "format", Text("html") } }))) == "invalid");
 	CHECK(Code(broker.call(Request("messages.send", {
@@ -1240,13 +1245,24 @@ void TestLevelTwoCalls() {
 		{ "chat", Int(1) }, { "id", Int(101) }, { "text", Text("new") } }))) == "denied");
 	CHECK(Code(broker.call(Request("messages.edit", {
 		{ "chat", Int(3) }, { "id", Int(100) }, { "text", Text("new") } }))) == "not_found");
+	CHECK(IsOk(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(-5) }, { "text", Text("new") } }))));
+	CHECK(data.actions.back() == "edit 1 -5 new");
+	CHECK(Code(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(0) }, { "text", Text("new") } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.react", {
+		{ "chat", Int(1) }, { "id", Int(-5) }, { "emoji", Text("x") } }))));
 	CHECK(IsOk(broker.call(Request("messages.delete", {
 		{ "chat", Int(1) }, { "ids", Ids({ 100, 101, 100 }) } }))));
 	CHECK(data.actions.back() == "delete 1 2 everyone");
 	CHECK(Code(broker.call(Request("messages.delete", {
 		{ "chat", Int(1) }, { "ids", Ids({}) } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.delete", {
+		{ "chat", Int(1) }, { "ids", Ids({ -1, 100 }) } }))));
+	CHECK(data.actions.back() == "delete 1 2 everyone");
 	CHECK(Code(broker.call(Request("messages.delete", {
-		{ "chat", Int(1) }, { "ids", Ids({ -1 }) } }))) == "invalid");
+		{ "chat", Int(1) }, { "ids", Ids({ 0 }) } }))) == "invalid");
+
 	CHECK(IsOk(broker.call(Request("messages.react", {
 		{ "chat", Int(2) }, { "id", Int(100) }, { "emoji", Text("👍") } }))));
 	CHECK(IsOk(broker.call(Request("messages.react", { { "chat", Int(2) }, { "id", Int(100) } }))));
@@ -1383,6 +1399,82 @@ void TestMediaCalls() {
 	auto denied = Fixture({ "media.read" });
 	CHECK(Code(denied.make().call(Request("messages.send_media", {
 		{ "chat", Int(1) }, { "data", file }, { "name", Text("a.txt") } }))) == "denied");
+
+	auto editing = Fixture({ "messages.edit" });
+	editing.grants.chats = std::set<int64_t>{ 1, 2 };
+	auto editor = editing.make();
+	const auto editMedia = [&](cbor::Map args) {
+		args.push_back({ "chat", Int(1) });
+		return editor.call(Request("messages.edit_media", std::move(args)));
+	};
+	CHECK(IsOk(editMedia({
+		{ "id", Int(100) },
+		{ "data", file },
+		{ "name", Text("cat.png") },
+		{ "caption", Text("**cat**") },
+		{ "format", Text("markdown") },
+		{ "spoiler", cbor::Value::FromBool(true) },
+	})));
+	CHECK(editing.data.editedMedia.size() == 1);
+	const auto &edited = editing.data.editedMedia.back();
+	CHECK(edited.id == 100 && edited.name == "cat.png" && edited.kind == "auto");
+	CHECK(edited.bytes.size() == 64 && edited.markdown && edited.spoiler);
+	CHECK(edited.caption == "**cat**");
+	CHECK(IsOk(editMedia({ { "id", Int(-7) }, { "data", file }, { "name", Text("a.bin") }, { "kind", Text("file") } })));
+	CHECK(editing.data.editedMedia.back().id == -7);
+	const auto refused = [&](cbor::Map args, int64_t chat = 1) {
+		auto fresh = Fixture({ "messages.edit" });
+		fresh.grants.chats = std::set<int64_t>{ 1, 2 };
+		auto broker = fresh.make();
+		args.push_back({ "chat", Int(chat) });
+		return Code(broker.call(Request("messages.edit_media", std::move(args))));
+	};
+	CHECK(refused({ { "id", Int(101) }, { "data", file }, { "name", Text("a.bin") } }) == "not_found");
+	CHECK(refused({ { "id", Int(0) }, { "data", file }, { "name", Text("a.bin") } }) == "invalid");
+	CHECK(refused({ { "data", file }, { "name", Text("a.bin") } }) == "invalid");
+	CHECK(refused({ { "id", Int(100) }, { "data", file }, { "name", Text("a.bin") }, { "kind", Text("voice") } }) == "invalid");
+	CHECK(refused({ { "id", Int(100) }, { "data", file }, { "name", Text("a/b.bin") } }) == "invalid");
+	CHECK(refused({ { "id", Int(100) }, { "data", Text("x") }, { "name", Text("a.bin") } }) == "invalid");
+	CHECK(refused({
+		{ "id", Int(100) },
+		{ "data", cbor::Value::FromBytes(cbor::Bytes((size_t(100) << 20) + 1, 1)) },
+		{ "name", Text("big.bin") } }) == "limit");
+	CHECK(refused({ { "id", Int(100) }, { "data", file }, { "name", Text("a.bin") } }, 5) == "denied");
+}
+
+void TestSentIds() {
+	const auto file = cbor::Value::FromBytes(cbor::Bytes(8, 7));
+	const auto send = [&](bool ids, bool media) {
+		auto permissions = std::set<std::string>{ "messages.send" };
+		if (ids) {
+			permissions.insert("messages.ids");
+		}
+		auto fixture = Fixture(std::move(permissions));
+		auto broker = fixture.make();
+		const auto answer = media
+			? broker.call(Request("messages.send_media", {
+				{ "chat", Int(1) }, { "data", file }, { "name", Text("a.png") } }))
+			: broker.call(Request("messages.send", {
+				{ "chat", Int(1) }, { "text", Text("x") } }));
+		CHECK(IsOk(answer));
+		const auto waited = media
+			? fixture.data.sentMedia.back().message.waitForServerId
+			: fixture.data.outgoing.back().waitForServerId;
+		CHECK(waited == ids);
+		const auto &payload = Payload(answer);
+		const auto local = payload.find("local_id");
+		const auto server = payload.find("id");
+		CHECK(local && local->asInt() == -1);
+		CHECK(ids ? (server && server->asInt() == 500) : !server);
+	};
+	auto forwarding = Fixture({ "messages.send", "messages.read" });
+	auto forwarder = forwarding.make();
+	CHECK(Code(forwarder.call(Request("messages.forward", {
+		{ "from_chat", Int(1) }, { "ids", Ids({ -1 }) }, { "to_chat", Int(2) } }))) == "invalid");
+	send(false, false);
+	send(true, false);
+	send(false, true);
+	send(true, true);
 }
 
 void TestFilesAndTimers() {
@@ -1503,6 +1595,7 @@ int main() {
 	TestClosedBrokerDropsAwaitedWork();
 	TestLevelTwoCalls();
 	TestMediaCalls();
+	TestSentIds();
 	TestFilesAndTimers();
 	return Failures() ? 1 : 0;
 }

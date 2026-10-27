@@ -12,8 +12,8 @@ checked against the permissions the user granted.
   `fg_init(ptr, len)` and `fg_on_event(ptr, len)`, and import
   `freshgram.call(req_ptr, req_len, out_ptr_slot, out_len_slot) -> status`.
   `c/freshgram.h` is a freestanding C implementation of the protocol with
-  helpers for common calls (`fg_send_text`, `fg_edit_text`, `fg_react`,
-  `fg_toast`, `fg_notify`, `fg_chat_info`, `fg_history`, `fg_fetch`,
+  helpers for common calls (`fg_send_text`, `fg_send_text_ids`, `fg_send_media`,
+  `fg_edit_text`, `fg_edit_media`, `fg_react`, `fg_toast`, `fg_notify`, `fg_chat_info`, `fg_history`, `fg_fetch`,
   `fg_timer_set`, `fg_timer_clear`, sockets, storage); any other call is built with
   `fg_begin` and `fg_send`.
 
@@ -31,7 +31,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 `not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`,
 `cancelled` (the user closed a file dialog).
 
-## Calls (API level 3)
+## Calls (API level 4)
 
 | Call | Permission | Notes |
 |---|---|---|
@@ -57,10 +57,11 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
 | `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `self`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
-| `messages.send` `{chat, text, format, reply_to, topic, silent, schedule}` | `messages.send` | `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode |
-| `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send` |
-| `messages.edit` `{chat, id, text, format}` | `messages.edit` | only messages you sent and may still edit |
-| `messages.delete` `{chat, ids, everyone}` | `messages.delete` | up to 100 of your own messages; for everyone (the default) when Telegram allows it for all of them |
+| `messages.send` `{chat, text, format, reply_to, topic, silent, schedule}` | `messages.send` | `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode; answers `{local_id}` at once: a negative id that `messages.edit`, `edit_media`, `react` and `delete` accept like a server id (they wait until a message that is still sending gets its server id, and fail with `failed` when the send fails); with `messages.ids` the call waits for the server and answers `{id, local_id}` too (`id` is null when the server did not answer in time, which is not an error, so a retry cannot send twice); `local_id` is null when no message was created (a dice, a text that is only spaces); scheduled sends have no ids |
+| `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send`; answers the ids like `messages.send` |
+| `messages.edit_media` `{chat, id, data, name, kind, caption, format, spoiler}` | `messages.edit` | replaces the media of a message you sent and may still edit, with a file of up to 100 MiB; `kind` is `auto` or `file` (not `voice`); `id` is a server or a local id; `caption` replaces the old one; waits until Telegram accepts the file (await it); `invalid` when the album or Telegram does not take the file, `denied` when the message cannot carry new media |
+| `messages.edit` `{chat, id, text, format}` | `messages.edit` | only messages you sent and may still edit; `id` may be a local id |
+| `messages.delete` `{chat, ids, everyone}` | `messages.delete` | up to 100 of your own messages, server or local ids; for everyone (the default) when Telegram allows it for all of them |
 | `messages.react` `{chat, id, emoji}` | `messages.react` | sets an emoji reaction; no `emoji` removes yours |
 | `messages.forward` `{from_chat, ids, to_chat, silent}` | `messages.send` and `messages.read` | up to 100 messages; both chats must be in scope |
 | `messages.search` `{chat, query, limit}` | `messages.history` | searches the chat on the server; the same message fields as the history |
@@ -95,7 +96,7 @@ panel, where the user can close any of them. Plugin traffic always goes directly
 it never uses the proxy configured in the app.
 
 Files of up to 100 MiB go both ways: `net.fetch` bodies, `media.get`,
-`messages.send_media` and `files.pick/save`. Await such calls, since a plain call
+`messages.send_media`, `messages.edit_media` and `files.pick/save`. Await such calls, since a plain call
 counts against the 60 seconds of its event, and give the plugin room in
 `runtime.limits.memoryMb`: a file passes through its memory about three times
 (the answer, the plugin's own copy and the next request). A C plugin built on

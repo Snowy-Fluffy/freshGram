@@ -35,6 +35,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ayu/utils/telegram_helpers.h"
 
+#include <map>
+
 
 namespace Api {
 namespace {
@@ -408,10 +410,28 @@ mtpRequestId EditMessage(
 		inputMedia);
 }
 
+[[nodiscard]] std::map<FullMsgId, Fn<void(const QString &)>> &EditMediaCompletions() {
+	static auto result = std::map<FullMsgId, Fn<void(const QString &)>>();
+	return result;
+}
+
+[[nodiscard]] Fn<void(const QString &)> TakeEditMediaCompletion(
+		FullMsgId itemId) {
+	auto &all = EditMediaCompletions();
+	const auto i = all.find(itemId);
+	if (i == all.end()) {
+		return nullptr;
+	}
+	auto result = std::move(i->second);
+	all.erase(i);
+	return result;
+}
+
 void EditMessageWithUploadedMedia(
 		not_null<HistoryItem*> item,
 		SendOptions options,
 		MTPInputMedia media) {
+	const auto itemId = item->fullId();
 	const auto done = [=](Fn<void()> applyUpdates) {
 		if (item) {
 			item->removeFromSharedMediaIndex();
@@ -421,15 +441,19 @@ void EditMessageWithUploadedMedia(
 			applyUpdates();
 			item->setIsLocalUpdateMedia(false);
 		}
+		if (const auto completion = TakeEditMediaCompletion(itemId)) {
+			completion(QString());
+		}
 	};
 	const auto fail = [=](const QString &error) {
 		const auto session = &item->history()->session();
 		const auto notModified = (error == u"MESSAGE_NOT_MODIFIED"_q);
 		const auto mediaInvalid = (error == u"MEDIA_NEW_INVALID"_q);
+		const auto completion = TakeEditMediaCompletion(itemId);
 		if (notModified || mediaInvalid) {
 			item->returnSavedMedia();
 			session->data().sendHistoryChangeNotifications();
-			if (mediaInvalid) {
+			if (mediaInvalid && !completion) {
 				Ui::show(
 					Ui::MakeInformBox(tr::lng_edit_media_invalid_file()),
 					Ui::LayerOption::KeepOther);
@@ -437,12 +461,25 @@ void EditMessageWithUploadedMedia(
 		} else {
 			session->api().sendMessageFail(error, item->history()->peer);
 		}
+		if (completion) {
+			completion(error);
+		}
 	};
 
 	EditMessage(item, options, done, fail, media);
 }
 
 } // namespace
+
+void SetEditMediaCompletion(
+		FullMsgId itemId,
+		Fn<void(const QString &error)> done) {
+	if (done) {
+		EditMediaCompletions()[itemId] = std::move(done);
+	} else {
+		EditMediaCompletions().erase(itemId);
+	}
+}
 
 void RescheduleMessage(
 		not_null<HistoryItem*> item,

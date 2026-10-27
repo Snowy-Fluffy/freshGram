@@ -490,6 +490,91 @@ static int fg_send_text(fg_i64 chat, const char *text) {
 	return fg_send(&w, 0);
 }
 
+/* The ids of a sent message: local_id at once, id (the server one) only with
+   messages.ids, and 0 while unknown. Either pointer may be null. */
+static int fg_sent_ids(fg_value result, fg_i64 *id, fg_i64 *local_id) {
+	fg_i64 value = 0;
+	if (id) {
+		*id = (fg_as_int(fg_find(result, "id"), &value) == 0) ? value : 0;
+	}
+	if (local_id) {
+		value = 0;
+		*local_id = (fg_as_int(fg_find(result, "local_id"), &value) == 0) ? value : 0;
+	}
+	return FG_OK;
+}
+
+static int fg_send_text_ids(fg_i64 chat, const char *text, fg_i64 *id, fg_i64 *local_id) {
+	fg_writer w;
+	fg_value result = fg_none();
+	fg_begin(&w, "messages.send", 2);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	const int code = fg_send(&w, &result);
+	if (code == FG_OK) {
+		fg_sent_ids(result, id, local_id);
+	}
+	return code;
+}
+
+/* kind is "auto", "file" or "voice"; null means "auto". */
+static int fg_send_media(
+		fg_i64 chat,
+		const void *data,
+		fg_u32 length,
+		const char *name,
+		const char *caption,
+		const char *kind,
+		fg_i64 *id,
+		fg_i64 *local_id) {
+	fg_writer w;
+	fg_value result = fg_none();
+	fg_begin(&w, "messages.send_media", 5);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "data");
+	fg_w_bytes(&w, data, length);
+	fg_w_text(&w, "name");
+	fg_w_text(&w, name);
+	fg_w_text(&w, "caption");
+	fg_w_text(&w, caption ? caption : "");
+	fg_w_text(&w, "kind");
+	fg_w_text(&w, kind ? kind : "auto");
+	const int code = fg_send(&w, &result);
+	if (code == FG_OK) {
+		fg_sent_ids(result, id, local_id);
+	}
+	return code;
+}
+
+/* message is a server id or a local one; kind is "auto" or "file". */
+static int fg_edit_media(
+		fg_i64 chat,
+		fg_i64 message,
+		const void *data,
+		fg_u32 length,
+		const char *name,
+		const char *caption,
+		const char *kind) {
+	fg_writer w;
+	fg_begin(&w, "messages.edit_media", 6);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "id");
+	fg_w_int(&w, message);
+	fg_w_text(&w, "data");
+	fg_w_bytes(&w, data, length);
+	fg_w_text(&w, "name");
+	fg_w_text(&w, name);
+	fg_w_text(&w, "caption");
+	fg_w_text(&w, caption ? caption : "");
+	fg_w_text(&w, "kind");
+	fg_w_text(&w, kind ? kind : "auto");
+	return fg_send(&w, 0);
+}
+
 static int fg_toast(const char *text) {
 	fg_writer w;
 	fg_begin(&w, "ui.toast", 1);

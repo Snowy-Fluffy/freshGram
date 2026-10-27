@@ -8984,6 +8984,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermMessagesReact" = "Put reactions on messages";
 "fresh_PermUsersInfo" = "See user profiles and online status";
 "fresh_PermChatsActive" = "Know which chat you open";
+"fresh_PermMessagesIds" = "Receive the ids of messages you send";
 "fresh_RiskChangesMessages" = "Can edit or delete messages you sent";
 "fresh_PluginChatNone" = "Not chosen";
 "fresh_PluginSettingsLoading" = "Loading the settings…";
