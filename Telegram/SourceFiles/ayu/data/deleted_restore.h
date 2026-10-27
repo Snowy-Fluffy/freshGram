@@ -33,6 +33,7 @@ public:
 
 	void checkLoaded();
 	void disable();
+	void reset();
 	void markStale();
 	HistoryItem *materialize(TimeId from, TimeId till);
 	void dropDuplicates();
@@ -63,6 +64,7 @@ private:
 	bool _materializing = false;
 	bool _disabled = false;
 	bool _stale = false;
+	int _generation = 0;
 
 };
 

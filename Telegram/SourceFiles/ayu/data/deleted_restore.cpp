@@ -194,9 +194,18 @@ void State::disable() {
 	_threads.clear();
 }
 
+void State::reset() {
+	disable();
+	_disabled = false;
+	_requested = false;
+	_stale = false;
+	++_generation;
+}
+
 void State::load(ID userId, ID dialogId) {
 	const auto limit = AyuSettings::getInstance().deletedRestoreLimit();
 	const auto weak = base::make_weak(this);
+	const auto generation = _generation;
 	AyuMessages::flushPending();
 	crl::async([=] {
 		auto messages = std::vector<AyuMessageBase>();
@@ -221,7 +230,9 @@ void State::load(ID userId, ID dialogId) {
 
 		crl::on_main([=, messages = std::move(messages), extras = std::move(extras), markups = std::move(markups), ranks = std::move(ranks)]() mutable {
 			const auto strong = weak.get();
-			if (!strong || strong->_disabled) {
+			if (!strong
+				|| strong->_disabled
+				|| strong->_generation != generation) {
 				return;
 			}
 			auto known = base::flat_set<std::pair<ID, TimeId>>();
