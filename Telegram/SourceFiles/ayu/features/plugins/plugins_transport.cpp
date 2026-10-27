@@ -63,6 +63,11 @@ struct Connection {
 	std::unique_ptr<QTcpSocket> stream;
 	std::unique_ptr<QUdpSocket> datagram;
 	std::deque<crl::time> recentDatagrams;
+	QString via;
+	std::unique_ptr<QTcpSocket> control;
+	QHostAddress relay;
+	int relayPort = 0;
+	QByteArray datagramHeader;
 };
 
 struct Traffic {
@@ -82,6 +87,39 @@ struct Registry {
 [[nodiscard]] Registry &GetRegistry() {
 	static auto result = Registry();
 	return result;
+}
+
+struct PolicyState {
+	std::mutex mutex;
+	NetworkPolicy policy;
+};
+
+[[nodiscard]] PolicyState &GetPolicyState() {
+	static auto result = PolicyState();
+	return result;
+}
+
+[[nodiscard]] NetworkPolicy CurrentPolicy() {
+	auto &state = GetPolicyState();
+	const auto lock = std::scoped_lock(state.mutex);
+	return state.policy;
+}
+
+[[nodiscard]] bool BlockedKind(const NetworkPolicy &policy, const QString &kind) {
+	return (kind == u"HTTPS"_q)
+		? policy.blockHttps
+		: (kind == u"UDP"_q)
+		? policy.blockUdp
+		: policy.blockTcp;
+}
+
+[[nodiscard]] QString ProxyLabel(const NetworkProxy &proxy) {
+	return ((proxy.type == NetworkProxy::Type::Socks5)
+		? u"socks5 "_q
+		: u"http "_q)
+		+ QString::fromStdString(proxy.host)
+		+ ':'
+		+ QString::number(proxy.port);
 }
 
 [[nodiscard]] std::shared_ptr<Connection> Register(
@@ -159,6 +197,10 @@ void Unregister(int64 id) {
 	if (connection->datagram) {
 		connection->datagram->abort();
 		connection->datagram.reset();
+	}
+	if (connection->control) {
+		connection->control->abort();
+		connection->control.reset();
 	}
 }
 
@@ -408,22 +450,446 @@ struct Parsed {
 	}
 }
 
-[[nodiscard]] std::optional<fgpl::FetchError> Attach(
+[[nodiscard]] std::optional<fgpl::FetchError> AttachDescriptor(
 		QTcpSocket &socket,
-		const QHostAddress &address,
-		int port,
-		const Connection &entry,
-		const QDeadlineTimer &deadline) {
-	const auto connected = Connect(address, port, entry, deadline);
-	if (!connected.ok()) {
-		return connected.error();
-	}
+		qintptr descriptor) {
 	socket.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
-	if (!socket.setSocketDescriptor(connected.value(), QAbstractSocket::ConnectedState)) {
-		::close(int(connected.value()));
+	if (!socket.setSocketDescriptor(descriptor, QAbstractSocket::ConnectedState)) {
+		::close(int(descriptor));
 		return Error("connect", socket.errorString());
 	}
 	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> ProxyError(QString text) {
+	return Error("connect", u"proxy: "_q + text);
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> SendAll(
+		int fd,
+		const QByteArray &data,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	auto sent = qsizetype(0);
+	while (sent < data.size()) {
+		if (entry.killed.load()) {
+			return Aborted();
+		} else if (deadline.hasExpired()) {
+			return ProxyError(u"the handshake timed out"_q);
+		}
+		auto item = pollfd{ fd, POLLOUT, 0 };
+		const auto ready = ::poll(&item, 1, Slice(deadline));
+		if (ready < 0 && errno != EINTR) {
+			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
+		} else if (ready <= 0) {
+			continue;
+		}
+		const auto written = ::send(
+			fd,
+			data.constData() + sent,
+			size_t(data.size() - sent),
+			MSG_NOSIGNAL);
+		if (written < 0) {
+			if (errno == EAGAIN || errno == EINTR) {
+				continue;
+			}
+			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
+		}
+		sent += qsizetype(written);
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> RecvExact(
+		int fd,
+		char *out,
+		size_t size,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	auto got = size_t(0);
+	while (got < size) {
+		if (entry.killed.load()) {
+			return Aborted();
+		} else if (deadline.hasExpired()) {
+			return ProxyError(u"the handshake timed out"_q);
+		}
+		auto item = pollfd{ fd, POLLIN, 0 };
+		const auto ready = ::poll(&item, 1, Slice(deadline));
+		if (ready < 0 && errno != EINTR) {
+			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
+		} else if (ready <= 0) {
+			continue;
+		}
+		const auto read = ::recv(fd, out + got, size - got, 0);
+		if (read == 0) {
+			return ProxyError(u"the connection was closed"_q);
+		} else if (read < 0) {
+			if (errno == EAGAIN || errno == EINTR) {
+				continue;
+			}
+			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
+		}
+		got += size_t(read);
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> Socks5Negotiate(
+		int fd,
+		const NetworkProxy &proxy,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	const auto authorize = !proxy.user.empty();
+	if (proxy.user.size() > 255 || proxy.password.size() > 255) {
+		return ProxyError(u"the credentials are too long"_q);
+	}
+	auto hello = QByteArray();
+	hello.append(char(5));
+	if (authorize) {
+		hello.append(char(2));
+		hello.append(char(0));
+		hello.append(char(2));
+	} else {
+		hello.append(char(1));
+		hello.append(char(0));
+	}
+	if (const auto error = SendAll(fd, hello, entry, deadline)) {
+		return error;
+	}
+	char reply[2] = {};
+	if (const auto error = RecvExact(fd, reply, 2, entry, deadline)) {
+		return error;
+	} else if (reply[0] != 5) {
+		return ProxyError(u"not a SOCKS5 server"_q);
+	} else if (reply[1] == char(0xFF)) {
+		return ProxyError(u"no acceptable authentication method"_q);
+	} else if (reply[1] == 0) {
+		return std::nullopt;
+	} else if (reply[1] != 2 || !authorize) {
+		return ProxyError(u"an unsupported authentication method"_q);
+	}
+	auto credentials = QByteArray();
+	credentials.append(char(1));
+	credentials.append(char(proxy.user.size()));
+	credentials.append(proxy.user.data(), qsizetype(proxy.user.size()));
+	credentials.append(char(proxy.password.size()));
+	credentials.append(proxy.password.data(), qsizetype(proxy.password.size()));
+	if (const auto error = SendAll(fd, credentials, entry, deadline)) {
+		return error;
+	} else if (const auto error = RecvExact(fd, reply, 2, entry, deadline)) {
+		return error;
+	} else if (reply[1] != 0) {
+		return ProxyError(u"the credentials were rejected"_q);
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] fgpl::Result<QByteArray, fgpl::FetchError> Socks5Address(
+		const std::string &host,
+		bool ip,
+		int port) {
+	auto result = QByteArray();
+	const auto address = ip
+		? QHostAddress(QString::fromStdString(host))
+		: QHostAddress();
+	if (ip && address.isNull()) {
+		return Error("invalid", u"a bad address"_q);
+	} else if (ip && address.protocol() == QAbstractSocket::IPv6Protocol) {
+		result.append(char(4));
+		const auto raw = address.toIPv6Address();
+		result.append(reinterpret_cast<const char*>(&raw), sizeof(raw));
+	} else if (ip) {
+		result.append(char(1));
+		const auto raw = htonl(address.toIPv4Address());
+		result.append(reinterpret_cast<const char*>(&raw), sizeof(raw));
+	} else if (host.empty() || host.size() > 255) {
+		return Error("invalid", u"a bad host name"_q);
+	} else {
+		result.append(char(3));
+		result.append(char(host.size()));
+		result.append(host.data(), qsizetype(host.size()));
+	}
+	result.append(char((port >> 8) & 0xFF));
+	result.append(char(port & 0xFF));
+	return result;
+}
+
+[[nodiscard]] QString Socks5ReplyText(int code) {
+	switch (code) {
+	case 1: return u"a general failure"_q;
+	case 2: return u"the connection is not allowed by the rules"_q;
+	case 3: return u"the network is unreachable"_q;
+	case 4: return u"the host is unreachable"_q;
+	case 5: return u"the connection was refused"_q;
+	case 6: return u"the TTL expired"_q;
+	case 7: return u"the command is not supported"_q;
+	case 8: return u"the address type is not supported"_q;
+	}
+	return u"an unknown error"_q;
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> Socks5Reply(
+		int fd,
+		QHostAddress &bound,
+		int &boundPort,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	char head[4] = {};
+	if (const auto error = RecvExact(fd, head, 4, entry, deadline)) {
+		return error;
+	} else if (head[0] != 5) {
+		return ProxyError(u"not a SOCKS5 server"_q);
+	} else if (head[1] != 0) {
+		return ProxyError(Socks5ReplyText(int(uint8_t(head[1]))));
+	}
+	bound = QHostAddress();
+	auto skip = size_t(0);
+	switch (head[3]) {
+	case 1: {
+		char raw[4] = {};
+		if (const auto error = RecvExact(fd, raw, 4, entry, deadline)) {
+			return error;
+		}
+		auto value = uint32_t();
+		std::memcpy(&value, raw, sizeof(value));
+		bound = QHostAddress(quint32(ntohl(value)));
+	} break;
+	case 4: {
+		char raw[16] = {};
+		if (const auto error = RecvExact(fd, raw, 16, entry, deadline)) {
+			return error;
+		}
+		auto value = Q_IPV6ADDR();
+		std::memcpy(&value, raw, sizeof(raw));
+		bound = QHostAddress(value);
+	} break;
+	case 3: {
+		char length = 0;
+		if (const auto error = RecvExact(fd, &length, 1, entry, deadline)) {
+			return error;
+		}
+		skip = size_t(uint8_t(length));
+	} break;
+	default:
+		return ProxyError(u"a malformed reply"_q);
+	}
+	if (skip) {
+		auto name = std::string(skip, '\0');
+		if (const auto error = RecvExact(fd, name.data(), skip, entry, deadline)) {
+			return error;
+		}
+	}
+	char port[2] = {};
+	if (const auto error = RecvExact(fd, port, 2, entry, deadline)) {
+		return error;
+	}
+	boundPort = (int(uint8_t(port[0])) << 8) | int(uint8_t(port[1]));
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<fgpl::FetchError> HttpConnect(
+		int fd,
+		const NetworkProxy &proxy,
+		const std::string &host,
+		bool ip,
+		int port,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	const auto name = (ip && host.find(':') != std::string::npos)
+		? "[" + host + "]"
+		: host;
+	const auto target = name + ":" + std::to_string(port);
+	auto request = QByteArray::fromStdString(
+		"CONNECT " + target + " HTTP/1.1\r\nHost: " + target + "\r\n");
+	if (!proxy.user.empty()) {
+		request.append("Proxy-Authorization: Basic ");
+		request.append(QByteArray::fromStdString(
+			proxy.user + ":" + proxy.password).toBase64());
+		request.append("\r\n");
+	}
+	request.append("\r\n");
+	if (const auto error = SendAll(fd, request, entry, deadline)) {
+		return error;
+	}
+	auto head = std::string();
+	while (head.size() < 4 || head.compare(head.size() - 4, 4, "\r\n\r\n") != 0) {
+		if (head.size() > kMaxHeaderBytes) {
+			return ProxyError(u"the reply is too large"_q);
+		}
+		char byte = 0;
+		if (const auto error = RecvExact(fd, &byte, 1, entry, deadline)) {
+			return error;
+		}
+		head.push_back(byte);
+	}
+	if (head.rfind("HTTP/1.", 0) != 0 || head.size() < 12) {
+		return ProxyError(u"not an HTTP proxy"_q);
+	}
+	const auto status = std::atoi(head.c_str() + 9);
+	if (status == 407) {
+		return ProxyError(u"authentication is required"_q);
+	} else if (status < 200 || status > 299) {
+		return ProxyError(u"refused with status "_q + QString::number(status));
+	}
+	return std::nullopt;
+}
+
+struct ProxySocket {
+	qintptr descriptor = -1;
+	QHostAddress address;
+};
+
+[[nodiscard]] fgpl::Result<ProxySocket, fgpl::FetchError> ConnectProxy(
+		const NetworkProxy &proxy,
+		const Connection &entry,
+		const QDeadlineTimer &deadline) {
+	const auto text = QString::fromStdString(proxy.host);
+	auto address = QHostAddress(text);
+	if (address.isNull()) {
+		const auto lookup = Lookup(text, entry, deadline);
+		if (!lookup.ok()) {
+			return lookup.error();
+		}
+		const auto &info = lookup.value();
+		if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
+			return Error("dns", u"the proxy host was not found"_q);
+		}
+		address = info.addresses().front();
+	}
+	const auto connected = Connect(address, proxy.port, entry, deadline);
+	if (!connected.ok()) {
+		return connected.error();
+	}
+	return ProxySocket{ connected.value(), address };
+}
+
+[[nodiscard]] fgpl::Result<qintptr, fgpl::FetchError> ConnectThrough(
+		const NetworkProxy &proxy,
+		const std::string &host,
+		bool ip,
+		int port,
+		Connection &entry,
+		const QDeadlineTimer &deadline) {
+	const auto opened = ConnectProxy(proxy, entry, deadline);
+	if (!opened.ok()) {
+		return opened.error();
+	}
+	const auto fd = int(opened.value().descriptor);
+	entry.address = opened.value().address;
+	const auto fail = [&](fgpl::FetchError error) {
+		::close(fd);
+		return error;
+	};
+	if (proxy.type == NetworkProxy::Type::Http) {
+		if (const auto error = HttpConnect(fd, proxy, host, ip, port, entry, deadline)) {
+			return fail(*error);
+		}
+		return qintptr(fd);
+	}
+	if (const auto error = Socks5Negotiate(fd, proxy, entry, deadline)) {
+		return fail(*error);
+	}
+	const auto address = Socks5Address(host, ip, port);
+	if (!address.ok()) {
+		return fail(address.error());
+	}
+	auto request = QByteArray("\x05\x01\x00", 3);
+	request.append(address.value());
+	auto bound = QHostAddress();
+	auto boundPort = 0;
+	if (const auto error = SendAll(fd, request, entry, deadline)) {
+		return fail(*error);
+	} else if (const auto error = Socks5Reply(fd, bound, boundPort, entry, deadline)) {
+		return fail(*error);
+	}
+	return qintptr(fd);
+}
+
+[[nodiscard]] fgpl::Result<qintptr, fgpl::FetchError> OpenStream(
+		const NetworkProxy &proxy,
+		const std::string &host,
+		bool ip,
+		int port,
+		Connection &entry,
+		const QDeadlineTimer &deadline) {
+	if (proxy.type != NetworkProxy::Type::None) {
+		entry.via = ProxyLabel(proxy);
+		return ConnectThrough(proxy, host, ip, port, entry, deadline);
+	}
+	const auto resolved = Resolve(host, ip, entry, deadline);
+	if (!resolved.ok()) {
+		return resolved.error();
+	}
+	entry.address = resolved.value();
+	return Connect(resolved.value(), port, entry, deadline);
+}
+
+struct UdpRelay {
+	QHostAddress address;
+	int port = 0;
+	std::unique_ptr<QTcpSocket> control;
+};
+
+[[nodiscard]] fgpl::Result<UdpRelay, fgpl::FetchError> Socks5Associate(
+		const NetworkProxy &proxy,
+		Connection &entry,
+		const QDeadlineTimer &deadline) {
+	const auto opened = ConnectProxy(proxy, entry, deadline);
+	if (!opened.ok()) {
+		return opened.error();
+	}
+	const auto fd = int(opened.value().descriptor);
+	const auto fail = [&](fgpl::FetchError error) {
+		::close(fd);
+		return error;
+	};
+	if (const auto error = Socks5Negotiate(fd, proxy, entry, deadline)) {
+		return fail(*error);
+	}
+	const auto request = QByteArray("\x05\x03\x00\x01\x00\x00\x00\x00\x00\x00", 10);
+	auto bound = QHostAddress();
+	auto boundPort = 0;
+	if (const auto error = SendAll(fd, request, entry, deadline)) {
+		return fail(*error);
+	} else if (const auto error = Socks5Reply(fd, bound, boundPort, entry, deadline)) {
+		return fail(*error);
+	}
+	if (bound.isNull()
+		|| bound == QHostAddress::AnyIPv4
+		|| bound == QHostAddress::AnyIPv6
+		|| bound == QHostAddress::Any) {
+		bound = opened.value().address;
+	}
+	if (boundPort <= 0) {
+		return fail(Error("connect", u"proxy: no relay port"_q));
+	}
+	auto result = UdpRelay();
+	result.address = bound;
+	result.port = boundPort;
+	result.control = std::make_unique<QTcpSocket>();
+	if (const auto error = AttachDescriptor(*result.control, qintptr(fd))) {
+		return *error;
+	}
+	return result;
+}
+
+[[nodiscard]] qsizetype UnwrapDatagram(const QByteArray &data) {
+	if (data.size() < 4 || data[0] != 0 || data[1] != 0 || data[2] != 0) {
+		return -1;
+	}
+	const auto type = int(uint8_t(data[3]));
+	const auto address = (type == 1)
+		? qsizetype(4)
+		: (type == 4)
+		? qsizetype(16)
+		: (type == 3 && data.size() > 4)
+		? qsizetype(1) + qsizetype(uint8_t(data[4]))
+		: qsizetype(-1);
+	if (address < 0) {
+		return -1;
+	}
+	const auto offset = qsizetype(4) + address + qsizetype(2);
+	return (data.size() >= offset) ? offset : qsizetype(-1);
 }
 
 [[nodiscard]] std::optional<fgpl::FetchError> Encrypt(
@@ -504,7 +970,9 @@ public:
 			event.result = QString::fromStdString(result.error().code + ": " + result.error().message);
 			event.failed = true;
 		} else if (const auto entry = Find(result.value())) {
-			event.result = entry->address.toString();
+			event.result = entry->via.isEmpty()
+				? entry->address.toString()
+				: u"via "_q + entry->via;
 		}
 		AddLog(std::move(event));
 		return result;
@@ -514,6 +982,9 @@ private:
 	fgpl::Result<fgpl::FetchResponse, fgpl::FetchError> fetchHops(
 			const fgpl::FetchRequest &request,
 			const std::shared_ptr<Connection> &entry) {
+		if (CurrentPolicy().blockHttps) {
+			return Error("blocked", u"HTTPS is blocked for plugins"_q);
+		}
 		auto url = request.url;
 		auto method = request.method;
 		auto body = request.body;
@@ -594,16 +1065,43 @@ private:
 		const auto fail = [&](const char *code, QString message) {
 			return failWith(Error(code, message));
 		};
-		const auto resolved = Resolve(request.host, request.ip, *entry, deadline);
-		if (!resolved.ok()) {
-			return failWith(resolved.error());
+		const auto policy = CurrentPolicy();
+		if (BlockedKind(policy, entry->kind)) {
+			return fail("blocked", entry->kind + u" is blocked for plugins"_q);
 		}
-		entry->address = resolved.value();
+		const auto proxied = (policy.proxy.type != NetworkProxy::Type::None);
 		entry->tls = request.tls;
 		if (udp) {
 			auto socket = std::make_unique<QUdpSocket>();
 			socket->setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
-			const auto any = (resolved.value().protocol() == QAbstractSocket::IPv6Protocol)
+			auto local = QAbstractSocket::NetworkLayerProtocol();
+			if (proxied) {
+				if (policy.proxy.type == NetworkProxy::Type::Http) {
+					return fail("unavailable", u"UDP is not supported through an HTTP proxy"_q);
+				}
+				entry->via = ProxyLabel(policy.proxy);
+				auto relay = Socks5Associate(policy.proxy, *entry, deadline);
+				if (!relay.ok()) {
+					return failWith(relay.error());
+				}
+				const auto header = Socks5Address(request.host, request.ip, request.port);
+				if (!header.ok()) {
+					return failWith(header.error());
+				}
+				entry->control = std::move(relay.value().control);
+				entry->relay = relay.value().address;
+				entry->relayPort = relay.value().port;
+				entry->datagramHeader = QByteArray("\x00\x00\x00", 3) + header.value();
+				local = entry->relay.protocol();
+			} else {
+				const auto resolved = Resolve(request.host, request.ip, *entry, deadline);
+				if (!resolved.ok()) {
+					return failWith(resolved.error());
+				}
+				entry->address = resolved.value();
+				local = resolved.value().protocol();
+			}
+			const auto any = (local == QAbstractSocket::IPv6Protocol)
 				? QHostAddress::AnyIPv6
 				: QHostAddress::AnyIPv4;
 			if (!socket->bind(QHostAddress(any), 0)) {
@@ -624,7 +1122,16 @@ private:
 		} else {
 			socket = std::make_unique<QTcpSocket>();
 		}
-		if (const auto error = Attach(*socket, resolved.value(), request.port, *entry, deadline)) {
+		const auto opened = OpenStream(
+			policy.proxy,
+			request.host,
+			request.ip,
+			request.port,
+			*entry,
+			deadline);
+		if (!opened.ok()) {
+			return failWith(opened.error());
+		} else if (const auto error = AttachDescriptor(*socket, opened.value())) {
 			return failWith(*error);
 		}
 		if (const auto secure = dynamic_cast<QSslSocket*>(socket.get())) {
@@ -648,7 +1155,14 @@ public:
 		const auto bytes = QByteArray(
 			reinterpret_cast<const char*>(data.data()),
 			qsizetype(data.size()));
+		if (BlockedKind(CurrentPolicy(), entry->kind)) {
+			return Error("blocked", entry->kind + u" is blocked for plugins"_q);
+		}
 		if (entry->datagram) {
+			if (entry->control
+				&& entry->control->state() != QAbstractSocket::ConnectedState) {
+				return Error("closed", u"the proxy closed the connection"_q);
+			}
 			const auto now = crl::now();
 			auto &recent = entry->recentDatagrams;
 			while (!recent.empty() && recent.front() <= now - 1000) {
@@ -658,15 +1172,18 @@ public:
 				return Error("limit", u"too many datagrams"_q);
 			}
 			recent.push_back(now);
+			const auto proxied = !entry->datagramHeader.isEmpty();
 			const auto written = entry->datagram->writeDatagram(
-				bytes,
-				entry->address,
-				quint16(entry->port));
+				proxied ? entry->datagramHeader + bytes : bytes,
+				proxied ? entry->relay : entry->address,
+				quint16(proxied ? entry->relayPort : entry->port));
 			if (written < 0) {
 				return Error("write", entry->datagram->errorString());
 			}
-			entry->sent += uint64(written);
-			return size_t(written);
+			const auto payload = size_t(written)
+				- (proxied ? size_t(entry->datagramHeader.size()) : size_t(0));
+			entry->sent += uint64(payload);
+			return payload;
 		}
 		const auto socket = entry->stream.get();
 		if (socket->state() != QAbstractSocket::ConnectedState) {
@@ -706,12 +1223,25 @@ public:
 						buffer.size(),
 						&sender,
 						&port);
-					if (got < 0 || port != entry->port || !sender.isEqual(entry->address)) {
+					const auto proxied = !entry->datagramHeader.isEmpty();
+					if (got < 0
+						|| port != (proxied ? entry->relayPort : entry->port)
+						|| !sender.isEqual(proxied ? entry->relay : entry->address)) {
 						continue;
 					}
-					entry->received += uint64(got);
-					const auto size = std::min<size_t>(size_t(got), maxBytes);
-					result.data.assign(buffer.constData(), buffer.constData() + size);
+					auto offset = qsizetype(0);
+					if (proxied) {
+						offset = UnwrapDatagram(buffer.left(qsizetype(got)));
+						if (offset < 0) {
+							continue;
+						}
+					}
+					const auto payload = size_t(got) - size_t(offset);
+					entry->received += uint64(payload);
+					const auto size = std::min<size_t>(payload, maxBytes);
+					result.data.assign(
+						buffer.constData() + offset,
+						buffer.constData() + offset + size);
 					return result;
 				}
 				if (entry->killed.load()) {
@@ -786,18 +1316,23 @@ private:
 			size_t maxBytes,
 			const QDeadlineTimer &deadline) {
 		const auto host = QString::fromStdString(url.host);
-		const auto resolved = Resolve(url.host, url.ip, entry, deadline);
-		if (!resolved.ok()) {
-			return resolved.error();
+		const auto opened = OpenStream(
+			CurrentPolicy().proxy,
+			url.host,
+			url.ip,
+			url.port,
+			entry,
+			deadline);
+		if (!opened.ok()) {
+			return opened.error();
 		}
-		entry.address = resolved.value();
 		auto socket = QSslSocket();
 		auto configuration = QSslConfiguration::defaultConfiguration();
 		configuration.setProtocol(QSsl::TlsV1_2OrLater);
 		socket.setSslConfiguration(configuration);
 		socket.setPeerVerifyMode(QSslSocket::VerifyPeer);
 		socket.setPeerVerifyName(host);
-		if (const auto error = Attach(socket, resolved.value(), url.port, entry, deadline)) {
+		if (const auto error = AttachDescriptor(socket, opened.value())) {
 			return *error;
 		} else if (const auto error = Encrypt(socket, entry, deadline)) {
 			return *error;
@@ -903,6 +1438,21 @@ private:
 
 } // namespace
 
+void SetNetworkPolicy(NetworkPolicy policy) {
+	{
+		auto &state = GetPolicyState();
+		const auto lock = std::scoped_lock(state.mutex);
+		state.policy = policy;
+	}
+	auto &registry = GetRegistry();
+	const auto lock = std::scoped_lock(registry.mutex);
+	for (const auto &[id, connection] : registry.connections) {
+		if (BlockedKind(policy, connection->kind)) {
+			connection->killed.store(true);
+		}
+	}
+}
+
 fgpl::Transport *NetworkTransport() {
 	static auto result = NetTransport();
 	return &result;
@@ -941,6 +1491,7 @@ std::vector<ConnectionView> Connections() {
 			.host = connection->host,
 			.port = connection->port,
 			.address = connection->address.toString(),
+			.via = connection->via,
 			.tls = connection->tls,
 			.received = connection->received.load(),
 			.sent = connection->sent.load(),
@@ -957,6 +1508,9 @@ void CloseConnection(int64 id) {
 }
 
 #else
+
+void SetNetworkPolicy(NetworkPolicy) {
+}
 
 fgpl::Transport *NetworkTransport() {
 	return nullptr;
