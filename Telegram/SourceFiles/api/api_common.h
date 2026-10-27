@@ -64,6 +64,7 @@ struct SendAction {
 	bool clearDraft = true;
 	bool generateLocal = true;
 	MsgId replaceMediaOf = 0;
+	MsgId localMessageId = 0;
 
 	[[nodiscard]] MTPInputReplyTo mtpReplyTo() const;
 

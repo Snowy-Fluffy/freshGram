@@ -118,7 +118,8 @@ constexpr auto kMaxTimerMs = int64_t(7) * 24 * 3600 * 1000;
 
 [[nodiscard]] std::optional<std::vector<int64_t>> IdsArg(
 		const cbor::Value *args,
-		const char *key) {
+		const char *key,
+		bool allowLocal = false) {
 	const auto value = Arg(args, key);
 	const auto list = value ? value->asArray() : nullptr;
 	if (!list || list->empty() || list->size() > kMaxIds) {
@@ -127,7 +128,7 @@ constexpr auto kMaxTimerMs = int64_t(7) * 24 * 3600 * 1000;
 	auto result = std::vector<int64_t>();
 	for (const auto &item : *list) {
 		const auto id = item.asInt();
-		if (!id || *id <= 0) {
+		if (!id || *id == 0 || (*id < 0 && !allowLocal)) {
 			return std::nullopt;
 		}
 		result.push_back(*id);
@@ -151,6 +152,27 @@ constexpr auto kMaxTimerMs = int64_t(7) * 24 * 3600 * 1000;
 
 [[nodiscard]] cbor::Value Done(const std::string &error, std::string_view what) {
 	return error.empty() ? api::Ok() : api::Fail(error, what);
+}
+
+[[nodiscard]] cbor::Value Sent(
+		const SendResult &result,
+		std::string_view what,
+		bool withServerId) {
+	if (!result.error.empty()) {
+		return api::Fail(result.error, what);
+	}
+	auto answer = cbor::Map();
+	if (withServerId) {
+		answer.push_back({
+			"id",
+			result.serverId ? Int(result.serverId) : cbor::Value(),
+		});
+	}
+	answer.push_back({
+		"local_id",
+		result.localId ? Int(result.localId) : cbor::Value(),
+	});
+	return api::Ok(cbor::Value::FromMap(std::move(answer)));
 }
 
 [[nodiscard]] bool ValidKey(const std::string &key) {
@@ -534,7 +556,10 @@ void Broker::noteUserAction(std::string_view type, std::string_view window) {
 std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 	const auto lock = std::scoped_lock(_limitsMutex);
 	const auto now = _services.clockMs();
-	if (op == "messages.send" || op == "messages.forward" || op == "messages.send_media") {
+	if (op == "messages.send"
+		|| op == "messages.forward"
+		|| op == "messages.send_media"
+		|| op == "messages.edit_media") {
 		_sendTokens = std::min(
 			kSendBurst,
 			_sendTokens + double(now - _sendRefilled) / kSendEachMs);
@@ -1165,7 +1190,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		if (!chat || chat->secret) {
 			return api::Fail(api::error::kNotFound, "chat");
 		}
-		return Done(data->sendMessage({
+		return Sent(data->sendMessage({
 			.chat = *id,
 			.text = *text,
 			.markdown = *markdown,
@@ -1173,7 +1198,8 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			.topic = topic,
 			.silent = *silent,
 			.schedule = when,
-		}), "the message was not sent");
+			.waitForServerId = has("messages.ids"),
+		}), "the message was not sent", has("messages.ids"));
 	} else if (op == "contacts.list") {
 		if (const auto refused = need("contacts.list")) {
 			return *refused;
@@ -1381,7 +1407,7 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			|| (kind == "voice" && !duration)) {
 			return api::Fail(api::error::kInvalid, "name, kind, caption or options");
 		}
-		return Done(data->sendMedia({
+		return Sent(data->sendMedia({
 			.message = {
 				.chat = chat.value(),
 				.text = *caption,
@@ -1390,13 +1416,14 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 				.topic = topic,
 				.silent = *silent,
 				.schedule = when,
+				.waitForServerId = has("messages.ids"),
 			},
 			.name = *name,
 			.kind = kind,
 			.bytes = *raw,
 			.spoiler = *spoiler,
 			.duration = duration,
-		}), "the media was not sent");
+		}), "the media was not sent", has("messages.ids"));
 	} else if (op == "messages.edit") {
 		if (const auto refused = need({ "messages.edit" })) {
 			return *refused;
@@ -1408,10 +1435,54 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		const auto id = IntArg(args, "id");
 		const auto text = TextArg(args, "text", kMaxMessage);
 		const auto markdown = MarkdownArg(args);
-		if (!id || *id <= 0 || !text || text->empty() || !markdown) {
+		if (!id || *id == 0 || !text || text->empty() || !markdown) {
 			return api::Fail(api::error::kInvalid, "id, text or format");
 		}
 		return Done(data->edit(chat.value(), *id, *text, *markdown), "the message was not edited");
+	} else if (op == "messages.edit_media") {
+		if (const auto refused = need({ "messages.edit" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		if (!chat.ok()) {
+			return chat.error();
+		}
+		static const auto kinds = std::set<std::string>{ "auto", "file" };
+		const auto id = IntArg(args, "id");
+		const auto bytes = Arg(args, "data");
+		const auto raw = bytes ? bytes->asBytes() : nullptr;
+		const auto name = TextArg(args, "name", kMaxFileName);
+		const auto kind = TextArg(args, "kind", 16).value_or("auto");
+		const auto caption = Arg(args, "caption")
+			? TextArg(args, "caption", kMaxCaption)
+			: std::optional<std::string>(std::string());
+		const auto markdown = MarkdownArg(args);
+		const auto spoiler = BoolArg(args, "spoiler", false);
+		if (!raw || raw->empty()) {
+			return api::Fail(api::error::kInvalid, "data");
+		} else if (raw->size() > kMaxSentMedia) {
+			return api::Fail(api::error::kLimit, "the file is too large");
+		} else if (!id
+			|| *id == 0
+			|| !name
+			|| name->empty()
+			|| name->find_first_of("/\\") != std::string::npos
+			|| !kinds.contains(kind)
+			|| !caption
+			|| !markdown
+			|| !spoiler) {
+			return api::Fail(api::error::kInvalid, "id, name, kind, caption or options");
+		}
+		return Done(data->editMedia({
+			.chat = chat.value(),
+			.id = *id,
+			.name = *name,
+			.kind = kind,
+			.bytes = *raw,
+			.caption = *caption,
+			.markdown = *markdown,
+			.spoiler = *spoiler,
+		}), "the media was not replaced");
 	} else if (op == "messages.delete") {
 		if (const auto refused = need({ "messages.delete" })) {
 			return *refused;
@@ -1420,7 +1491,7 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		if (!chat.ok()) {
 			return chat.error();
 		}
-		const auto ids = IdsArg(args, "ids");
+		const auto ids = IdsArg(args, "ids", true);
 		const auto everyone = BoolArg(args, "everyone", true);
 		if (!ids || !everyone) {
 			return api::Fail(api::error::kInvalid, "ids or everyone");
@@ -1438,7 +1509,7 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		const auto emoji = Arg(args, "emoji")
 			? TextArg(args, "emoji", kMaxEmoji)
 			: std::optional<std::string>(std::string());
-		if (!id || *id <= 0 || !emoji) {
+		if (!id || *id == 0 || !emoji) {
 			return api::Fail(api::error::kInvalid, "id or emoji");
 		}
 		return Done(data->react(chat.value(), *id, *emoji), "the reaction was not set");

@@ -162,16 +162,19 @@ struct FileLoadTo {
 		PeerId peer,
 		Api::SendOptions options,
 		FullReplyTo replyTo,
-		MsgId replaceMediaOf)
+		MsgId replaceMediaOf,
+		MsgId localMessageId = 0)
 	: peer(peer)
 	, options(options)
 	, replyTo(replyTo)
-	, replaceMediaOf(replaceMediaOf) {
+	, replaceMediaOf(replaceMediaOf)
+	, localMessageId(localMessageId) {
 	}
 	PeerId peer;
 	Api::SendOptions options;
 	FullReplyTo replyTo;
 	MsgId replaceMediaOf;
+	MsgId localMessageId;
 };
 
 using UploadFileParts = std::vector<QByteArray>;

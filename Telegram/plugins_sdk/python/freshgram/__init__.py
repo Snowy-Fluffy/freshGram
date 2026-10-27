@@ -14,7 +14,7 @@ from . import _channel
 from . import _cbor
 from . import _errors
 
-API_VERSION = 2
+API_VERSION = 4
 
 _output = _channel._output
 call = _channel.raw_call
@@ -259,6 +259,30 @@ class _Chats(_Namespace):
         return self._call("chats.action", _nothing, chat=chat, kind=kind, **_given(topic=topic))
 
 
+class Sent:
+    """What messages.send and messages.send_media answer.
+
+    local_id is known at once and stays valid until the app restarts; id is
+    the server id, which needs the messages.ids permission (the call then
+    waits for it) and is None without it, or when the server did not answer
+    in time. Pass either, or this object, to edit, react and delete.
+    """
+
+    def __init__(self, data):
+        data = data or {}
+        self.id = data.get("id")
+        self.local_id = data.get("local_id")
+
+    def __repr__(self):
+        return "Sent(id=%r, local_id=%r)" % (self.id, self.local_id)
+
+
+def _ref(message):
+    if isinstance(message, Sent):
+        return message.id or message.local_id
+    return message
+
+
 class _Messages(_Namespace):
     def history(self, chat, limit=20, before=0, topic=0):
         return self._call(
@@ -269,10 +293,14 @@ class _Messages(_Namespace):
             **_given(topic=topic))
 
     def send(self, chat, text, reply_to=0, topic=0, silent=False, schedule=0, markdown=False):
-        """Send a message; schedule is a unix time, markdown parses **bold** and the like."""
+        """Send a message; schedule is a unix time, markdown parses **bold** and the like.
+
+        Returns Sent. With messages.ids the call waits for the server, so await it
+        (freshgram.aio) instead of blocking the event.
+        """
         return self._call(
             "messages.send",
-            _nothing,
+            Sent,
             chat=chat,
             text=text,
             **_given(reply_to=reply_to, topic=topic, silent=silent, schedule=schedule),
@@ -284,10 +312,11 @@ class _Messages(_Namespace):
 
         kind "auto" sends photos and videos as media, "file" as a document,
         "voice" an OGG/Opus voice message (needs duration in seconds).
+        Returns Sent, see send.
         """
         return self._call(
             "messages.send_media",
-            _nothing,
+            Sent,
             chat=chat,
             data=bytes(data),
             name=name,
@@ -308,17 +337,35 @@ class _Messages(_Namespace):
             "messages.edit",
             _nothing,
             chat=chat,
-            id=message,
+            id=_ref(message),
             text=text,
+            **_format(markdown))
+
+    def edit_media(self, chat, message, data, name, caption="", kind="auto",
+                   markdown=False, spoiler=False):
+        """Replace the media of a message you sent (messages.edit), up to 100 MiB.
+
+        kind "auto" or "file"; caption replaces the old one. Await it: the call
+        returns when Telegram has accepted the new file.
+        """
+        return self._call(
+            "messages.edit_media",
+            _nothing,
+            chat=chat,
+            id=_ref(message),
+            data=bytes(data),
+            name=name,
+            kind=kind,
+            **_given(caption=caption, spoiler=spoiler),
             **_format(markdown))
 
     def delete(self, chat, messages, everyone=True):
         """Delete messages you sent (messages.delete), for everyone when possible."""
-        return self._call("messages.delete", _nothing, chat=chat, ids=list(messages), everyone=everyone)
+        return self._call("messages.delete", _nothing, chat=chat, ids=[_ref(message) for message in messages], everyone=everyone)
 
     def react(self, chat, message, emoji=""):
         """Put an emoji reaction on a message, or remove yours with an empty emoji."""
-        return self._call("messages.react", _nothing, chat=chat, id=message, emoji=emoji)
+        return self._call("messages.react", _nothing, chat=chat, id=_ref(message), emoji=emoji)
 
     def forward(self, from_chat, messages, to_chat, silent=False):
         """Forward messages (messages.send and messages.read)."""

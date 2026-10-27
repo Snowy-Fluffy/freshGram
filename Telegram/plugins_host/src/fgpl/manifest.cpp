@@ -401,7 +401,8 @@ const std::set<std::string> &KnownPermissions() {
 		"plugins.message",
 		"fs.user_selected", "clipboard", "background",
 		"messages.edit", "messages.delete", "messages.react", "users.info",
-		"chats.active",
+		"chats.active", "messages.ids", "chats.activity", "users.presence",
+		"app.activity", "translate.provide",
 	};
 	return known;
 }

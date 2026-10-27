@@ -2,8 +2,12 @@
 #pragma once
 
 #include "base/basic_types.h"
+#include "data/data_msg_id.h"
 
 class HistoryItem;
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace fgpl {
 class DataProvider;
@@ -18,6 +22,13 @@ void ReleaseData();
 
 [[nodiscard]] bool WantsEvents();
 [[nodiscard]] bool PluginSending();
+[[nodiscard]] bool IsPluginMessage(
+	not_null<Main::Session*> session,
+	FullMsgId id);
+void NoteMessageIdChange(
+	not_null<Main::Session*> session,
+	FullMsgId old,
+	MsgId now);
 void SendMessageEvent(
 	const char *type,
 	not_null<const HistoryItem*> item,

@@ -180,7 +180,7 @@ struct Service {
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
-	config.environment.apiLevel = 3;
+	config.environment.apiLevel = 4;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}
@@ -310,7 +310,7 @@ void WatchEvents(
 		if (!IsServerMsgId(item->id)) {
 			if (item->out() && item->isLocal()) {
 				events->sending.emplace(item->fullId());
-				if (PluginSending()) {
+				if (PluginSending() || IsPluginMessage(session, item->fullId())) {
 					events->byPlugin.emplace(item->fullId());
 				}
 			}
@@ -324,6 +324,7 @@ void WatchEvents(
 	data->itemIdChanged(
 	) | rpl::on_next([=](const Data::Session::IdChange &change) {
 		const auto old = FullMsgId(change.newId.peer, change.oldId);
+		NoteMessageIdChange(session, old, change.newId.msg);
 		const auto sent = events->sending.remove(old);
 		const auto byPlugin = events->byPlugin.remove(old);
 		const auto item = data->message(change.newId);
@@ -659,11 +660,26 @@ bool ApplyOutgoing(
 		return false;
 	}
 	auto &queue = service.outgoing[history];
-	queue.push_back({ std::move(message), localMessageId, PluginSending() });
+	const auto byPlugin = PluginSending()
+		|| (localMessageId
+			&& IsPluginMessage(
+				&history->session(),
+				FullMsgId(history->peer->id, *localMessageId)));
+	queue.push_back({ std::move(message), localMessageId, byPlugin });
 	if (!waiting) {
 		Next(history);
 	}
 	return true;
+#else
+	return false;
+#endif
+}
+
+bool HasPendingOutgoing(not_null<History*> history) {
+#ifdef FRESHGRAM_PLUGINS
+	const auto &outgoing = GetService().outgoing;
+	const auto i = outgoing.find(history);
+	return (i != end(outgoing)) && !i->second.empty();
 #else
 	return false;
 #endif

@@ -185,7 +185,8 @@ void ShowChannelsLimitBox(not_null<PeerData*> peer) {
 		peer->id,
 		action.options,
 		action.replyTo,
-		action.replaceMediaOf);
+		action.replaceMediaOf,
+		action.localMessageId);
 }
 
 [[nodiscard]] QString FormatVideoTimestamp(TimeId seconds) {

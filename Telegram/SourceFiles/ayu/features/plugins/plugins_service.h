@@ -16,6 +16,8 @@ namespace Api {
 struct MessageToSend;
 } // namespace Api
 
+class History;
+
 namespace Window {
 class SessionController;
 } // namespace Window
@@ -38,6 +40,7 @@ void Stop();
 [[nodiscard]] bool ApplyOutgoing(
 	Api::MessageToSend &message,
 	std::optional<MsgId> localMessageId);
+[[nodiscard]] bool HasPendingOutgoing(not_null<History*> history);
 [[nodiscard]] State CurrentState();
 [[nodiscard]] rpl::producer<State> StateValue();
 
