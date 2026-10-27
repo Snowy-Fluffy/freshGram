@@ -279,6 +279,7 @@
 "fresh_PermUiComposerButton" = "Добавлять кнопку у поля ввода";
 "fresh_PermUiDialog" = "Показывать окна";
 "fresh_PermUiToast" = "Показывать всплывающие подсказки";
+"fresh_PermUiBadges" = "Показывать значки рядом с именами";
 "fresh_PermNotifications" = "Показывать системные уведомления";
 "fresh_PermNetHttps" = "Отправлять HTTPS-запросы";
 "fresh_PermNetTcp" = "Открывать TCP-соединения";

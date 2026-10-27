@@ -81,6 +81,11 @@ struct ManagerServices {
 		const std::string &window,
 		const std::string &mode,
 		const cbor::Value *page)> window;
+	std::function<void(
+		const std::string &id,
+		const std::string &account,
+		int64_t user,
+		const cbor::Value *items)> badges;
 	DataProvider *data = nullptr;
 	std::function<DataProvider*(const std::string &account)> dataFor;
 	Transport *transport = nullptr;

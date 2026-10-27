@@ -488,7 +488,7 @@ const std::set<std::string> &KnownPermissions() {
 		"messages.history", "account.info", "stars.balance", "composer.draft",
 		"contacts.list", "settings.read", "folders.list", "ui.menu",
 		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",
-		"ui.toast", "notifications", "net.https", "net.tcp", "net.udp", "storage.private",
+		"ui.toast", "ui.badges", "notifications", "net.https", "net.tcp", "net.udp", "storage.private",
 		"plugins.message",
 		"fs.user_selected", "clipboard", "background",
 		"messages.edit", "messages.delete", "messages.react", "users.info",

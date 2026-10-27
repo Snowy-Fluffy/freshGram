@@ -279,6 +279,7 @@
 "fresh_PermUiComposerButton" = "Ajouter un bouton à côté du champ de saisie";
 "fresh_PermUiDialog" = "Afficher des fenêtres";
 "fresh_PermUiToast" = "Afficher de courts messages";
+"fresh_PermUiBadges" = "Afficher des icônes à côté des noms";
 "fresh_PermNotifications" = "Afficher des notifications système";
 "fresh_PermNetHttps" = "Envoyer des requêtes HTTPS";
 "fresh_PermNetTcp" = "Ouvrir des connexions TCP";

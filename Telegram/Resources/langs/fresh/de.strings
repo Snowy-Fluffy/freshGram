@@ -279,6 +279,7 @@
 "fresh_PermUiComposerButton" = "Eine Schaltfläche neben dem Eingabefeld hinzufügen";
 "fresh_PermUiDialog" = "Dialoge anzeigen";
 "fresh_PermUiToast" = "Kurze Hinweise anzeigen";
+"fresh_PermUiBadges" = "Symbole neben Namen anzeigen";
 "fresh_PermNotifications" = "Systembenachrichtigungen anzeigen";
 "fresh_PermNetHttps" = "HTTPS-Anfragen senden";
 "fresh_PermNetTcp" = "TCP-Verbindungen öffnen";

@@ -9063,6 +9063,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermUiComposerButton" = "Add a button next to the message field";
 "fresh_PermUiDialog" = "Show dialogs";
 "fresh_PermUiToast" = "Show pop-up notices";
+"fresh_PermUiBadges" = "Show icons next to names";
 "fresh_PermNotifications" = "Show system notifications";
 "fresh_PermNetHttps" = "Make HTTPS requests";
 "fresh_PermNetTcp" = "Open TCP connections";

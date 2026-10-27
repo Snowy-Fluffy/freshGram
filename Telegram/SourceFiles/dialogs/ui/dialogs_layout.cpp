@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_layout.h"
 
+#include "ayu/features/plugins/plugins_ui.h"
+
 #include "base/options.h"
 #include "base/unixtime.h"
 #include "core/ui_integration.h"
@@ -1006,6 +1008,51 @@ void PaintRow(
 				+ (st::semiboldFont->height - muteIcon.height()) / 2;
 			muteIcon.paint(p, muteLeft, muteTop, context.width);
 		}
+		auto badgeRects = std::vector<QRect>();
+		if (history && !context.search) {
+			const auto badges = FreshPlugins::BadgesFor(from);
+			if (!badges.empty()) {
+				const auto side = st::semiboldFont->height;
+				const auto muteExtra = drawMuteIcon
+					? (ThreeStateIcon(
+						st::dialogsMuteIcon,
+						context.active,
+						context.selected).width()
+						+ st::dialogsMuteIconSkip)
+					: 0;
+				const auto left = rectForName.left()
+					+ std::min(rowName.maxWidth(), rectForName.width())
+					+ badgeWidth
+					+ muteExtra
+					+ st::dialogsChatTypeSkip;
+				const auto limit = rectForName.left()
+					+ rectForName.width()
+					+ badgeWidth
+					+ muteExtra;
+				const auto badgesWidth = FreshPlugins::BadgesWidth(badges, side);
+				if (left + badgesWidth <= limit) {
+					const auto top = rectForName.top();
+					FreshPlugins::PaintBadges(
+						p,
+						left,
+						top,
+						side,
+						context.width,
+						badges,
+						(context.active
+							? st::dialogsNameFgActive
+							: context.selected
+							? st::dialogsNameFgOver
+							: st::dialogsNameFg)->c);
+					for (auto i = 0; i != int(badges.size()); ++i) {
+						badgeRects.push_back(style::rtlrect(
+							FreshPlugins::BadgeRect(i, left, top, side),
+							context.width));
+					}
+				}
+			}
+		}
+		FreshPlugins::NoteListBadges(entry, std::move(badgeRects));
 	} else if (hiddenSenderInfo) {
 		p.setPen(context.active
 			? st::dialogsNameFgActive

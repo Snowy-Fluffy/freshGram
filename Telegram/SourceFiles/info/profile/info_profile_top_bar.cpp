@@ -56,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_memento.h"
 #include "info/profile/info_profile_badge_tooltip.h"
 #include "info/profile/info_profile_badge.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "info/profile/info_profile_birthday_effect.h"
 #include "info/profile/info_profile_cover.h" // LargeCustomEmojiMargins
 #include "info/profile/info_profile_status_label.h"
@@ -534,6 +535,7 @@ TopBar::TopBar(
 	}, _title->lifetime());
 
 	setupUniqueBadgeTooltip();
+	setupPluginBadges(controller);
 	setupButtons(controller, descriptor.source);
 	setupSwipeBack(controller);
 	setupUserpicButton(controller);
@@ -664,6 +666,14 @@ void TopBar::adjustColors(const std::optional<QColor> &edgeColor) {
 		: shouldOverrideTitle
 		? std::optional<QColor>(st::groupCallMembersFg->c)
 		: std::nullopt);
+	_pluginBadgesColor = collectible
+		? std::optional<QColor>(collectible->textColor)
+		: shouldOverrideTitle
+		? std::optional<QColor>(st::groupCallMembersFg->c)
+		: std::nullopt;
+	if (_pluginBadges) {
+		_pluginBadges->update();
+	}
 	_tabSubtitleOverride = collectible
 		? collectible->textColor
 		: shouldOverrideStatus
@@ -1933,6 +1943,74 @@ int TopBar::calculateRightButtonsWidth() const {
 	return width;
 }
 
+void TopBar::setupPluginBadges(
+		not_null<Window::SessionController*> controller) {
+	if (!_peer->isUser()) {
+		return;
+	}
+	struct State {
+		std::vector<FreshPlugins::PluginBadge> list;
+		int side = 0;
+	};
+	_pluginBadges = base::make_unique_q<Ui::RpWidget>(this);
+	const auto widget = _pluginBadges.get();
+	const auto state = widget->lifetime().make_state<State>();
+	widget->setMouseTracking(true);
+	widget->hide();
+
+	const auto refresh = [=] {
+		state->list = FreshPlugins::BadgesFor(_peer);
+		state->side = std::clamp(_title->height() * 3 / 4, 12, 24);
+		widget->resize(
+			FreshPlugins::BadgesWidth(state->list, state->side),
+			state->side);
+		widget->setVisible(!state->list.empty());
+		updateLabelsPosition();
+	};
+	refresh();
+	FreshPlugins::BadgesChanged() | rpl::on_next(refresh, widget->lifetime());
+
+	widget->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(widget);
+		FreshPlugins::PaintBadges(
+			p,
+			0,
+			0,
+			state->side,
+			widget->width(),
+			state->list,
+			_pluginBadgesColor.value_or(_title->st().textFg->c));
+	}, widget->lifetime());
+
+	widget->events() | rpl::on_next([=](not_null<QEvent*> e) {
+		const auto type = e->type();
+		if (type != QEvent::MouseMove
+			&& type != QEvent::MouseButtonPress
+			&& type != QEvent::Leave) {
+			return;
+		}
+		const auto index = (type == QEvent::Leave)
+			? -1
+			: FreshPlugins::BadgeIndexAt(
+				state->list,
+				state->side,
+				static_cast<QMouseEvent*>(e.get())->pos().x());
+		if (type == QEvent::MouseButtonPress) {
+			if (index >= 0
+				&& static_cast<QMouseEvent*>(e.get())->button() == Qt::LeftButton) {
+				FreshPlugins::ClickBadge(
+					controller,
+					_peer,
+					state->list[index],
+					"profile");
+			}
+			return;
+		}
+		widget->setCursor((index >= 0) ? style::cur_pointer : style::cur_default);
+		widget->setToolTip((index >= 0) ? state->list[index].tooltip : QString());
+	}, widget->lifetime());
+}
+
 void TopBar::updateLabelsPosition() {
 	if (width() <= 0) {
 		return;
@@ -2002,6 +2080,13 @@ void TopBar::updateTitlePosition(float64 progressCurrent) {
 	if (verifiedWidget || badgeWidget) {
 		badgesWidth += st::infoVerifiedCheckPosition.x();
 	}
+	const auto pluginWidget = (_pluginBadges && _pluginBadges->width() > 0)
+		? _pluginBadges.get()
+		: nullptr;
+	const auto pluginSkip = pluginWidget
+		? (pluginWidget->width() + st::infoVerifiedCheckPosition.x())
+		: 0;
+	badgesWidth += pluginSkip;
 	const auto titleWidth = width()
 		- interpolatedPadding
 		- reservedRight
@@ -2033,7 +2118,7 @@ void TopBar::updateTitlePosition(float64 progressCurrent) {
 	if (verifiedWidget || badgeWidget) {
 		totalElementsWidth += st::infoVerifiedCheckPosition.x();
 	}
-	totalElementsWidth += botVerifySkip;
+	totalElementsWidth += botVerifySkip + pluginSkip;
 
 	auto titleLeft = anim::interpolate(
 		titleMostLeft,
@@ -2058,6 +2143,14 @@ void TopBar::updateTitlePosition(float64 progressCurrent) {
 			badgeLeft + (badgeWidget ? badgeWidget->width() : 0),
 			badgeTop,
 			badgeBottom);
+	}
+	if (pluginWidget) {
+		pluginWidget->move(
+			badgeLeft
+				+ (badgeWidget ? badgeWidget->width() : 0)
+				+ (verifiedWidget ? verifiedWidget->width() : 0)
+				+ st::infoVerifiedCheckPosition.x(),
+			badgeTop + (_title->height() - pluginWidget->height()) / 2);
 	}
 }
 

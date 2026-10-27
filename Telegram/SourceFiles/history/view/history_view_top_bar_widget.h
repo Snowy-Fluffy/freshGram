@@ -224,6 +224,7 @@ private:
 	rpl::lifetime _activeChatLifetime;
 
 	Ui::PeerBadge _titleBadge;
+	std::vector<QRect> _pluginBadgeRects;
 	Ui::Text::String _title;
 	int _titleNameVersion = 0;
 

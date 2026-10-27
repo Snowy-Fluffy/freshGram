@@ -538,6 +538,7 @@ void TestUiContributions() {
 	auto document = Document("com.example.uidemo", "1.0.0", {
 		{ "ui.menu", {} }, { "ui.command", {} }, { "ui.settings_page", {} }, { "storage.private", {} },
 		{ "ui.dialog", {} },
+		{ "ui.badges", {} },
 	});
 	Set(document, "runtime.kind", Text("python"));
 	Remove(document, "runtime.module");
@@ -569,7 +570,13 @@ void TestUiContributions() {
 	CHECK(manager.setEnabled(id, true));
 
 	CHECK(manager.contributions("A", "default").empty());
+	const auto badgeClick = cbor::Value::FromMap({
+		{ "type", Text("badge.click") }, { "id", Text("vip") }, { "user", Int(7) }, { "surface", Text("chat") },
+	});
 	CHECK(manager.grant(id, "A", { { "ui.menu", "ui.command", "ui.settings_page", "storage.private", "ui.dialog" }, std::nullopt }));
+	CHECK(!manager.send(id, "A", badgeClick));
+	CHECK(manager.grant(id, "A", { { "ui.menu", "ui.command", "ui.settings_page", "storage.private", "ui.dialog", "ui.badges" }, std::nullopt }));
+	CHECK(manager.send(id, "A", badgeClick));
 	const auto contributions = manager.contributions("A", "ru");
 	CHECK(contributions.size() == 1);
 	if (!contributions.empty()) {

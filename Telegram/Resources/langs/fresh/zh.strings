@@ -279,6 +279,7 @@
 "fresh_PermUiComposerButton" = "在输入框旁添加按钮";
 "fresh_PermUiDialog" = "显示对话框";
 "fresh_PermUiToast" = "显示简短提示";
+"fresh_PermUiBadges" = "在名称旁显示图标";
 "fresh_PermNotifications" = "显示系统通知";
 "fresh_PermNetHttps" = "发送 HTTPS 请求";
 "fresh_PermNetTcp" = "打开 TCP 连接";

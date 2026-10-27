@@ -50,6 +50,7 @@ constexpr auto kToastEachMs = int64_t(2000);
 constexpr auto kDialogEachMs = int64_t(60000);
 constexpr auto kUserActionWindowMs = int64_t(10000);
 constexpr auto kMaxWindows = size_t(3);
+constexpr auto kMaxBadgeUsers = size_t(256);
 constexpr auto kWindowUpdateEachMs = int64_t(100);
 constexpr auto kMaxMessage = size_t(4096);
 constexpr auto kMaxSocketsPerKind = 16;
@@ -777,6 +778,51 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kInvalid, checked.error());
 		} else if (!_services.ui || !_services.ui("settings", checked.value())) {
 			return api::Fail(api::error::kUnavailable, "settings page");
+		}
+		return api::Ok();
+	} else if (op == "badges.set" || op == "badges.clear") {
+		if (!has("ui.badges")) {
+			return api::Fail(api::error::kDenied, "ui.badges");
+		} else if (!_services.ui) {
+			return api::Fail(api::error::kUnavailable, "badges");
+		} else if (op == "badges.clear") {
+			{
+				const auto lock = std::scoped_lock(_limitsMutex);
+				_badgeUsers.clear();
+			}
+			_services.ui("badges.clear", cbor::Value());
+			return api::Ok();
+		}
+		const auto user = IntArg(args, "user");
+		const auto items = Arg(args, "items");
+		if (!user || *user <= 0) {
+			return api::Fail(api::error::kInvalid, "user");
+		} else if (*user == api::kServiceChat) {
+			return api::Fail(api::error::kDenied, "this user");
+		} else if (!items) {
+			return api::Fail(api::error::kInvalid, "items");
+		}
+		const auto checked = ui::ValidateBadges(*items);
+		if (!checked.ok()) {
+			return api::Fail(api::error::kInvalid, checked.error());
+		}
+		const auto clear = checked.value().asArray()->empty();
+		{
+			const auto lock = std::scoped_lock(_limitsMutex);
+			if (clear) {
+				_badgeUsers.erase(*user);
+			} else if (!_badgeUsers.contains(*user)
+				&& _badgeUsers.size() >= kMaxBadgeUsers) {
+				return api::Fail(api::error::kQuota, "too many users have badges");
+			} else {
+				_badgeUsers.insert(*user);
+			}
+		}
+		if (!_services.ui("badges", cbor::Value::FromMap({
+				{ "user", Int(*user) },
+				{ "items", checked.value() },
+			}))) {
+			return api::Fail(api::error::kUnavailable, "badges");
 		}
 		return api::Ok();
 	} else if (op == "net.fetch") {

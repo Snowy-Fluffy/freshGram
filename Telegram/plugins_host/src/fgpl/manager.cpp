@@ -1264,6 +1264,10 @@ bool PluginManager::send(
 			|| (surface == "composer" && !has("ui.composer_button"))) {
 			return false;
 		}
+	} else if (*type == "badge.click") {
+		if (!has("ui.badges")) {
+			return false;
+		}
 	} else if (*type == "command") {
 		const auto declared = std::any_of(parsed->commands.begin(), parsed->commands.end(), [&](const auto &command) {
 			return command.name == text("name");
@@ -1309,7 +1313,7 @@ bool PluginManager::send(
 		return false;
 	}
 	pump();
-	const auto trigger = (*type == "menu.click")
+	const auto trigger = (*type == "menu.click" || *type == "badge.click")
 		? "menu"
 		: (*type == "command")
 		? "command"
@@ -1490,10 +1494,22 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		: nullptr;
 	const auto dialog = _config.services.dialog;
 	const auto window = _config.services.window;
+	const auto badges = _config.services.badges;
 	const auto pluginId = record.id;
-	services.ui = [settings, dialog, window, pluginId, account](std::string_view kind, const cbor::Value &payload) {
+	services.ui = [settings, dialog, window, badges, pluginId, account](std::string_view kind, const cbor::Value &payload) {
 		if (kind == "settings" && settings) {
 			settings(pluginId, account, payload);
+			return true;
+		} else if (kind == "badges" && badges) {
+			const auto user = payload.find("user");
+			const auto items = payload.find("items");
+			if (!user || !user->asInt() || !items) {
+				return false;
+			}
+			badges(pluginId, account, *user->asInt(), items);
+			return true;
+		} else if (kind == "badges.clear" && badges) {
+			badges(pluginId, account, 0, nullptr);
 			return true;
 		} else if (kind == "dialog" && dialog) {
 			dialog(pluginId, account, &payload);

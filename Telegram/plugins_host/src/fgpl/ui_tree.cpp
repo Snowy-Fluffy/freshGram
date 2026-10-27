@@ -204,6 +204,60 @@ bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines) {
 	return true;
 }
 
+Result<cbor::Value, std::string> ValidateBadges(const cbor::Value &items) {
+	const auto list = items.asArray();
+	if (!list || list->size() > kMaxBadges) {
+		return std::string("badges are a list of up to 4 entries");
+	}
+	auto check = Checker();
+	auto out = cbor::Array();
+	auto ids = std::set<std::string>();
+	for (const auto &item : *list) {
+		if (!item.asMap()
+			|| !check.keys(item, { "id", "icon", "image", "tooltip" })) {
+			return check.failed() ? check.error() : std::string("badges must be objects");
+		}
+		const auto idField = item.find("id");
+		const auto id = idField ? idField->asText() : nullptr;
+		if (!id || id->size() > 32 || !ValidId(*id) || !ids.insert(*id).second) {
+			return std::string("a badge needs a unique id of up to 32 characters");
+		}
+		const auto icon = item.find("icon");
+		const auto image = item.find("image");
+		if (!icon == !image) {
+			return std::string("a badge has an icon or an image");
+		}
+		auto entry = cbor::Map();
+		entry.push_back({ "id", Text(*id) });
+		if (icon) {
+			const auto name = icon->asText();
+			if (!name || !ValidIconName(*name)) {
+				return std::string("a badge has a bad icon name");
+			}
+			entry.push_back({ "icon", Text(*name) });
+		} else {
+			const auto bytes = image->asBytes();
+			if (!bytes || bytes->empty() || bytes->size() > kMaxBadgeImageBytes) {
+				return std::string("a badge image is up to 64 KiB");
+			}
+			const auto size = ImageSize(*bytes);
+			if (!size
+				|| size->first > kMaxBadgeImageDimension
+				|| size->second > kMaxBadgeImageDimension) {
+				return std::string("a badge image is a PNG up to 128x128 or a JPEG");
+			}
+			entry.push_back({ "image", *image });
+		}
+		const auto tooltip = check.text(item, "tooltip", kMaxBadgeTooltip, false);
+		if (check.failed()) {
+			return check.error();
+		}
+		entry.push_back({ "tooltip", Text(tooltip.value_or("")) });
+		out.push_back(cbor::Value::FromMap(std::move(entry)));
+	}
+	return cbor::Value::FromArray(std::move(out));
+}
+
 Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 	auto check = Checker();
 	if (!page.asMap() || !check.keys(page, { "title", "items", "buttons" })) {

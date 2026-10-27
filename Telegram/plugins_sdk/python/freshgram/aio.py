@@ -16,6 +16,7 @@ freshgram awaitables can be awaited: asyncio does not run here.
 from . import _aio
 from . import (
     _Account,
+    _Badges,
     _Chats,
     _Clipboard,
     _Composer,
@@ -55,6 +56,7 @@ settings = _Settings(_async_call)
 media = _Media(_async_call)
 users = _Users(_async_call)
 notify = _Notify(_async_call)
+badges = _Badges(_async_call)
 clipboard = _Clipboard(_async_call)
 files = _Files(_async_call)
 timers = _Timers(_async_call)
