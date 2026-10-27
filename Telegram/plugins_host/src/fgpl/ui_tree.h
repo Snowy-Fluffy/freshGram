@@ -30,9 +30,12 @@ constexpr auto kMaxCell = size_t(120);
 constexpr auto kMaxImageBytes = size_t(256 * 1024);
 constexpr auto kMaxImageDimension = uint32_t(2048);
 constexpr auto kMaxImageSide = int64_t(512);
+constexpr auto kMaxRichIcons = size_t(32);
 
 [[nodiscard]] bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines);
 [[nodiscard]] bool ValidIconName(const std::string &name);
+// peer:<chat id> or emoji:<custom emoji id>, drawn by the app from its own data.
+[[nodiscard]] bool ValidRichIcon(const std::string &name);
 [[nodiscard]] bool ValidWindowId(const std::string &id);
 [[nodiscard]] const std::set<std::string> &BuiltinIcons();
 

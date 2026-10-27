@@ -145,6 +145,21 @@ bool ValidIconName(const std::string &name) {
 		});
 }
 
+bool ValidRichIcon(const std::string &name) {
+	const auto colon = name.find(':');
+	if (colon == std::string::npos) {
+		return false;
+	}
+	const auto kind = name.substr(0, colon);
+	const auto digits = name.substr(colon + 1);
+	return (kind == "peer" || kind == "emoji")
+		&& !digits.empty()
+		&& digits.size() <= 20
+		&& std::all_of(digits.begin(), digits.end(), [](char ch) {
+			return ch >= '0' && ch <= '9';
+		});
+}
+
 const std::set<std::string> &BuiltinIcons() {
 	static const auto result = std::set<std::string>{
 		"add", "archive", "block", "bot", "cancel", "chat", "chats", "clear",
@@ -236,14 +251,20 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 		}
 		return *value;
 	};
+	auto richIcons = size_t(0);
 	const auto takeIcon = [&](const cbor::Value &item, cbor::Map &entry) {
 		const auto field = item.find("icon");
 		if (!field) {
 			return true;
 		}
 		const auto name = field->asText();
-		if (!name || !ValidIconName(*name)) {
-			check.fail("icon must be a lowercase name");
+		if (name && ValidRichIcon(*name)) {
+			if (++richIcons > kMaxRichIcons) {
+				check.fail("a page may use at most 32 peer and emoji icons");
+				return false;
+			}
+		} else if (!name || !ValidIconName(*name)) {
+			check.fail("icon must be a lowercase name, peer:<id> or emoji:<id>");
 			return false;
 		}
 		entry.push_back({ "icon", Text(*name) });
@@ -491,6 +512,24 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 					|| (*type == "row" && children.size() > kMaxRowItems)) {
 					return std::string("a row holds 1 to 4 items, a column at least one");
 				}
+				entry.push_back({ "items", cbor::Value::FromArray(std::move(children)) });
+			} else if (*type == "page") {
+				if (!check.keys(item, { "type", "id", "label", "icon", "hint", "disabled", "items" })
+					|| !takeId(item, entry)
+					|| !takeIcon(item, entry)) {
+					return check.error();
+				}
+				const auto label = check.text(item, "label", kMaxLabel, true);
+				if (!label || !takeCommon(item, entry)) {
+					return check.error();
+				}
+				auto children = cbor::Array();
+				if (const auto error = parseList(item.find("items"), depth + 1, children)) {
+					return *error;
+				} else if (children.empty()) {
+					return std::string("a page needs items");
+				}
+				entry.push_back({ "label", Text(*label) });
 				entry.push_back({ "items", cbor::Value::FromArray(std::move(children)) });
 			} else if (*type == "card") {
 				if (!check.keys(item, { "type", "title", "items" })) {
