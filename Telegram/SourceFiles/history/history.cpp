@@ -4619,7 +4619,11 @@ void History::clear(ClearType type, bool markEmpty) {
 			item->destroy();
 		}
 		if (_freshRestore) {
-			_freshRestore->disable();
+			if (type == ClearType::DeleteChat) {
+				_freshRestore->reset();
+			} else {
+				_freshRestore->disable();
+			}
 		}
 		clearNotifications();
 		owner().notifyHistoryCleared(this);
