@@ -378,6 +378,23 @@ bool Outdated(const Manifest &manifest, const HostEnvironment &environment) {
 		: (app.minor > tested.minor);
 }
 
+const std::set<std::string> &OutgoingChatTypes() {
+	static const auto result = std::set<std::string>{
+		"user", "bot", "self", "group", "supergroup", "forum", "channel",
+	};
+	return result;
+}
+
+bool Matches(const OutgoingFilter &filter, const OutgoingInfo &info) {
+	if (!filter.chats.empty() && !filter.chats.contains(info.chat)) {
+		return false;
+	} else if (!filter.chatTypes.empty()
+		&& !filter.chatTypes.contains(info.chatType)) {
+		return false;
+	}
+	return true;
+}
+
 const std::set<std::string> &HostFeatures() {
 	static const auto features = [] {
 		auto result = KnownPermissions();
@@ -698,10 +715,37 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				}
 			}
 		}
-		if (const auto outgoing = reader.object(*contributes, "outgoing", "contributes", false, { "onFailure" })) {
-			manifest.outgoing = reader.text(*outgoing, "onFailure", "contributes.outgoing", false, 8).value_or("pass");
-			if (manifest.outgoing != "pass" && manifest.outgoing != "block") {
+		if (const auto outgoing = reader.object(*contributes, "outgoing", "contributes", false, { "onFailure", "filter" })) {
+			manifest.outgoing.declared = true;
+			const auto policy = reader.text(*outgoing, "onFailure", "contributes.outgoing", false, 8).value_or("pass");
+			if (policy != "pass" && policy != "block") {
 				reader.error("contributes.outgoing", "onFailure must be 'pass' or 'block'");
+			}
+			manifest.outgoing.block = (policy == "block");
+			if (const auto filter = reader.object(*outgoing, "filter", "contributes.outgoing", false, {
+					"chats", "chat_types" })) {
+				auto &parsed = manifest.outgoing.filter;
+				const auto chats = reader.array(*filter, "chats", "contributes.outgoing.filter", 256);
+				for (const auto &item : chats ? *chats : cbor::Array()) {
+					const auto chat = item.asInt();
+					if (!chat || !*chat) {
+						reader.error("contributes.outgoing.filter.chats", "has a bad entry");
+					} else {
+						parsed.chats.insert(*chat);
+					}
+				}
+				const auto strings = [&](const char *key, const std::set<std::string> &allowed, std::set<std::string> &into) {
+					const auto list = reader.array(*filter, key, "contributes.outgoing.filter", 32);
+					for (const auto &item : list ? *list : cbor::Array()) {
+						const auto text = item.asText();
+						if (!text || !allowed.contains(*text)) {
+							reader.error(std::string("contributes.outgoing.filter.") + key, "has an unknown entry");
+						} else {
+							into.insert(*text);
+						}
+					}
+				};
+				strings("chat_types", OutgoingChatTypes(), parsed.chatTypes);
 			}
 		}
 	}
@@ -789,7 +833,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	if (!manifest.messagesFrom.empty() && !hasPermission("plugins.message")) {
 		reader.error("contributes.messages", "needs the plugins.message permission");
 	}
-	if (!manifest.outgoing.empty() && !hasPermission("messages.transform_outgoing")) {
+	if (manifest.outgoing.declared && !hasPermission("messages.transform_outgoing")) {
 		reader.error("contributes.outgoing", "needs the messages.transform_outgoing permission");
 	}
 	const auto composer = std::any_of(

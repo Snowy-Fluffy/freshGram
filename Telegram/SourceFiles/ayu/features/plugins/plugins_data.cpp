@@ -1223,43 +1223,8 @@ public:
 				} else {
 					startEditMedia(item, edit, path, done);
 				}
-				session->api().sendVoiceMessage(
-					file.readAll(),
-					VoiceWaveform(),
-					crl::time(outgoing.duration) * 1000,
-					false,
-					action);
-				return {};
-			}
-			auto list = Storage::PrepareMediaList(
-				QStringList{ path },
-				st::sendMediaPreviewSize,
-				session->premium());
-			if (list.error != Ui::PreparedList::Error::None || list.files.empty()) {
-				return fgpl::api::error::kInvalid;
-			}
-			auto &file = list.files.front();
-			const auto asFile = (outgoing.kind == "file");
-			const auto restriction = asFile
-				? std::make_optional(ChatRestriction::SendFiles)
-				: RestrictionFor(file.type);
-			if (!restriction || !Data::CanSend(thread, *restriction)) {
-				return fgpl::api::error::kDenied;
-			}
-			const auto caption = Formatted(message.text, message.markdown);
-			file.caption = TextWithTags{
-				caption.text,
-				TextUtilities::ConvertEntitiesToTextTags(caption.entities),
-			};
-			file.spoiler = outgoing.spoiler;
-			const auto type = (asFile || file.type == Ui::PreparedFile::Type::File)
-				? SendMediaType::File
-				: SendMediaType::Photo;
-			++PluginSendDepth;
-			session->api().sendFiles(std::move(list), type, nullptr, action);
-			--PluginSendDepth;
-			return {};
-		}, fgpl::api::error::kUnavailable);
+			});
+		}, fgpl::api::error::kUnavailable, kWaitDownload);
 	}
 
 	std::optional<fgpl::UserInfo> user(int64_t id) override {
@@ -2004,6 +1969,19 @@ void ReleaseData() {
 	GetData().providers.clear();
 }
 
+std::string PeerKind(not_null<PeerData*> peer) {
+	return KindOf(peer);
+}
+
+std::string MessageMediaKind(not_null<const HistoryItem*> item) {
+	return MediaKindOf(item);
+}
+
+bool ValidScheduleTime(TimeId when) {
+	const auto now = base::unixtime::now();
+	return (when > now + 10) && (when <= now + kMaxScheduleSeconds);
+}
+
 bool WantsEvents() {
 	const auto snapshot = Snapshot();
 	return snapshot && snapshot->wantsEvents;
@@ -2119,6 +2097,18 @@ void CloseData() {
 }
 
 void ReleaseData() {
+}
+
+std::string PeerKind(not_null<PeerData*>) {
+	return {};
+}
+
+std::string MessageMediaKind(not_null<const HistoryItem*>) {
+	return {};
+}
+
+bool ValidScheduleTime(TimeId) {
+	return false;
 }
 
 bool WantsEvents() {

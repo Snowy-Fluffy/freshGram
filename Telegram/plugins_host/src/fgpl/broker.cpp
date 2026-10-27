@@ -409,13 +409,12 @@ void Broker::releaseSockets() {
 
 void Broker::beginOutgoing() {
 	_outgoing = true;
-	_outgoingText = std::nullopt;
-	_outgoingMarkdown = false;
+	_outgoingEdit = OutgoingEdit();
 }
 
-std::optional<std::string> Broker::finishOutgoing() {
+OutgoingEdit Broker::finishOutgoing() {
 	_outgoing = false;
-	return std::exchange(_outgoingText, std::nullopt);
+	return std::exchange(_outgoingEdit, OutgoingEdit());
 }
 
 bool Broker::has(const char *permission) const {
@@ -467,7 +466,8 @@ cbor::Value Broker::call(const cbor::Value &request) {
 	} else if (_outgoing
 		&& *name != "meta.info"
 		&& *name != "log"
-		&& *name != "messages.set_outgoing") {
+		&& *name != "messages.set_outgoing"
+		&& *name != "messages.drop_outgoing") {
 		response = api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
 	} else if (*name == "time.sleep" || *name == "files.pick" || *name == "files.save") {
 		response = api::Fail(api::error::kInvalid, *name + " must be awaited");
@@ -493,7 +493,9 @@ cbor::Value Broker::call(const cbor::Value &request) {
 cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
 	if (_outgoing) {
 		return api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
-	} else if (op == "messages.set_outgoing" || op == "plugin.unload") {
+	} else if (op == "messages.set_outgoing"
+		|| op == "messages.drop_outgoing"
+		|| op == "plugin.unload") {
 		return api::Fail(api::error::kInvalid, "this call cannot be awaited");
 	} else if (!_services.post || !_services.after || !_services.complete) {
 		return api::Fail(api::error::kUnavailable, "awaitable calls");
@@ -605,13 +607,61 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		} else if (!_outgoing) {
 			return api::Fail(api::error::kInvalid, "only while handling message.outgoing");
 		}
-		const auto text = TextArg(args, "text", kMaxMessage);
+		const auto text = Arg(args, "text")
+			? TextArg(args, "text", kMaxMessage)
+			: std::optional<std::string>();
 		const auto markdown = MarkdownArg(args);
-		if (!text || text->empty() || !markdown) {
-			return api::Fail(api::error::kInvalid, "text or format");
+		const auto silent = Arg(args, "silent")
+			? BoolArg(args, "silent", false)
+			: std::optional<bool>();
+		const auto schedule = IntArg(args, "schedule");
+		const auto replyTo = IntArg(args, "reply_to");
+		const auto topic = IntArg(args, "topic");
+		const auto given = [&](const char *key) {
+			return Arg(args, key) != nullptr;
+		};
+		if (!markdown
+			|| (given("text") && (!text || text->empty()))
+			|| (given("silent") && !silent)
+			|| (given("schedule") && (!schedule || *schedule < 0))
+			|| (given("reply_to") && (!replyTo || *replyTo < 0))
+			|| (given("topic") && (!topic || *topic < 0))) {
+			return api::Fail(api::error::kInvalid, "text, format, silent, schedule, reply_to or topic");
+		} else if (!given("text") && !given("silent") && !given("schedule")
+			&& !given("reply_to") && !given("topic")) {
+			return api::Fail(api::error::kInvalid, "nothing to change");
 		}
-		_outgoingText = *text;
-		_outgoingMarkdown = *markdown;
+		if (text) {
+			_outgoingEdit.text = *text;
+			_outgoingEdit.markdown = *markdown;
+		}
+		if (silent) {
+			_outgoingEdit.silent = *silent;
+		}
+		if (schedule) {
+			_outgoingEdit.schedule = *schedule;
+		}
+		if (replyTo) {
+			_outgoingEdit.replyTo = *replyTo;
+		}
+		if (topic) {
+			_outgoingEdit.topic = *topic;
+		}
+		return api::Ok();
+	} else if (op == "messages.drop_outgoing") {
+		if (!has("messages.transform_outgoing")) {
+			return api::Fail(api::error::kDenied, "messages.transform_outgoing");
+		} else if (!_outgoing) {
+			return api::Fail(api::error::kInvalid, "only while handling message.outgoing");
+		}
+		const auto reason = Arg(args, "reason")
+			? TextArg(args, "reason", 200)
+			: std::optional<std::string>(std::string());
+		if (!reason) {
+			return api::Fail(api::error::kInvalid, "reason");
+		}
+		_outgoingEdit.drop = true;
+		_outgoingEdit.dropReason = *reason;
 		return api::Ok();
 	} else if (op == "plugins.send" || op == "plugins.peers") {
 		if (!has("plugins.message")) {

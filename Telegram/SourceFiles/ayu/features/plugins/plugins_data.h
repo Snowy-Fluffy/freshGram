@@ -5,6 +5,9 @@
 #include "data/data_msg_id.h"
 
 class HistoryItem;
+class PeerData;
+class UserData;
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -19,6 +22,10 @@ namespace FreshPlugins {
 void OpenData();
 void CloseData();
 void ReleaseData();
+
+[[nodiscard]] std::string PeerKind(not_null<PeerData*> peer);
+[[nodiscard]] std::string MessageMediaKind(not_null<const HistoryItem*> item);
+[[nodiscard]] bool ValidScheduleTime(TimeId when);
 
 [[nodiscard]] bool WantsEvents();
 [[nodiscard]] bool PluginSending();

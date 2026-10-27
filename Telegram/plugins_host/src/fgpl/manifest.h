@@ -38,6 +38,34 @@ struct Command {
 	Localized description;
 };
 
+struct OutgoingFilter {
+	std::set<int64_t> chats;
+	std::set<std::string> chatTypes;
+};
+
+struct OutgoingHook {
+	bool declared = false;
+	bool block = false;
+	OutgoingFilter filter;
+};
+
+// What the app knows about a message that is about to be sent.
+struct OutgoingInfo {
+	int64_t chat = 0;
+	bool secret = false;
+	std::string chatType;
+	int64_t topic = 0;
+	int64_t replyTo = 0;
+	bool silent = false;
+	int64_t scheduled = 0;
+	std::string text;
+};
+
+[[nodiscard]] const std::set<std::string> &OutgoingChatTypes();
+[[nodiscard]] bool Matches(
+	const OutgoingFilter &filter,
+	const OutgoingInfo &info);
+
 struct Dependency {
 	std::string id;
 	std::optional<VersionRange> range;
@@ -92,7 +120,7 @@ struct Manifest {
 	std::map<std::string, std::string> icons;
 	std::vector<Command> commands;
 	bool settingsPage = false;
-	std::string outgoing;
+	OutgoingHook outgoing;
 	std::vector<std::string> messagesFrom;
 
 	std::vector<Dependency> dependencies;

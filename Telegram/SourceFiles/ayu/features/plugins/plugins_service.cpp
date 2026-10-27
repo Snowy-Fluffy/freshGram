@@ -497,14 +497,68 @@ void Stop() {
 
 namespace {
 
+[[nodiscard]] fgpl::OutgoingInfo InfoOf(const Api::MessageToSend &message) {
+	const auto &action = message.action;
+	const auto peer = action.history->peer;
+	auto result = fgpl::OutgoingInfo();
+	result.chat = int64_t(peer->id.value);
+	result.secret = FreshSecret::IsSecretPeerId(peer->id);
+	result.chatType = PeerKind(peer);
+	result.topic = action.replyTo.topicRootId.bare;
+	result.replyTo = action.replyTo.messageId.msg.bare;
+	result.silent = action.options.silent;
+	result.scheduled = action.options.scheduled;
+	result.text = message.textWithTags.text.toStdString();
+	return result;
+}
+
 [[nodiscard]] bool Transforms(const Api::MessageToSend &message) {
 	const auto snapshot = Snapshot();
-	const auto peer = message.action.history->peer;
+	const auto &options = message.action.options;
 	return snapshot
 		&& !message.textWithTags.text.isEmpty()
-		&& (!snapshot->loaded || snapshot->transformsOutgoing(
-			int64_t(peer->id.value),
-			FreshSecret::IsSecretPeerId(peer->id)));
+		&& !options.shortcutId
+		&& !options.welcomeTemplate
+		&& !options.suggest.exists
+		&& (!snapshot->loaded
+			|| snapshot->transformsOutgoing(InfoOf(message)));
+}
+
+void ApplyChanges(
+		Api::MessageToSend &message,
+		const fgpl::OutgoingResult &result) {
+	auto &action = message.action;
+	const auto history = action.history;
+	const auto peer = history->peer;
+	if (result.silent) {
+		action.options.silent = *result.silent;
+	}
+	if (result.schedule) {
+		if (!*result.schedule) {
+			action.options.scheduled = 0;
+		} else if (ValidScheduleTime(TimeId(*result.schedule))) {
+			action.options.scheduled = TimeId(*result.schedule);
+		}
+	}
+	if (result.replyTo) {
+		if (!*result.replyTo) {
+			action.replyTo.messageId = FullMsgId();
+		} else if (const auto replied = peer->owner().message(
+				peer->id,
+				MsgId(*result.replyTo))) {
+			action.replyTo.messageId = replied->fullId();
+			action.replyTo.topicRootId = replied->topicRootId();
+		}
+	}
+	if (result.topic) {
+		if (!*result.topic) {
+			action.replyTo.topicRootId = MsgId();
+		} else if (const auto topic = peer->forumTopicFor(MsgId(*result.topic))) {
+			if (Data::CanSendTexts(topic)) {
+				action.replyTo.topicRootId = topic->rootId();
+			}
+		}
+	}
 }
 
 void SendNow(Outgoing &&outgoing) {
@@ -561,6 +615,23 @@ void Refuse(const Outgoing &outgoing, const fgpl::OutgoingResult &result) {
 		QString::fromStdString(result.reason)));
 }
 
+void Drop(const fgpl::OutgoingResult &result) {
+	if (result.reason.empty()) {
+		return;
+	}
+	const auto snapshot = Snapshot();
+	const auto parsed = snapshot ? snapshot->manifest(result.plugin) : nullptr;
+	const auto name = parsed
+		? QString::fromStdString(parsed->name.get(Lang::Id().toStdString()))
+		: QString::fromStdString(result.plugin);
+	Ui::Toast::Show(tr::fresh_PluginOutgoingBlocked(
+		tr::now,
+		lt_plugin,
+		name,
+		lt_reason,
+		QString::fromStdString(result.reason)));
+}
+
 void Next(not_null<History*> history);
 
 void Finish(
@@ -579,7 +650,10 @@ void Finish(
 	i->second.pop_front();
 	if (result.blocked) {
 		Refuse(outgoing, result);
+	} else if (result.dropped) {
+		Drop(result);
 	} else {
+		ApplyChanges(outgoing.message, result);
 		const auto changed = QString::fromStdString(result.text);
 		if (result.markdown) {
 			auto parsed = TextWithEntities{ changed };
@@ -608,18 +682,13 @@ void Next(not_null<History*> history) {
 			continue;
 		}
 		const auto &message = i->second.front().message;
-		const auto peer = history->peer;
 		const auto account = AccountId(&history->session()).toStdString();
-		const auto chat = int64_t(peer->id.value);
-		const auto secret = FreshSecret::IsSecretPeerId(peer->id);
-		const auto text = message.textWithTags.text.toStdString();
+		const auto info = InfoOf(message);
 		const auto weak = base::make_weak(&history->session());
 		const auto posted = Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->transformOutgoingAsync(
 				account,
-				chat,
-				secret,
-				text,
+				info,
 				kOutgoingTimeoutMs,
 				[=](fgpl::OutgoingResult result) {
 					crl::on_main([=, result = std::move(result)] {

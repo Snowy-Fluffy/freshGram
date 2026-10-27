@@ -453,6 +453,38 @@ static int fg_set_outgoing(const char *text) {
 	return fg_send(&w, 0);
 }
 
+/* Like fg_set_outgoing; markdown parses **bold** and the like. */
+static int fg_set_outgoing_markdown(const char *text) {
+	fg_writer w;
+	fg_begin(&w, "messages.set_outgoing", 2);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	fg_w_text(&w, "format");
+	fg_w_text(&w, "markdown");
+	return fg_send(&w, 0);
+}
+
+/* Send the message being sent without sound. */
+static int fg_set_outgoing_silent(int silent) {
+	fg_writer w;
+	fg_begin(&w, "messages.set_outgoing", 1);
+	fg_w_text(&w, "silent");
+	fg_w_bool(&w, silent);
+	return fg_send(&w, 0);
+}
+
+/* Do not send the message being sent; a non-empty reason is shown as a toast. */
+static int fg_drop_outgoing(const char *reason) {
+	fg_writer w;
+	const int has_reason = reason && reason[0];
+	fg_begin(&w, "messages.drop_outgoing", has_reason ? 1 : 0);
+	if (has_reason) {
+		fg_w_text(&w, "reason");
+		fg_w_text(&w, reason);
+	}
+	return fg_send(&w, 0);
+}
+
 static int fg_socket_connect(const char *op, const char *host, fg_i64 port, int tls, fg_i64 *id) {
 	fg_writer w;
 	fg_value result = fg_none();

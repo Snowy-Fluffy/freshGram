@@ -383,9 +383,30 @@ class _Messages(_Namespace):
 
 
 class _SyncMessages(_Messages):
-    def set_outgoing(self, text, markdown=False):
-        """Replace the text of the message being sent (message.outgoing only)."""
-        _request("messages.set_outgoing", text=text, **_format(markdown))
+    def set_outgoing(self, text=None, markdown=False, silent=None, schedule=None,
+                     reply_to=None, topic=None):
+        """Change the message being sent (message.outgoing only).
+
+        Give the new text, and any of silent, schedule (a unix time, 0 to send
+        now), reply_to (a message id, 0 for none) and topic. A value the app
+        cannot use, such as a message that is not there, is ignored.
+        """
+        arguments = {}
+        if text is not None:
+            arguments["text"] = text
+            arguments.update(_format(markdown))
+        for key, value in (("silent", silent), ("schedule", schedule),
+                           ("reply_to", reply_to), ("topic", topic)):
+            if value is not None:
+                arguments[key] = value
+        _request("messages.set_outgoing", **arguments)
+
+    def drop_outgoing(self, reason=""):
+        """Do not send the message being sent (message.outgoing only).
+
+        The input field stays empty. A non-empty reason is shown as a toast.
+        """
+        _request("messages.drop_outgoing", **_given(reason=reason))
 
 
 class _Users(_Namespace):

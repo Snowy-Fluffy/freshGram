@@ -521,10 +521,32 @@ void TestOutgoingAndUnload() {
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("still fine") } }))));
 	CHECK(Code(broker.call(Request("messages.set_outgoing", { { "text", Text("") } }))) == "invalid");
 	CHECK(IsOk(broker.call(Request("messages.set_outgoing", { { "text", Text("changed") } }))));
-	CHECK(broker.finishOutgoing() == std::optional<std::string>("changed"));
+	CHECK(broker.finishOutgoing().text == std::optional<std::string>("changed"));
 	CHECK(IsOk(broker.call(Request("chats.list"))));
 	broker.beginOutgoing();
-	CHECK(!broker.finishOutgoing());
+	CHECK(!broker.finishOutgoing().text);
+
+	broker.beginOutgoing();
+	CHECK(Code(broker.call(Request("messages.set_outgoing"))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_outgoing", { { "schedule", Int(-1) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_outgoing", { { "silent", Text("yes") } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.set_outgoing", {
+		{ "silent", cbor::Value::FromBool(true) },
+		{ "schedule", Int(2000000000) },
+		{ "reply_to", Int(5) },
+		{ "topic", Int(7) },
+	}))));
+	const auto edit = broker.finishOutgoing();
+	CHECK(!edit.text && edit.silent == std::optional<bool>(true));
+	CHECK(edit.schedule == std::optional<int64_t>(2000000000));
+	CHECK(edit.replyTo == std::optional<int64_t>(5) && edit.topic == std::optional<int64_t>(7));
+	CHECK(!edit.drop);
+
+	CHECK(Code(broker.call(Request("messages.drop_outgoing"))) == "invalid");
+	broker.beginOutgoing();
+	CHECK(IsOk(broker.call(Request("messages.drop_outgoing", { { "reason", Text("spam") } }))));
+	const auto dropped = broker.finishOutgoing();
+	CHECK(dropped.drop && dropped.dropReason == "spam");
 
 	CHECK(IsOk(broker.call(Request("plugin.unload"))));
 	CHECK(unloads == 1);

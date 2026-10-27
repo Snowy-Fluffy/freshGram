@@ -972,6 +972,85 @@ void TestOutgoingTransform() {
 	CHECK(blocked.blocked && blocked.plugin == strict);
 }
 
+[[nodiscard]] std::string EncodedRequest(const char *op, cbor::Map args = {}) {
+	auto map = cbor::Map{ { "op", Text(op) } };
+	if (!args.empty()) {
+		map.push_back({ "a", cbor::Value::FromMap(std::move(args)) });
+	}
+	auto bytes = cbor::Bytes();
+	CHECK(cbor::Encode(cbor::Value::FromMap(std::move(map)), bytes, 8));
+	return std::string(bytes.begin(), bytes.end());
+}
+
+void TestOutgoingFilterDropAndOptions() {
+	auto lab = Lab("fgpl-manager-outgoing-options");
+	auto manager = PluginManager(lab.config());
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	};
+	const auto filtered = [](const char *key, cbor::Value value) {
+		return [=](cbor::Value &document) {
+			Set(document, "contributes.outgoing.onFailure", Text("pass"));
+			Set(document, std::string("contributes.outgoing.filter.") + key, value);
+		};
+	};
+	const auto dropper = std::string("com.example.dropper");
+	const auto options = std::string("com.example.options");
+	CHECK(manager.install(CustomArchive(dropper, CallingModule(EncodedRequest(
+		"messages.drop_outgoing",
+		{ { "reason", Text("no spam") } })), permissions,
+		filtered("chats", cbor::Value::FromArray({ Int(9) })))).ok());
+	CHECK(manager.install(CustomArchive(options, CallingModule(EncodedRequest(
+		"messages.set_outgoing",
+		{
+			{ "silent", cbor::Value::FromBool(true) },
+			{ "reply_to", Int(5) },
+		})), permissions,
+		filtered("chat_types", Array({ "group" })))).ok());
+	for (const auto &id : { dropper, options }) {
+		CHECK(manager.setEnabled(id, true));
+		CHECK(manager.grant(id, "A", { { "messages.read", "messages.transform_outgoing" }, std::nullopt }));
+	}
+	CHECK(manager.startEnabled("A").started == 2);
+	CHECK(manager.drain(20000));
+
+	const auto run = [&](int64_t chat, const char *type) {
+		auto info = OutgoingInfo();
+		info.chat = chat;
+		info.chatType = type;
+		info.text = "hi";
+		auto result = std::optional<OutgoingResult>();
+		manager.transformOutgoingAsync("A", info, 5000, [&](OutgoingResult value) {
+			result = std::move(value);
+		});
+		while (!result) {
+			manager.pump();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+		return std::move(*result);
+	};
+	const auto snapshot = manager.snapshot();
+	auto probe = OutgoingInfo();
+	probe.chat = 1;
+	probe.chatType = "user";
+	CHECK(!snapshot.transformsOutgoing(probe));
+	probe.chatType = "group";
+	CHECK(snapshot.transformsOutgoing(probe));
+	probe.chat = 9;
+	probe.chatType = "user";
+	CHECK(snapshot.transformsOutgoing(probe));
+
+	const auto untouched = run(1, "user");
+	CHECK(!untouched.dropped && !untouched.silent && !untouched.replyTo && untouched.text == "hi");
+	const auto changed = run(2, "group");
+	CHECK(!changed.dropped && changed.silent == std::optional<bool>(true));
+	CHECK(changed.replyTo == std::optional<int64_t>(5) && !changed.schedule);
+	const auto dropped = run(9, "group");
+	CHECK(dropped.dropped && dropped.plugin == dropper && dropped.reason == "no spam");
+	CHECK(!dropped.silent);
+}
+
 void TestPluginsTalkThroughTheApp() {
 #ifdef FGPL_COUNTER_WASM
 	auto lab = Lab("fgpl-manager-messages");
@@ -1414,6 +1493,7 @@ int main(int argc, char **argv) {
 	run("cancel", TestStopWhileStartingIsPrompt);
 	run("unload", TestSelfUnloadAndLazyStart);
 	run("outgoing", TestOutgoingTransform);
+	run("outgoing-options", TestOutgoingFilterDropAndOptions);
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);
 	run("merge", TestOldPerAccountStateIsMerged);
