@@ -73,6 +73,13 @@ struct Command {
 	Localized description;
 };
 
+struct TranslatorDecl {
+	bool declared = false;
+	std::string name;
+	std::vector<std::string> languages;
+	int maxChars = 4096;
+};
+
 struct OutgoingFilter {
 	std::set<int64_t> chats;
 	std::set<std::string> chatTypes;
@@ -151,7 +158,7 @@ struct Manifest {
 	int eventTimeoutMs = 500;
 	int storageMb = 10;
 
-	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer" };
+	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer", "translate", "toast" };
 	bool background = false;
 
 	std::vector<PermissionRequest> permissions;
@@ -161,6 +168,7 @@ struct Manifest {
 	std::vector<Command> commands;
 	bool settingsPage = false;
 	OutgoingHook outgoing;
+	TranslatorDecl translator;
 	std::vector<std::string> messagesFrom;
 
 	std::vector<Dependency> dependencies;

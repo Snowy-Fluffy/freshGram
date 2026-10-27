@@ -83,6 +83,10 @@ constexpr auto kMaxTimerMs = int64_t(7) * 24 * 3600 * 1000;
 	return cbor::Value::FromInt(number);
 }
 
+constexpr auto kMaxTranslateItems = size_t(20);
+constexpr auto kMaxTranslatedItem = size_t(32) << 10;
+constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
+
 [[nodiscard]] const cbor::Value *Arg(const cbor::Value *args, const char *key) {
 	return args ? args->find(key) : nullptr;
 }
@@ -664,6 +668,40 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		_outgoingEdit.drop = true;
 		_outgoingEdit.dropReason = *reason;
 		return api::Ok();
+	} else if (op == "translate.reply") {
+		if (!has("translate.provide")) {
+			return api::Fail(api::error::kDenied, "translate.provide");
+		} else if (!_services.translateReply) {
+			return api::Fail(api::error::kUnavailable, "translation");
+		}
+		const auto ticket = IntArg(args, "ticket");
+		const auto markdown = MarkdownArg(args);
+		const auto error = Arg(args, "error")
+			? TextArg(args, "error", 200)
+			: std::optional<std::string>(std::string());
+		const auto list = Arg(args, "items") ? Arg(args, "items")->asArray() : nullptr;
+		if (!ticket || !markdown || !error || (error->empty() && !list)) {
+			return api::Fail(api::error::kInvalid, "ticket, items, format or error");
+		}
+		auto items = std::vector<std::string>();
+		auto total = size_t(0);
+		for (const auto &entry : list ? *list : cbor::Array()) {
+			const auto text = entry.asText();
+			if (!text || text->size() > kMaxTranslatedItem) {
+				return api::Fail(api::error::kInvalid, "items");
+			}
+			total += text->size();
+			if (items.size() >= kMaxTranslateItems || total > kMaxTranslatedTotal) {
+				return api::Fail(api::error::kLimit, "the answer is too large");
+			}
+			items.push_back(*text);
+		}
+		const auto refused = _services.translateReply(
+			*ticket,
+			std::move(items),
+			*markdown,
+			*error);
+		return Done(refused, "no such translation");
 	} else if (op == "plugins.send" || op == "plugins.peers") {
 		if (!has("plugins.message")) {
 			return api::Fail(api::error::kDenied, "plugins.message");

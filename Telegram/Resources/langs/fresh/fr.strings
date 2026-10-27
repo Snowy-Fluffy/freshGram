@@ -205,6 +205,7 @@
 "fresh_PermChatsActivity" = "Voir qui écrit, les accusés de lecture et qui rejoint ou quitte les discussions";
 "fresh_PermUsersPresence" = "Voir quand les gens sont en ligne";
 "fresh_PermAppActivity" = "Savoir si l’application est au premier plan";
+"fresh_PermTranslateProvide" = "Traduire des textes pour vous";
 "fresh_PluginMenuItems" = "Éléments de menu";
 "fresh_PluginMenuSurfaceMessage" = "Menu du message";
 "fresh_PluginMenuSurfaceChat" = "Menu de la discussion";

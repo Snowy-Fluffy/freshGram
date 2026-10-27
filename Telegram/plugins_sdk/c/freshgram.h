@@ -607,6 +607,39 @@ static int fg_edit_media(
 	return fg_send(&w, 0);
 }
 
+/* Answers a translate.request: one translation for each of the `count` items. */
+static int fg_translate_reply(
+		fg_i64 ticket,
+		const char *const *items,
+		fg_u32 count,
+		int markdown) {
+	fg_writer w;
+	fg_begin(&w, "translate.reply", markdown ? 3 : 2);
+	fg_w_text(&w, "ticket");
+	fg_w_int(&w, ticket);
+	fg_w_text(&w, "items");
+	fg_w_array(&w, count);
+	for (fg_u32 i = 0; i < count; ++i) {
+		fg_w_text(&w, items[i]);
+	}
+	if (markdown) {
+		fg_w_text(&w, "format");
+		fg_w_text(&w, "markdown");
+	}
+	return fg_send(&w, 0);
+}
+
+/* Answers a translate.request with an error (up to 200 bytes). */
+static int fg_translate_error(fg_i64 ticket, const char *error) {
+	fg_writer w;
+	fg_begin(&w, "translate.reply", 2);
+	fg_w_text(&w, "ticket");
+	fg_w_int(&w, ticket);
+	fg_w_text(&w, "error");
+	fg_w_text(&w, error);
+	return fg_send(&w, 0);
+}
+
 static int fg_toast(const char *text) {
 	fg_writer w;
 	fg_begin(&w, "ui.toast", 1);

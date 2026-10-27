@@ -13,6 +13,8 @@
 #include "ayu/features/recognition/speech_recognition.h"
 #include "ayu/features/recognition/text_recognition.h"
 #include "ayu/features/recognition/text_translation.h"
+#include "ayu/features/plugins/plugins_service.h"
+#include "ayu/features/plugins/plugins_translate.h"
 #include "ayu/ui/boxes/recognition_models_box.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
@@ -46,50 +48,66 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 
 	auto *settings = &AyuSettings::getInstance();
 
-	const auto options = std::vector{
-		std::pair(TranslationProvider::Telegram, QString("Telegram")),
-		std::pair(TranslationProvider::Google, QString("Google")),
-		std::pair(TranslationProvider::Yandex, QString("Yandex")),
+	struct Option {
+		TranslationProvider provider = TranslationProvider::Telegram;
+		QString label;
+		QString plugin;
 	};
-	const auto nativeAvailable = Platform::IsTranslateProviderAvailable();
-	auto availableOptions = options;
-	if (nativeAvailable) {
-		availableOptions.push_back(std::pair(
-			TranslationProvider::Native,
-			[] {
-				if constexpr (Platform::IsMac()) {
-					return QString("macOS");
-				} else if constexpr (Platform::IsWindows()) {
-					return QString("Windows");
-				} else {
-					return QString("Linux");
-				}
-			}()));
-	}
-	if (FreshRecognition::TextTranslationAvailable()) {
-		availableOptions.push_back(std::pair(
-			TranslationProvider::Local,
-			tr::fresh_TranslateProviderLocal(tr::now)));
-	}
-	auto optionLabels = std::vector<QString>();
-	optionLabels.reserve(availableOptions.size());
-	for (const auto &option : availableOptions) {
-		optionLabels.push_back(option.second);
-	}
-
-	const auto getIndex = [=](TranslationProvider val) {
-		const auto i = ranges::find(
-			availableOptions,
-			val,
-			&std::pair<TranslationProvider, QString>::first);
-		return (i != end(availableOptions))
-			? int(i - begin(availableOptions))
-			: 0;
+	const auto optionsNow = [] {
+		auto result = std::vector<Option>{
+			{ TranslationProvider::Telegram, u"Telegram"_q },
+			{ TranslationProvider::Google, u"Google"_q },
+			{ TranslationProvider::Yandex, u"Yandex"_q },
+		};
+		if (Platform::IsTranslateProviderAvailable()) {
+			result.push_back({
+				TranslationProvider::Native,
+				[] {
+					if constexpr (Platform::IsMac()) {
+						return QString("macOS");
+					} else if constexpr (Platform::IsWindows()) {
+						return QString("Windows");
+					} else {
+						return QString("Linux");
+					}
+				}(),
+			});
+		}
+		if (FreshRecognition::TextTranslationAvailable()) {
+			result.push_back({
+				TranslationProvider::Local,
+				tr::fresh_TranslateProviderLocal(tr::now),
+			});
+		}
+		for (const auto &entry : FreshPlugins::Translators()) {
+			result.push_back({
+				TranslationProvider::Plugin,
+				entry.name,
+				entry.plugin,
+			});
+		}
+		return result;
+	};
+	const auto indexOf = [](
+			const std::vector<Option> &list,
+			TranslationProvider provider,
+			const QString &plugin) {
+		const auto i = ranges::find_if(list, [&](const Option &option) {
+			return (option.provider == provider)
+				&& (provider != TranslationProvider::Plugin
+					|| option.plugin == plugin);
+		});
+		return (i != end(list)) ? int(i - begin(list)) : 0;
 	};
 
-	auto currentVal = AyuSettings::getInstance().translationProviderValue()
-		| rpl::map(getIndex)
-		| rpl::map([=](int val) { return availableOptions[val].second; });
+	auto currentVal = rpl::combine(
+		settings->translationProviderValue(),
+		settings->translationPluginValue(),
+		rpl::single(rpl::empty) | rpl::then(FreshPlugins::ListChanges() | rpl::to_empty)
+	) | rpl::map([=](TranslationProvider provider, const QString &plugin, auto) {
+		const auto list = optionsNow();
+		return list[indexOf(list, provider, plugin)].label;
+	});
 
 	const auto button = builder.addButton({
 		.id = u"ayu/translationProvider"_q,
@@ -100,12 +118,22 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 			if (const auto controller = Core::App().activeWindow()->sessionController()) {
 				controller->show(Box(
 						[=](not_null<Ui::GenericBox*> box) {
+							const auto list = optionsNow();
+							auto labels = std::vector<QString>();
+							labels.reserve(list.size());
+							for (const auto &option : list) {
+								labels.push_back(option.label);
+							}
 							const auto save = [=](int index) {
-								const auto option = availableOptions[index].first;
-								AyuSettings::getInstance().setTranslationProvider(option);
+								const auto &option = list[index];
+								if (option.provider == TranslationProvider::Plugin) {
+									AyuSettings::getInstance().setTranslationPlugin(option.plugin);
+								} else {
+									AyuSettings::getInstance().setTranslationProvider(option.provider);
+								}
 
 								if constexpr (Platform::IsMac()) {
-									if (option == TranslationProvider::Native) {
+									if (option.provider == TranslationProvider::Native) {
 										controller->showToast(Ui::Toast::Config{
 											.text = tr::lng_translate_settings_use_platform_mac_about(tr::now, tr::rich),
 											.duration = 6 * crl::time(1000)
@@ -115,8 +143,11 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 							};
 							SingleChoiceBox(box, {
 								.title = tr::ayu_TranslationProvider(),
-								.options = optionLabels,
-								.initialSelection = getIndex(settings->translationProvider()),
+								.options = labels,
+								.initialSelection = indexOf(
+									list,
+									settings->translationProvider(),
+									settings->translationPlugin()),
 								.callback = save,
 							});
 						}));

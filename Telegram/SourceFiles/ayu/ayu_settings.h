@@ -47,6 +47,7 @@ enum class TranslationProvider {
 	Yandex = 2,
 	Native = 3,
 	Local = 4,
+	Plugin = 5,
 };
 
 enum class TranscriptionProvider {
@@ -84,6 +85,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(TranslationProvider, {
 	{TranslationProvider::Yandex, "yandex"},
 	{TranslationProvider::Native, "native"},
 	{TranslationProvider::Local, "local"},
+	{TranslationProvider::Plugin, "plugin"},
 })
 
 NLOHMANN_JSON_SERIALIZE_ENUM(TranscriptionProvider, {
@@ -491,6 +493,7 @@ public:
 	[[nodiscard]] bool voiceConfirmation() const { return _voiceConfirmation.current(); }
 	[[nodiscard]] bool roundConfirmation() const { return _roundConfirmation.current(); }
 	[[nodiscard]] TranslationProvider translationProvider() const { return _translationProvider.current(); }
+	[[nodiscard]] const QString &translationPlugin() const { return _translationPlugin.current(); }
 	[[nodiscard]] TranscriptionProvider transcriptionProvider() const { return _transcriptionProvider.current(); }
 	[[nodiscard]] bool adaptiveCoverColor() const { return _adaptiveCoverColor.current(); }
 	[[nodiscard]] bool improveLinkPreviews() const { return _improveLinkPreviews.current(); }
@@ -659,6 +662,7 @@ public:
 	void setVoiceConfirmation(bool val);
 	void setRoundConfirmation(bool val);
 	void setTranslationProvider(TranslationProvider val);
+	void setTranslationPlugin(const QString &id);
 	void setTranscriptionProvider(TranscriptionProvider val);
 	void setAdaptiveCoverColor(bool val);
 	void setImproveLinkPreviews(bool val);
@@ -880,7 +884,14 @@ public:
 	[[nodiscard]] rpl::producer<bool> roundConfirmationValue() const { return _roundConfirmation.value(); }
 	[[nodiscard]] rpl::producer<bool> roundConfirmationChanges() const { return _roundConfirmation.changes(); }
 	[[nodiscard]] rpl::producer<TranslationProvider> translationProviderValue() const { return _translationProvider.value(); }
-	[[nodiscard]] rpl::producer<TranslationProvider> translationProviderChanges() const { return _translationProvider.changes(); }
+	[[nodiscard]] rpl::producer<TranslationProvider> translationProviderChanges() const {
+		return rpl::merge(
+			_translationProvider.changes(),
+			_translationPlugin.changes() | rpl::map([=](const QString &) {
+				return _translationProvider.current();
+			}));
+	}
+	[[nodiscard]] rpl::producer<QString> translationPluginValue() const { return _translationPlugin.value(); }
 	[[nodiscard]] rpl::producer<TranscriptionProvider> transcriptionProviderValue() const { return _transcriptionProvider.value(); }
 	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorValue() const { return _adaptiveCoverColor.value(); }
 	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorChanges() const { return _adaptiveCoverColor.changes(); }
@@ -1064,6 +1075,7 @@ private:
 	rpl::variable<bool> _voiceConfirmation = false;
 	rpl::variable<bool> _roundConfirmation = false;
 	rpl::variable<TranslationProvider> _translationProvider = TranslationProvider::Telegram;
+	rpl::variable<QString> _translationPlugin;
 	rpl::variable<TranscriptionProvider> _transcriptionProvider = TranscriptionProvider::Telegram;
 	rpl::variable<bool> _adaptiveCoverColor = true;
 	rpl::variable<bool> _improveLinkPreviews = false;

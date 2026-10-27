@@ -205,6 +205,7 @@
 "fresh_PermChatsActivity" = "查看正在输入、已读状态以及谁加入或离开聊天";
 "fresh_PermUsersPresence" = "查看用户是否在线";
 "fresh_PermAppActivity" = "知道应用是否处于前台";
+"fresh_PermTranslateProvide" = "为你翻译文本";
 "fresh_PluginMenuItems" = "菜单项";
 "fresh_PluginMenuSurfaceMessage" = "消息菜单";
 "fresh_PluginMenuSurfaceChat" = "聊天菜单";

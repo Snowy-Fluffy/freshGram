@@ -1058,6 +1058,58 @@ void TestAuditTrail() {
 	CHECK(fixture.audit.size() == 2 && fixture.audit[1] == "account.info:denied");
 }
 
+[[nodiscard]] cbor::Value Texts(std::vector<std::string> items) {
+	auto list = cbor::Array();
+	for (auto &item : items) {
+		list.push_back(Text(std::move(item)));
+	}
+	return cbor::Value::FromArray(std::move(list));
+}
+
+void TestTranslateReply() {
+	auto fixture = Fixture({ "translate.provide" });
+	auto seen = std::vector<std::tuple<int64_t, size_t, bool, std::string>>();
+	fixture.services.translateReply = [&](
+			int64_t ticket,
+			std::vector<std::string> items,
+			bool markdown,
+			std::string error) -> std::string {
+		seen.emplace_back(ticket, items.size(), markdown, error);
+		return (ticket == 7) ? std::string() : std::string(api::error::kNotFound);
+	};
+	auto broker = fixture.make();
+	const auto reply = [&](cbor::Map args) {
+		return Code(broker.call(Request("translate.reply", std::move(args))));
+	};
+	CHECK(reply({ { "ticket", Int(7) }, { "items", Texts({ "a", "b" }) } }) == "");
+	CHECK(IsOk(broker.call(Request("translate.reply", {
+		{ "ticket", Int(7) }, { "items", Texts({ "**a**" }) }, { "format", Text("markdown") } }))));
+	CHECK(IsOk(broker.call(Request("translate.reply", {
+		{ "ticket", Int(7) }, { "error", Text("no key") } }))));
+	CHECK(seen.size() == 3 && std::get<0>(seen[0]) == 7 && std::get<1>(seen[0]) == 2);
+	CHECK(std::get<2>(seen[1]) && std::get<3>(seen[2]) == "no key");
+	CHECK(reply({ { "ticket", Int(8) }, { "items", Texts({ "a" }) } }) == "not_found");
+	CHECK(reply({ { "items", Texts({ "a" }) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "items", cbor::Value::FromArray({ Int(1) }) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "items", Texts({ "a" }) }, { "format", Text("html") } }) == "invalid");
+	CHECK(reply({
+		{ "ticket", Int(7) },
+		{ "items", cbor::Value::FromArray({ Text(std::string((size_t(32) << 10) + 1, 'x')) }) } }) == "invalid");
+	auto many = cbor::Array();
+	for (auto i = 0; i != 21; ++i) {
+		many.push_back(Text("x"));
+	}
+	CHECK(reply({ { "ticket", Int(7) }, { "items", cbor::Value::FromArray(std::move(many)) } }) == "limit");
+	auto big = cbor::Array();
+	for (auto i = 0; i != 4; ++i) {
+		big.push_back(Text(std::string(size_t(30) << 10, 'x')));
+	}
+	CHECK(reply({ { "ticket", Int(7) }, { "items", cbor::Value::FromArray(std::move(big)) } }) == "limit");
+	CHECK(Code(Fixture({}).make().call(Request("translate.reply", {
+		{ "ticket", Int(7) }, { "items", Texts({ "a" }) } }))) == "denied");
+}
+
 void TestActivityEvents() {
 	const auto chatEvent = [](const char *type, int64_t chat, bool secret = false) {
 		return cbor::Value::FromMap({
@@ -1667,6 +1719,7 @@ int main() {
 	TestAuditTrail();
 	TestEvents();
 	TestActivityEvents();
+	TestTranslateReply();
 	TestAwaitableCalls();
 	TestRateLimits();
 	TestClosedBrokerDropsAwaitedWork();

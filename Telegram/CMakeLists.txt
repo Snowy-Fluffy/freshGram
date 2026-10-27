@@ -166,6 +166,8 @@ set(ayugram_files
         ayu/features/plugins/plugins_ui.cpp
         ayu/features/plugins/plugins_ui.h
         ayu/features/plugins/plugins_transport.h
+        ayu/features/plugins/plugins_translate.cpp
+        ayu/features/plugins/plugins_translate.h
         ayu/features/plugins/plugins_service.cpp
         ayu/features/plugins/plugins_service.h
         ayu/ui/boxes/plugin_install_box.cpp

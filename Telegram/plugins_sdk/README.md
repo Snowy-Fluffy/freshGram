@@ -53,6 +53,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `messages.drop_outgoing` `{reason}` | `messages.transform_outgoing` | only while handling `message.outgoing`; the message is not sent and the input field stays empty; a non-empty `reason` (up to 200 bytes) is shown as a toast with the plugin's name; the plugins after this one do not see the message |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `ui.window.show` `{id, page, mode}`, `ui.window.update` `{id, page}`, `ui.window.close` `{id}` | `ui.dialog` | a window of the plugin's own: `id` is a lowercase token of up to 32 characters, `mode` is `layer` (over the chat, the default) or `window` (a window of its own); up to 3 windows at a time; see *Windows* |
+| `translate.reply` `{ticket, items, format, error}` | `translate.provide` | answers a `translate.request`: `items` is a list with one translation for each requested text (up to 32 KiB each, 96 KiB in all), `format` is `plain` (default) or `markdown`; or `error` (up to 200 bytes) instead; `not_found` for a ticket that is not yours or already answered |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
@@ -152,6 +153,7 @@ for the account, reads you make (`chat.read` with `outbox: false`) and
 | `chat.member` | `chats.activity` | `{chat, user, joined}`; someone joined or left a group or supergroup (not for channels) |
 | `user.status` | `users.presence` | `{user, status, last_seen}` with the values of `users.info`; not for yourself, bots, or users who hide their status |
 | `app.focus`, `app.blur` | `app.activity` | `{}`; the app window got or lost the focus |
+| `translate.request` | `translate.provide` | `{ticket, to, format, items}`: texts to translate into the language `to` (a two-letter code); see *Translator* |
 `timer` `{id}` comes when a timer set with `timers.set` fires; it is not listed
 in `contributes.events`.
 
@@ -171,6 +173,30 @@ chat ids) and `chat_types` (`user`, `bot`, `self`, `group`, `supergroup`, `forum
 plugins see a message one after another, each one the changes of those before. It has about a second; `contributes.outgoing.onFailure` says what
 happens when it fails or is late: `pass` sends the text unchanged, `block` stops
 the message and puts it back into the input field.
+
+## Translator
+
+A plugin with the `translate.provide` permission and `contributes.translator`
+(`{"name": "DeepL", "languages": ["en", "ru"], "maxChars": 4096}`: `languages` is
+informational, `maxChars` from 64 to 8192 is the longest text it takes, 4096 by
+default) appears in the app's list of translators (Settings, Translator). When
+the user picks it, the app asks it for every translation: the message bar, the
+translate box and the input field. The plugin gets `translate.request`
+`{ticket, to, format: "plain", items}` with up to 20 texts and 24 KiB at a
+time, formatting removed, and answers with `translate.reply` within 20 seconds
+(a plugin that is not running is started; its `activation.on`, when listed,
+must contain `translate`). A plugin may be asked several times at once (up to
+8 requests), so answer by ticket. In Python:
+
+```python
+@freshgram.on_translate
+def translate(items, to):
+    return [shout(text) for text in items]
+```
+
+`on_translate(markdown=True)` makes the answers parsed as markdown, and an
+`async def` handler is run on the plugin's own loop. In C, answer with
+`fg_translate_reply` or `fg_translate_error`.
 
 ## Waiting without blocking
 
@@ -241,7 +267,7 @@ one at a time, so storage updates from two accounts never interleave.
 ## Activation and unloading
 
 `activation.on` lists what may start the plugin: `startup`, `event`, `command`,
-`menu`, `settings`, `message`, `timer` (the default is all of them except `startup`). Plugins that
+`menu`, `settings`, `message`, `timer`, `translate`, `toast` (the default is all of them except `startup`). Plugins that
 change outgoing messages or run in the background start with the app. A plugin
 calls `plugin.unload` when it has nothing to do; it is stopped after the
 current event and started again by its next activation, so it costs no memory

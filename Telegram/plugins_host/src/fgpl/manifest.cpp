@@ -641,7 +641,8 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				if (!name
 					|| (*name != "startup" && *name != "command" && *name != "event"
 						&& *name != "menu" && *name != "settings" && *name != "message"
-						&& *name != "timer")) {
+						&& *name != "timer" && *name != "translate"
+						&& *name != "toast")) {
 					reader.error("activation.on", "has an unknown trigger");
 				} else {
 					manifest.activation.insert(*name);
@@ -688,7 +689,8 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
-			"events", "menus", "commands", "settingsPage", "outgoing", "messages", "icons" })) {
+			"events", "menus", "commands", "settingsPage", "outgoing", "messages", "icons",
+			"translator" })) {
 		if (const auto icons = contributes->find("icons"); icons && !icons->asMap()) {
 			reader.error("contributes.icons", "must be an object");
 		} else if (icons) {
@@ -808,6 +810,22 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				}
 			}
 		}
+		if (const auto translator = reader.object(*contributes, "translator", "contributes", false, {
+				"name", "languages", "maxChars" })) {
+			auto &decl = manifest.translator;
+			decl.declared = true;
+			decl.name = reader.text(*translator, "name", "contributes.translator", true, 40).value_or("");
+			const auto languages = reader.array(*translator, "languages", "contributes.translator", 200);
+			for (const auto &item : languages ? *languages : cbor::Array()) {
+				const auto code = item.asText();
+				if (!code || !ValidLanguage(*code)) {
+					reader.error("contributes.translator.languages", "has a bad language code");
+				} else {
+					decl.languages.push_back(*code);
+				}
+			}
+			decl.maxChars = int(reader.integer(*translator, "maxChars", "contributes.translator", 64, 8192).value_or(4096));
+		}
 		if (const auto outgoing = reader.object(*contributes, "outgoing", "contributes", false, { "onFailure", "filter" })) {
 			manifest.outgoing.declared = true;
 			const auto policy = reader.text(*outgoing, "onFailure", "contributes.outgoing", false, 8).value_or("pass");
@@ -922,6 +940,9 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 	if (!manifest.messagesFrom.empty() && !hasPermission("plugins.message")) {
 		reader.error("contributes.messages", "needs the plugins.message permission");
+	}
+	if (manifest.translator.declared && !hasPermission("translate.provide")) {
+		reader.error("contributes.translator", "needs the translate.provide permission");
 	}
 	if (manifest.outgoing.declared && !hasPermission("messages.transform_outgoing")) {
 		reader.error("contributes.outgoing", "needs the messages.transform_outgoing permission");

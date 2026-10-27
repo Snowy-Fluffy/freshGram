@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_translate_provider.h"
 
 #include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_translate.h"
 #include "ayu/features/recognition/text_translation.h"
 #include "ayu/features/translator/ayu_translate_provider.h"
 #include "ayu/features/translator/local_translate_provider.h"
@@ -44,15 +45,23 @@ base::options::option<QString> OptionTranslateUrlTemplate({
 		&& !FreshRecognition::TextTranslationAvailable()) {
 		return TranslationProvider::Telegram;
 	}
+	if ((provider == TranslationProvider::Plugin)
+		&& !FreshPlugins::TranslatorAvailable(
+			AyuSettings::getInstance().translationPlugin())) {
+		return TranslationProvider::Telegram;
+	}
 	return provider;
 }
 
 [[nodiscard]] QString ProviderIdentity(
 		TranslationProvider provider,
 		const QString &urlTemplate) {
-	return (!urlTemplate.isEmpty() && urlTemplate.contains(u"%q"_q))
-		? (u"url:"_q + urlTemplate)
-		: (u"provider:"_q + QString::number(int(provider)));
+	if (!urlTemplate.isEmpty() && urlTemplate.contains(u"%q"_q)) {
+		return u"url:"_q + urlTemplate;
+	} else if (provider == TranslationProvider::Plugin) {
+		return u"plugin:"_q + AyuSettings::getInstance().translationPlugin();
+	}
+	return u"provider:"_q + QString::number(int(provider));
 }
 
 } // namespace
@@ -86,6 +95,10 @@ std::unique_ptr<TranslateProvider> CreateTranslateProvider(
 		break;
 	case TranslationProvider::Local:
 		return Ayu::Translator::CreateLocalTranslateProvider();
+	case TranslationProvider::Plugin:
+		return FreshPlugins::CreatePluginTranslateProvider(
+			session,
+			AyuSettings::getInstance().translationPlugin());
 	case TranslationProvider::Telegram:
 		break;
 	}
@@ -121,6 +134,9 @@ QString TranslateProviderName() {
 		return tr::fresh_SecretTranslateSystem(tr::now);
 	case TranslationProvider::Local:
 		return tr::fresh_TranslateProviderLocal(tr::now);
+	case TranslationProvider::Plugin:
+		return FreshPlugins::TranslatorName(
+			AyuSettings::getInstance().translationPlugin());
 	case TranslationProvider::Telegram:
 		return u"Telegram"_q;
 	}

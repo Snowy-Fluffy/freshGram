@@ -673,6 +673,53 @@ def on_chat_opened(function):
     return function
 
 
+def on_translate(function=None, markdown=False):
+    """Make the plugin a translator (translate.provide, contributes.translator).
+
+    The function gets (items, to): a list of up to 20 texts and the target
+    language code, and returns the list of translations, one for each item,
+    or a coroutine of it. Raise an exception to answer with an error. With
+    markdown=True the answers use **bold** and the like. A plugin whose
+    manifest lists activation triggers needs "translate" among them.
+    """
+    def register(handler):
+        def wrapper(event):
+            ticket = event["ticket"]
+
+            def reply(items=None, error=None):
+                if error is not None:
+                    _request("translate.reply", ticket=ticket, error=str(error)[:200])
+                else:
+                    _request(
+                        "translate.reply",
+                        ticket=ticket,
+                        items=[str(item) for item in items],
+                        **_format(markdown))
+
+            try:
+                result = handler(event["items"], event["to"])
+            except Exception as error:
+                _log_exception()
+                reply(error=error)
+                return
+
+            if isinstance(result, _types.CoroutineType):
+                async def finish():
+                    try:
+                        items = await result
+                    except Exception as error:
+                        _log_exception()
+                        reply(error=error)
+                        return
+                    reply(items)
+                _aio.spawn(finish())
+            else:
+                reply(result)
+        _event_handlers.append(("translate.request", wrapper))
+        return handler
+    return register(function) if function is not None else register
+
+
 def on_typing(function):
     """Run when someone types or sends something in a chat (chats.activity).
 

@@ -1051,6 +1051,76 @@ void TestOutgoingFilterDropAndOptions() {
 	CHECK(!dropped.silent);
 }
 
+void TestTranslator() {
+	auto lab = Lab("fgpl-manager-translator");
+	auto manager = PluginManager(lab.config());
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "translate.provide", {} },
+	};
+	const auto translator = [](cbor::Value &document) {
+		Remove(document, "contributes.events");
+		Set(document, "contributes.translator", cbor::Value::FromMap({
+			{ "name", Text("Shout") },
+			{ "languages", Array({ "en", "ru" }) },
+		}));
+	};
+	const auto good = std::string("com.example.shout");
+	const auto crashing = std::string("com.example.crasher");
+	const auto bystander = std::string("com.example.bystander");
+	CHECK(manager.install(CustomArchive(good, CallingModule(EncodedRequest(
+		"translate.reply",
+		{ { "ticket", Int(1) }, { "items", Array({ "X" }) } })), permissions, translator)).ok());
+	CHECK(manager.install(CustomArchive(crashing, CrashOnEvent(), permissions, translator)).ok());
+	CHECK(manager.install(CustomArchive(bystander, CallingModule(EncodedRequest(
+		"translate.reply",
+		{ { "ticket", Int(2) }, { "items", Array({ "STOLEN" }) } })), permissions, translator)).ok());
+	for (const auto &id : { good, crashing, bystander }) {
+		CHECK(manager.setEnabled(id, true));
+	}
+	CHECK(manager.grant(good, "A", { { "translate.provide" }, std::nullopt }));
+	CHECK(manager.grant(crashing, "A", { { "translate.provide" }, std::nullopt }));
+
+	const auto listed = manager.snapshot().contributions("A", "en");
+	auto names = std::vector<std::string>();
+	for (const auto &entry : listed) {
+		if (entry.translator.declared) {
+			names.push_back(entry.translator.name + ":" + std::to_string(entry.translator.languages.size()));
+		}
+	}
+	CHECK(names.size() == 2 && names[0] == "Shout:2");
+
+	const auto ask = [&](const std::string &plugin, const char *account = "A") {
+		auto result = std::optional<TranslateResult>();
+		auto request = TranslateRequest();
+		request.to = "ru";
+		request.items = { "hi" };
+		manager.translateAsync(account, plugin, request, 5000, [&](TranslateResult value) {
+			result = std::move(value);
+		});
+		for (auto waited = 0; !result && waited < 20000; waited += 5) {
+			manager.pump();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+		return result;
+	};
+	const auto answered = ask(good);
+	CHECK(answered && answered->error.empty() && answered->items == std::vector<std::string>{ "X" });
+	const auto refused = ask(bystander);
+	CHECK(refused && !refused->error.empty());
+	const auto failed = ask(crashing);
+	CHECK(failed && !failed->error.empty());
+	const auto missing = ask("com.example.none");
+	CHECK(missing && missing->error == "unavailable");
+	const auto otherAccount = ask(good, "bad account!");
+	CHECK(otherAccount && otherAccount->error == "unavailable");
+
+	auto empty = std::optional<TranslateResult>();
+	manager.translateAsync("A", good, TranslateRequest{ "ru", {} }, 1000, [&](TranslateResult value) {
+		empty = std::move(value);
+	});
+	CHECK(empty && empty->error == "invalid");
+}
+
 void TestPluginsTalkThroughTheApp() {
 #ifdef FGPL_COUNTER_WASM
 	auto lab = Lab("fgpl-manager-messages");
@@ -1494,6 +1564,7 @@ int main(int argc, char **argv) {
 	run("unload", TestSelfUnloadAndLazyStart);
 	run("outgoing", TestOutgoingTransform);
 	run("outgoing-options", TestOutgoingFilterDropAndOptions);
+	run("translator", TestTranslator);
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);
 	run("merge", TestOldPerAccountStateIsMerged);

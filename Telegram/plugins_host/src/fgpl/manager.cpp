@@ -603,6 +603,7 @@ void PluginManager::post(Completion completion) {
 void PluginManager::stopMany(const std::vector<Key> &keys) {
 	auto victims = std::vector<Instance *>();
 	for (const auto &key : keys) {
+		failTranslations(key.first, key.second, "the plugin stopped");
 		const auto i = _instances.find(key);
 		if (i == _instances.end()) {
 			continue;
@@ -1177,7 +1178,18 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 			}
 		}
 		entry.settingsPage = parsed->settingsPage && has("ui.settings_page");
-		if (!entry.menus.empty() || !entry.commands.empty() || entry.settingsPage) {
+		if (parsed->translator.declared && has("translate.provide")) {
+			entry.translator = {
+				true,
+				parsed->translator.name,
+				parsed->translator.languages,
+				parsed->translator.maxChars,
+			};
+		}
+		if (!entry.menus.empty()
+			|| !entry.commands.empty()
+			|| entry.settingsPage
+			|| entry.translator.declared) {
 			result.push_back(std::move(entry));
 		}
 	}
@@ -1497,6 +1509,19 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		return peers(pluginId, account);
 	};
 	const auto key = Key{ pluginId, account };
+	services.translateReply = [this, pluginId, account](
+			int64_t ticket,
+			std::vector<std::string> items,
+			bool markdown,
+			std::string error) {
+		return acceptTranslation(
+			pluginId,
+			account,
+			ticket,
+			std::move(items),
+			markdown,
+			std::move(error));
+	};
 	services.setTimer = [this, key](const std::string &id, int64_t delayMs, bool repeat) {
 		return setTimer(key, id, delayMs, repeat);
 	};
@@ -2037,6 +2062,7 @@ int PluginManager::pump() {
 		}
 	}
 	advanceOutgoing();
+	expireTranslations();
 	return handled;
 }
 
@@ -2402,6 +2428,176 @@ void PluginManager::advanceOutgoing() {
 	});
 	for (const auto &chain : finished) {
 		chain->done(std::move(chain->result));
+	}
+}
+
+constexpr auto kMaxTranslateRequests = size_t(8);
+constexpr auto kMaxTranslateItems = size_t(20);
+constexpr auto kMaxTranslateBytes = size_t(24) << 10;
+
+void PluginManager::translateAsync(
+		const std::string &account,
+		const std::string &plugin,
+		TranslateRequest request,
+		int timeoutMs,
+		std::function<void(TranslateResult)> done) {
+	const auto fail = [&](const char *why) {
+		auto result = TranslateResult();
+		result.error = why;
+		done(std::move(result));
+	};
+	auto bytes = size_t(0);
+	for (const auto &item : request.items) {
+		bytes += item.size();
+	}
+	const auto found = _records.find(plugin);
+	if (!ValidAccount(account) || !mayRun() || found == _records.end()) {
+		return fail("unavailable");
+	} else if (request.items.empty()
+		|| request.items.size() > kMaxTranslateItems
+		|| bytes > kMaxTranslateBytes
+		|| request.to.empty()
+		|| request.to.size() > 12) {
+		return fail("invalid");
+	}
+	auto &record = found->second;
+	const auto grant = record.grants.find(kAllAccounts);
+	const auto parsed = manifest(plugin);
+	if (!record.enabled
+		|| grant == record.grants.end()
+		|| !grant->second.granted.contains("translate.provide")
+		|| !parsed
+		|| !parsed->translator.declared) {
+		return fail("unavailable");
+	}
+	{
+		const auto lock = std::scoped_lock(_translationsMutex);
+		const auto busy = std::count_if(
+			_translations.begin(),
+			_translations.end(),
+			[&](const auto &entry) { return entry.second.plugin == plugin; });
+		if (size_t(busy) >= kMaxTranslateRequests) {
+			return fail("busy");
+		}
+	}
+	pump();
+	auto *instance = ensure(record, account, "translate");
+	if (!instance) {
+		return fail("unavailable");
+	}
+	auto ticket = int64_t(0);
+	{
+		const auto lock = std::scoped_lock(_translationsMutex);
+		ticket = _nextTranslation++;
+		_translations.emplace(ticket, PendingTranslation{
+			plugin,
+			account,
+			request.items.size(),
+			std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs),
+			std::move(done),
+		});
+	}
+	auto items = cbor::Array();
+	for (const auto &item : request.items) {
+		items.push_back(Text(item));
+	}
+	const auto event = cbor::Value::FromMap({
+		{ "type", Text("translate.request") },
+		{ "ticket", cbor::Value::FromInt(ticket) },
+		{ "to", Text(request.to) },
+		{ "format", Text("plain") },
+		{ "items", cbor::Value::FromArray(std::move(items)) },
+	});
+	const auto size = EncodedSize(event);
+	auto queued = false;
+	{
+		const auto lock = std::scoped_lock(instance->mutex);
+		if (!instance->closing && !instance->finished) {
+			instance->queue.emplace_back(event, size);
+			instance->queuedBytes += size;
+			queued = true;
+		}
+	}
+	if (!queued) {
+		failTranslations(plugin, account, "unavailable");
+		return;
+	}
+	instance->wake.notify_one();
+}
+
+std::string PluginManager::acceptTranslation(
+		const std::string &plugin,
+		const std::string &account,
+		int64_t ticket,
+		std::vector<std::string> items,
+		bool markdown,
+		std::string error) {
+	auto pending = std::optional<PendingTranslation>();
+	{
+		const auto lock = std::scoped_lock(_translationsMutex);
+		const auto i = _translations.find(ticket);
+		if (i == _translations.end()
+			|| i->second.plugin != plugin
+			|| i->second.account != account) {
+			return api::error::kNotFound;
+		} else if (error.empty() && items.size() != i->second.count) {
+			return api::error::kInvalid;
+		}
+		pending = std::move(i->second);
+		_translations.erase(i);
+	}
+	auto result = TranslateResult();
+	if (error.empty()) {
+		result.items = std::move(items);
+		result.markdown = markdown;
+	} else {
+		result.error = std::move(error);
+	}
+	pending->done(std::move(result));
+	return {};
+}
+
+void PluginManager::expireTranslations() {
+	auto expired = std::vector<PendingTranslation>();
+	{
+		const auto lock = std::scoped_lock(_translationsMutex);
+		const auto now = std::chrono::steady_clock::now();
+		for (auto i = _translations.begin(); i != _translations.end();) {
+			if (now >= i->second.deadline) {
+				expired.push_back(std::move(i->second));
+				i = _translations.erase(i);
+			} else {
+				++i;
+			}
+		}
+	}
+	for (auto &pending : expired) {
+		auto result = TranslateResult();
+		result.error = "timeout";
+		pending.done(std::move(result));
+	}
+}
+
+void PluginManager::failTranslations(
+		const std::string &plugin,
+		const std::string &account,
+		const std::string &reason) {
+	auto failed = std::vector<PendingTranslation>();
+	{
+		const auto lock = std::scoped_lock(_translationsMutex);
+		for (auto i = _translations.begin(); i != _translations.end();) {
+			if (i->second.plugin == plugin && i->second.account == account) {
+				failed.push_back(std::move(i->second));
+				i = _translations.erase(i);
+			} else {
+				++i;
+			}
+		}
+	}
+	for (auto &pending : failed) {
+		auto result = TranslateResult();
+		result.error = reason;
+		pending.done(std::move(result));
 	}
 }
 

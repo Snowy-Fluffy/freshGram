@@ -8988,6 +8988,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermChatsActivity" = "See typing, read marks and who joins or leaves chats";
 "fresh_PermUsersPresence" = "See when people are online";
 "fresh_PermAppActivity" = "Know when the app is in focus";
+"fresh_PermTranslateProvide" = "Translate texts for you";
 "fresh_PluginMenuItems" = "Menu items";
 "fresh_PluginMenuSurfaceMessage" = "Message menu";
 "fresh_PluginMenuSurfaceChat" = "Chat menu";
