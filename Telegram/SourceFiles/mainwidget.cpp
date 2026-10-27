@@ -1509,7 +1509,7 @@ void MainWidget::showHistory(
 					const auto wasState
 						= _controller->dialogsEntryStateCurrent();
 					if (wasState.key) {
-						info->inlineReturnTo = wasState;
+						info->setInlineReturnTo(wasState);
 					}
 				}
 			}
