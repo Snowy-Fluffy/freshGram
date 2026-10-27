@@ -607,6 +607,35 @@ static int fg_edit_media(
 	return fg_send(&w, 0);
 }
 
+/* A toast with a button; fg_plugin_event gets toast.click {id} when it is
+   pressed. label may be null with undo, which shows "Undo". */
+static int fg_toast_action(
+		const char *text,
+		const char *id,
+		const char *label,
+		int undo,
+		fg_i64 seconds) {
+	fg_writer w;
+	fg_begin(&w, "ui.toast", undo ? 4 : 3);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	fg_w_text(&w, "action");
+	fg_w_map(&w, (label && label[0]) ? 2 : 1);
+	fg_w_text(&w, "id");
+	fg_w_text(&w, id);
+	if (label && label[0]) {
+		fg_w_text(&w, "label");
+		fg_w_text(&w, label);
+	}
+	fg_w_text(&w, "duration");
+	fg_w_int(&w, seconds);
+	if (undo) {
+		fg_w_text(&w, "style");
+		fg_w_text(&w, "undo");
+	}
+	return fg_send(&w, 0);
+}
+
 /* Answers a translate.request: one translation for each of the `count` items. */
 static int fg_translate_reply(
 		fg_i64 ticket,

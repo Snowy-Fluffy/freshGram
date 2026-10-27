@@ -598,6 +598,8 @@ private:
 		std::chrono::steady_clock::time_point deadline;
 		std::function<void(TranslateResult)> done;
 	};
+	std::mutex _toastMutex;
+	std::map<Key, std::deque<std::string>> _toastActions;
 	std::mutex _translationsMutex;
 	std::map<int64_t, PendingTranslation> _translations;
 	int64_t _nextTranslation = 1;

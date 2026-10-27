@@ -7,6 +7,7 @@ namespace Ayu::Ui {
 void ShowToastWithAction(
 	::Ui::Toast::Config &&config,
 	const QString &buttonText,
-	Fn<void()> callback);
+	Fn<void()> callback,
+	Fn<void()> closed = nullptr);
 
 }

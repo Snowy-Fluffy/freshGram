@@ -1424,7 +1424,41 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		if (!text) {
 			return api::Fail(api::error::kInvalid, "text");
 		}
-		data->toast(_grants.pluginId + ": " + *text);
+		const auto action = Arg(args, "action");
+		const auto style = TextArg(args, "style", 8).value_or("default");
+		const auto seconds = Arg(args, "duration") ? IntArg(args, "duration") : std::optional<int64_t>(5);
+		if (style != "default" && style != "undo") {
+			return api::Fail(api::error::kInvalid, "style");
+		} else if (!seconds || *seconds < 1 || *seconds > 8) {
+			return api::Fail(api::error::kInvalid, "duration");
+		} else if (!action && style == "default" && !Arg(args, "duration")) {
+			data->toast(_grants.pluginId + ": " + *text);
+			return api::Ok();
+		}
+		auto toast = ToastAction{
+			.plugin = _grants.pluginId,
+			.text = _grants.pluginId + ": " + *text,
+			.undo = (style == "undo"),
+			.seconds = int(*seconds),
+		};
+		if (action) {
+			const auto id = action->asMap() ? TextArg(action, "id", 32) : std::nullopt;
+			const auto label = TextArg(action, "label", 40).value_or("");
+			if (!action->asMap()
+				|| !id
+				|| id->empty()
+				|| (label.empty() && !toast.undo)) {
+				return api::Fail(api::error::kInvalid, "action");
+			} else if (!_services.toastOffered) {
+				return api::Fail(api::error::kUnavailable, "toast actions");
+			}
+			toast.id = *id;
+			toast.label = label;
+			_services.toastOffered(*id);
+		} else if (toast.undo) {
+			return api::Fail(api::error::kInvalid, "undo needs an action");
+		}
+		data->toastAction(toast);
 		return api::Ok();
 	}
 	return actionAnswer(op, args);

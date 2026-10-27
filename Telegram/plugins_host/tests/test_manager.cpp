@@ -1051,6 +1051,34 @@ void TestOutgoingFilterDropAndOptions() {
 	CHECK(!dropped.silent);
 }
 
+void TestToastEvents() {
+	auto lab = Lab("fgpl-manager-toast");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.toaster");
+	CHECK(manager.install(CustomArchive(id, CallingModule(EncodedRequest(
+		"ui.toast",
+		{
+			{ "text", Text("Deleted") },
+			{ "action", cbor::Value::FromMap({ { "id", Text("undo") }, { "label", Text("Undo") } }) },
+		})), {
+		{ "messages.read", {} },
+		{ "ui.toast", {} },
+	})).ok());
+	CHECK(manager.setEnabled(id, true));
+	CHECK(manager.grant(id, "A", { { "messages.read", "ui.toast" }, std::nullopt }));
+	const auto click = [&](const char *type, const char *action) {
+		return manager.send(id, "A", cbor::Value::FromMap({
+			{ "type", Text(type) }, { "id", Text(action) } }));
+	};
+	CHECK(!click("toast.click", "undo"));
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	CHECK(!click("toast.click", "other"));
+	CHECK(click("toast.click", "undo"));
+	CHECK(click("toast.close", "undo"));
+	CHECK(!click("toast.click", "undo"));
+	CHECK(!click("toast.close", "undo"));
+}
+
 void TestTranslator() {
 	auto lab = Lab("fgpl-manager-translator");
 	auto manager = PluginManager(lab.config());
@@ -1565,6 +1593,7 @@ int main(int argc, char **argv) {
 	run("outgoing", TestOutgoingTransform);
 	run("outgoing-options", TestOutgoingFilterDropAndOptions);
 	run("translator", TestTranslator);
+	run("toast-events", TestToastEvents);
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);
 	run("merge", TestOldPerAccountStateIsMerged);

@@ -1066,6 +1066,47 @@ void TestAuditTrail() {
 	return cbor::Value::FromArray(std::move(list));
 }
 
+void TestToastActions() {
+	auto offered = std::vector<std::string>();
+	const auto make = [&](std::set<std::string> permissions) {
+		auto fixture = std::make_unique<Fixture>(std::move(permissions));
+		fixture->services.toastOffered = [&](const std::string &id) { offered.push_back(id); };
+		return fixture;
+	};
+	const auto action = [](const char *id, const char *label) {
+		return cbor::Value::FromMap({ { "id", Text(id) }, { "label", Text(label) } });
+	};
+	auto fixture = make({ "ui.toast" });
+	auto broker = fixture->make();
+	CHECK(IsOk(broker.call(Request("ui.toast", {
+		{ "text", Text("Deleted") }, { "action", action("undo", "Undo") }, { "duration", Int(7) } }))));
+	CHECK(fixture->data.toastActions.size() == 1 && offered == std::vector<std::string>{ "undo" });
+	const auto &shown = fixture->data.toastActions.back();
+	CHECK(shown.id == "undo" && shown.label == "Undo" && !shown.undo && shown.seconds == 7);
+	CHECK(shown.plugin == "com.example.test" && shown.text == "com.example.test: Deleted");
+
+	const auto call = [&](cbor::Map args) {
+		auto each = make({ "ui.toast" });
+		auto isolated = each->make();
+		args.push_back({ "text", Text("x") });
+		return Code(isolated.call(Request("ui.toast", std::move(args))));
+	};
+	CHECK(call({ { "action", action("undo", "") }, { "style", Text("undo") } }) == "");
+	CHECK(call({ { "action", action("", "Undo") } }) == "invalid");
+	CHECK(call({ { "action", action("go", "") } }) == "invalid");
+	CHECK(call({ { "action", Text("go") } }) == "invalid");
+	CHECK(call({ { "style", Text("undo") } }) == "invalid");
+	CHECK(call({ { "style", Text("neon") } }) == "invalid");
+	CHECK(call({ { "action", action("a", "A") }, { "duration", Int(9) } }) == "invalid");
+	CHECK(call({ { "action", action("a", "A") }, { "duration", Int(0) } }) == "invalid");
+	CHECK(call({ { "action", action("a", "A") } }) == "");
+
+	auto plain = Fixture({ "ui.toast" });
+	auto plainBroker = plain.make();
+	CHECK(IsOk(plainBroker.call(Request("ui.toast", { { "text", Text("hi") } }))));
+	CHECK(plain.data.toasts.size() == 1 && plain.data.toastActions.empty());
+}
+
 void TestTranslateReply() {
 	auto fixture = Fixture({ "translate.provide" });
 	auto seen = std::vector<std::tuple<int64_t, size_t, bool, std::string>>();
@@ -1720,6 +1761,7 @@ int main() {
 	TestEvents();
 	TestActivityEvents();
 	TestTranslateReply();
+	TestToastActions();
 	TestAwaitableCalls();
 	TestRateLimits();
 	TestClosedBrokerDropsAwaitedWork();
