@@ -3059,6 +3059,49 @@ PluginHeader HeaderFor(
 	};
 }
 
+namespace {
+
+// Formatting and https links only: no mentions, commands, emoji or numbers.
+[[nodiscard]] TextWithEntities DescriptionText(const QString &description) {
+	auto result = TextWithEntities{ description };
+	TextUtilities::ParseEntities(
+		result,
+		TextParseMarkdown | TextParseLinks | TextParseMultiline);
+	auto kept = EntitiesInText();
+	for (const auto &entity : result.entities) {
+		switch (entity.type()) {
+		case EntityType::Bold:
+		case EntityType::Italic:
+		case EntityType::Underline:
+		case EntityType::StrikeOut:
+		case EntityType::Code:
+		case EntityType::Pre:
+		case EntityType::Blockquote:
+		case EntityType::Spoiler:
+			kept.push_back(entity);
+			break;
+		case EntityType::Url:
+			if (result.text.mid(entity.offset(), entity.length()).startsWith(
+					u"https://"_q,
+					Qt::CaseInsensitive)) {
+				kept.push_back(entity);
+			}
+			break;
+		case EntityType::CustomUrl:
+			if (entity.data().startsWith(u"https://"_q, Qt::CaseInsensitive)) {
+				kept.push_back(entity);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+	result.entities = std::move(kept);
+	return result;
+}
+
+} // namespace
+
 void AddPluginHeader(
 		not_null<Ui::VerticalLayout*> container,
 		const PluginHeader &data) {
@@ -3140,7 +3183,10 @@ void AddPluginHeader(
 	if (!data.description.isEmpty()) {
 		Ui::AddSkip(container);
 		container->add(
-			object_ptr<Ui::FlatLabel>(container, data.description, st::boxLabel),
+			object_ptr<Ui::FlatLabel>(
+				container,
+				rpl::single(DescriptionText(data.description)),
+				st::boxLabel),
 			st::boxRowPadding);
 	}
 	auto links = TextWithEntities();
