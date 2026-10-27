@@ -7,7 +7,7 @@ _input = sys.stdin.buffer
 _output = sys.stdout.buffer
 sys.stdout = sys.stderr
 
-MAX_FRAME = 16 << 20
+MAX_FRAME = 128 << 20
 
 
 def _read(count):

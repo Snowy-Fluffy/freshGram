@@ -99,7 +99,7 @@ struct ManagerConfig {
 	int64_t failureWindowMs = 600000;
 	size_t logLines = 200;
 	size_t maxQueuedEvents = 256;
-	size_t maxQueuedBytes = size_t(8) << 20;
+	size_t maxQueuedBytes = size_t(256) << 20;
 	int maxConcurrentStarts = 2;
 };
 
@@ -511,13 +511,15 @@ private:
 	[[nodiscard]] bool mayRun() const;
 
 	[[nodiscard]] Result<LoadRequest, std::string> buildRequest(
-		const Package &package,
-		const std::atomic<bool> *cancel = nullptr);
+		const Package &package);
 	[[nodiscard]] Result<LoadRequest, std::string> loadRequest(
 		const std::string &id,
-		const StartPlan &plan,
+		const StartPlan &plan);
+	[[nodiscard]] bool pythonAvailable() const;
+	// Reads the Python runtime into a Python request, wasm requests stay as they are.
+	[[nodiscard]] std::string fillPython(
+		LoadRequest &request,
 		const std::atomic<bool> *cancel);
-	[[nodiscard]] bool loadPython(const std::atomic<bool> *cancel);
 
 	ManagerConfig _config;
 	mutable std::map<std::string, std::pair<std::string, std::shared_ptr<const Manifest>>> _manifests;
@@ -550,11 +552,6 @@ private:
 	int _freeSlots = 0;
 	uint64_t _deliveredTotal = 0;
 	uint64_t _failedTotal = 0;
-	std::mutex _pythonMutex;
-	bool _pythonLoaded = false;
-	bool _pythonAvailable = false;
-	cbor::Bytes _pythonWasm;
-	std::vector<std::pair<std::string, cbor::Bytes>> _pythonFiles;
 	std::unique_ptr<AsyncPool> _pool;
 
 };

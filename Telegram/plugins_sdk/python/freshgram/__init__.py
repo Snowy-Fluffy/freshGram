@@ -280,7 +280,7 @@ class _Messages(_Namespace):
 
     def send_media(self, chat, data, name, caption="", kind="auto", markdown=False,
                    reply_to=0, topic=0, silent=False, schedule=0, spoiler=False, duration=0):
-        """Send a file (messages.send), up to 10 MiB.
+        """Send a file (messages.send), up to 100 MiB.
 
         kind "auto" sends photos and videos as media, "file" as a document,
         "voice" an OGG/Opus voice message (needs duration in seconds).
@@ -427,10 +427,10 @@ class _Settings(_Namespace):
 
 class _Media(_Namespace):
     def get(self, chat, message, thumbnail=False, download=False):
-        """The file of a message: kind, mime, name and data (up to 8 MiB).
+        """The file of a message: kind, mime, name and data (up to 100 MiB).
 
         With download=True a file that is not on this device yet is downloaded
-        first (up to a minute; prefer freshgram.aio for that).
+        first (up to five minutes; prefer freshgram.aio for that).
         """
         return self._call(
             "media.get",

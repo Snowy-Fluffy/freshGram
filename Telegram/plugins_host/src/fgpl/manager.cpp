@@ -13,6 +13,10 @@
 
 #include <unistd.h>
 
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif // __GLIBC__
+
 namespace fgpl {
 namespace {
 
@@ -41,8 +45,19 @@ constexpr auto kMaxIconBytes = size_t(64) << 10;
 }
 
 [[nodiscard]] cbor::Bytes ReadFile(const fs::path &path) {
+	auto error = std::error_code();
+	const auto size = fs::file_size(path, error);
+	if (error) {
+		return {};
+	}
 	auto stream = std::ifstream(path, std::ios::binary);
-	return { std::istreambuf_iterator<char>(stream), {} };
+	auto result = cbor::Bytes(size_t(size));
+	if (!stream.read(
+			reinterpret_cast<char *>(result.data()),
+			std::streamsize(result.size()))) {
+		return {};
+	}
+	return result;
 }
 
 [[nodiscard]] bool WriteFileAtomic(const fs::path &path, std::span<const uint8_t> data) {
@@ -1273,58 +1288,61 @@ bool PluginManager::send(
 	return true;
 }
 
-bool PluginManager::loadPython(const std::atomic<bool> *cancel) {
-	const auto lock = std::scoped_lock(_pythonMutex);
-	if (_pythonLoaded) {
-		return _pythonAvailable;
+bool PluginManager::pythonAvailable() const {
+	const auto &python = _config.python;
+	auto error = std::error_code();
+	return !python.wasm.empty()
+		&& fs::exists(python.wasm, error)
+		&& fs::exists(python.library, error)
+		&& fs::exists(python.sdk, error);
+}
+
+std::string PluginManager::fillPython(
+		LoadRequest &request,
+		const std::atomic<bool> *cancel) {
+	// Only Python requests carry arguments, a wasm module is already in place.
+	if (request.args.empty()) {
+		return {};
 	}
 	const auto &python = _config.python;
-	if (python.wasm.empty() || !fs::exists(python.wasm)) {
-		_pythonLoaded = true;
-		return false;
-	}
-	const auto cancelled = [&] {
-		if (!cancel || !cancel->load()) {
-			return false;
-		}
-		_pythonWasm.clear();
-		_pythonFiles.clear();
-		return true;
+	const auto failed = [&] {
+		return (cancel && cancel->load())
+			? std::string("cancelled")
+			: std::string("the Python runtime is not installed");
 	};
-	_pythonWasm = ReadFile(python.wasm);
-	if (!python.expectedHash.empty() && HashText(_pythonWasm) != python.expectedHash) {
-		_pythonWasm.clear();
-		_pythonLoaded = true;
-		return false;
+	request.wasm = ReadFile(python.wasm);
+	if (request.wasm.empty()
+		|| (!python.expectedHash.empty()
+			&& HashText(request.wasm) != python.expectedHash)) {
+		request.wasm.clear();
+		return failed();
 	}
+	const auto before = request.files.size();
 	auto error = std::error_code();
 	for (const auto &entry : fs::recursive_directory_iterator(python.library, error)) {
-		if (cancelled()) {
-			return false;
+		if (cancel && cancel->load()) {
+			return failed();
 		} else if (entry.is_regular_file()) {
-			_pythonFiles.emplace_back(
+			request.files.emplace_back(
 				"runtime/lib/" + fs::relative(entry.path(), python.library).generic_string(),
 				ReadFile(entry.path()));
 		}
 	}
 	for (const auto &entry : fs::recursive_directory_iterator(python.sdk, error)) {
 		if (entry.is_regular_file() && entry.path().extension() == ".py") {
-			_pythonFiles.emplace_back(
+			request.files.emplace_back(
 				"runtime/sdk/" + fs::relative(entry.path(), python.sdk).generic_string(),
 				ReadFile(entry.path()));
 		}
 	}
-	if (cancelled()) {
-		return false;
+	if ((cancel && cancel->load()) || request.files.size() == before) {
+		return failed();
 	}
-	_pythonLoaded = true;
-	_pythonAvailable = !_pythonWasm.empty() && !_pythonFiles.empty();
-	return _pythonAvailable;
+	return {};
 }
 
 Result<LoadRequest, std::string> PluginManager::buildRequest(
-		const Package &package,
-		const std::atomic<bool> *cancel) {
+		const Package &package) {
 	const auto &manifest = package.manifest;
 	auto request = LoadRequest();
 	request.limits.memoryBytes = uint64_t(manifest.memoryMb) << 20;
@@ -1334,15 +1352,8 @@ Result<LoadRequest, std::string> PluginManager::buildRequest(
 		request.wasm = package.files.at(manifest.module);
 		return request;
 	}
-	if (!loadPython(cancel)) {
-		return (cancel && cancel->load())
-			? std::string("cancelled")
-			: std::string("the Python runtime is not installed");
-	}
-	{
-		const auto lock = std::scoped_lock(_pythonMutex);
-		request.wasm = _pythonWasm;
-		request.files.insert(request.files.end(), _pythonFiles.begin(), _pythonFiles.end());
+	if (!pythonAvailable()) {
+		return std::string("the Python runtime is not installed");
 	}
 	request.args = { "python", "-S", "-B", "/plugin/" + manifest.entry };
 	request.env = {
@@ -1360,13 +1371,12 @@ Result<LoadRequest, std::string> PluginManager::buildRequest(
 
 Result<LoadRequest, std::string> PluginManager::loadRequest(
 		const std::string &id,
-		const StartPlan &plan,
-		const std::atomic<bool> *cancel) {
+		const StartPlan &plan) {
 	const auto opened = openInstalled(id, plan.version, plan.archiveHash);
 	if (!opened.ok()) {
 		return "the plugin files are not usable: " + opened.error();
 	}
-	return buildRequest(opened.value(), cancel);
+	return buildRequest(opened.value());
 }
 
 Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::prepare(
@@ -1568,7 +1578,7 @@ void PluginManager::run(Instance &instance) {
 		instance.finished = true;
 	};
 	{
-		auto request = loadRequest(instance.id, instance.plan, &instance.cancel);
+		auto request = loadRequest(instance.id, instance.plan);
 		if (!request.ok()) {
 			fail(request.error());
 			return;
@@ -1605,6 +1615,9 @@ void PluginManager::run(Instance &instance) {
 		instance.pid.store(instance.client->pid());
 		if (instance.cancel.load()) {
 			problem = "cancelled";
+		} else if (auto filled = fillPython(instance.plan.request, &instance.cancel);
+				!filled.empty()) {
+			problem = std::move(filled);
 		} else {
 			const auto loaded = LoadWithCache(
 				*instance.client,
@@ -1630,6 +1643,10 @@ void PluginManager::run(Instance &instance) {
 	}
 	releaseSlot();
 	instance.plan.request = LoadRequest();
+#ifdef __GLIBC__
+	// The request buffers are gone by now, give their heap back.
+	malloc_trim(0);
+#endif // __GLIBC__
 	if (!problem.empty()) {
 		fail(std::move(problem));
 		return;

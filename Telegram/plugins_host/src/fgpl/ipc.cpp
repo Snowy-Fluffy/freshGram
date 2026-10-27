@@ -74,6 +74,7 @@ cbor::Limits TrustedLimits() {
 	result.maxItems = size_t(1) << 20;
 	result.maxContainer = size_t(1) << 18;
 	result.maxString = kMaxFrameBytes;
+	result.maxBytes = kMaxFrameBytes;
 	return result;
 }
 
@@ -83,6 +84,7 @@ cbor::Limits StrictLimits() {
 	result.maxItems = 1 << 16;
 	result.maxContainer = 1 << 14;
 	result.maxString = size_t(2) << 20;
+	result.maxBytes = size_t(128) << 20;
 	return result;
 }
 

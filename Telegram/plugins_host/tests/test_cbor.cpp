@@ -231,6 +231,11 @@ void TestLimits() {
 	CHECK(Decode(FromHex("63616263"), limits).ok());
 	CHECK(!Decode(FromHex("6461626364"), limits).ok()
 		&& Decode(FromHex("6461626364"), limits).error() == Error::TooLarge);
+	CHECK(Decode(FromHex("4461626364"), limits).ok());
+	limits.maxBytes = 3;
+	CHECK(!Decode(FromHex("4461626364"), limits).ok()
+		&& Decode(FromHex("4461626364"), limits).error() == Error::TooLarge);
+	CHECK(!Decode(FromHex("6461626364"), limits).ok());
 }
 
 void TestPrefix() {
