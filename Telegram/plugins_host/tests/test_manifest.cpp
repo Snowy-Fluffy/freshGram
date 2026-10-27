@@ -225,6 +225,20 @@ void TestRejections() {
 		}));
 		Set(d, "contributes.outgoing.onFailure", Text("maybe"));
 	}, "onFailure");
+	ExpectError("unknown event", [](auto &d) {
+		Set(d, "contributes.events", Array({ "chat.shouting" }));
+	}, "unknown event");
+	for (const auto &item : std::vector<std::pair<const char *, const char *>>{
+			{ "chat.typing", "chats.activity" },
+			{ "chat.read", "chats.activity" },
+			{ "chat.member", "chats.activity" },
+			{ "user.status", "users.presence" },
+			{ "app.focus", "app.activity" },
+			{ "app.blur", "app.activity" } }) {
+		ExpectError(item.first, [event = item.first](auto &d) {
+			Set(d, "contributes.events", Array({ event }));
+		}, std::string(item.second) + " permission");
+	}
 	ExpectError("composer without permission", [](auto &d) {
 		Set(d, "permissions.optional", cbor::Value::FromArray({
 			cbor::Value::FromMap({ { "id", Text("ui.menu") }, { "reason", Text("x") } }),

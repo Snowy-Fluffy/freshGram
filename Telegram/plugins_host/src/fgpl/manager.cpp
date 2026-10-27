@@ -1057,6 +1057,16 @@ ManagerSnapshot PluginManager::snapshot() const {
 	result.plugins = list();
 	result.environment = _config.environment;
 	result.wantsEvents = wantsEvents();
+	if (result.wantsEvents) {
+		for (const auto event : {
+				"message.new", "message.edited", "message.deleted",
+				"message.reaction", "chat.opened", "chat.typing", "chat.read",
+				"chat.member", "user.status", "app.focus", "app.blur" }) {
+			if (wantsEvents(event)) {
+				result.wantedEvents.insert(event);
+			}
+		}
+	}
 	result.locked = _locked;
 	result.hidden = _hidden;
 	for (const auto &[id, record] : _records) {
@@ -1826,7 +1836,7 @@ std::shared_ptr<SharedStorage> PluginManager::storeOf(Record &record) {
 	return record.store;
 }
 
-bool PluginManager::wantsEvents() const {
+bool PluginManager::wantsEvents(const char *event) const {
 	if (!mayRun()) {
 		return false;
 	}
@@ -1837,6 +1847,20 @@ bool PluginManager::wantsEvents() const {
 		const auto parsed = manifest(id);
 		if (!parsed || parsed->events.empty()) {
 			continue;
+		}
+		if (event) {
+			const auto permission = EventPermission(event);
+			const auto listed = std::find(
+				parsed->events.begin(),
+				parsed->events.end(),
+				event) != parsed->events.end();
+			const auto granted = permission
+				&& std::any_of(record.grants.begin(), record.grants.end(), [&](const auto &entry) {
+					return entry.second.granted.contains(permission);
+				});
+			if (!listed || !granted) {
+				continue;
+			}
 		}
 		const auto active = std::any_of(_instances.begin(), _instances.end(), [&](const auto &entry) {
 			return entry.first.first == id;

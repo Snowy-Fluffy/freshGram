@@ -27,6 +27,11 @@ void ReleaseData();
 [[nodiscard]] std::string MessageMediaKind(not_null<const HistoryItem*> item);
 [[nodiscard]] bool ValidScheduleTime(TimeId when);
 
+[[nodiscard]] std::string UserStatus(
+	not_null<UserData*> user,
+	int64_t &lastSeen);
+
+[[nodiscard]] bool WantsEvent(const char *type);
 [[nodiscard]] bool WantsEvents();
 [[nodiscard]] bool PluginSending();
 [[nodiscard]] bool IsPluginMessage(

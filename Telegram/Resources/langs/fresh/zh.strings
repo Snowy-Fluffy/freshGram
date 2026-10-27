@@ -202,6 +202,9 @@
 "fresh_PermUsersInfo" = "查看用户资料和在线状态";
 "fresh_PermChatsActive" = "知道你打开了哪个聊天";
 "fresh_PermMessagesIds" = "获取你所发送消息的 ID";
+"fresh_PermChatsActivity" = "查看正在输入、已读状态以及谁加入或离开聊天";
+"fresh_PermUsersPresence" = "查看用户是否在线";
+"fresh_PermAppActivity" = "知道应用是否处于前台";
 "fresh_RiskChangesMessages" = "可以编辑或删除你发送的消息";
 "fresh_PluginChatNone" = "未选择";
 "fresh_PluginSettingsLoading" = "正在加载设置…";

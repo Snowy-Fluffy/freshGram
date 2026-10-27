@@ -2777,6 +2777,14 @@ auto Session::megagroupParticipantAdded() const
 	return _megagroupParticipantAdded.events();
 }
 
+void Session::notifyChatMemberChanged(ChatMember change) {
+	_chatMemberChanged.fire(std::move(change));
+}
+
+rpl::producer<Session::ChatMember> Session::chatMemberChanged() const {
+	return _chatMemberChanged.events();
+}
+
 rpl::producer<not_null<UserData*>> Session::megagroupParticipantAdded(
 		not_null<ChannelData*> channel) const {
 	return megagroupParticipantAdded(

@@ -8985,6 +8985,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermUsersInfo" = "See user profiles and online status";
 "fresh_PermChatsActive" = "Know which chat you open";
 "fresh_PermMessagesIds" = "Receive the ids of messages you send";
+"fresh_PermChatsActivity" = "See typing, read marks and who joins or leaves chats";
+"fresh_PermUsersPresence" = "See when people are online";
+"fresh_PermAppActivity" = "Know when the app is in focus";
 "fresh_RiskChangesMessages" = "Can edit or delete messages you sent";
 "fresh_PluginChatNone" = "Not chosen";
 "fresh_PluginSettingsLoading" = "Loading the settings…";

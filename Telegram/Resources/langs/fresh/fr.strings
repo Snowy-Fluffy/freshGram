@@ -202,6 +202,9 @@
 "fresh_PermUsersInfo" = "Voir les profils et le statut en ligne des utilisateurs";
 "fresh_PermChatsActive" = "Savoir quelle discussion vous ouvrez";
 "fresh_PermMessagesIds" = "Recevoir les identifiants des messages que vous envoyez";
+"fresh_PermChatsActivity" = "Voir qui écrit, les accusés de lecture et qui rejoint ou quitte les discussions";
+"fresh_PermUsersPresence" = "Voir quand les gens sont en ligne";
+"fresh_PermAppActivity" = "Savoir si l’application est au premier plan";
 "fresh_RiskChangesMessages" = "Peut modifier ou supprimer les messages que vous avez envoyés";
 "fresh_PluginChatNone" = "Non choisi";
 "fresh_PluginSettingsLoading" = "Chargement des réglages…";

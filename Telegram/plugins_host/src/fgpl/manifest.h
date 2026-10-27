@@ -61,6 +61,11 @@ struct OutgoingInfo {
 	std::string text;
 };
 
+// The permission an event type needs, or null for an unknown event.
+[[nodiscard]] const char *EventPermission(const std::string &event);
+// Events of a chat follow the plugin's chat scope and never come from secret chats.
+[[nodiscard]] bool EventIsChatScoped(const std::string &event);
+
 [[nodiscard]] const std::set<std::string> &OutgoingChatTypes();
 [[nodiscard]] bool Matches(
 	const OutgoingFilter &filter,

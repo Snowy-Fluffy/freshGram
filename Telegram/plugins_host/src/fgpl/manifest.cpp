@@ -378,6 +378,32 @@ bool Outdated(const Manifest &manifest, const HostEnvironment &environment) {
 		: (app.minor > tested.minor);
 }
 
+const char *EventPermission(const std::string &event) {
+	static const auto permissions = std::map<std::string, const char*>{
+		{ "message.new", "messages.read" },
+		{ "message.edited", "messages.read" },
+		{ "message.deleted", "messages.read" },
+		{ "message.reaction", "messages.read" },
+		{ "chat.opened", "chats.active" },
+		{ "chat.typing", "chats.activity" },
+		{ "chat.read", "chats.activity" },
+		{ "chat.member", "chats.activity" },
+		{ "user.status", "users.presence" },
+		{ "app.focus", "app.activity" },
+		{ "app.blur", "app.activity" },
+	};
+	const auto i = permissions.find(event);
+	return (i != permissions.end()) ? i->second : nullptr;
+}
+
+bool EventIsChatScoped(const std::string &event) {
+	return event.rfind("message.", 0) == 0
+		|| event == "chat.opened"
+		|| event == "chat.typing"
+		|| event == "chat.read"
+		|| event == "chat.member";
+}
+
 const std::set<std::string> &OutgoingChatTypes() {
 	static const auto result = std::set<std::string>{
 		"user", "bot", "self", "group", "supergroup", "forum", "channel",
@@ -645,10 +671,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 		const auto events = reader.array(*contributes, "events", "contributes", 16);
 		for (const auto &item : events ? *events : cbor::Array()) {
 			const auto name = item.asText();
-			if (!name
-				|| (*name != "message.new" && *name != "message.edited"
-					&& *name != "message.deleted" && *name != "message.reaction"
-					&& *name != "chat.opened")) {
+			if (!name || !EventPermission(*name)) {
 				reader.error("contributes.events", "has an unknown event");
 			} else {
 				manifest.events.push_back(*name);
@@ -808,14 +831,11 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			[&](const auto &request) { return request.id == id; });
 	};
 	for (const auto &event : manifest.events) {
-		const auto opened = (event == "chat.opened");
-		if (!hasPermission(opened ? "chats.active" : "messages.read")) {
+		const auto permission = EventPermission(event);
+		if (permission && !hasPermission(permission)) {
 			reader.error(
 				"contributes.events",
-				opened
-					? "chat.opened needs the chats.active permission"
-					: "needs the messages.read permission");
-			break;
+				event + " needs the " + permission + " permission");
 		}
 	}
 	if (!manifest.menus.empty() && !hasPermission("ui.menu")) {

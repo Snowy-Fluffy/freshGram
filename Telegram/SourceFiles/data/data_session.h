@@ -513,6 +513,14 @@ public:
 	[[nodiscard]] rpl::producer<not_null<UserData*>> megagroupParticipantAdded(
 		not_null<ChannelData*> channel) const;
 
+	struct ChatMember {
+		not_null<ChatData*> chat;
+		not_null<UserData*> user;
+		bool joined = false;
+	};
+	void notifyChatMemberChanged(ChatMember change);
+	[[nodiscard]] rpl::producer<ChatMember> chatMemberChanged() const;
+
 	HistoryItemsList idsToItems(const MessageIdsList &ids) const;
 	MessageIdsList itemsToIds(const HistoryItemsList &items) const;
 	MessageIdsList itemOrItsGroup(not_null<HistoryItem*> item) const;
@@ -1253,6 +1261,7 @@ private:
 	rpl::event_stream<not_null<History*>> _historyChanged;
 	rpl::event_stream<MegagroupParticipant> _megagroupParticipantRemoved;
 	rpl::event_stream<MegagroupParticipant> _megagroupParticipantAdded;
+	rpl::event_stream<ChatMember> _chatMemberChanged;
 	rpl::event_stream<DialogsRowReplacement> _dialogsRowReplacements;
 	rpl::event_stream<ChatListEntryRefresh> _chatListEntryRefreshes;
 	rpl::event_stream<> _unreadBadgeChanges;

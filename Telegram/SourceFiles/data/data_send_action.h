@@ -28,6 +28,17 @@ public:
 	};
 	explicit SendActionManager();
 
+	struct Activity {
+		not_null<History*> history;
+		MsgId rootId;
+		not_null<UserData*> user;
+		QString kind;
+		bool cancelled = false;
+	};
+	[[nodiscard]] rpl::producer<Activity> activity() const {
+		return _activity.events();
+	}
+
 	void registerFor(
 		not_null<History*> history,
 		MsgId rootId,
@@ -68,6 +79,7 @@ private:
 	Ui::Animations::Basic _animation;
 
 	rpl::event_stream<AnimationUpdate> _animationUpdate;
+	rpl::event_stream<Activity> _activity;
 	rpl::event_stream<not_null<History*>> _speakingAnimationUpdate;
 
 	base::flat_map<

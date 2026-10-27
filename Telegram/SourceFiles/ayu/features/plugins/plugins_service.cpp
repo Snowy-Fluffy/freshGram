@@ -3,6 +3,7 @@
 
 #include "ayu/ayu_settings.h"
 #include "ayu/data/fresh_vault.h"
+#include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/plugins/plugins_control.h"
 #include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_runtime.h"
@@ -13,6 +14,10 @@
 #include "apiwrap.h"
 #include "crl/crl_on_main.h"
 #include "data/data_changes.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_send_action.h"
+#include "data/data_user.h"
 #include "data/data_drafts.h"
 #include "data/data_forum_topic.h"
 #include "dialogs/dialogs_key.h"
@@ -58,6 +63,8 @@ namespace {
 constexpr auto kOutgoingTimeoutMs = 1000;
 constexpr auto kRememberedMessages = size_t(20000);
 constexpr auto kFreshEditSeconds = TimeId(300);
+constexpr auto kTypingEachMs = crl::time(3000);
+constexpr auto kMaxRememberedActivity = size_t(512);
 
 #ifdef FRESHGRAM_PLUGINS
 
@@ -73,6 +80,9 @@ struct Events {
 	std::deque<FullMsgId> seenOrder;
 	base::flat_set<FullMsgId> deleted;
 	std::deque<FullMsgId> deletedOrder;
+	std::map<std::tuple<PeerId, PeerId, QString, bool>, crl::time> typing;
+	std::map<std::pair<PeerId, bool>, MsgId> readTill;
+	std::map<PeerId, std::pair<std::string, int64_t>> statuses;
 };
 
 struct Watched {
@@ -299,12 +309,190 @@ void Note(Events &events, not_null<const HistoryItem*> item) {
 	events.seen[id] = SeenOf(item);
 }
 
+void DispatchActivity(
+		const std::string &account,
+		const char *type,
+		fgpl::cbor::Map fields) {
+	if (!Running()) {
+		return;
+	}
+	using Value = fgpl::cbor::Value;
+	fields.insert(fields.begin(), { "type", Value::FromText(type) });
+	Post([=, event = Value::FromMap(std::move(fields))](
+			not_null<fgpl::PluginManager*> manager) {
+		manager->dispatch(account, event);
+	}, false);
+}
+
+[[nodiscard]] bool Hidden(not_null<PeerData*> peer) {
+	return FreshSecret::IsSecretPeerId(peer->id)
+		|| peer->id.value == fgpl::api::kServiceChat
+		|| FiltersController::isBlocked(peer);
+}
+
+template <typename Map>
+void Trim(Map &map) {
+	while (map.size() > kMaxRememberedActivity) {
+		map.erase(map.begin());
+	}
+}
+
+void WatchActivity(
+		not_null<Main::Session*> session,
+		const std::string &id,
+		not_null<Events*> events,
+		rpl::lifetime &lifetime) {
+	using Value = fgpl::cbor::Value;
+	const auto ghost = [=] {
+		return AyuSettings::ghost(session).isGhostModeActive();
+	};
+
+	session->data().sendActionManager().activity(
+	) | rpl::on_next([=](const Data::SendActionManager::Activity &activity) {
+		if (!WantsEvent("chat.typing")) {
+			return;
+		}
+		const auto peer = activity.history->peer;
+		if (Hidden(peer) || FiltersController::isBlocked(activity.user)) {
+			return;
+		}
+		const auto key = std::make_tuple(
+			peer->id,
+			activity.user->id,
+			activity.kind,
+			activity.cancelled);
+		const auto now = crl::now();
+		auto &last = events->typing[key];
+		if (last && now - last < kTypingEachMs) {
+			return;
+		}
+		last = now;
+		Trim(events->typing);
+		auto fields = fgpl::cbor::Map{
+			{ "chat", Value::FromInt(int64_t(peer->id.value)) },
+			{ "user", Value::FromInt(int64_t(activity.user->id.value)) },
+			{ "action", Value::FromText(activity.kind.toStdString()) },
+			{ "cancelled", Value::FromBool(activity.cancelled) },
+		};
+		if (activity.rootId) {
+			fields.push_back({ "topic", Value::FromInt(activity.rootId.bare) });
+		}
+		DispatchActivity(id, "chat.typing", std::move(fields));
+	}, lifetime);
+
+	session->changes().historyUpdates(
+		Data::HistoryUpdate::Flag::OutboxRead | Data::HistoryUpdate::Flag::InboxRead
+	) | rpl::on_next([=](const Data::HistoryUpdate &update) {
+		if (!WantsEvent("chat.read")) {
+			return;
+		}
+		const auto history = update.history;
+		if (Hidden(history->peer)) {
+			return;
+		}
+		const auto notify = [&](bool outbox) {
+			if (!outbox && ghost()) {
+				return;
+			}
+			const auto till = outbox
+				? history->outboxReadTillId()
+				: history->inboxReadTillId();
+			auto &last = events->readTill[{ history->peer->id, outbox }];
+			if (till <= last) {
+				return;
+			}
+			last = till;
+			Trim(events->readTill);
+			DispatchActivity(id, "chat.read", {
+				{ "chat", Value::FromInt(int64_t(history->peer->id.value)) },
+				{ "read_till", Value::FromInt(till.bare) },
+				{ "outbox", Value::FromBool(outbox) },
+			});
+		};
+		if (update.flags & Data::HistoryUpdate::Flag::OutboxRead) {
+			notify(true);
+		}
+		if (update.flags & Data::HistoryUpdate::Flag::InboxRead) {
+			notify(false);
+		}
+	}, lifetime);
+
+	const auto member = [=](
+			not_null<PeerData*> peer,
+			not_null<UserData*> user,
+			bool joined) {
+		if (!WantsEvent("chat.member")
+			|| Hidden(peer)
+			|| FiltersController::isBlocked(user)) {
+			return;
+		}
+		DispatchActivity(id, "chat.member", {
+			{ "chat", Value::FromInt(int64_t(peer->id.value)) },
+			{ "user", Value::FromInt(int64_t(user->id.value)) },
+			{ "joined", Value::FromBool(joined) },
+		});
+	};
+	session->data().chatMemberChanged(
+	) | rpl::on_next([=](const Data::Session::ChatMember &change) {
+		member(change.chat, change.user, change.joined);
+	}, lifetime);
+	session->data().megagroupParticipantAdded(
+	) | rpl::on_next([=](const Data::Session::MegagroupParticipant &change) {
+		member(std::get<0>(change), std::get<1>(change), true);
+	}, lifetime);
+	session->data().megagroupParticipantRemoved(
+	) | rpl::on_next([=](const Data::Session::MegagroupParticipant &change) {
+		member(std::get<0>(change), std::get<1>(change), false);
+	}, lifetime);
+
+	session->changes().peerUpdates(
+		Data::PeerUpdate::Flag::OnlineStatus
+	) | rpl::on_next([=](const Data::PeerUpdate &update) {
+		if (!WantsEvent("user.status")) {
+			return;
+		}
+		const auto user = update.peer->asUser();
+		if (!user || user->isSelf() || user->isBot() || FiltersController::isBlocked(user)) {
+			return;
+		}
+		auto lastSeen = int64_t(0);
+		auto status = UserStatus(user, lastSeen);
+		if (status == "hidden" || status == "bot") {
+			return;
+		}
+		const auto now = std::make_pair(status, lastSeen);
+		auto &known = events->statuses[user->id];
+		if (known == now) {
+			return;
+		}
+		known = now;
+		Trim(events->statuses);
+		auto fields = fgpl::cbor::Map{
+			{ "user", Value::FromInt(int64_t(user->id.value)) },
+			{ "status", Value::FromText(status) },
+		};
+		if (lastSeen) {
+			fields.push_back({ "last_seen", Value::FromInt(lastSeen) });
+		}
+		DispatchActivity(id, "user.status", std::move(fields));
+	}, lifetime);
+
+	Core::App().appDeactivatedValue(
+	) | rpl::skip(1) | rpl::on_next([=](bool deactivated) {
+		const auto type = deactivated ? "app.blur" : "app.focus";
+		if (WantsEvent(type) && !ghost()) {
+			DispatchActivity(id, type, {});
+		}
+	}, lifetime);
+}
+
 void WatchEvents(
 		not_null<Main::Session*> session,
 		const std::string &id,
 		rpl::lifetime &lifetime) {
 	const auto events = lifetime.make_state<Events>();
 	const auto data = &session->data();
+	WatchActivity(session, id, events, lifetime);
 	data->newItemAdded(
 	) | rpl::on_next([=](not_null<HistoryItem*> item) {
 		if (!IsServerMsgId(item->id)) {
