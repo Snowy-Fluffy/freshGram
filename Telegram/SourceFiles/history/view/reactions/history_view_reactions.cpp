@@ -34,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ayu/ayu_settings.h"
 #include "ayu/features/message_shot/message_shot.h"
+#include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/ui/ayu_userpic.h"
 #include "ayu/features/filters/filters_controller.h"
 
@@ -621,10 +622,16 @@ void InlineList::paint(
 		resolveUserpicsImage(button);
 		const auto left = inner.x() + (flipped ? 0 : bubbleSkip);
 		if (button.userpics) {
+			auto userpicsImage = button.userpics->image;
+			if (AyuFeatures::MessageShot::isTakingShot()
+				&& AyuSettings::getInstance().messageShotSettings().privacyMode()
+				&& !AyuFeatures::StreamerMode::spoilersActive()) {
+				AyuFeatures::StreamerMode::spoilerImage(userpicsImage);
+			}
 			p.drawImage(
 				left + size + st::reactionInlineUserpicsPadding.left(),
 				geometry.y() + st::reactionInlineUserpicsPadding.top(),
-				button.userpics->image);
+				userpicsImage);
 		} else {
 			p.setPen(textFg);
 			const auto textLeft = tags

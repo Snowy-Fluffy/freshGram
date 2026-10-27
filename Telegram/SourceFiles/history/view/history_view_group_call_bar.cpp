@@ -59,6 +59,7 @@ void GenerateUserpicsInRow(
 		q.setCompositionMode(QPainter::CompositionMode_SourceOver);
 		entry.peer->paintUserpic(q, entry.view, x, 0, single, true);
 		entry.uniqueKey = entry.peer->userpicUniqueKey(entry.view);
+		entry.ayuState = AyuUserpic::PackedState();
 		q.setCompositionMode(QPainter::CompositionMode_Source);
 		q.setBrush(Qt::NoBrush);
 		q.setPen(pen);
@@ -78,7 +79,8 @@ bool NeedRegenerateUserpics(
 		auto &view = entry.view;
 		const auto wasView = view.cloud.get();
 		if (peer->userpicUniqueKey(view) != entry.uniqueKey
-			|| view.cloud.get() != wasView) {
+			|| view.cloud.get() != wasView
+			|| entry.ayuState != AyuUserpic::PackedState()) {
 			return true;
 		}
 	}
