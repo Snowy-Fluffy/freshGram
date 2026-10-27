@@ -73,6 +73,14 @@ struct Command {
 	Localized description;
 };
 
+struct StorageExport {
+	bool declared = false;
+	std::vector<std::string> prefixes;
+	std::vector<std::string> exclude;
+
+	[[nodiscard]] bool includes(const std::string &key) const;
+};
+
 struct TranslatorDecl {
 	bool declared = false;
 	std::string name;
@@ -174,6 +182,7 @@ struct Manifest {
 	std::vector<Dependency> dependencies;
 	std::vector<Dependency> conflicts;
 	int storageSchema = 1;
+	StorageExport storageExport;
 	std::string updatesFeed;
 
 	std::map<std::string, std::string> files;

@@ -8989,6 +8989,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermUsersPresence" = "See when people are online";
 "fresh_PermAppActivity" = "Know when the app is in focus";
 "fresh_PermTranslateProvide" = "Translate texts for you";
+"fresh_PluginSettingsExport" = "Export settings";
+"fresh_PluginSettingsImport" = "Import settings";
+"fresh_PluginSettingsExported" = "Settings saved.";
+"fresh_PluginSettingsImported" = "Settings imported.";
+"fresh_PluginSettingsImportAsk" = "Replace the settings of {name} with the ones from this file? The plugin restarts.";
+"fresh_PluginSettingsImportReplace" = "Replace";
+"fresh_PluginSettingsError" = "The settings were not transferred: {reason}";
+"fresh_PluginSettingsErrorInvalid" = "this is not a settings file of this plugin";
+"fresh_PluginSettingsErrorNewer" = "the file is from a newer version of the plugin";
+"fresh_PluginSettingsErrorQuota" = "the file does not fit into the plugin's storage";
+"fresh_PluginSettingsErrorUnavailable" = "the plugin cannot export its settings";
 "fresh_PluginMenuItems" = "Menu items";
 "fresh_PluginMenuSurfaceMessage" = "Message menu";
 "fresh_PluginMenuSurfaceChat" = "Chat menu";

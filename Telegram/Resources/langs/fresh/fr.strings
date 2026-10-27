@@ -206,6 +206,17 @@
 "fresh_PermUsersPresence" = "Voir quand les gens sont en ligne";
 "fresh_PermAppActivity" = "Savoir si l’application est au premier plan";
 "fresh_PermTranslateProvide" = "Traduire des textes pour vous";
+"fresh_PluginSettingsExport" = "Exporter les réglages";
+"fresh_PluginSettingsImport" = "Importer les réglages";
+"fresh_PluginSettingsExported" = "Réglages enregistrés.";
+"fresh_PluginSettingsImported" = "Réglages importés.";
+"fresh_PluginSettingsImportAsk" = "Remplacer les réglages de {name} par ceux de ce fichier ? Le plugin redémarre.";
+"fresh_PluginSettingsImportReplace" = "Remplacer";
+"fresh_PluginSettingsError" = "Les réglages n’ont pas été transférés : {reason}";
+"fresh_PluginSettingsErrorInvalid" = "ce n’est pas un fichier de réglages de ce plugin";
+"fresh_PluginSettingsErrorNewer" = "le fichier provient d’une version plus récente du plugin";
+"fresh_PluginSettingsErrorQuota" = "le fichier ne tient pas dans le stockage du plugin";
+"fresh_PluginSettingsErrorUnavailable" = "le plugin ne peut pas exporter ses réglages";
 "fresh_PluginMenuItems" = "Éléments de menu";
 "fresh_PluginMenuSurfaceMessage" = "Menu du message";
 "fresh_PluginMenuSurfaceChat" = "Menu de la discussion";

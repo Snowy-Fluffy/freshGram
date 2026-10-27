@@ -206,6 +206,17 @@
 "fresh_PermUsersPresence" = "查看用户是否在线";
 "fresh_PermAppActivity" = "知道应用是否处于前台";
 "fresh_PermTranslateProvide" = "为你翻译文本";
+"fresh_PluginSettingsExport" = "导出设置";
+"fresh_PluginSettingsImport" = "导入设置";
+"fresh_PluginSettingsExported" = "设置已保存。";
+"fresh_PluginSettingsImported" = "设置已导入。";
+"fresh_PluginSettingsImportAsk" = "用此文件中的设置替换 {name} 的设置？插件将重新启动。";
+"fresh_PluginSettingsImportReplace" = "替换";
+"fresh_PluginSettingsError" = "设置未能转移：{reason}";
+"fresh_PluginSettingsErrorInvalid" = "这不是此插件的设置文件";
+"fresh_PluginSettingsErrorNewer" = "文件来自更新版本的插件";
+"fresh_PluginSettingsErrorQuota" = "文件超出了插件的存储空间";
+"fresh_PluginSettingsErrorUnavailable" = "此插件无法导出其设置";
 "fresh_PluginMenuItems" = "菜单项";
 "fresh_PluginMenuSurfaceMessage" = "消息菜单";
 "fresh_PluginMenuSurfaceChat" = "聊天菜单";

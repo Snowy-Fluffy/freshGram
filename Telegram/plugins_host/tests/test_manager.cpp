@@ -1051,6 +1051,80 @@ void TestOutgoingFilterDropAndOptions() {
 	CHECK(!dropped.silent);
 }
 
+void TestSettingsExport() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-export");
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.counter");
+	const auto key = Seed(1);
+	const auto build = [&](const char *version, int schema, bool exported) {
+		auto document = Document(id, version);
+		Set(document, "storage.schema", Int(schema));
+		if (exported) {
+			Set(document, "storage.export", cbor::Value::FromMap({
+				{ "prefixes", Array({ "count" }) },
+				{ "exclude", Array({ "count.secret" }) },
+			}));
+		}
+		return Build(document, { { "plugin.wasm", ReadFile(FGPL_COUNTER_WASM) } }, &key).archive;
+	};
+	CHECK(manager.install(build("1.0.0", 2, true)).ok());
+	Prepare(manager, id);
+	for (auto i = 0; i != 2; ++i) {
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	}
+	CHECK(manager.setEnabled(id, false));
+	CHECK(manager.setEnabled(id, true));
+	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
+
+	const auto exported = manager.exportSettings(id);
+	CHECK(exported.ok());
+	if (!exported.ok()) {
+		return;
+	}
+	const auto document = cbor::Decode(exported.value());
+	CHECK(document.ok() && *document.value().find("plugin")->asText() == id);
+	CHECK(document.value().find("items")->find("count")->asInt() == 2);
+	CHECK(document.value().find("storageSchema")->asInt() == 2);
+
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	CHECK(manager.setEnabled(id, false));
+	CHECK(manager.setEnabled(id, true));
+	CHECK(lab.stored(id, "A", "count")->asInt() == 3);
+	const auto restored = manager.importSettings(id, exported.value());
+	CHECK(restored.ok() && restored.value() == 1);
+	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
+	CHECK(manager.runningCount() == 0);
+
+	const auto code = [&](std::span<const uint8_t> data) {
+		const auto result = manager.importSettings(id, data);
+		return result.ok() ? std::string() : result.error();
+	};
+	CHECK(code(cbor::Bytes{ 1, 2, 3 }) == "invalid");
+	const auto edited = [&](const char *path, cbor::Value value) {
+		auto copy = document.value();
+		Set(copy, path, std::move(value));
+		auto bytes = cbor::Bytes();
+		CHECK(cbor::Encode(copy, bytes, 20));
+		return bytes;
+	};
+	CHECK(code(edited("plugin", Text("com.example.other"))) == "wrong_plugin");
+	CHECK(code(edited("storageSchema", Int(3))) == "newer");
+	CHECK(code(edited("format", Text("something.else"))) == "invalid");
+	CHECK(code(edited("items", cbor::Value::FromMap({ { "elsewhere", Int(1) } }))) == "invalid");
+	CHECK(code(edited("items", cbor::Value::FromMap({ { "count.secret", Int(1) } }))) == "invalid");
+	CHECK(code(edited("items", cbor::Value::FromMap({ { "count", Text(std::string(size_t(11) << 20, 'x')) } }))) == "invalid");
+	CHECK(code(edited("items", cbor::Value::FromMap({ { "count", Int(9) } }))) == "");
+	CHECK(lab.stored(id, "A", "count")->asInt() == 9);
+	CHECK(code(edited("storageSchema", Int(1))) == "");
+
+	CHECK(manager.install(build("1.1.0", 2, false)).ok());
+	CHECK(!manager.exportSettings(id).ok());
+	CHECK(code(exported.value()) == "unavailable");
+	CHECK(!manager.exportSettings("com.example.none").ok());
+#endif
+}
+
 void TestToastEvents() {
 	auto lab = Lab("fgpl-manager-toast");
 	auto manager = PluginManager(lab.config());
@@ -1594,6 +1668,7 @@ int main(int argc, char **argv) {
 	run("outgoing-options", TestOutgoingFilterDropAndOptions);
 	run("translator", TestTranslator);
 	run("toast-events", TestToastEvents);
+	run("settings-export", TestSettingsExport);
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);
 	run("merge", TestOldPerAccountStateIsMerged);

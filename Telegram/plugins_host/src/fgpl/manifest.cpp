@@ -378,6 +378,15 @@ bool Outdated(const Manifest &manifest, const HostEnvironment &environment) {
 		: (app.minor > tested.minor);
 }
 
+bool StorageExport::includes(const std::string &key) const {
+	const auto starts = [&](const std::string &prefix) {
+		return key.compare(0, prefix.size(), prefix) == 0;
+	};
+	return declared
+		&& std::any_of(prefixes.begin(), prefixes.end(), starts)
+		&& !std::any_of(exclude.begin(), exclude.end(), starts);
+}
+
 const std::set<std::string> &MenuSurfaces() {
 	static const auto result = std::set<std::string>{
 		"message", "chat", "profile", "composer", "main_menu", "tray",
@@ -869,8 +878,28 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 
 	ReadDependencies(reader, document, "dependencies", true, manifest.id, manifest.dependencies);
 	ReadDependencies(reader, document, "conflicts", false, manifest.id, manifest.conflicts);
-	if (const auto storage = reader.object(document, "storage", "", false, { "schema" })) {
+	if (const auto storage = reader.object(document, "storage", "", false, { "schema", "export" })) {
 		manifest.storageSchema = int(reader.integer(*storage, "schema", "storage", 1, 100000).value_or(1));
+		if (const auto exported = reader.object(*storage, "export", "storage", false, { "prefixes", "exclude" })) {
+			auto &decl = manifest.storageExport;
+			decl.declared = true;
+			const auto keys = [&](const char *name, std::vector<std::string> &into, size_t most) {
+				const auto list = reader.array(*exported, name, "storage.export", most);
+				for (const auto &item : list ? *list : cbor::Array()) {
+					const auto key = item.asText();
+					if (!key || key->size() > 128 || !ui::SafeText(*key, 128, false)) {
+						reader.error(std::string("storage.export.") + name, "has a bad key prefix");
+					} else {
+						into.push_back(*key);
+					}
+				}
+			};
+			keys("prefixes", decl.prefixes, 32);
+			keys("exclude", decl.exclude, 32);
+			if (decl.prefixes.empty()) {
+				reader.error("storage.export", "needs at least one prefix");
+			}
+		}
 	}
 	if (const auto updates = reader.object(document, "updates", "", false, { "feed" })) {
 		manifest.updatesFeed = reader.url(*updates, "feed", "updates").value_or("");
