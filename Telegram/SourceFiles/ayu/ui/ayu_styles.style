@@ -209,16 +209,43 @@ pluginDangerMedium: FlatLabel(boxDividerLabel) {
 pluginDangerHigh: FlatLabel(boxDividerLabel) {
 	textFg: attentionButtonFg;
 }
-pluginDangerTitleLow: FlatLabel(defaultSubsectionTitle) {
-	textFg: boxTextFgGood;
+pluginPermissionButtonBase: SettingsButton(settingsButtonNoIconLocked) {
+	style: defaultTextStyle;
+	textBg: transparent;
+	textBgOver: transparent;
+	padding: margins(68px, 8px, 22px, 8px);
+	iconLeft: 17px;
 }
-pluginDangerTitleMedium: FlatLabel(defaultSubsectionTitle) {
-	textFg: historyPeer8NameFg;
+pluginPermissionButtonStyleLow: DetailedSettingsButtonStyle(detailedSettingsButtonStyle) {
+	button: SettingsButton(pluginPermissionButtonBase) {
+		textFg: boxTextFgGood;
+		textFgOver: boxTextFgGood;
+	}
+	description: FlatLabel(defaultFlatLabel) {
+		textFg: boxTextFgGood;
+	}
+	iconPadding: 4px;
+	iconForegroundPadding: 2px;
 }
-pluginDangerTitleHigh: FlatLabel(defaultSubsectionTitle) {
-	textFg: attentionButtonFg;
+pluginPermissionButtonStyleMedium: DetailedSettingsButtonStyle(detailedSettingsButtonStyle) {
+	button: SettingsButton(pluginPermissionButtonBase) {
+		textFg: historyPeer8NameFg;
+		textFgOver: historyPeer8NameFg;
+	}
+	description: FlatLabel(defaultFlatLabel) {
+		textFg: historyPeer8NameFg;
+	}
+	iconPadding: 4px;
+	iconForegroundPadding: 2px;
 }
-pluginPermissionButtonStyle: DetailedSettingsButtonStyle(detailedSettingsButtonStyle) {
+pluginPermissionButtonStyleHigh: DetailedSettingsButtonStyle(detailedSettingsButtonStyle) {
+	button: SettingsButton(pluginPermissionButtonBase) {
+		textFg: attentionButtonFg;
+		textFgOver: attentionButtonFg;
+	}
+	description: FlatLabel(defaultFlatLabel) {
+		textFg: attentionButtonFg;
+	}
 	iconPadding: 4px;
 	iconForegroundPadding: 2px;
 }
