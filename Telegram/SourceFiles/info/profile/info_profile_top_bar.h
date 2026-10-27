@@ -189,6 +189,7 @@ private:
 	void setupSwipeBack(not_null<Window::SessionController*> controller);
 	void setupShowLastSeen(not_null<Window::SessionController*> controller);
 	void setupUniqueBadgeTooltip();
+	void setupPluginBadges(not_null<Window::SessionController*> controller);
 	void hideBadgeTooltip();
 	void setupAnimatedPattern(const QRect &userpicGeometry = QRect());
 	void paintAnimatedPattern(
@@ -310,6 +311,8 @@ private:
 	base::Timer _statusScrollTimer;
 	AyuUi::StatusMarquee _statusMarquee;
 	base::unique_qptr<Ui::RpWidget> _statusScroll;
+	base::unique_qptr<Ui::RpWidget> _pluginBadges;
+	std::optional<QColor> _pluginBadgesColor;
 	QImage _statusTape;
 	rpl::producer<TextWithEntities> _customStatus;
 	object_ptr<Ui::FadeWrap<Ui::RoundButton>> _showLastSeen = { nullptr };

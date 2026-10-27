@@ -2317,6 +2317,19 @@ void Session::requestViewResize(not_null<ViewElement*> view) {
 	notifyViewLayoutChange(view);
 }
 
+void Session::requestViewsResize(
+		Fn<bool(not_null<const HistoryItem*>)> filter) {
+	auto views = std::vector<not_null<ViewElement*>>();
+	for (const auto &[item, list] : _views) {
+		if (filter(item)) {
+			views.insert(views.end(), list.begin(), list.end());
+		}
+	}
+	for (const auto view : views) {
+		requestViewResize(view);
+	}
+}
+
 rpl::producer<not_null<ViewElement*>> Session::viewResizeRequest() const {
 	return _viewResizeRequest.events();
 }

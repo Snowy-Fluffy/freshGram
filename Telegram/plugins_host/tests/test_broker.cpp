@@ -852,6 +852,82 @@ void TestSettingsPage() {
 	return Item({ { "type", Text("button") }, { "id", Text(id) }, { "label", Text(text) } });
 }
 
+void TestBadges() {
+	auto fixture = Fixture({ "ui.badges" });
+	auto received = std::vector<std::pair<std::string, cbor::Value>>();
+	fixture.services.ui = [&](std::string_view kind, const cbor::Value &payload) {
+		received.emplace_back(std::string(kind), payload);
+		return kind == "badges" || kind == "badges.clear";
+	};
+	auto broker = fixture.make();
+	const auto badge = [](std::string id, std::vector<std::pair<std::string, cbor::Value>> more) {
+		auto map = cbor::Map();
+		map.push_back({ "id", Text(id) });
+		for (auto &entry : more) {
+			map.push_back({ std::move(entry.first), std::move(entry.second) });
+		}
+		return cbor::Value::FromMap(std::move(map));
+	};
+	const auto set = [&](int64_t user, std::vector<cbor::Value> items) {
+		return broker.call(Request("badges.set", {
+			{ "user", cbor::Value::FromInt(user) },
+			{ "items", cbor::Value::FromArray(std::move(items)) },
+		}));
+	};
+	const auto star = badge("star", { { "icon", Text("star") }, { "tooltip", Text("A star") } });
+	CHECK(IsOk(set(5, { star })));
+	CHECK(received.size() == 1 && received.back().first == "badges");
+	CHECK(*received.back().second.find("user")->asInt() == 5);
+	CHECK(*received.back().second.find("items")->asArray()->front().find("tooltip")->asText() == "A star");
+	CHECK(IsOk(set(5, { badge("pic", { { "image", Png(64, 64) } }) })));
+	CHECK(IsOk(set(5, {})));
+	CHECK(Code(set(5, { badge("pic", { { "image", Png(512, 512) } }) })) == "invalid");
+	CHECK(Code(set(5, { badge("pic", { { "icon", Text("star") }, { "image", Png(8, 8) } }) })) == "invalid");
+	CHECK(Code(set(5, { badge("none", {}) })) == "invalid");
+	CHECK(Code(set(5, { badge("Bad Id", { { "icon", Text("star") } }) })) == "invalid");
+	CHECK(Code(set(5, { star, star })) == "invalid");
+	CHECK(Code(set(5, { badge("tip", { { "icon", Text("star") }, { "tooltip", Text(std::string(100, 'x')) } }) })) == "invalid");
+	CHECK(Code(set(5, { badge("x", { { "icon", Text("star") }, { "extra", Text("y") } }) })) == "invalid");
+	auto many = std::vector<cbor::Value>();
+	for (auto i = 0; i != 5; ++i) {
+		many.push_back(badge("b" + std::to_string(i), { { "icon", Text("star") } }));
+	}
+	CHECK(Code(set(5, std::move(many))) == "invalid");
+	CHECK(Code(set(0, { star })) == "invalid");
+	CHECK(Code(set(777000, { star })) == "denied");
+
+	fixture.time += 1500;
+	for (auto user = int64_t(100); user != 100 + 256; ++user) {
+		if (user % 100 == 0) {
+			fixture.time += 1500;
+		}
+		CHECK(IsOk(set(user, { star })));
+	}
+	fixture.time += 1500;
+	CHECK(Code(set(1000, { star })) == "quota");
+	CHECK(IsOk(set(100, { star })));
+	CHECK(IsOk(set(100, {})));
+	CHECK(IsOk(set(1000, { star })));
+
+	received.clear();
+	CHECK(IsOk(broker.call(Request("badges.clear"))));
+	CHECK(received.size() == 1 && received.back().first == "badges.clear");
+
+	auto denied = Fixture({ "ui.toast" });
+	denied.services.ui = fixture.services.ui;
+	auto refused = denied.make();
+	CHECK(Code(refused.call(Request("badges.set", {
+		{ "user", cbor::Value::FromInt(5) },
+		{ "items", cbor::Value::FromArray({ star }) },
+	}))) == "denied");
+	auto none = Fixture({ "ui.badges" });
+	auto unavailable = none.make();
+	CHECK(Code(unavailable.call(Request("badges.set", {
+		{ "user", cbor::Value::FromInt(5) },
+		{ "items", cbor::Value::FromArray({ star }) },
+	}))) == "unavailable");
+}
+
 void TestTemplateTree() {
 	auto fixture = Fixture({ "ui.dialog" });
 	auto received = std::vector<cbor::Value>();
@@ -1804,6 +1880,7 @@ int main() {
 	TestDataIsFilteredByTheBroker();
 	TestRichIconsAndSubPages();
 	TestSettingsPage();
+	TestBadges();
 	TestTemplateTree();
 	TestWindows();
 	TestTargetedEvents();

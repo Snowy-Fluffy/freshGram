@@ -628,6 +628,7 @@ private:
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;
 	bool _dialogOpen = false;
+	std::set<int64_t> _badgeUsers;
 	std::map<std::string, std::string> _windows;
 	std::map<std::string, int64_t> _windowUpdated;
 	int64_t _nextTicket = 1;

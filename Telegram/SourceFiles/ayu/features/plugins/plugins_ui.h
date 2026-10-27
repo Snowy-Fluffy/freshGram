@@ -4,6 +4,9 @@
 #include "base/basic_types.h"
 #include "data/data_msg_id.h"
 #include "ui/rp_widget.h"
+#include "ui/click_handler.h"
+
+class QPainter;
 
 class HistoryItem;
 class PeerData;
@@ -43,6 +46,60 @@ void StoreSettingsPage(
 	const fgpl::cbor::Value &page);
 
 void ForgetSettingsPages(const std::string &id);
+
+struct PluginBadge {
+	std::string plugin;
+	std::string id;
+	std::string icon;
+	QByteArray image;
+	QString tooltip;
+
+	friend inline bool operator==(
+		const PluginBadge &a,
+		const PluginBadge &b) = default;
+};
+
+// WHY: no items drop the plugin's badges of that user, and user 0 with no
+// items drops all of them.
+void StoreBadges(
+	const std::string &plugin,
+	const std::string &account,
+	int64_t user,
+	const fgpl::cbor::Value *items);
+void ForgetBadges(const std::string &plugin);
+
+[[nodiscard]] std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer);
+[[nodiscard]] rpl::producer<> BadgesChanged();
+[[nodiscard]] int BadgesWidth(
+	const std::vector<PluginBadge> &badges,
+	int side);
+void PaintBadges(
+	QPainter &p,
+	int left,
+	int top,
+	int side,
+	int outerWidth,
+	const std::vector<PluginBadge> &badges,
+	QColor color);
+[[nodiscard]] QRect BadgeRect(int index, int left, int top, int side);
+[[nodiscard]] int BadgeIndexAt(
+	const std::vector<PluginBadge> &badges,
+	int side,
+	int x);
+void ClickBadge(
+	not_null<Window::SessionController*> controller,
+	not_null<PeerData*> peer,
+	const PluginBadge &badge,
+	const char *surface,
+	FullMsgId item = FullMsgId());
+// The list handles clicks on a row's badges, so it needs the painted rects.
+void NoteListBadges(const void *row, std::vector<QRect> rects);
+[[nodiscard]] int ListBadgeAt(const void *row, QPoint point);
+[[nodiscard]] ClickHandlerPtr BadgeLink(
+	not_null<PeerData*> peer,
+	const PluginBadge &badge,
+	const char *surface,
+	FullMsgId item = FullMsgId());
 
 void ShowPluginDialog(
 	const std::string &id,

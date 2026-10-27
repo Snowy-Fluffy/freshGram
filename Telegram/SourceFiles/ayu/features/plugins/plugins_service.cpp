@@ -143,6 +143,16 @@ struct Service {
 			StoreSettingsPage(id, account, page);
 		});
 	};
+	config.services.badges = [](
+			const std::string &id,
+			const std::string &account,
+			int64_t user,
+			const fgpl::cbor::Value *items) {
+		auto copy = items ? std::make_optional(*items) : std::nullopt;
+		crl::on_main([=] {
+			StoreBadges(id, account, user, copy ? &*copy : nullptr);
+		});
+	};
 	config.services.dialog = [](
 			const std::string &id,
 			const std::string &account,

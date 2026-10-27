@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/data/kept_dialogs.h"
 #include "dialogs/dialogs_inner_widget.h"
 
+#include "ayu/features/plugins/plugins_ui.h"
+
 #include "dialogs/dialogs_three_state_icon.h"
 #include "dialogs/ui/chat_search_empty.h"
 #include "dialogs/ui/chat_search_in.h"
@@ -337,6 +339,12 @@ InnerWidget::InnerWidget(
 				sponsored->button = {};
 			}
 		}
+	}, lifetime());
+
+	FreshPlugins::BadgesChanged(
+	) | rpl::on_next([=] {
+		_cachedRows.clear();
+		update();
 	}, lifetime());
 
 	session().downloaderTaskFinished(
@@ -2545,6 +2553,29 @@ void InnerWidget::processGlobalForceClick(QPoint globalPosition) {
 
 void InnerWidget::mousePressEvent(QMouseEvent *e) {
 	selectByMouse(e->globalPos());
+
+	if (e->button() == Qt::LeftButton && _selected && !_selectedTopicJump) {
+		const auto entry = _selected->entry();
+		const auto peer = entry->asHistory()
+			? entry->asHistory()->peer.get()
+			: nullptr;
+		const auto index = peer
+			? FreshPlugins::ListBadgeAt(
+				entry,
+				e->pos() - QPoint(0, dialogsOffset() + _selected->top()))
+			: -1;
+		const auto badges = (index >= 0)
+			? FreshPlugins::BadgesFor(peer)
+			: std::vector<FreshPlugins::PluginBadge>();
+		if (index >= 0 && index < int(badges.size())) {
+			FreshPlugins::ClickBadge(
+				_controller,
+				peer,
+				badges[index],
+				"chats");
+			return;
+		}
+	}
 
 	_pressButton = e->button();
 	setPressed(_selected, _selectedTopicJump, _selectedRightButton);

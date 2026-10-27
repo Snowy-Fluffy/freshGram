@@ -78,6 +78,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `account.info` | `account.info` | no phone number |
 | `stars.balance` | `stars.balance` | read only |
 | `composer.draft`, `composer.set_draft` `{chat, text, replace}` | `composer.draft` | setting a draft never switches the chat; a non-empty draft is kept unless `replace: true` |
+| `badges.set` `{user, items}`, `badges.clear` | `ui.badges` | icons or mini pictures next to the name of a user, see *Badges next to names*; up to 4 for a user and 256 users |
 | `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
 | `ui.toast` `{text, action, style, duration}` | `ui.toast` | the plugin id is prefixed; `action` is `{id, label}` and adds a button (the plugin gets `toast.click` `{id}` when it is pressed and `toast.close` `{id, reason}` when the toast goes, `reason` is `action` or `timeout`); `style: "undo"` needs an action and labels the button "Undo" when `label` is empty; `duration` is 1 to 8 seconds (5 for a toast with a button); an action id is up to 32 bytes, a label up to 40 |
 | `time.sleep` `{ms}` | none | awaitable only; up to 60000 ms |
@@ -345,7 +346,8 @@ Activations come back as events:
 
 | Event | Fields |
 |---|---|
-| `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`, `selection`, `shared_media`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); `selection` and `shared_media` carry `chat` and `ids` (message ids, `ids` only with `messages.read`) instead of `message`; the `composer` surface is a button next to the input field and needs `ui.composer_button`, its click also has `topic` and `reply_to` like `command` (the reply is then taken off the input field) |
+| `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`, `selection`, `shared_media`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); `selection` and `shared_media` carry `chat` and `ids` (message ids, `ids` only with `messages.read`) instead of `message`; the `composer` surface is a button next to the input field and needs `ui.composer_button`, its click also has `topic` and `reply_to` like `command` (the reply is then taken off the input field) and `button: "right"` when the user pressed it with the right mouse button (left clicks have no `button`; the "more" menu of a long row of buttons is left-click only) |
+| `badge.click` | `id`, `user`, `surface` (`message`, `chat`, `profile` or `chats`), and `chat`, `message` for a message; sent when the user clicks a badge set with `badges.set`; needs `ui.badges`, and starts a stopped plugin like a menu click (`activation.on` needs `menu`) |
 | `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope, `reply_to` when the user was replying to a message of that chat (the reply is then taken off the input field, so answer with `messages.send` and `reply_to`); the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
 | `toast.click`, `toast.close` | `id` of the action offered with `ui.toast`; `toast.close` also has `reason`; only the ids the plugin offered (up to 16 at a time) come back, also after the plugin unloaded itself (an `activation.on` list must contain `toast`) |
 | `settings.open` | the user opened the plugin's settings; send the page now (the plugin is started for it) |
@@ -395,6 +397,30 @@ Interactive items also take `hint` (a line of text under the item) and
 of a dialog. The app validates the tree, shows it in its own window and keeps
 the last version; send it again to change it: values the user is typing are
 kept. Text cannot contain control or bidi override characters.
+
+## Badges next to names
+
+With `ui.badges` a plugin marks a user with up to four small icons or pictures right of the
+name: in the sender line of a message, the title of an open chat, the profile header and the
+chat list. `badges.set` replaces the plugin's badges for one user; an empty list removes them:
+
+```python
+freshgram.badges.set(user_id, [
+    {"id": "vip", "icon": "star", "tooltip": "VIP"},
+    {"id": "logo", "image": png_bytes},
+])
+
+@freshgram.on_badge_click("vip")
+def vip(event):
+    freshgram.ui.toast("VIP user " + str(event["user"]))
+```
+
+`icon` is a built-in name or one of the plugin's own icons (drawn in the text color), `image` is
+a PNG up to 128x128 or a JPEG, up to 64 KiB (drawn as it is); give one of them. `tooltip` is up
+to 80 bytes. Ids are lowercase tokens, unique among the badges of a user. A plugin that is
+turned off, or loses the permission, shows nothing. Badges live while the app runs: set them
+again on `init` (the plugin then needs `startup` in `activation.on`). Only users get badges,
+never the service chat 777000.
 
 ## Windows
 

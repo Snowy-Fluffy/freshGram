@@ -31,6 +31,10 @@ constexpr auto kMaxImageBytes = size_t(256 * 1024);
 constexpr auto kMaxImageDimension = uint32_t(2048);
 constexpr auto kMaxImageSide = int64_t(512);
 constexpr auto kMaxRichIcons = size_t(32);
+constexpr auto kMaxBadges = size_t(4);
+constexpr auto kMaxBadgeTooltip = size_t(80);
+constexpr auto kMaxBadgeImageBytes = size_t(64 * 1024);
+constexpr auto kMaxBadgeImageDimension = uint32_t(128);
 
 [[nodiscard]] bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines);
 [[nodiscard]] bool ValidIconName(const std::string &name);
@@ -41,5 +45,8 @@ constexpr auto kMaxRichIcons = size_t(32);
 
 [[nodiscard]] Result<cbor::Value, std::string> ValidatePage(
 	const cbor::Value &page);
+
+[[nodiscard]] Result<cbor::Value, std::string> ValidateBadges(
+	const cbor::Value &items);
 
 } // namespace fgpl::ui

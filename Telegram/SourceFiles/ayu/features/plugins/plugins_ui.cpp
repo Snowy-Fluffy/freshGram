@@ -13,6 +13,7 @@
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/secret/secret_peer.h"
 #include "core/application.h"
+#include "core/click_handler_types.h"
 #include "crl/crl_on_main.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
@@ -92,6 +93,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <tuple>
 
 namespace FreshPlugins {
@@ -569,11 +571,15 @@ void Send(
 		PeerData *peer,
 		HistoryItem *item,
 		MsgId topicRootId = MsgId(),
-		MsgId replyToId = MsgId()) {
+		MsgId replyToId = MsgId(),
+		bool rightClick = false) {
 	auto map = cbor::Map();
 	map.push_back({ "type", cbor::Value::FromText("menu.click") });
 	map.push_back({ "surface", cbor::Value::FromText(surface) });
 	map.push_back({ "id", cbor::Value::FromText(menuId) });
+	if (rightClick) {
+		map.push_back({ "button", cbor::Value::FromText("right") });
+	}
 	if (peer) {
 		map.push_back({ "chat", Number(int64_t(peer->id.value)) });
 		map.push_back({ "secret", Flag(FreshSecret::IsSecretPeerId(peer->id)) });
@@ -2324,6 +2330,7 @@ void BuildDetails(
 					manager->uninstall(plugin, true);
 				});
 				ForgetSettingsPages(plugin);
+				ForgetBadges(plugin);
 				close();
 				if (const auto strong = weak.get()) {
 					strong->closeBox();
@@ -2883,6 +2890,7 @@ namespace {
 		{ "ui.composer_button", &st::menuIconCustomize },
 		{ "ui.dialog", &st::menuIconCustomize },
 		{ "ui.toast", &st::menuIconInfo },
+		{ "ui.badges", &st::menuIconInfo },
 		{ "notifications", &st::menuIconNotifications },
 		{ "net.https", &st::menuIconNetwork },
 		{ "net.tcp", &st::menuIconNetwork },
@@ -3406,6 +3414,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "ui.composer_button", tr::fresh_PermUiComposerButton },
 		{ "ui.dialog", tr::fresh_PermUiDialog },
 		{ "ui.toast", tr::fresh_PermUiToast },
+		{ "ui.badges", tr::fresh_PermUiBadges },
 		{ "notifications", tr::fresh_PermNotifications },
 		{ "net.https", tr::fresh_PermNetHttps },
 		{ "net.tcp", tr::fresh_PermNetTcp },
@@ -3548,7 +3557,7 @@ bool ComposerButtons::refresh(PeerData *peer, MsgId topicRootId) {
 	_state->buttons.clear();
 	_state->overflow.clear();
 	const auto weak = base::make_weak(session);
-	const auto click = [=](const Entry &entry) {
+	const auto click = [=](const Entry &entry, bool right = false) {
 		const auto strong = weak.get();
 		const auto found = strong ? strong->data().peerLoaded(_state->peer) : nullptr;
 		if (!found) {
@@ -3561,7 +3570,8 @@ bool ComposerButtons::refresh(PeerData *peer, MsgId topicRootId) {
 			found,
 			nullptr,
 			_state->topicRootId,
-			replyToId));
+			replyToId,
+			right));
 		if (replyToId && _state->replyTaken) {
 			// The plugin answers to it, like a sent message would.
 			_state->replyTaken();
@@ -3577,6 +3587,13 @@ bool ComposerButtons::refresh(PeerData *peer, MsgId topicRootId) {
 		auto button = base::make_unique_q<ComposerButton>(this, entries[i], false);
 		const auto entry = entries[i];
 		button->setClickedCallback([=] { click(entry); });
+		button->setAcceptBoth(true);
+		button->clicks(
+		) | rpl::on_next([=](Qt::MouseButton which) {
+			if (which == Qt::RightButton) {
+				click(entry, true);
+			}
+		}, button->lifetime());
 		_state->buttons.push_back(std::move(button));
 	}
 	if (!_state->overflow.empty()) {
@@ -3600,6 +3617,409 @@ bool ComposerButtons::refresh(PeerData *peer, MsgId topicRootId) {
 	}
 	resize(left, st::historyPluginsToggle.height);
 	return true;
+}
+
+namespace {
+
+constexpr auto kBadgeGap = 3;
+
+struct BadgeStore {
+	std::map<std::pair<std::string, int64_t>, std::vector<PluginBadge>> users;
+	rpl::event_stream<> changes;
+};
+
+[[nodiscard]] BadgeStore &GetBadgeStore() {
+	static auto result = BadgeStore();
+	return result;
+}
+
+using GlyphKey = std::tuple<std::string, std::string, size_t, int, int, QRgb>;
+
+[[nodiscard]] std::map<GlyphKey, QImage> &GlyphCache() {
+	static auto result = std::map<GlyphKey, QImage>();
+	return result;
+}
+
+[[nodiscard]] QImage MakeBadgeGlyph(
+		const PluginBadge &badge,
+		int side,
+		QColor color) {
+	const auto ratio = style::DevicePixelRatio();
+	const auto full = QSize(side, side) * ratio;
+	auto source = QImage();
+	if (!badge.image.isEmpty()) {
+		auto bytes = badge.image;
+		auto buffer = QBuffer(&bytes);
+		buffer.open(QIODevice::ReadOnly);
+		auto reader = QImageReader(&buffer);
+		const auto size = reader.size();
+		if (size.isEmpty() || size.width() > 512 || size.height() > 512) {
+			return QImage();
+		}
+		source = reader.read();
+	} else {
+		const auto size = st::menuIconBot.size();
+		source = QImage(size * ratio, QImage::Format_ARGB32_Premultiplied);
+		source.fill(Qt::transparent);
+		source.setDevicePixelRatio(ratio);
+		auto p = QPainter(&source);
+		PaintPluginIcon(
+			p,
+			QPoint(),
+			size.width(),
+			badge.plugin,
+			badge.icon,
+			st::menuIconBot,
+			color);
+	}
+	if (source.isNull()) {
+		return QImage();
+	}
+	source.setDevicePixelRatio(1.);
+	const auto fitted = source.scaled(
+		full,
+		Qt::KeepAspectRatio,
+		Qt::SmoothTransformation);
+	auto result = QImage(full, QImage::Format_ARGB32_Premultiplied);
+	result.fill(Qt::transparent);
+	{
+		auto p = QPainter(&result);
+		p.drawImage(
+			(full.width() - fitted.width()) / 2,
+			(full.height() - fitted.height()) / 2,
+			fitted);
+	}
+	result.setDevicePixelRatio(ratio);
+	return result;
+}
+
+[[nodiscard]] QImage BadgeGlyph(
+		const PluginBadge &badge,
+		int side,
+		QColor color) {
+	const auto ratio = style::DevicePixelRatio();
+	const auto picture = !badge.image.isEmpty();
+	const auto key = GlyphKey{
+		badge.plugin,
+		badge.icon,
+		picture ? size_t(qHash(badge.image)) : size_t(0),
+		side,
+		ratio,
+		picture ? QRgb() : color.rgba(),
+	};
+	auto &cache = GlyphCache();
+	if (const auto i = cache.find(key); i != cache.end()) {
+		return i->second;
+	}
+	if (cache.size() > 512) {
+		cache.clear();
+	}
+	return cache.emplace(key, MakeBadgeGlyph(badge, side, color)).first->second;
+}
+
+struct BadgeRefresh {
+	base::Timer timer;
+	std::set<int64_t> users;
+	bool all = false;
+};
+
+[[nodiscard]] BadgeRefresh &GetBadgeRefresh() {
+	static auto result = BadgeRefresh();
+	return result;
+}
+
+// Many calls in a row are joined into one pass.
+void RefreshBadgeViews(int64_t user) {
+	auto &refresh = GetBadgeRefresh();
+	if (user) {
+		refresh.users.insert(user);
+	} else {
+		refresh.all = true;
+	}
+	if (refresh.timer.isActive()) {
+		return;
+	}
+	refresh.timer.setCallback([] {
+		auto &refresh = GetBadgeRefresh();
+		const auto all = std::exchange(refresh.all, false);
+		const auto users = std::move(refresh.users);
+		refresh.users.clear();
+		if (!Core::App().domain().started()) {
+			return;
+		}
+		for (const auto &entry : Core::App().domain().accounts()) {
+			const auto session = entry.account->maybeSession();
+			if (!session) {
+				continue;
+			}
+			session->data().requestViewsResize([&](not_null<const HistoryItem*> item) {
+				const auto from = item->from();
+				return all
+					|| (from && users.contains(int64_t(from->id.value)));
+			});
+		}
+	});
+	refresh.timer.callOnce(50);
+}
+
+class BadgeLinkHandler final : public ClickHandler {
+public:
+	BadgeLinkHandler(
+		not_null<PeerData*> peer,
+		PluginBadge badge,
+		const char *surface,
+		FullMsgId item)
+	: _peer(peer)
+	, _badge(std::move(badge))
+	, _surface(surface)
+	, _item(item) {
+	}
+
+	void onClick(ClickContext context) const override {
+		if (context.button != Qt::LeftButton) {
+			return;
+		}
+		const auto my = context.other.value<ClickHandlerContext>();
+		if (const auto controller = my.sessionWindow.get()) {
+			ClickBadge(controller, _peer, _badge, _surface, _item);
+		}
+	}
+
+	QString tooltip() const override {
+		return _badge.tooltip;
+	}
+
+private:
+	const not_null<PeerData*> _peer;
+	const PluginBadge _badge;
+	const char *_surface;
+	const FullMsgId _item;
+
+};
+
+} // namespace
+
+void StoreBadges(
+		const std::string &plugin,
+		const std::string &account,
+		int64_t user,
+		const cbor::Value *items) {
+	auto &store = GetBadgeStore();
+	const auto mine = [&](const PluginBadge &badge) {
+		return badge.plugin == plugin;
+	};
+	if (!items && !user) {
+		for (auto i = store.users.begin(); i != store.users.end();) {
+			if (i->first.first == account) {
+				auto &list = i->second;
+				list.erase(std::remove_if(list.begin(), list.end(), mine), list.end());
+			}
+			i = i->second.empty() ? store.users.erase(i) : std::next(i);
+		}
+	} else {
+		auto &list = store.users[{ account, user }];
+		list.erase(std::remove_if(list.begin(), list.end(), mine), list.end());
+		const auto array = items ? items->asArray() : nullptr;
+		for (const auto &item : array ? *array : cbor::Array()) {
+			const auto text = [&](const char *name) {
+				const auto field = item.find(name);
+				return (field && field->asText()) ? *field->asText() : std::string();
+			};
+			const auto image = item.find("image");
+			const auto bytes = image ? image->asBytes() : nullptr;
+			list.push_back({
+				plugin,
+				text("id"),
+				text("icon"),
+				bytes
+					? QByteArray(
+						reinterpret_cast<const char*>(bytes->data()),
+						qsizetype(bytes->size()))
+					: QByteArray(),
+				Utf8(text("tooltip")),
+			});
+		}
+		if (list.empty()) {
+			store.users.erase({ account, user });
+		}
+	}
+	GlyphCache().clear();
+	store.changes.fire({});
+	RefreshBadgeViews(user);
+}
+
+void ForgetBadges(const std::string &plugin) {
+	auto &store = GetBadgeStore();
+	for (auto i = store.users.begin(); i != store.users.end();) {
+		auto &list = i->second;
+		list.erase(
+			std::remove_if(list.begin(), list.end(), [&](const PluginBadge &badge) {
+				return badge.plugin == plugin;
+			}),
+			list.end());
+		i = list.empty() ? store.users.erase(i) : std::next(i);
+	}
+	GlyphCache().clear();
+	store.changes.fire({});
+	RefreshBadgeViews(0);
+}
+
+std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer) {
+	const auto &store = GetBadgeStore();
+	if (store.users.empty() || !peer->isUser()) {
+		return {};
+	}
+	const auto user = int64_t(peer->id.value);
+	const auto i = store.users.find({ AccountOf(&peer->session()), user });
+	const auto snapshot = Snapshot();
+	if (i == store.users.end()
+		|| !snapshot
+		|| snapshot->hidden
+		|| snapshot->locked
+		|| user == fgpl::api::kServiceChat) {
+		return {};
+	}
+	auto result = std::vector<PluginBadge>();
+	for (const auto &badge : i->second) {
+		const auto info = snapshot->plugin(badge.plugin);
+		const auto grants = snapshot->grantsOf(badge.plugin);
+		if (!info
+			|| !info->enabled
+			|| !grants
+			|| !grants->granted.contains("ui.badges")) {
+			continue;
+		} else if (badge.image.isEmpty()
+			&& !BuiltinIcon(badge.icon)
+			&& !HasCustomIcon(badge.plugin, badge.icon)) {
+			continue;
+		}
+		result.push_back(badge);
+	}
+	return result;
+}
+
+rpl::producer<> BadgesChanged() {
+	return rpl::merge(GetBadgeStore().changes.events(), ListChanges());
+}
+
+int BadgesWidth(const std::vector<PluginBadge> &badges, int side) {
+	return badges.empty()
+		? 0
+		: (int(badges.size()) * side + (int(badges.size()) - 1) * kBadgeGap);
+}
+
+void PaintBadges(
+		QPainter &p,
+		int left,
+		int top,
+		int side,
+		int outerWidth,
+		const std::vector<PluginBadge> &badges,
+		QColor color) {
+	for (const auto &badge : badges) {
+		const auto glyph = BadgeGlyph(badge, side, color);
+		if (!glyph.isNull()) {
+			p.drawImage(
+				style::rtlrect(QRect(left, top, side, side), outerWidth).topLeft(),
+				glyph);
+		}
+		left += side + kBadgeGap;
+	}
+}
+
+QRect BadgeRect(int index, int left, int top, int side) {
+	return QRect(left + index * (side + kBadgeGap), top, side, side);
+}
+
+namespace {
+
+[[nodiscard]] std::map<const void*, std::vector<QRect>> &ListBadgeRects() {
+	static auto result = std::map<const void*, std::vector<QRect>>();
+	return result;
+}
+
+} // namespace
+
+void NoteListBadges(const void *row, std::vector<QRect> rects) {
+	auto &all = ListBadgeRects();
+	if (rects.empty()) {
+		all.erase(row);
+	} else {
+		all[row] = std::move(rects);
+	}
+}
+
+int ListBadgeAt(const void *row, QPoint point) {
+	const auto &all = ListBadgeRects();
+	const auto i = all.find(row);
+	if (i == all.end()) {
+		return -1;
+	}
+	for (auto k = 0; k != int(i->second.size()); ++k) {
+		if (i->second[k].contains(point)) {
+			return k;
+		}
+	}
+	return -1;
+}
+
+int BadgeIndexAt(
+		const std::vector<PluginBadge> &badges,
+		int side,
+		int x) {
+	if (x < 0 || side <= 0) {
+		return -1;
+	}
+	const auto index = x / (side + kBadgeGap);
+	return (index < int(badges.size()) && x % (side + kBadgeGap) < side)
+		? index
+		: -1;
+}
+
+void ClickBadge(
+		not_null<Window::SessionController*> controller,
+		not_null<PeerData*> peer,
+		const PluginBadge &badge,
+		const char *surface,
+		FullMsgId item) {
+	auto map = cbor::Map();
+	map.push_back({ "type", cbor::Value::FromText("badge.click") });
+	map.push_back({ "id", cbor::Value::FromText(badge.id) });
+	map.push_back({ "user", Number(int64_t(peer->id.value)) });
+	map.push_back({ "surface", cbor::Value::FromText(surface) });
+	if (item) {
+		map.push_back({ "chat", Number(int64_t(item.peer.value)) });
+		map.push_back({ "message", Number(item.msg.bare) });
+	}
+	Send(
+		&controller->session(),
+		badge.plugin,
+		cbor::Value::FromMap(std::move(map)));
+}
+
+ClickHandlerPtr BadgeLink(
+		not_null<PeerData*> peer,
+		const PluginBadge &badge,
+		const char *surface,
+		FullMsgId item) {
+	static auto cache = std::map<std::string, ClickHandlerPtr>();
+	auto key = badge.plugin
+		+ '|' + badge.id
+		+ '|' + surface
+		+ '|' + std::to_string(peer->id.value)
+		+ '|' + std::to_string(item.peer.value)
+		+ '|' + std::to_string(item.msg.bare)
+		+ '|' + badge.tooltip.toStdString();
+	if (const auto i = cache.find(key); i != cache.end()) {
+		return i->second;
+	}
+	if (cache.size() > 1024) {
+		cache.clear();
+	}
+	return cache.emplace(
+		std::move(key),
+		std::make_shared<BadgeLinkHandler>(peer, badge, surface, item)
+	).first->second;
 }
 
 QString TrayItemsKey() {
@@ -4193,6 +4613,69 @@ void ShowNetworkPanel(not_null<Window::SessionController*>) {
 }
 
 void ForgetSettingsPages(const std::string &) {
+}
+
+void StoreBadges(
+	const std::string &,
+	const std::string &,
+	int64_t,
+	const fgpl::cbor::Value *) {
+}
+
+void ForgetBadges(const std::string &) {
+}
+
+std::vector<PluginBadge> BadgesFor(not_null<PeerData*>) {
+	return {};
+}
+
+rpl::producer<> BadgesChanged() {
+	return rpl::never<>();
+}
+
+int BadgesWidth(const std::vector<PluginBadge> &, int) {
+	return 0;
+}
+
+void PaintBadges(
+	QPainter &,
+	int,
+	int,
+	int,
+	int,
+	const std::vector<PluginBadge> &,
+	QColor) {
+}
+
+QRect BadgeRect(int, int, int, int) {
+	return QRect();
+}
+
+void NoteListBadges(const void *, std::vector<QRect>) {
+}
+
+int ListBadgeAt(const void *, QPoint) {
+	return -1;
+}
+
+int BadgeIndexAt(const std::vector<PluginBadge> &, int, int) {
+	return -1;
+}
+
+void ClickBadge(
+	not_null<Window::SessionController*>,
+	not_null<PeerData*>,
+	const PluginBadge &,
+	const char *,
+	FullMsgId) {
+}
+
+ClickHandlerPtr BadgeLink(
+		not_null<PeerData*>,
+		const PluginBadge &,
+		const char *,
+		FullMsgId) {
+	return nullptr;
 }
 
 #endif

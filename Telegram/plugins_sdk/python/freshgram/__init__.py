@@ -427,6 +427,21 @@ class _Users(_Namespace):
         return self._call("users.info", id=user)
 
 
+class _Badges(_Namespace):
+    def set(self, user, items):
+        """Show icons or mini pictures next to the name of a user (ui.badges).
+
+        items is a list of up to 4 dicts {"id", "icon" or "image", "tooltip"}: icon is a
+        built-in or the plugin's own icon name, image is PNG or JPEG bytes (up to 128x128
+        and 64 KiB). An empty list removes the badges. A click comes as on_badge_click.
+        """
+        return self._call("badges.set", _nothing, user=user, items=list(items))
+
+    def clear(self):
+        """Remove every badge this plugin has set."""
+        return self._call("badges.clear", _nothing)
+
+
 class _Notify(_Namespace):
     def show(self, text, title=""):
         """Show a system notification (notifications), at most one in 5 seconds."""
@@ -558,6 +573,7 @@ settings = _Settings(_sync_call)
 media = _Media(_sync_call)
 users = _Users(_sync_call)
 notify = _Notify(_sync_call)
+badges = _Badges(_sync_call)
 clipboard = _Clipboard(_sync_call)
 timers = _Timers(_sync_call)
 
@@ -604,6 +620,21 @@ def on_menu(menu_id, surface=None):
             if event.get("id") == menu_id and (surface is None or event.get("surface") == surface):
                 return function(event)
         _event_handlers.append(("menu.click", wrapper))
+        return function
+    return register
+
+
+def on_badge_click(badge_id=None):
+    """Run the function(event) when the user clicks a badge set with badges.set.
+
+    The event has id, user, surface (message, chat, profile or chats) and, for
+    a message, chat and message.
+    """
+    def register(function):
+        def wrapper(event):
+            if badge_id is None or event.get("id") == badge_id:
+                return function(event)
+        _event_handlers.append(("badge.click", wrapper))
         return function
     return register
 

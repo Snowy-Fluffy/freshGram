@@ -76,6 +76,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/deleted_comments/deleted_comments.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/message_shot/message_shot.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "styles/style_ayu_icons.h"
 
 
@@ -509,6 +510,25 @@ struct Message::CommentsButton {
 	QPoint lastPoint;
 	int rippleShift = 0;
 };
+
+namespace {
+
+[[nodiscard]] std::vector<FreshPlugins::PluginBadge> PluginBadgesOf(
+		PeerData *from) {
+	return from
+		? FreshPlugins::BadgesFor(from)
+		: std::vector<FreshPlugins::PluginBadge>();
+}
+
+[[nodiscard]] int PluginBadgesSkip(
+		const std::vector<FreshPlugins::PluginBadge> &badges) {
+	return badges.empty()
+		? 0
+		: (st::msgServiceFont->spacew
+			+ FreshPlugins::BadgesWidth(badges, st::msgNameFont->height));
+}
+
+} // namespace
 
 struct Message::FromNameStatus {
 	EmojiStatusId id;
@@ -1569,6 +1589,7 @@ QSize Message::performCountOptimalSize() {
 					+ (_fromNameStatus
 						? st::dialogsPremiumIcon.icon.width()
 						: 0)
+					+ PluginBadgesSkip(PluginBadgesOf(from))
 					+ st::msgPadding.right();
 				if (via && !displayForwardedFrom()) {
 					namew += st::msgServiceFont->spacew + via->maxWidth
@@ -2694,6 +2715,23 @@ void Message::paintFromName(
 		+ st::msgServiceFont->spacew;
 	availableLeft += skipWidth;
 	availableWidth -= skipWidth;
+
+	if (const auto badges = PluginBadgesOf(from); !badges.empty()) {
+		const auto side = st::msgNameFont->height;
+		const auto badgesWidth = FreshPlugins::BadgesWidth(badges, side);
+		if (availableWidth >= badgesWidth) {
+			FreshPlugins::PaintBadges(
+				p,
+				availableLeft,
+				trect.top(),
+				side,
+				width(),
+				badges,
+				nameFg);
+		}
+		availableLeft += badgesWidth + st::msgServiceFont->spacew;
+		availableWidth -= badgesWidth + st::msgServiceFont->spacew;
+	}
 
 	if (via && !displayForwardedFrom() && availableWidth > 0) {
 		p.setPen(stm->msgServiceFg);
@@ -4409,6 +4447,28 @@ bool Message::getStateFromName(
 			+ st::msgServiceFont->spacew;
 		availableLeft += skipWidth;
 		availableWidth -= skipWidth;
+
+		if (const auto badges = PluginBadgesOf(from); !badges.empty()) {
+			const auto side = st::msgNameFont->height;
+			const auto badgesWidth = FreshPlugins::BadgesWidth(badges, side);
+			if (point.x() >= availableLeft
+				&& point.x() < availableLeft + std::min(badgesWidth, availableWidth)) {
+				const auto index = FreshPlugins::BadgeIndexAt(
+					badges,
+					side,
+					point.x() - availableLeft);
+				if (index >= 0) {
+					outResult->link = FreshPlugins::BadgeLink(
+						from,
+						badges[index],
+						"message",
+						item->fullId());
+					return true;
+				}
+			}
+			availableLeft += badgesWidth + st::msgServiceFont->spacew;
+			availableWidth -= badgesWidth + st::msgServiceFont->spacew;
+		}
 
 		if (via
 			&& !displayForwardedFrom()
@@ -6509,7 +6569,8 @@ void Message::fromNameUpdated(int width) const {
 		- (_fromNameStatus
 			? (st::dialogsPremiumIcon.icon.width()
 				+ st::msgServiceFont->spacew)
-			: 0);
+			: 0)
+		- PluginBadgesSkip(PluginBadgesOf(from));
 	auto viaWidth = 0;
 	if (via && !displayForwardedFrom()) {
 		via->resize(available - st::msgServiceFont->spacew);

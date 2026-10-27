@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/data/kept_dialogs.h"
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/features/peek/peek_online.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/secret/secret_bridge.h"
 #include "ayu/secret/secret_peer.h"
 #include "ayu/ui/status_marquee.h"
@@ -174,6 +175,11 @@ TopBarWidget::TopBarWidget(
 	Lang::Updated(
 	) | rpl::on_next([=] {
 		refreshLang();
+	}, lifetime());
+
+	FreshPlugins::BadgesChanged(
+	) | rpl::on_next([=] {
+		update();
 	}, lifetime());
 
 	_forward->setClickedCallback([=] { _forwardSelection.fire({}); });
@@ -597,6 +603,7 @@ void TopBarWidget::paintEvent(QPaintEvent *e) {
 	}
 	updateConnectingState();
 	Painter p(this);
+	_pluginBadgeRects.clear();
 
 	const auto selectedButtonsTop = countSelectedButtonsTop(
 		_selectedShown.value(showSelectedActions() ? 1. : 0.));
@@ -785,6 +792,7 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			.paused = _controller->isGifPausedAtLeastFor(
 				Window::GifPauseReason::Any),
 		});
+		const auto nameLimit = nameleft + namewidth;
 		namewidth -= badgeWidth;
 
 		p.setPen(st::dialogsNameFg);
@@ -793,6 +801,28 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			.availableWidth = namewidth,
 			.elisionLines = 1,
 		});
+		if (const auto badges = FreshPlugins::BadgesFor(namePeer); !badges.empty()) {
+			const auto side = st::msgNameStyle.font->height;
+			const auto badgesLeft = nameleft
+				+ std::min(_title.maxWidth(), namewidth)
+				+ badgeWidth
+				+ st::dialogsChatTypeSkip;
+			const auto badgesWidth = FreshPlugins::BadgesWidth(badges, side);
+			if (badgesLeft + badgesWidth <= nameLimit) {
+				FreshPlugins::PaintBadges(
+					p,
+					badgesLeft,
+					nametop,
+					side,
+					width(),
+					badges,
+					st::dialogsNameFg->c);
+				for (auto i = 0; i != int(badges.size()); ++i) {
+					_pluginBadgeRects.push_back(myrtlrect(
+						FreshPlugins::BadgeRect(i, badgesLeft, nametop, side)));
+				}
+			}
+		}
 
 		p.setFont(st::dialogsTextFont);
 		if (!paintConnectingState(p, statusleft, statustop, width())
@@ -937,6 +967,24 @@ QRect TopBarWidget::getMembersShowAreaGeometry() const {
 }
 
 void TopBarWidget::mousePressEvent(QMouseEvent *e) {
+	if (e->button() == Qt::LeftButton && !showSelectedState()) {
+		for (auto i = 0; i != int(_pluginBadgeRects.size()); ++i) {
+			if (!_pluginBadgeRects[i].contains(e->pos())) {
+				continue;
+			}
+			if (const auto peer = titleNamePeer()) {
+				const auto badges = FreshPlugins::BadgesFor(peer);
+				if (i < int(badges.size())) {
+					FreshPlugins::ClickBadge(
+						_controller,
+						peer,
+						badges[i],
+						"chat");
+					return;
+				}
+			}
+		}
+	}
 	const auto handleClick = (e->button() == Qt::LeftButton)
 		&& (e->pos().y() < st::topBarHeight)
 		&& !showSelectedState()
