@@ -693,7 +693,9 @@ namespace {
 	result.secret = FreshSecret::IsSecretPeerId(peer->id);
 	result.chatType = PeerKind(peer);
 	result.topic = action.replyTo.topicRootId.bare;
-	result.replyTo = action.replyTo.messageId.msg.bare;
+	result.replyTo = (action.replyTo.messageId.msg == action.replyTo.topicRootId)
+		? 0
+		: action.replyTo.messageId.msg.bare;
 	result.silent = action.options.silent;
 	result.scheduled = action.options.scheduled;
 	result.text = message.textWithTags.text.toStdString();
@@ -728,24 +730,38 @@ void ApplyChanges(
 			action.options.scheduled = TimeId(*result.schedule);
 		}
 	}
+	auto &replyTo = action.replyTo;
 	if (result.replyTo) {
 		if (!*result.replyTo) {
-			action.replyTo.messageId = FullMsgId();
+			replyTo.messageId = FullMsgId();
 		} else if (const auto replied = peer->owner().message(
 				peer->id,
 				MsgId(*result.replyTo))) {
-			action.replyTo.messageId = replied->fullId();
-			action.replyTo.topicRootId = replied->topicRootId();
+			replyTo.messageId = replied->fullId();
+			replyTo.topicRootId = ThreadRootOf(peer, replied);
 		}
 	}
 	if (result.topic) {
-		if (!*result.topic) {
-			action.replyTo.topicRootId = MsgId();
-		} else if (const auto topic = peer->forumTopicFor(MsgId(*result.topic))) {
-			if (Data::CanSendTexts(topic)) {
-				action.replyTo.topicRootId = topic->rootId();
-			}
+		const auto marker = (replyTo.messageId.msg == replyTo.topicRootId);
+		const auto wanted = MsgId(*result.topic);
+		const auto topic = wanted ? peer->forumTopicFor(wanted) : nullptr;
+		const auto allowed = topic
+			? Data::CanSendTexts(topic)
+			: (!peer->forum()
+				&& wanted != MsgId(Data::ForumTopic::kGeneralId));
+		if (!wanted) {
+			replyTo.topicRootId = MsgId();
+		} else if (allowed) {
+			replyTo.topicRootId = wanted;
+		} else {
+			return;
 		}
+		if (marker) {
+			replyTo.messageId = FullMsgId();
+		}
+	}
+	if (replyTo.topicRootId && !replyTo.messageId) {
+		replyTo.messageId = FullMsgId(peer->id, replyTo.topicRootId);
 	}
 }
 

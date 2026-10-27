@@ -56,6 +56,7 @@
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
+#include "main/session/send_as_peers.h"
 #include "data/components/credits.h"
 #include "storage/cache/storage_cache_database.h"
 #include "ui/toast/toast.h"
@@ -341,6 +342,64 @@ template <typename T>
 		parse(data.vmessages().v);
 	});
 	return list;
+}
+
+[[nodiscard]] PeerData *ChosenSendAs(not_null<History*> history) {
+	const auto peer = history->peer;
+	auto &sendAs = peer->session().sendAsPeers();
+	return sendAs.shouldChoose({ peer })
+		? sendAs.resolveChosen(peer).get()
+		: nullptr;
+}
+
+struct SendTarget {
+	not_null<Data::Thread*> thread;
+	MsgId rootId;
+	HistoryItem *replied = nullptr;
+	bool missingReply = false;
+};
+
+[[nodiscard]] SendTarget ResolveTarget(
+		not_null<Main::Session*> session,
+		not_null<History*> history,
+		MsgId topic,
+		MsgId replyTo) {
+	const auto peer = history->peer;
+	const auto replied = replyTo
+		? session->data().message(peer->id, replyTo)
+		: nullptr;
+	if (replyTo && !replied) {
+		return {
+			.thread = not_null<Data::Thread*>(history),
+			.missingReply = true,
+		};
+	}
+	const auto general = MsgId(Data::ForumTopic::kGeneralId);
+	const auto rootId = replied
+		? ThreadRootOf(peer, replied)
+		: (topic && (peer->forum() || topic != general))
+		? topic
+		: MsgId();
+	const auto forumTopic = rootId ? peer->forumTopicFor(rootId) : nullptr;
+	return {
+		.thread = forumTopic
+			? not_null<Data::Thread*>(forumTopic)
+			: not_null<Data::Thread*>(history),
+		.rootId = rootId,
+		.replied = replied,
+	};
+}
+
+void ApplyTarget(Api::SendAction &action, const SendTarget &target) {
+	if (target.rootId) {
+		action.replyTo.topicRootId = target.rootId;
+		action.replyTo.messageId = FullMsgId(
+			action.history->peer->id,
+			target.rootId);
+	}
+	if (target.replied) {
+		action.replyTo.messageId = target.replied->fullId();
+	}
 }
 
 int PluginSendDepth = 0;
@@ -795,6 +854,7 @@ public:
 			}
 			auto action = Api::SendAction(history);
 			action.clearDraft = false;
+			action.options.sendAs = ChosenSendAs(history);
 			auto message = Api::MessageToSend(action);
 			message.textWithTags = TextWithTags{ QString::fromStdString(text) };
 			++PluginSendDepth;
@@ -1570,13 +1630,14 @@ private:
 			|| FreshSecret::IsSecretPeerId(history->peer->id)) {
 			return { .error = fgpl::api::error::kNotFound };
 		}
-		const auto topic = outgoing.topic
-			? history->peer->forumTopicFor(MsgId(outgoing.topic))
-			: nullptr;
-		const auto thread = topic
-			? not_null<Data::Thread*>(topic)
-			: not_null<Data::Thread*>(history);
-		if (!Data::CanSendTexts(thread)) {
+		const auto target = ResolveTarget(
+			session,
+			history,
+			MsgId(outgoing.topic),
+			MsgId(outgoing.replyTo));
+		if (target.missingReply) {
+			return { .error = fgpl::api::error::kNotFound };
+		} else if (!Data::CanSendTexts(target.thread)) {
 			return { .error = fgpl::api::error::kDenied };
 		} else if (history->peer->slowmodeSecondsLeft() > 0) {
 			return { .error = fgpl::api::error::kLimit };
@@ -1584,23 +1645,12 @@ private:
 		if (outgoing.schedule && !ValidScheduleTime(TimeId(outgoing.schedule))) {
 			return { .error = fgpl::api::error::kInvalid };
 		}
-		auto action = Api::SendAction(thread);
+		auto action = Api::SendAction(target.thread);
 		action.clearDraft = false;
 		action.options.silent = outgoing.silent;
 		action.options.scheduled = TimeId(outgoing.schedule);
-		if (outgoing.topic && !topic) {
-			action.replyTo.topicRootId = MsgId(outgoing.topic);
-		}
-		if (outgoing.replyTo) {
-			const auto replied = session->data().message(
-				history->peer->id,
-				MsgId(outgoing.replyTo));
-			if (!replied) {
-				return { .error = fgpl::api::error::kNotFound };
-			}
-			action.replyTo.messageId = replied->fullId();
-			action.replyTo.topicRootId = replied->topicRootId();
-		}
+		action.options.sendAs = ChosenSendAs(history);
+		ApplyTarget(action, target);
 		const auto text = Formatted(outgoing.text, outgoing.markdown);
 		auto message = Api::MessageToSend(action);
 		message.textWithTags = TextWithTags{
@@ -1640,13 +1690,15 @@ private:
 		} else if (history->peer->starsPerMessageChecked() > 0) {
 			return { .error = fgpl::api::error::kDenied };
 		}
-		const auto topic = message.topic
-			? history->peer->forumTopicFor(MsgId(message.topic))
-			: nullptr;
-		const auto thread = topic
-			? not_null<Data::Thread*>(topic)
-			: not_null<Data::Thread*>(history);
-		if (history->peer->slowmodeSecondsLeft() > 0) {
+		const auto target = ResolveTarget(
+			session,
+			history,
+			MsgId(message.topic),
+			MsgId(message.replyTo));
+		const auto thread = target.thread;
+		if (target.missingReply) {
+			return { .error = fgpl::api::error::kNotFound };
+		} else if (history->peer->slowmodeSecondsLeft() > 0) {
 			return { .error = fgpl::api::error::kLimit };
 		}
 		if (message.schedule && !ValidScheduleTime(TimeId(message.schedule))) {
@@ -1656,19 +1708,8 @@ private:
 		action.clearDraft = false;
 		action.options.silent = message.silent;
 		action.options.scheduled = TimeId(message.schedule);
-		if (message.topic && !topic) {
-			action.replyTo.topicRootId = MsgId(message.topic);
-		}
-		if (message.replyTo) {
-			const auto replied = session->data().message(
-				history->peer->id,
-				MsgId(message.replyTo));
-			if (!replied) {
-				return { .error = fgpl::api::error::kNotFound };
-			}
-			action.replyTo.messageId = replied->fullId();
-			action.replyTo.topicRootId = replied->topicRootId();
-		}
+		action.options.sendAs = ChosenSendAs(history);
+		ApplyTarget(action, target);
 		const auto track = [&] {
 			if (!message.schedule) {
 				action.localMessageId = session->data().nextLocalMessageId();
@@ -2019,6 +2060,17 @@ bool ValidScheduleTime(TimeId when) {
 	return (when > now + 10) && (when <= now + kMaxScheduleSeconds);
 }
 
+MsgId ThreadRootOf(
+		not_null<PeerData*> peer,
+		not_null<HistoryItem*> item) {
+	if (peer->forum()) {
+		return item->topicRootId();
+	} else if (const auto top = item->replyToTop()) {
+		return top;
+	}
+	return item->isDiscussionPost() ? item->id : MsgId();
+}
+
 std::string UserStatus(not_null<UserData*> user, int64_t &lastSeen) {
 	return StatusOf(user, lastSeen);
 }
@@ -2155,6 +2207,10 @@ std::string MessageMediaKind(not_null<const HistoryItem*>) {
 
 bool ValidScheduleTime(TimeId) {
 	return false;
+}
+
+MsgId ThreadRootOf(not_null<PeerData*>, not_null<HistoryItem*>) {
+	return {};
 }
 
 std::string UserStatus(not_null<UserData*>, int64_t &) {
