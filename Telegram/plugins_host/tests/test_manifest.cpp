@@ -371,6 +371,72 @@ void TestCompatibility() {
 	CHECK(CheckCompatibility(manifest, environment()).size() == 3);
 }
 
+void TestMenuConditions() {
+	const auto withMenu = [](const char *surface, cbor::Value when) {
+		return [=](cbor::Value &d) {
+			Set(d, "permissions.optional", cbor::Value::FromArray({
+				cbor::Value::FromMap({ { "id", Text("ui.menu") }, { "reason", Text("x") } }),
+			}));
+			Set(d, "contributes.menus", cbor::Value::FromArray({
+				cbor::Value::FromMap({
+					{ "surface", Text(surface) }, { "id", Text("x") },
+					{ "title", Text("X") }, { "when", when },
+				}),
+			}));
+		};
+	};
+	ExpectError("unknown key", withMenu("message", cbor::Value::FromMap({ { "color", Int(1) } })), "color");
+	ExpectError("message key on a chat", withMenu("chat", cbor::Value::FromMap({
+		{ "out", cbor::Value::FromBool(true) } })), "does not apply");
+	ExpectError("chat type on the tray", withMenu("tray", cbor::Value::FromMap({
+		{ "chat_type", Array({ "group" }) } })), "does not apply");
+	ExpectError("bad media", withMenu("message", cbor::Value::FromMap({
+		{ "media", Array({ "hologram" }) } })), "media");
+	ExpectError("bad flag", withMenu("selection", cbor::Value::FromMap({ { "forwarded", Int(1) } })), "forwarded");
+
+	auto document = ValidDocument();
+	withMenu("shared_media", cbor::Value::FromMap({
+		{ "chat_type", Array({ "group", "channel" }) },
+		{ "media", Array({ "photo", "video" }) },
+		{ "out", cbor::Value::FromBool(true) },
+		{ "has_text", cbor::Value::FromBool(false) },
+	}))(document);
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (!parsed.ok()) {
+		return;
+	}
+	const auto &when = parsed.value().menus.front().when;
+	CHECK(!when.empty() && when.chatTypes.size() == 2 && when.media.size() == 2);
+	CHECK(HostFeatures().contains("menu.selection") && HostFeatures().contains("menu.shared_media"));
+
+	auto context = MenuContext();
+	context.chatType = "group";
+	context.out = true;
+	context.media = "photo";
+	CHECK(Matches(when, context));
+	context.hasText = true;
+	CHECK(!Matches(when, context));
+	context.hasText = false;
+	context.out = false;
+	CHECK(!Matches(when, context));
+	context.out = true;
+	context.media = "file";
+	CHECK(!Matches(when, context));
+	context.media = "photo";
+	context.chatType = "user";
+	CHECK(!Matches(when, context));
+
+	auto hasMedia = MenuWhen();
+	hasMedia.hasMedia = true;
+	auto preview = MenuContext();
+	preview.media = "webpage";
+	CHECK(!Matches(hasMedia, preview));
+	preview.media = "voice";
+	CHECK(Matches(hasMedia, preview));
+	CHECK(Matches(MenuWhen(), MenuContext()));
+}
+
 void TestOutgoingFilter() {
 	const auto withHook = [](cbor::Value filter) {
 		return [filter = std::move(filter)](cbor::Value &d) {
@@ -474,5 +540,6 @@ int main() {
 	TestSignedTextIgnoresTheSignature();
 	TestIcons();
 	TestOutgoingFilter();
+	TestMenuConditions();
 	return Failures() ? 1 : 0;
 }

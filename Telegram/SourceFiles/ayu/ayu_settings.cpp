@@ -1806,6 +1806,15 @@ void AyuSettings::setPluginsEnabled(bool val) {
 	save();
 }
 
+void AyuSettings::setPluginMenuState(
+		std::vector<std::string> hidden,
+		std::vector<std::string> order) {
+	if (_pluginMenuHidden == hidden && _pluginMenuOrder == order) return;
+	_pluginMenuHidden = std::move(hidden);
+	_pluginMenuOrder = std::move(order);
+	save();
+}
+
 void AyuSettings::setPluginsRuntimeAutoUpdate(bool val) {
 	if (_pluginsRuntimeAutoUpdate.current() == val) return;
 	_pluginsRuntimeAutoUpdate = val;
@@ -2019,6 +2028,8 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"improveLinkPreviews", s._improveLinkPreviews.current()},
 		{"crashReporting", s._crashReporting.current()},
 		{"pluginsEnabled", s._pluginsEnabled.current()},
+		{"pluginMenuHidden", s._pluginMenuHidden},
+		{"pluginMenuOrder", s._pluginMenuOrder},
 		{"pluginsRuntimeAutoUpdate", s._pluginsRuntimeAutoUpdate.current()},
 		{"avatarCorners", s._avatarCorners.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
@@ -2207,6 +2218,8 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._improveLinkPreviews = j.value("improveLinkPreviews", defaults._improveLinkPreviews.current());
 	s._crashReporting = j.value("crashReporting", defaults._crashReporting.current());
 	s._pluginsEnabled = j.value("pluginsEnabled", defaults._pluginsEnabled.current());
+	s._pluginMenuHidden = j.value("pluginMenuHidden", defaults._pluginMenuHidden);
+	s._pluginMenuOrder = j.value("pluginMenuOrder", defaults._pluginMenuOrder);
 	s._pluginsRuntimeAutoUpdate = j.value("pluginsRuntimeAutoUpdate", defaults._pluginsRuntimeAutoUpdate.current());
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());

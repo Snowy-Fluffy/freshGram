@@ -205,6 +205,16 @@
 "fresh_PermChatsActivity" = "查看正在输入、已读状态以及谁加入或离开聊天";
 "fresh_PermUsersPresence" = "查看用户是否在线";
 "fresh_PermAppActivity" = "知道应用是否处于前台";
+"fresh_PluginMenuItems" = "菜单项";
+"fresh_PluginMenuSurfaceMessage" = "消息菜单";
+"fresh_PluginMenuSurfaceChat" = "聊天菜单";
+"fresh_PluginMenuSurfaceProfile" = "个人资料菜单";
+"fresh_PluginMenuSurfaceComposer" = "输入框按钮";
+"fresh_PluginMenuSurfaceMainMenu" = "主菜单";
+"fresh_PluginMenuSurfaceTray" = "托盘菜单";
+"fresh_PluginMenuSurfaceSelection" = "所选消息菜单";
+"fresh_PluginMenuSurfaceSharedMedia" = "共享媒体菜单";
+"fresh_PluginMenuItemsAbout" = "选择此插件的哪些项目显示在菜单中。";
 "fresh_RiskChangesMessages" = "可以编辑或删除你发送的消息";
 "fresh_PluginChatNone" = "未选择";
 "fresh_PluginSettingsLoading" = "正在加载设置…";

@@ -2,6 +2,8 @@
 #include "ayu/features/plugins/plugins_ui.h"
 
 #include "lang/lang_keys.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_log_view.h"
 #include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_service.h"
@@ -28,6 +30,7 @@
 #include "data/data_user.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "history/history_item_components.h"
 #include "main/main_session.h"
 #include "settings/detailed_settings_button.h"
 #include "settings/settings_common.h"
@@ -403,10 +406,35 @@ void AddButtonIcon(
 	icon->show();
 }
 
+[[nodiscard]] fgpl::MenuContext ContextOf(
+		PeerData *peer,
+		HistoryItem *item = nullptr) {
+	auto result = fgpl::MenuContext();
+	if (peer) {
+		result.chatType = PeerKind(peer);
+	}
+	if (item) {
+		result.out = item->out();
+		result.media = MessageMediaKind(item);
+		result.hasText = !item->originalText().text.isEmpty();
+		result.forwarded = item->Has<HistoryMessageForwarded>();
+	}
+	return result;
+}
+
+[[nodiscard]] std::string MenuKey(
+		const std::string &plugin,
+		const std::string &surface,
+		const std::string &menuId) {
+	return plugin + '|' + surface + '|' + menuId;
+}
+
+// Items of the surface that fit the chat and every one of the messages.
 [[nodiscard]] std::vector<Entry> EntriesFor(
 		not_null<Main::Session*> session,
 		const char *surface,
-		PeerData *peer = nullptr) {
+		PeerData *peer = nullptr,
+		const std::vector<fgpl::MenuContext> &contexts = {}) {
 	auto result = std::vector<Entry>();
 	const auto snapshot = Snapshot();
 	if (!snapshot) {
@@ -416,6 +444,8 @@ void AddButtonIcon(
 			|| int64_t(peer->id.value) == fgpl::api::kServiceChat)) {
 		return result;
 	}
+	const auto &settings = AyuSettings::getInstance();
+	const auto &hidden = settings.pluginMenuHidden();
 	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
 		if (peer) {
 			const auto grant = snapshot->grantsOf(plugin.id);
@@ -428,6 +458,17 @@ void AddButtonIcon(
 		for (const auto &menu : plugin.menus) {
 			if (menu.surface != surface) {
 				continue;
+			} else if (ranges::contains(hidden, MenuKey(plugin.id, menu.surface, menu.id))) {
+				continue;
+			} else if (!menu.when.empty()) {
+				const auto fits = contexts.empty()
+					? fgpl::Matches(menu.when, ContextOf(peer))
+					: ranges::all_of(contexts, [&](const fgpl::MenuContext &context) {
+						return fgpl::Matches(menu.when, context);
+					});
+				if (!fits) {
+					continue;
+				}
 			}
 			result.push_back({
 				plugin.id,
@@ -441,6 +482,17 @@ void AddButtonIcon(
 				menu.icon,
 			});
 		}
+	}
+	if (const auto &order = settings.pluginMenuOrder(); !order.empty()) {
+		const auto rank = [&](const Entry &entry) {
+			return std::find(
+				order.begin(),
+				order.end(),
+				MenuKey(entry.plugin, surface, entry.menuId)) - order.begin();
+		};
+		std::stable_sort(result.begin(), result.end(), [&](const Entry &a, const Entry &b) {
+			return rank(a) < rank(b);
+		});
 	}
 	return result;
 }
@@ -1716,6 +1768,82 @@ void FillPermissionsBox(
 	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 }
 
+[[nodiscard]] QString MenuSurfaceTitle(const std::string &surface) {
+	return (surface == "message")
+		? tr::fresh_PluginMenuSurfaceMessage(tr::now)
+		: (surface == "chat")
+		? tr::fresh_PluginMenuSurfaceChat(tr::now)
+		: (surface == "profile")
+		? tr::fresh_PluginMenuSurfaceProfile(tr::now)
+		: (surface == "composer")
+		? tr::fresh_PluginMenuSurfaceComposer(tr::now)
+		: (surface == "main_menu")
+		? tr::fresh_PluginMenuSurfaceMainMenu(tr::now)
+		: (surface == "tray")
+		? tr::fresh_PluginMenuSurfaceTray(tr::now)
+		: (surface == "selection")
+		? tr::fresh_PluginMenuSurfaceSelection(tr::now)
+		: tr::fresh_PluginMenuSurfaceSharedMedia(tr::now);
+}
+
+[[nodiscard]] std::vector<fgpl::ContributedMenu> MenusOf(
+		const std::string &plugin,
+		const std::string &account) {
+	const auto snapshot = Snapshot();
+	if (snapshot) {
+		for (const auto &entry : snapshot->contributions(account, Language())) {
+			if (entry.id == plugin) {
+				return entry.menus;
+			}
+		}
+	}
+	return {};
+}
+
+void FillMenuItemsBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller,
+		std::string plugin) {
+	const auto account = AccountOf(&controller->session());
+	box->setTitle(tr::fresh_PluginMenuItems());
+	box->setWidth(st::boxWideWidth);
+	Ui::AddDividerText(
+		box->verticalLayout(),
+		tr::fresh_PluginMenuItemsAbout());
+	for (const auto &menu : MenusOf(plugin, account)) {
+		const auto key = MenuKey(plugin, menu.surface, menu.id);
+		const auto shown = !ranges::contains(
+			AyuSettings::getInstance().pluginMenuHidden(),
+			key);
+		const auto button = Settings::AddButtonWithIcon(
+			box->verticalLayout(),
+			rpl::single(tr::fresh_PluginBadge(
+				tr::now,
+				lt_title,
+				Utf8(menu.title),
+				lt_plugin,
+				MenuSurfaceTitle(menu.surface))),
+			st::settingsButton,
+			{ &st::menuIconCustomize });
+		const auto on = button->lifetime().make_state<rpl::variable<bool>>(shown);
+		button->toggleOn(on->value(), true);
+		button->addClickHandler([=] {
+			*on = !on->current();
+			auto &settings = AyuSettings::getInstance();
+			auto hidden = settings.pluginMenuHidden();
+			const auto i = ranges::find(hidden, key);
+			if (on->current() && i != hidden.end()) {
+				hidden.erase(i);
+			} else if (!on->current() && i == hidden.end()) {
+				hidden.push_back(key);
+			}
+			settings.setPluginMenuState(std::move(hidden), settings.pluginMenuOrder());
+			NotifyListChanged();
+		});
+	}
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+}
+
 [[nodiscard]] QString AboutText(
 		const fgpl::ManagerSnapshot &snapshot,
 		const fgpl::PluginInfo &info,
@@ -1884,6 +2012,16 @@ void BuildDetails(
 			{ &st::menuIconPermissions }
 		)->addClickHandler([=] {
 			controller->show(Box(FillPermissionsBox, controller, plugin));
+		});
+	}
+	if (!MenusOf(plugin, account).empty()) {
+		Settings::AddButtonWithIcon(
+			content,
+			tr::fresh_PluginMenuItems(),
+			st::settingsButton,
+			{ &st::menuIconCustomize }
+		)->addClickHandler([=] {
+			controller->show(Box(FillMenuItemsBox, controller, plugin));
 		});
 	}
 	Settings::AddButtonWithIcon(
@@ -3299,7 +3437,11 @@ void AddMessageMenuItems(
 		return;
 	}
 	const auto session = &item->history()->session();
-	const auto entries = EntriesFor(session, "message", peer);
+	const auto entries = EntriesFor(
+		session,
+		"message",
+		peer,
+		{ ContextOf(peer, item) });
 	if (entries.empty()) {
 		return;
 	}
@@ -3323,6 +3465,93 @@ void AddMessageMenuItems(
 	}
 }
 
+namespace {
+
+[[nodiscard]] cbor::Value BatchEvent(
+		const char *surface,
+		const std::string &menuId,
+		not_null<PeerData*> peer,
+		const std::vector<MsgId> &ids) {
+	auto map = cbor::Map();
+	map.push_back({ "type", cbor::Value::FromText("menu.click") });
+	map.push_back({ "surface", cbor::Value::FromText(surface) });
+	map.push_back({ "id", cbor::Value::FromText(menuId) });
+	map.push_back({ "chat", Number(int64_t(peer->id.value)) });
+	map.push_back({ "secret", Flag(FreshSecret::IsSecretPeerId(peer->id)) });
+	auto list = cbor::Array();
+	for (const auto &id : ids) {
+		list.push_back(Number(id.bare));
+	}
+	map.push_back({ "ids", cbor::Value::FromArray(std::move(list)) });
+	return cbor::Value::FromMap(std::move(map));
+}
+
+void AddBatchMenuItems(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<Main::Session*> session,
+		const std::vector<FullMsgId> &ids,
+		const char *surface) {
+	constexpr auto kMaxBatch = 100;
+	if (ids.empty() || ids.size() > kMaxBatch) {
+		return;
+	}
+	auto peer = static_cast<PeerData*>(nullptr);
+	auto contexts = std::vector<fgpl::MenuContext>();
+	for (const auto &id : ids) {
+		const auto item = session->data().message(id);
+		if (!item
+			|| item->isService()
+			|| !item->isRegular()
+			|| !IsServerMsgId(item->id)
+			|| (peer && peer != item->history()->peer)) {
+			return;
+		}
+		peer = item->history()->peer;
+		contexts.push_back(ContextOf(peer, item));
+	}
+	const auto entries = EntriesFor(session, surface, peer, contexts);
+	if (entries.empty()) {
+		return;
+	}
+	menu->addSeparator();
+	const auto weak = base::make_weak(session);
+	const auto add = Ui::Menu::CreateAddActionCallback(menu);
+	for (const auto &entry : entries) {
+		AddPluginAction(add, entry, [=] {
+			const auto strong = weak.get();
+			const auto found = strong ? strong->data().peerLoaded(peer->id) : nullptr;
+			if (!found) {
+				return;
+			}
+			auto alive = std::vector<MsgId>();
+			for (const auto &id : ids) {
+				if (strong->data().message(id)) {
+					alive.push_back(id.msg);
+				}
+			}
+			if (!alive.empty()) {
+				Send(strong, entry.plugin, BatchEvent(surface, entry.menuId, found, alive));
+			}
+		});
+	}
+}
+
+} // namespace
+
+void AddSelectionMenuItems(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<Main::Session*> session,
+		const std::vector<FullMsgId> &ids) {
+	AddBatchMenuItems(menu, session, ids, "selection");
+}
+
+void AddSharedMediaMenuItems(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<Main::Session*> session,
+		const std::vector<FullMsgId> &ids) {
+	AddBatchMenuItems(menu, session, ids, "shared_media");
+}
+
 void AddPeerMenuItems(
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer,
@@ -3336,7 +3565,7 @@ void AddPeerMenuItems(
 	const auto session = &controller->session();
 	const auto weak = base::make_weak(session);
 	const auto peerId = peer->id;
-	const auto entries = EntriesFor(session, surface, peer);
+	const auto entries = EntriesFor(session, surface, peer, { ContextOf(peer) });
 	if (!entries.empty()) {
 		add({ .isSeparator = true });
 	}
@@ -3559,6 +3788,18 @@ void StoreSettingsPage(
 }
 
 void AddMessageMenuItems(not_null<Ui::PopupMenu*>, not_null<HistoryItem*>) {
+}
+
+void AddSelectionMenuItems(
+	not_null<Ui::PopupMenu*>,
+	not_null<Main::Session*>,
+	const std::vector<FullMsgId> &) {
+}
+
+void AddSharedMediaMenuItems(
+	not_null<Ui::PopupMenu*>,
+	not_null<Main::Session*>,
+	const std::vector<FullMsgId> &) {
 }
 
 void AddPeerMenuItems(

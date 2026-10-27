@@ -14,7 +14,9 @@
 #include "rpl/variable.h"
 
 #include <map>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 
 namespace Main {
@@ -494,6 +496,8 @@ public:
 	[[nodiscard]] bool improveLinkPreviews() const { return _improveLinkPreviews.current(); }
 	[[nodiscard]] bool crashReporting() const { return _crashReporting.current(); }
 	[[nodiscard]] bool pluginsEnabled() const { return _pluginsEnabled.current(); }
+	[[nodiscard]] const std::vector<std::string> &pluginMenuHidden() const { return _pluginMenuHidden; }
+	[[nodiscard]] const std::vector<std::string> &pluginMenuOrder() const { return _pluginMenuOrder; }
 	[[nodiscard]] bool pluginsRuntimeAutoUpdate() const { return _pluginsRuntimeAutoUpdate.current(); }
 	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
@@ -660,6 +664,7 @@ public:
 	void setImproveLinkPreviews(bool val);
 	void setCrashReporting(bool val);
 	void setPluginsEnabled(bool val);
+	void setPluginMenuState(std::vector<std::string> hidden, std::vector<std::string> order);
 	void setPluginsRuntimeAutoUpdate(bool val);
 	void setAvatarCorners(int val);
 	void setSingleCornerRadius(bool val);
@@ -1064,6 +1069,8 @@ private:
 	rpl::variable<bool> _improveLinkPreviews = false;
 	rpl::variable<bool> _crashReporting = true;
 	rpl::variable<bool> _pluginsEnabled = false;
+	std::vector<std::string> _pluginMenuHidden;
+	std::vector<std::string> _pluginMenuOrder;
 	rpl::variable<bool> _pluginsRuntimeAutoUpdate = true;
 	rpl::variable<int> _avatarCorners = 23;
 	rpl::variable<bool> _singleCornerRadius = false;

@@ -378,6 +378,46 @@ bool Outdated(const Manifest &manifest, const HostEnvironment &environment) {
 		: (app.minor > tested.minor);
 }
 
+const std::set<std::string> &MenuSurfaces() {
+	static const auto result = std::set<std::string>{
+		"message", "chat", "profile", "composer", "main_menu", "tray",
+		"selection", "shared_media",
+	};
+	return result;
+}
+
+bool MenuSurfaceHasMessages(const std::string &surface) {
+	return surface == "message"
+		|| surface == "selection"
+		|| surface == "shared_media";
+}
+
+const std::set<std::string> &MenuMediaKinds() {
+	static const auto result = std::set<std::string>{
+		"photo", "video", "gif", "round", "voice", "audio", "file",
+		"sticker", "poll", "contact", "location", "webpage", "other",
+	};
+	return result;
+}
+
+bool Matches(const MenuWhen &when, const MenuContext &context) {
+	const auto hasMedia = !context.media.empty() && context.media != "webpage";
+	if (!when.chatTypes.empty() && !when.chatTypes.contains(context.chatType)) {
+		return false;
+	} else if (when.out && *when.out != context.out) {
+		return false;
+	} else if (when.hasMedia && *when.hasMedia != hasMedia) {
+		return false;
+	} else if (when.hasText && *when.hasText != context.hasText) {
+		return false;
+	} else if (when.forwarded && *when.forwarded != context.forwarded) {
+		return false;
+	} else if (!when.media.empty() && !when.media.contains(context.media)) {
+		return false;
+	}
+	return true;
+}
+
 const char *EventPermission(const std::string &event) {
 	static const auto permissions = std::map<std::string, const char*>{
 		{ "message.new", "messages.read" },
@@ -424,9 +464,8 @@ bool Matches(const OutgoingFilter &filter, const OutgoingInfo &info) {
 const std::set<std::string> &HostFeatures() {
 	static const auto features = [] {
 		auto result = KnownPermissions();
-		for (const auto surface : {
-				"message", "chat", "profile", "composer", "main_menu", "tray" }) {
-			result.insert(std::string("menu.") + surface);
+		for (const auto &surface : MenuSurfaces()) {
+			result.insert("menu." + surface);
 		}
 		return result;
 	}();
@@ -683,7 +722,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				reader.error("contributes.menus", "entries must be objects");
 				continue;
 			}
-			reader.checkKeys(item, "contributes.menus", { "surface", "id", "title", "icon" });
+			reader.checkKeys(item, "contributes.menus", { "surface", "id", "title", "icon", "when" });
 			auto menu = MenuItem();
 			if (const auto icon = item.find("icon")) {
 				const auto name = icon->asText();
@@ -698,11 +737,42 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			if (const auto title = reader.localized(item, "title", "contributes.menus", true, 80)) {
 				menu.title = *title;
 			}
-			static const auto surfaces = std::set<std::string>{
-				"message", "chat", "profile", "composer", "main_menu", "tray",
-			};
-			if (!surfaces.contains(menu.surface) || !LowerToken(menu.id, 64)) {
+			if (!MenuSurfaces().contains(menu.surface) || !LowerToken(menu.id, 64)) {
 				reader.error("contributes.menus", "has a bad surface or id");
+			}
+			if (const auto when = reader.object(item, "when", "contributes.menus", false, {
+					"chat_type", "out", "has_media", "has_text", "media", "forwarded" })) {
+				const auto messages = MenuSurfaceHasMessages(menu.surface);
+				const auto peers = messages
+					|| menu.surface == "chat"
+					|| menu.surface == "profile"
+					|| menu.surface == "composer";
+				for (const auto &entry : *when->asMap()) {
+					const auto message = (entry.key != "chat_type");
+					if (message ? !messages : !peers) {
+						reader.error(
+							"contributes.menus.when",
+							entry.key + " does not apply to the " + menu.surface + " surface");
+					}
+				}
+				const auto where = std::string("contributes.menus.when");
+				const auto kinds = [&](const char *key, const std::set<std::string> &allowed, std::set<std::string> &into) {
+					const auto list = reader.array(*when, key, where, 16);
+					for (const auto &kind : list ? *list : cbor::Array()) {
+						const auto text = kind.asText();
+						if (!text || !allowed.contains(*text)) {
+							reader.error(where + "." + key, "has an unknown entry");
+						} else {
+							into.insert(*text);
+						}
+					}
+				};
+				kinds("chat_type", OutgoingChatTypes(), menu.when.chatTypes);
+				kinds("media", MenuMediaKinds(), menu.when.media);
+				menu.when.out = reader.boolean(*when, "out", where);
+				menu.when.hasMedia = reader.boolean(*when, "has_media", where);
+				menu.when.hasText = reader.boolean(*when, "has_text", where);
+				menu.when.forwarded = reader.boolean(*when, "forwarded", where);
 			}
 			manifest.menus.push_back(std::move(menu));
 		}

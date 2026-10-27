@@ -1162,7 +1162,13 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 				if (menu.surface == "composer" && !has("ui.composer_button")) {
 					continue;
 				}
-				entry.menus.push_back({ menu.surface, menu.id, menu.title.get(language), menu.icon });
+				entry.menus.push_back({
+					menu.surface,
+					menu.id,
+					menu.title.get(language),
+					menu.icon,
+					menu.when,
+				});
 			}
 		}
 		if (has("ui.command")) {

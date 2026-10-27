@@ -2,6 +2,7 @@
 #pragma once
 
 #include "base/basic_types.h"
+#include "data/data_msg_id.h"
 #include "ui/rp_widget.h"
 
 class HistoryItem;
@@ -117,6 +118,16 @@ void ShowNetworkLog(not_null<Window::SessionController*> controller);
 void AddMessageMenuItems(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<HistoryItem*> item);
+
+void AddSelectionMenuItems(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<Main::Session*> session,
+	const std::vector<FullMsgId> &ids);
+
+void AddSharedMediaMenuItems(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<Main::Session*> session,
+	const std::vector<FullMsgId> &ids);
 
 void AddPeerMenuItems(
 	not_null<Window::SessionController*> controller,
