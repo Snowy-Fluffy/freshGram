@@ -179,6 +179,12 @@ historyTranslateButton: IconButton(historyAttach) {
 	iconOver: icon {{ "chat/input_translate", historyComposeIconFgOver }};
 }
 
+boxCaptionTranslateButton: IconButton(historyTranslateButton) {
+	width: 30px;
+	height: 30px;
+	rippleAreaSize: 0px;
+}
+
 fagramSliderHeight: 32px;
 fagramCardInset: 16px;
 fagramProfileCardInset: 8px;
