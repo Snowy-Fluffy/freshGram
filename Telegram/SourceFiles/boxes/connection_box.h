@@ -149,3 +149,8 @@ private:
 	rpl::lifetime _lifetime;
 
 };
+
+[[nodiscard]] object_ptr<Ui::BoxContent> ProxyEditBox(
+	const MTP::ProxyData &data,
+	std::vector<MTP::ProxyData::Type> allowed,
+	Fn<void(MTP::ProxyData)> callback);

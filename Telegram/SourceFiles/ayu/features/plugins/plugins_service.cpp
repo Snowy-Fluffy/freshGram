@@ -31,6 +31,7 @@
 #include "ui/toast/toast.h"
 #include "base/flat_set.h"
 #include "base/timer.h"
+#include "rpl/combine.h"
 #include "core/application.h"
 #include "core/version.h"
 #include "platform/platform_specific.h"
@@ -631,6 +632,36 @@ void Start() {
 	AyuSettings::getInstance().pluginsEnabledValue(
 	) | rpl::on_next([] {
 		Refresh();
+	}, service.lifetime);
+
+	auto &settings = AyuSettings::getInstance();
+	rpl::combine(
+		settings.pluginsBlockHttpsValue(),
+		settings.pluginsBlockTcpValue(),
+		settings.pluginsBlockUdpValue(),
+		settings.pluginsProxyValue()
+	) | rpl::on_next([](
+			bool blockHttps,
+			bool blockTcp,
+			bool blockUdp,
+			const PluginsProxy &proxy) {
+		auto policy = NetworkPolicy{
+			.blockHttps = blockHttps,
+			.blockTcp = blockTcp,
+			.blockUdp = blockUdp,
+		};
+		if (proxy.enabled && proxy.valid()) {
+			policy.proxy = NetworkProxy{
+				.type = (proxy.type == PluginsProxy::Type::Http)
+					? NetworkProxy::Type::Http
+					: NetworkProxy::Type::Socks5,
+				.host = proxy.host,
+				.port = proxy.port,
+				.user = proxy.user,
+				.password = proxy.password,
+			};
+		}
+		SetNetworkPolicy(std::move(policy));
 	}, service.lifetime);
 
 	Core::App().domain().accountsChanges(

@@ -196,6 +196,15 @@
 "fresh_PluginsNetworkLog" = "Журнал сети";
 "fresh_PluginsNetworkLogTabErrors" = "Ошибки";
 "fresh_PluginsNetworkLogEmpty" = "Сетевой активности пока не было.";
+"fresh_PluginsNetworkAccess" = "Сеть плагинов";
+"fresh_PluginsBlockHttps" = "Блокировать HTTPS для всех плагинов";
+"fresh_PluginsBlockTcp" = "Блокировать TCP для всех плагинов";
+"fresh_PluginsBlockUdp" = "Блокировать UDP для всех плагинов";
+"fresh_PluginsBlockAbout" = "Действует на всех плагинов поверх их собственных разрешений. Открытые соединения заблокированного вида закрываются.";
+"fresh_PluginsProxy" = "Прокси для плагинов";
+"fresh_PluginsProxyOff" = "Выкл";
+"fresh_PluginsProxyUse" = "Использовать прокси для плагинов";
+"fresh_PluginsProxyAbout" = "Через этот прокси идёт только трафик плагинов. Если прокси не работает, плагины получают ошибку, а не соединяются напрямую. UDP работает только с SOCKS5. Имена хостов разрешает прокси.";
 "fresh_PermMessagesEdit" = "Изменять отправленные вами сообщения";
 "fresh_PermMessagesDelete" = "Удалять отправленные вами сообщения";
 "fresh_PermMessagesReact" = "Ставить реакции на сообщения";

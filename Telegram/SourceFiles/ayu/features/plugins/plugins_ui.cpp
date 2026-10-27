@@ -2715,7 +2715,9 @@ void FillNetworkLogBox(not_null<Ui::GenericBox*> box) {
 
 [[nodiscard]] QString ConnectionText(const ConnectionView &view) {
 	const auto endpoint = view.host + ':' + QString::number(view.port)
-		+ ((view.address.isEmpty() || view.address == view.host)
+		+ (!view.via.isEmpty()
+			? u" ("_q + view.via + ')'
+			: (view.address.isEmpty() || view.address == view.host)
 			? QString()
 			: u" ("_q + view.address + ')');
 	return tr::fresh_PluginsNetworkRow(

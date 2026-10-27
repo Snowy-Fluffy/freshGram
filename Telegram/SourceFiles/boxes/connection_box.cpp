@@ -703,7 +703,8 @@ public:
 		QWidget*,
 		const ProxyData &data,
 		Fn<void(ProxyData)> callback,
-		Fn<void(ProxyData)> shareCallback);
+		Fn<void(ProxyData)> shareCallback,
+		std::vector<ProxyData::Type> allowed = {});
 
 private:
 	using Type = ProxyData::Type;
@@ -733,6 +734,7 @@ private:
 		const QString &text) const;
 
 	const bool _allowShare = false;
+	const std::vector<Type> _allowed;
 	Fn<void(ProxyData)> _callback;
 	Fn<void(ProxyData)> _shareCallback;
 
@@ -1489,8 +1491,10 @@ ProxyBox::ProxyBox(
 	QWidget*,
 	const ProxyData &data,
 	Fn<void(ProxyData)> callback,
-	Fn<void(ProxyData)> shareCallback)
-: _allowShare(data.type != Type::None)
+	Fn<void(ProxyData)> shareCallback,
+	std::vector<ProxyData::Type> allowed)
+: _allowShare(data.type != Type::None && shareCallback)
+, _allowed(std::move(allowed))
 , _callback(std::move(callback))
 , _shareCallback(std::move(shareCallback))
 , _content(this) {
@@ -1638,6 +1642,9 @@ void ProxyBox::setupTypes() {
 		{ Type::Web, u"WEB"_q },
 	};
 	for (const auto &[type, label] : types) {
+		if (!_allowed.empty() && !ranges::contains(_allowed, type)) {
+			continue;
+		}
 		_content->add(
 			object_ptr<Ui::Radioenum<Type>>(
 				_content,
@@ -1781,10 +1788,15 @@ void ProxyBox::setupMtprotoCredentials(const ProxyData &data) {
 }
 
 void ProxyBox::setupControls(const ProxyData &data) {
+	const auto allowedType = [&](Type type) {
+		return _allowed.empty() || ranges::contains(_allowed, type);
+	};
 	_type = std::make_shared<Ui::RadioenumGroup<Type>>(
-		(data.type == Type::None
+		allowedType(data.type) && data.type != Type::None
+			? data.type
+			: _allowed.empty()
 			? Type::Mtproto
-			: data.type));
+			: _allowed.front());
 	_content.create(this);
 	_content->resizeToWidth(st::boxWideWidth);
 	_content->moveToLeft(0, 0);
@@ -2430,6 +2442,17 @@ void ProxiesBoxController::replaceItemValue(
 
 	applyItem(which->id);
 	saveDelayed();
+}
+
+object_ptr<Ui::BoxContent> ProxyEditBox(
+		const MTP::ProxyData &data,
+		std::vector<MTP::ProxyData::Type> allowed,
+		Fn<void(MTP::ProxyData)> callback) {
+	return Box<ProxyBox>(
+		data,
+		std::move(callback),
+		nullptr,
+		std::move(allowed));
 }
 
 object_ptr<Ui::BoxContent> ProxiesBoxController::addNewItemBox() {

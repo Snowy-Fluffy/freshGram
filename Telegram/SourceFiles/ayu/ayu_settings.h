@@ -23,6 +23,31 @@ namespace Main {
 class Session;
 }
 
+struct PluginsProxy {
+	enum class Type {
+		Socks5 = 0,
+		Http = 1,
+	};
+
+	bool enabled = false;
+	Type type = Type::Socks5;
+	std::string host;
+	int port = 0;
+	std::string user;
+	std::string password;
+
+	[[nodiscard]] bool valid() const {
+		return !host.empty() && port > 0 && port < 65536;
+	}
+
+	friend inline bool operator==(
+		const PluginsProxy &,
+		const PluginsProxy &) = default;
+};
+
+void to_json(nlohmann::json &j, const PluginsProxy &s);
+void from_json(const nlohmann::json &j, PluginsProxy &s);
+
 enum class PeerIdDisplay {
 	Hidden = 0,
 	TelegramApi = 1,
@@ -502,6 +527,10 @@ public:
 	[[nodiscard]] const std::vector<std::string> &pluginMenuHidden() const { return _pluginMenuHidden; }
 	[[nodiscard]] const std::vector<std::string> &pluginMenuOrder() const { return _pluginMenuOrder; }
 	[[nodiscard]] bool pluginsRuntimeAutoUpdate() const { return _pluginsRuntimeAutoUpdate.current(); }
+	[[nodiscard]] bool pluginsBlockHttps() const { return _pluginsBlockHttps.current(); }
+	[[nodiscard]] bool pluginsBlockTcp() const { return _pluginsBlockTcp.current(); }
+	[[nodiscard]] bool pluginsBlockUdp() const { return _pluginsBlockUdp.current(); }
+	[[nodiscard]] const PluginsProxy &pluginsProxy() const { return _pluginsProxy.current(); }
 	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
@@ -670,6 +699,10 @@ public:
 	void setPluginsEnabled(bool val);
 	void setPluginMenuState(std::vector<std::string> hidden, std::vector<std::string> order);
 	void setPluginsRuntimeAutoUpdate(bool val);
+	void setPluginsBlockHttps(bool val);
+	void setPluginsBlockTcp(bool val);
+	void setPluginsBlockUdp(bool val);
+	void setPluginsProxy(PluginsProxy val);
 	void setAvatarCorners(int val);
 	void setSingleCornerRadius(bool val);
 	void setStreamerMode(bool val);
@@ -901,6 +934,10 @@ public:
 	[[nodiscard]] rpl::producer<bool> crashReportingChanges() const { return _crashReporting.changes(); }
 	[[nodiscard]] rpl::producer<bool> pluginsEnabledValue() const { return _pluginsEnabled.value(); }
 	[[nodiscard]] rpl::producer<bool> pluginsRuntimeAutoUpdateValue() const { return _pluginsRuntimeAutoUpdate.value(); }
+	[[nodiscard]] rpl::producer<bool> pluginsBlockHttpsValue() const { return _pluginsBlockHttps.value(); }
+	[[nodiscard]] rpl::producer<bool> pluginsBlockTcpValue() const { return _pluginsBlockTcp.value(); }
+	[[nodiscard]] rpl::producer<bool> pluginsBlockUdpValue() const { return _pluginsBlockUdp.value(); }
+	[[nodiscard]] rpl::producer<PluginsProxy> pluginsProxyValue() const { return _pluginsProxy.value(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersValue() const { return _avatarCorners.value(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersChanges() const { return _avatarCorners.changes(); }
 	[[nodiscard]] rpl::producer<bool> singleCornerRadiusValue() const { return _singleCornerRadius.value(); }
@@ -1084,6 +1121,10 @@ private:
 	std::vector<std::string> _pluginMenuHidden;
 	std::vector<std::string> _pluginMenuOrder;
 	rpl::variable<bool> _pluginsRuntimeAutoUpdate = true;
+	rpl::variable<bool> _pluginsBlockHttps = false;
+	rpl::variable<bool> _pluginsBlockTcp = false;
+	rpl::variable<bool> _pluginsBlockUdp = false;
+	rpl::variable<PluginsProxy> _pluginsProxy;
 	rpl::variable<int> _avatarCorners = 23;
 	rpl::variable<bool> _singleCornerRadius = false;
 	rpl::variable<bool> _streamerMode = false;

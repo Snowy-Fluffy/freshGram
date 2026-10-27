@@ -196,6 +196,15 @@
 "fresh_PluginsNetworkLog" = "网络日志";
 "fresh_PluginsNetworkLogTabErrors" = "错误";
 "fresh_PluginsNetworkLogEmpty" = "暂无网络活动。";
+"fresh_PluginsNetworkAccess" = "插件网络";
+"fresh_PluginsBlockHttps" = "对所有插件屏蔽 HTTPS";
+"fresh_PluginsBlockTcp" = "对所有插件屏蔽 TCP";
+"fresh_PluginsBlockUdp" = "对所有插件屏蔽 UDP";
+"fresh_PluginsBlockAbout" = "在每个插件自身权限之外额外生效。已屏蔽类型的现有连接会被关闭。";
+"fresh_PluginsProxy" = "插件代理";
+"fresh_PluginsProxyOff" = "关闭";
+"fresh_PluginsProxyUse" = "为插件使用代理";
+"fresh_PluginsProxyAbout" = "只有插件的流量会经过此代理。代理失效时，插件会收到错误，而不是直接连接。UDP 仅支持 SOCKS5。主机名由代理解析。";
 "fresh_PermMessagesEdit" = "编辑你发送的消息";
 "fresh_PermMessagesDelete" = "删除你发送的消息";
 "fresh_PermMessagesReact" = "对消息做出回应";

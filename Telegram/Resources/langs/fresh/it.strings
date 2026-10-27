@@ -196,6 +196,15 @@
 "fresh_PluginsNetworkLog" = "Registro di rete";
 "fresh_PluginsNetworkLogTabErrors" = "Errori";
 "fresh_PluginsNetworkLogEmpty" = "Ancora nessuna attività di rete.";
+"fresh_PluginsNetworkAccess" = "Rete dei plugin";
+"fresh_PluginsBlockHttps" = "Blocca HTTPS per tutti i plugin";
+"fresh_PluginsBlockTcp" = "Blocca TCP per tutti i plugin";
+"fresh_PluginsBlockUdp" = "Blocca UDP per tutti i plugin";
+"fresh_PluginsBlockAbout" = "Vale per ogni plugin oltre ai suoi permessi. Le connessioni aperte del tipo bloccato vengono chiuse.";
+"fresh_PluginsProxy" = "Proxy per i plugin";
+"fresh_PluginsProxyOff" = "Disattivato";
+"fresh_PluginsProxyUse" = "Usa un proxy per i plugin";
+"fresh_PluginsProxyAbout" = "Solo il traffico dei plugin passa da questo proxy. Se il proxy non funziona, i plugin ricevono un errore invece di connettersi direttamente. UDP funziona solo con SOCKS5. I nomi host vengono risolti dal proxy.";
 "fresh_PermMessagesEdit" = "Modificare i messaggi che hai inviato";
 "fresh_PermMessagesDelete" = "Eliminare i messaggi che hai inviato";
 "fresh_PermMessagesReact" = "Reagire ai messaggi";

@@ -8979,6 +8979,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsNetworkLog" = "Network log";
 "fresh_PluginsNetworkLogTabErrors" = "Errors";
 "fresh_PluginsNetworkLogEmpty" = "No network activity yet.";
+"fresh_PluginsNetworkAccess" = "Plugin network";
+"fresh_PluginsBlockHttps" = "Block HTTPS for all plugins";
+"fresh_PluginsBlockTcp" = "Block TCP for all plugins";
+"fresh_PluginsBlockUdp" = "Block UDP for all plugins";
+"fresh_PluginsBlockAbout" = "Applies to every plugin on top of its own permissions. Open connections of a blocked kind are closed.";
+"fresh_PluginsProxy" = "Proxy for plugins";
+"fresh_PluginsProxyOff" = "Off";
+"fresh_PluginsProxyUse" = "Use a proxy for plugins";
+"fresh_PluginsProxyAbout" = "Only plugin traffic goes through this proxy. If the proxy fails, plugins get an error instead of connecting directly. UDP works only with SOCKS5. Host names are resolved by the proxy.";
 "fresh_PermMessagesEdit" = "Edit messages you sent";
 "fresh_PermMessagesDelete" = "Delete messages you sent";
 "fresh_PermMessagesReact" = "Put reactions on messages";

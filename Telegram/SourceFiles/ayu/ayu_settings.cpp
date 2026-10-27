@@ -577,6 +577,10 @@ void AyuSettings::attachVault() {
 				settings._shadowBanIds = p["shadowBanIds"].get<
 					std::unordered_set<int64>>();
 			}
+			if (p.contains("pluginsProxy")
+				&& p["pluginsProxy"].is_object()) {
+				settings._pluginsProxy = p["pluginsProxy"].get<PluginsProxy>();
+			}
 		} catch (...) {
 			LOG(("freshGram settings: failed to parse the sealed accounts data"));
 		}
@@ -596,6 +600,7 @@ void AyuSettings::save() {
 		const auto sealed = json{
 			{ "ghostModeSettings", p["ghostModeSettings"] },
 			{ "shadowBanIds", p["shadowBanIds"] },
+			{ "pluginsProxy", p["pluginsProxy"] },
 		};
 		strip = FreshVault::WriteSealedFile(
 			getAccountsPath(),
@@ -607,6 +612,7 @@ void AyuSettings::save() {
 	if (strip) {
 		p.erase("ghostModeSettings");
 		p.erase("shadowBanIds");
+		p.erase("pluginsProxy");
 	}
 	p["accountsVaulted"] = settings._accountsVaulted;
 
@@ -1867,6 +1873,53 @@ void AyuSettings::setStreamerSpoilers(bool val) {
 	save();
 }
 
+void AyuSettings::setPluginsBlockHttps(bool val) {
+	if (_pluginsBlockHttps.current() == val) return;
+	_pluginsBlockHttps = val;
+	save();
+}
+
+void AyuSettings::setPluginsBlockTcp(bool val) {
+	if (_pluginsBlockTcp.current() == val) return;
+	_pluginsBlockTcp = val;
+	save();
+}
+
+void AyuSettings::setPluginsBlockUdp(bool val) {
+	if (_pluginsBlockUdp.current() == val) return;
+	_pluginsBlockUdp = val;
+	save();
+}
+
+void AyuSettings::setPluginsProxy(PluginsProxy val) {
+	if (_pluginsProxy.current() == val) return;
+	_pluginsProxy = std::move(val);
+	save();
+}
+
+void to_json(nlohmann::json &j, const PluginsProxy &s) {
+	j = nlohmann::json{
+		{"enabled", s.enabled},
+		{"type", int(s.type)},
+		{"host", s.host},
+		{"port", s.port},
+		{"user", s.user},
+		{"password", s.password},
+	};
+}
+
+void from_json(const nlohmann::json &j, PluginsProxy &s) {
+	const auto type = j.value("type", int(PluginsProxy::Type::Socks5));
+	s.enabled = j.value("enabled", false);
+	s.type = (type == int(PluginsProxy::Type::Http))
+		? PluginsProxy::Type::Http
+		: PluginsProxy::Type::Socks5;
+	s.host = j.value("host", std::string());
+	s.port = j.value("port", 0);
+	s.user = j.value("user", std::string());
+	s.password = j.value("password", std::string());
+}
+
 void to_json(nlohmann::json &j, const AyuSettings &s) {
 	auto ghostAccounts = nlohmann::json::object();
 	for (const auto &[key, value] : s._ghostAccounts) {
@@ -2040,6 +2093,10 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"pluginMenuHidden", s._pluginMenuHidden},
 		{"pluginMenuOrder", s._pluginMenuOrder},
 		{"pluginsRuntimeAutoUpdate", s._pluginsRuntimeAutoUpdate.current()},
+		{"pluginsBlockHttps", s._pluginsBlockHttps.current()},
+		{"pluginsBlockTcp", s._pluginsBlockTcp.current()},
+		{"pluginsBlockUdp", s._pluginsBlockUdp.current()},
+		{"pluginsProxy", s._pluginsProxy.current()},
 		{"avatarCorners", s._avatarCorners.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
 		{"streamerMode", s._streamerMode.current()},
@@ -2231,6 +2288,12 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._pluginMenuHidden = j.value("pluginMenuHidden", defaults._pluginMenuHidden);
 	s._pluginMenuOrder = j.value("pluginMenuOrder", defaults._pluginMenuOrder);
 	s._pluginsRuntimeAutoUpdate = j.value("pluginsRuntimeAutoUpdate", defaults._pluginsRuntimeAutoUpdate.current());
+	s._pluginsBlockHttps = j.value("pluginsBlockHttps", defaults._pluginsBlockHttps.current());
+	s._pluginsBlockTcp = j.value("pluginsBlockTcp", defaults._pluginsBlockTcp.current());
+	s._pluginsBlockUdp = j.value("pluginsBlockUdp", defaults._pluginsBlockUdp.current());
+	if (j.contains("pluginsProxy") && j["pluginsProxy"].is_object()) {
+		s._pluginsProxy = j["pluginsProxy"].get<PluginsProxy>();
+	}
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 	s._streamerMode = j.value("streamerMode", defaults._streamerMode.current());

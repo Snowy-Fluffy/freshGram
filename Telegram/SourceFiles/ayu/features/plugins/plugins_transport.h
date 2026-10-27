@@ -4,6 +4,8 @@
 #include "base/basic_types.h"
 #include "crl/crl_time.h"
 
+#include <string>
+
 namespace fgpl {
 class Transport;
 } // namespace fgpl
@@ -18,6 +20,7 @@ struct ConnectionView {
 	QString host;
 	int port = 0;
 	QString address;
+	QString via;
 	bool tls = false;
 	uint64 received = 0;
 	uint64 sent = 0;
@@ -36,6 +39,29 @@ struct NetworkEvent {
 	uint64 sent = 0;
 	crl::time duration = 0;
 };
+
+struct NetworkProxy {
+	enum class Type {
+		None,
+		Socks5,
+		Http,
+	};
+
+	Type type = Type::None;
+	std::string host;
+	int port = 0;
+	std::string user;
+	std::string password;
+};
+
+struct NetworkPolicy {
+	bool blockHttps = false;
+	bool blockTcp = false;
+	bool blockUdp = false;
+	NetworkProxy proxy;
+};
+
+void SetNetworkPolicy(NetworkPolicy policy);
 
 [[nodiscard]] fgpl::Transport *NetworkTransport();
 [[nodiscard]] std::vector<NetworkEvent> NetworkLog();
