@@ -49,7 +49,8 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `settings.read` | `settings.read` | `language`, `theme`, `streamerMode` |
 | `media.get` `{chat, message, thumbnail, download}` | `media.read` | the file of a message, up to 100 MiB: `kind`, `mime`, `name`, `data`; without `download` only a file already on this device (`not_found` otherwise), with `download: true` the app downloads it first (up to five minutes, `limit` for larger files; await it) |
 | `media.list` `{chat, kind, limit, before}` | `media.read` | messages with media, newest first, the same fields as the history; `kind` is `any` (the recent history), `photo`, `video`, `photo_video`, `file`, `voice`, `round`, `audio` or `gif` (searched on the server) |
-| `messages.set_outgoing` `{text, format}` | `messages.transform_outgoing` | only while handling `message.outgoing`; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting |
+| `messages.set_outgoing` `{text, format, silent, schedule, reply_to, topic}` | `messages.transform_outgoing` | only while handling `message.outgoing`; give at least one field; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting; `schedule` is a unix time (0 sends now), `reply_to` a message id of the chat (0 for none), `topic` a forum topic; the app ignores a value it cannot use (a time out of range, a message that is not there) |
+| `messages.drop_outgoing` `{reason}` | `messages.transform_outgoing` | only while handling `message.outgoing`; the message is not sent and the input field stays empty; a non-empty `reason` (up to 200 bytes) is shown as a toast with the plugin's name; the plugins after this one do not see the message |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `ui.window.show` `{id, page, mode}`, `ui.window.update` `{id, page}`, `ui.window.close` `{id}` | `ui.dialog` | a window of the plugin's own: `id` is a lowercase token of up to 32 characters, `mode` is `layer` (over the chat, the default) or `window` (a window of its own); up to 3 windows at a time; see *Windows* |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
@@ -143,11 +144,17 @@ in `contributes.events`.
 Chat ids are the app's peer ids: users are their user id, basic groups and
 channels have a type in the high bits. Use them as they are.
 
-`message.outgoing` `{chat, text}` comes to plugins with
+`message.outgoing` `{chat, text, chat_type, silent, topic, reply_to, scheduled}`
+(`topic`, `reply_to` and `scheduled` only when set) comes to plugins with
 `messages.transform_outgoing` and `contributes.outgoing` before a text message is
-sent (never for secret chats or 777000). The plugin may call
-`messages.set_outgoing` to replace the text; other data calls are refused during
-this event. It has about a second; `contributes.outgoing.onFailure` says what
+sent (never for secret chats, 777000, business shortcuts, welcome templates or
+suggested posts; messages with files are not hooked yet). The plugin may call
+`messages.set_outgoing` to replace the text or the send options, or
+`messages.drop_outgoing` to stop the message; other data calls are refused during
+this event. `contributes.outgoing.filter` limits the event to `chats` (a list of
+chat ids) and `chat_types` (`user`, `bot`, `self`, `group`, `supergroup`, `forum`,
+`channel`); a message that does not match is not delayed by the plugin at all. The
+plugins see a message one after another, each one the changes of those before. It has about a second; `contributes.outgoing.onFailure` says what
 happens when it fails or is late: `pass` sends the text unchanged, `block` stops
 the message and puts it back into the input field.
 
@@ -157,7 +164,7 @@ A plain call waits for its answer, and the plugin handles nothing else
 meanwhile. An awaitable call (`"async": true`) is answered at once with
 `{"ticket": N}`; the app does the work in the background and later delivers
 `call.result` `{ticket, ok, v}` or `{ticket, ok: false, e, m}` as an ordinary
-event. Every call except `messages.set_outgoing` and `plugin.unload` can be
+event. Every call except `messages.set_outgoing`, `messages.drop_outgoing` and `plugin.unload` can be
 awaited; at most 32 may wait at a time (`limit` after that), and none can be
 started while handling `message.outgoing`. When the plugin stops, the calls
 still waiting are dropped.
@@ -188,7 +195,7 @@ freshgram.run()
 timeout)` and `freshgram.spawn(coroutine)` (a background task whose failure is
 logged) work on the plugin's own loop; `asyncio` does not run in the sandbox.
 An async handler of `message.outgoing` must call
-`freshgram.messages.set_outgoing` before its first `await`. In C,
+`freshgram.messages.set_outgoing` or `drop_outgoing` before its first `await`. In C,
 `fg_begin_async` starts a request and `fg_send_async` sends it and writes the
 ticket to its out-parameter; `fg_sleep_async` starts a timer. The results come
 to `fg_plugin_event`.

@@ -1169,17 +1169,26 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 }
 
 bool ManagerSnapshot::transformsOutgoing(int64_t chat, bool secret) const {
-	if (hidden || locked || secret || chat == api::kServiceChat) {
+	auto info = OutgoingInfo();
+	info.chat = chat;
+	info.secret = secret;
+	return transformsOutgoing(info);
+}
+
+bool ManagerSnapshot::transformsOutgoing(const OutgoingInfo &info) const {
+	const auto chat = info.chat;
+	if (hidden || locked || info.secret || chat == api::kServiceChat) {
 		return false;
 	}
-	for (const auto &info : plugins) {
-		const auto grant = grants.find(info.id);
-		const auto parsed = manifest(info.id);
-		if (info.enabled
+	for (const auto &plugin : plugins) {
+		const auto grant = grants.find(plugin.id);
+		const auto parsed = manifest(plugin.id);
+		if (plugin.enabled
 			&& grant != grants.end()
 			&& grant->second.granted.contains("messages.transform_outgoing")
 			&& parsed
-			&& !parsed->outgoing.empty()
+			&& parsed->outgoing.declared
+			&& Matches(parsed->outgoing.filter, info)
 			&& (!grant->second.chats || grant->second.chats->contains(chat))) {
 			return true;
 		}
@@ -1702,11 +1711,10 @@ void PluginManager::run(Instance &instance) {
 		const auto result = instance.client->deliver(event, *instance.broker);
 		serial.unlock();
 		if (outgoing) {
-			const auto text = instance.broker->finishOutgoing();
+			auto edit = instance.broker->finishOutgoing();
 			const auto lock = std::scoped_lock(outgoing->mutex);
 			outgoing->ok = result.ok() && result.value() == 0;
-			outgoing->text = text;
-			outgoing->markdown = instance.broker->outgoingMarkdown();
+			outgoing->edit = std::move(edit);
 			outgoing->finished = true;
 			outgoing->done.notify_all();
 		}
@@ -1845,7 +1853,7 @@ bool PluginManager::activatedBy(const Record &record, const char *trigger) const
 	if (!parsed) {
 		return false;
 	} else if (std::string_view(trigger) == "startup") {
-		const auto transforms = !parsed->outgoing.empty()
+		const auto transforms = parsed->outgoing.declared
 			&& std::any_of(record.grants.begin(), record.grants.end(), [](const auto &entry) {
 				return entry.second.granted.contains("messages.transform_outgoing");
 			});
@@ -2200,13 +2208,26 @@ void PluginManager::transformOutgoingAsync(
 		const std::string &text,
 		int timeoutMs,
 		std::function<void(OutgoingResult)> done) {
+	auto info = OutgoingInfo();
+	info.chat = chat;
+	info.secret = secret;
+	info.text = text;
+	transformOutgoingAsync(account, std::move(info), timeoutMs, std::move(done));
+}
+
+void PluginManager::transformOutgoingAsync(
+		const std::string &account,
+		OutgoingInfo info,
+		int timeoutMs,
+		std::function<void(OutgoingResult)> done) {
 	auto chain = std::make_shared<OutgoingChain>();
 	chain->account = account;
-	chain->chat = chat;
 	chain->timeoutMs = timeoutMs;
-	chain->result.text = text;
+	chain->result.text = info.text;
+	const auto allowed = !info.secret && info.chat != api::kServiceChat;
+	chain->info = std::move(info);
 	chain->done = std::move(done);
-	if (ValidAccount(account) && mayRun() && !secret && chat != api::kServiceChat) {
+	if (ValidAccount(account) && mayRun() && allowed) {
 		for (const auto &item : _records) {
 			chain->plugins.push_back(item.first);
 		}
@@ -2228,23 +2249,42 @@ bool PluginManager::advance(
 		if (const auto pending = chain.current) {
 			auto finished = false;
 			auto ok = false;
-			auto text = std::optional<std::string>();
-			auto markdown = false;
+			auto edit = OutgoingEdit();
 			{
 				const auto lock = std::scoped_lock(pending->mutex);
 				finished = pending->finished;
 				ok = pending->ok;
-				text = pending->text;
-				markdown = pending->markdown;
+				edit = pending->edit;
 			}
 			if (!finished && now < chain.deadline) {
 				return false;
 			}
 			chain.current = nullptr;
 			if (finished && ok) {
-				if (text) {
-					chain.result.text = *text;
-					chain.result.markdown = markdown;
+				auto &result = chain.result;
+				auto &info = chain.info;
+				if (edit.drop) {
+					result.dropped = true;
+					result.plugin = chain.plugins[chain.next - 1];
+					result.reason = std::move(edit.dropReason);
+					return true;
+				}
+				if (edit.text) {
+					result.text = *edit.text;
+					result.markdown = edit.markdown;
+					info.text = *edit.text;
+				}
+				if (edit.silent) {
+					result.silent = info.silent = *edit.silent;
+				}
+				if (edit.schedule) {
+					result.schedule = info.scheduled = *edit.schedule;
+				}
+				if (edit.replyTo) {
+					result.replyTo = info.replyTo = *edit.replyTo;
+				}
+				if (edit.topic) {
+					result.topic = info.topic = *edit.topic;
 				}
 			} else if (chain.blocking) {
 				return refuse(
@@ -2268,11 +2308,12 @@ bool PluginManager::advance(
 			|| grant == record.grants.end()
 			|| !grant->second.granted.contains("messages.transform_outgoing")
 			|| !parsed
-			|| parsed->outgoing.empty()
-			|| (grant->second.chats && !grant->second.chats->contains(chain.chat))) {
+			|| !parsed->outgoing.declared
+			|| !Matches(parsed->outgoing.filter, chain.info)
+			|| (grant->second.chats && !grant->second.chats->contains(chain.info.chat))) {
 			continue;
 		}
-		const auto blocking = (parsed->outgoing == "block");
+		const auto blocking = parsed->outgoing.block;
 		auto *instance = ensure(record, chain.account, nullptr);
 		auto ready = false;
 		if (instance) {
@@ -2286,11 +2327,23 @@ bool PluginManager::advance(
 			continue;
 		}
 		auto pending = std::make_shared<Outgoing>();
-		pending->event = cbor::Value::FromMap({
+		const auto &info = chain.info;
+		auto event = cbor::Map{
 			{ "type", Text("message.outgoing") },
-			{ "chat", cbor::Value::FromInt(chain.chat) },
+			{ "chat", cbor::Value::FromInt(info.chat) },
 			{ "text", Text(chain.result.text) },
-		});
+			{ "chat_type", Text(info.chatType) },
+			{ "silent", cbor::Value::FromBool(info.silent) },
+		};
+		const auto optional = [&](const char *key, int64_t value) {
+			if (value) {
+				event.push_back({ key, cbor::Value::FromInt(value) });
+			}
+		};
+		optional("topic", info.topic);
+		optional("reply_to", info.replyTo);
+		optional("scheduled", info.scheduled);
+		pending->event = cbor::Value::FromMap(std::move(event));
 		{
 			const auto lock = std::scoped_lock(instance->mutex);
 			instance->outgoing.push_back(pending);

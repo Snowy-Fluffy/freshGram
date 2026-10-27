@@ -357,6 +357,51 @@ void TestCompatibility() {
 	CHECK(CheckCompatibility(manifest, environment()).size() == 3);
 }
 
+void TestOutgoingFilter() {
+	const auto withHook = [](cbor::Value filter) {
+		return [filter = std::move(filter)](cbor::Value &d) {
+			Set(d, "permissions.optional", cbor::Value::FromArray({
+				cbor::Value::FromMap({ { "id", Text("messages.transform_outgoing") }, { "reason", Text("x") } }),
+			}));
+			Set(d, "contributes.outgoing.filter", filter);
+		};
+	};
+	ExpectError("filter key", withHook(cbor::Value::FromMap({ { "color", Int(1) } })), "color");
+	ExpectError("filter chat type", withHook(cbor::Value::FromMap({
+		{ "chat_types", Array({ "planet" }) } })), "chat_types");
+	ExpectError("filter chats", withHook(cbor::Value::FromMap({
+		{ "chats", cbor::Value::FromArray({ Text("x") }) } })), "chats");
+
+	auto document = ValidDocument();
+	withHook(cbor::Value::FromMap({
+		{ "chats", cbor::Value::FromArray({ Int(5), Int(6) }) },
+		{ "chat_types", Array({ "group", "channel" }) },
+	}))(document);
+	Set(document, "contributes.outgoing.onFailure", Text("block"));
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (!parsed.ok()) {
+		return;
+	}
+	const auto &hook = parsed.value().outgoing;
+	CHECK(hook.declared && hook.block);
+	CHECK(hook.filter.chats == std::set<int64_t>({ 5, 6 }));
+	CHECK(hook.filter.chatTypes.size() == 2);
+
+	auto info = OutgoingInfo();
+	info.chat = 5;
+	info.chatType = "group";
+	CHECK(Matches(hook.filter, info));
+	info.chat = 7;
+	CHECK(!Matches(hook.filter, info));
+	info.chat = 6;
+	info.chatType = "user";
+	CHECK(!Matches(hook.filter, info));
+	info.chatType = "channel";
+	CHECK(Matches(hook.filter, info));
+	CHECK(Matches(OutgoingFilter(), info));
+}
+
 void TestSignedTextIgnoresTheSignature() {
 	auto document = ValidDocument();
 	const auto before = SignedText(document);
@@ -414,5 +459,6 @@ int main() {
 	TestCompatibility();
 	TestSignedTextIgnoresTheSignature();
 	TestIcons();
+	TestOutgoingFilter();
 	return Failures() ? 1 : 0;
 }

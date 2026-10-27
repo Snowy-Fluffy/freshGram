@@ -157,8 +157,13 @@ struct PluginStats {
 
 struct OutgoingResult {
 	bool blocked = false;
+	bool dropped = false;
 	std::string text;
 	bool markdown = false;
+	std::optional<bool> silent;
+	std::optional<int64_t> schedule;
+	std::optional<int64_t> replyTo;
+	std::optional<int64_t> topic;
 	std::string plugin;
 	std::string reason;
 };
@@ -242,6 +247,7 @@ struct ManagerSnapshot {
 	[[nodiscard]] std::vector<Contribution> contributions(
 		const std::string &account,
 		const std::string &language) const;
+	[[nodiscard]] bool transformsOutgoing(const OutgoingInfo &info) const;
 	[[nodiscard]] bool transformsOutgoing(int64_t chat, bool secret) const;
 };
 
@@ -302,6 +308,12 @@ public:
 		const std::string &text,
 		int timeoutMs,
 		std::function<void(OutgoingResult)> done);
+	void transformOutgoingAsync(
+		const std::string &account,
+		OutgoingInfo info,
+		int timeoutMs,
+		std::function<void(OutgoingResult)> done);
+
 
 	[[nodiscard]] ManagerSnapshot snapshot() const;
 
@@ -361,8 +373,7 @@ private:
 		std::condition_variable done;
 		bool finished = false;
 		bool ok = false;
-		std::optional<std::string> text;
-		bool markdown = false;
+		OutgoingEdit edit;
 	};
 
 	struct StartPlan {
@@ -421,7 +432,7 @@ private:
 
 	struct OutgoingChain {
 		std::string account;
-		int64_t chat = 0;
+		OutgoingInfo info;
 		int timeoutMs = 0;
 		std::vector<std::string> plugins;
 		size_t next = 0;

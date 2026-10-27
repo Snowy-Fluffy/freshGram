@@ -152,6 +152,18 @@ struct OutgoingMessage {
 	bool waitForServerId = false;
 };
 
+// What a plugin asked for while handling message.outgoing.
+struct OutgoingEdit {
+	std::optional<std::string> text;
+	bool markdown = false;
+	std::optional<bool> silent;
+	std::optional<int64_t> schedule;
+	std::optional<int64_t> replyTo;
+	std::optional<int64_t> topic;
+	bool drop = false;
+	std::string dropReason;
+};
+
 struct SendResult {
 	std::string error;
 	int64_t localId = 0;
@@ -526,10 +538,7 @@ public:
 	}
 
 	void beginOutgoing();
-	[[nodiscard]] std::optional<std::string> finishOutgoing();
-	[[nodiscard]] bool outgoingMarkdown() const {
-		return _outgoingMarkdown;
-	}
+	[[nodiscard]] OutgoingEdit finishOutgoing();
 	void releaseSockets();
 
 	[[nodiscard]] int pending() const {
@@ -602,8 +611,7 @@ private:
 	std::map<std::string, int64_t> _windowUpdated;
 	int64_t _nextTicket = 1;
 	bool _outgoing = false;
-	std::optional<std::string> _outgoingText;
-	bool _outgoingMarkdown = false;
+	OutgoingEdit _outgoingEdit;
 
 };
 
