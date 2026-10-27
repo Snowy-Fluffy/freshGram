@@ -19,7 +19,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(2);
+constexpr auto kVersion = int64_t(3);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -509,7 +509,7 @@ public:
 	void close() {
 		_closed = true;
 	}
-	void noteUserAction(std::string_view type);
+	void noteUserAction(std::string_view type, std::string_view window = {});
 
 private:
 	[[nodiscard]] cbor::Value schedule(
@@ -569,6 +569,8 @@ private:
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;
 	bool _dialogOpen = false;
+	std::map<std::string, std::string> _windows;
+	std::map<std::string, int64_t> _windowUpdated;
 	int64_t _nextTicket = 1;
 	bool _outgoing = false;
 	std::optional<std::string> _outgoingText;

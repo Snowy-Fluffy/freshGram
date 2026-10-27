@@ -518,8 +518,18 @@ void TestUiContributions() {
 	}
 	auto lab = Lab("fgpl-manager-ui");
 	auto pages = std::vector<std::pair<std::string, cbor::Value>>();
+	auto windows = std::vector<std::string>();
 	auto pagesMutex = std::mutex();
 	auto config = lab.config();
+	config.services.window = [&](
+			const std::string &id,
+			const std::string &account,
+			const std::string &window,
+			const std::string &mode,
+			const cbor::Value *page) {
+		const auto lock = std::scoped_lock(pagesMutex);
+		windows.push_back(id + "/" + account + "/" + window + "/" + mode + (page ? "/open" : "/close"));
+	};
 	config.services.settingsPage = [&](const std::string &id, const std::string &account, const cbor::Value &page) {
 		const auto lock = std::scoped_lock(pagesMutex);
 		pages.emplace_back(id + "/" + account, page);
@@ -527,6 +537,7 @@ void TestUiContributions() {
 	auto manager = PluginManager(config);
 	auto document = Document("com.example.uidemo", "1.0.0", {
 		{ "ui.menu", {} }, { "ui.command", {} }, { "ui.settings_page", {} }, { "storage.private", {} },
+		{ "ui.dialog", {} },
 	});
 	Set(document, "runtime.kind", Text("python"));
 	Remove(document, "runtime.module");
@@ -558,7 +569,7 @@ void TestUiContributions() {
 	CHECK(manager.setEnabled(id, true));
 
 	CHECK(manager.contributions("A", "default").empty());
-	CHECK(manager.grant(id, "A", { { "ui.menu", "ui.command", "ui.settings_page", "storage.private" }, std::nullopt }));
+	CHECK(manager.grant(id, "A", { { "ui.menu", "ui.command", "ui.settings_page", "storage.private", "ui.dialog" }, std::nullopt }));
 	const auto contributions = manager.contributions("A", "ru");
 	CHECK(contributions.size() == 1);
 	if (!contributions.empty()) {
@@ -587,13 +598,26 @@ void TestUiContributions() {
 	CHECK(manager.send(id, "A", cbor::Value::FromMap({
 		{ "type", Text("settings.change") }, { "id", Text("loud") }, { "value", cbor::Value::FromBool(true) },
 	})));
+	CHECK(manager.send(id, "A", cbor::Value::FromMap({
+		{ "type", Text("command") }, { "name", Text("tr") }, { "args", Text("window") },
+	})));
 	CHECK(manager.drain(120000));
+	CHECK(manager.send(id, "A", cbor::Value::FromMap({
+		{ "type", Text("window.click") }, { "window", Text("board") }, { "id", Text("go") },
+	})));
+	CHECK(manager.drain(120000));
+	const auto window = lab.stored(id, "A", "window");
+	CHECK(window && window->asArray()->size() == 3 && *(*window->asArray())[1].asText() == "board");
+	{
+		const auto lock = std::scoped_lock(pagesMutex);
+		CHECK(windows == (std::vector<std::string>{ "com.example.uidemo/A/board/window/open" }));
+	}
 
 	const auto menu = lab.stored(id, "A", "menu");
 	CHECK(menu && menu->find("chat")->asInt() == 1 && menu->find("message")->isNull());
 	CHECK(menu && menu->find("text")->isNull());
 	const auto command = lab.stored(id, "A", "command");
-	CHECK(command && *command->asText() == "bonjour");
+	CHECK(command && *command->asText() == "window");
 	const auto setting = lab.stored(id, "A", "setting");
 	CHECK(setting && setting->asArray()->size() == 3 && *(*setting->asArray())[1].asText() == "loud");
 	{

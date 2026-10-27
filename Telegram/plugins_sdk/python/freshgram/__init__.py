@@ -208,6 +208,25 @@ class _Ui(_Namespace):
     def close_dialog(self):
         return self._call("ui.dialog.close", _nothing)
 
+    def window(self, window_id, title, items, buttons=None, mode="layer"):
+        """Show a window or update it (ui.dialog); events carry its id as `window`.
+
+        Items may nest: row, column, card and tabs hold other items, and
+        image, list, table and code add content. mode is "layer" (over the
+        chat) or "window" (a window of its own); an open window keeps its mode.
+        """
+        return self._call(
+            "ui.window.show", _nothing,
+            id=window_id, mode=mode, page=_page(title, items, buttons))
+
+    def update_window(self, window_id, title, items, buttons=None):
+        return self._call(
+            "ui.window.update", _nothing,
+            id=window_id, page=_page(title, items, buttons))
+
+    def close_window(self, window_id):
+        return self._call("ui.window.close", _nothing, id=window_id)
+
 
 def _page(title, items, buttons):
     page = {"title": title, "items": items}
@@ -554,6 +573,17 @@ def on_dialog(item_id=None):
             if item_id is None or event.get("id") == item_id:
                 return function(event)
         _event_handlers.append(("dialog.*", wrapper))
+        return function
+    return register
+
+
+def on_window(window_id, item_id=None):
+    """Run for clicks and changes in a window of ui.window, and when it closes."""
+    def register(function):
+        def wrapper(event):
+            if event.get("window") == window_id and (item_id is None or event.get("id") == item_id):
+                return function(event)
+        _event_handlers.append(("window.*", wrapper))
         return function
     return register
 

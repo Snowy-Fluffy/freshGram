@@ -21,6 +21,15 @@ def menu(event):
 @freshgram.on_command("tr")
 def command(event):
     freshgram.storage.set("command", event.get("args"))
+    if event.get("args") == "window":
+        freshgram.ui.window("board", "Board", [
+            {"type": "row", "items": [{"type": "button", "id": "go", "label": "Go"}]},
+        ], mode="window")
+
+
+@freshgram.on_window("board", "go")
+def board(event):
+    freshgram.storage.set("window", [event["type"], event["window"], event["id"]])
 
 
 @freshgram.on_setting()

@@ -31,7 +31,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 `not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`,
 `cancelled` (the user closed a file dialog).
 
-## Calls (API level 2)
+## Calls (API level 3)
 
 | Call | Permission | Notes |
 |---|---|---|
@@ -51,6 +51,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `media.list` `{chat, kind, limit, before}` | `media.read` | messages with media, newest first, the same fields as the history; `kind` is `any` (the recent history), `photo`, `video`, `photo_video`, `file`, `voice`, `round`, `audio` or `gif` (searched on the server) |
 | `messages.set_outgoing` `{text, format}` | `messages.transform_outgoing` | only while handling `message.outgoing`; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
+| `ui.window.show` `{id, page, mode}`, `ui.window.update` `{id, page}`, `ui.window.close` `{id}` | `ui.dialog` | a window of the plugin's own: `id` is a lowercase token of up to 32 characters, `mode` is `layer` (over the chat, the default) or `window` (a window of its own); up to 3 windows at a time; see *Windows* |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
@@ -83,7 +84,8 @@ most 256 calls while handling one event. Some calls have limits of their own:
 `messages.send` allows 5 messages at once and then one a second, `ui.toast` one
 toast every 2 seconds, and `ui.dialog.show` opens a dialog only within 10
 seconds of a user action (a menu click, a command, a settings or dialog event)
-or while the plugin's dialog is already open. A call over a limit fails with
+or while the plugin's dialog is already open; `ui.window.show` follows the same
+rule, and an open window can be updated at most ten times a second. A call over a limit fails with
 `limit`. A request or an answer may be up to 12 MiB; a larger answer fails with
 `limit` instead of stopping the plugin. `runtime.limits.eventTimeoutMs` is the plugin's
 own time for an event: time spent waiting for the app (a download, a socket
@@ -218,7 +220,7 @@ in between.
 
 ## UI contributions
 
-A plugin never draws widgets. It declares menu items and commands in the manifest
+A plugin never runs code in the app's windows: it sends a tree of data and the app draws it. It declares menu items and commands in the manifest
 (`contributes.menus`, `contributes.commands`, each needing `ui.menu` / `ui.command`) and the
 app draws them with the plugin's name next to the title. Every `composer` item becomes its
 own button next to the message field, for every plugin; when there are more than three, the
@@ -260,6 +262,7 @@ Activations come back as events:
 | `settings.click` | `id` of a button or of one of the page's `buttons` |
 | `dialog.change`, `dialog.click` | the same for a dialog shown with `ui.dialog.show` |
 | `dialog.close` | the user closed the dialog |
+| `window.change`, `window.click`, `window.close` | the same for a window shown with `ui.window.show`, with its `window` id; a click on a `list` entry has the entry's `id`, a change of `tabs` the id of the chosen tab |
 
 The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items": [...], "buttons": [...]}` with up to
 64 items (`id` is a lowercase token, unique within the page, buttons included):
@@ -278,11 +281,54 @@ The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items"
 | `slider` | `id`, `label`, `min`, `max`, `step`, `value` (at most 1000 steps) |
 | `chat` | `id`, `label`, `value` (a chat id or 0), `icon`: the user picks a chat |
 
+Pages can nest and show more than a settings list. These items also work in dialogs and
+windows (all ids stay unique across the whole page; at most 4 levels and 256 items in total):
+
+| Item | Fields |
+|---|---|
+| `row` | `items`: 1 to 4 items side by side |
+| `column` | `items`: a group of items |
+| `card` | `title`, `items`: a titled group set off from the rest of the page |
+| `tabs` | `id`, `value` (the chosen tab), `tabs: [{id, label, items}]` (up to 8); a change sends the tab id |
+| `list` | `items: [{id, title, subtitle, icon}]` (up to 64): rows that can be clicked |
+| `table` | `columns` (up to 6 titles), `rows` (up to 32 lists of texts, one per column) |
+| `image` | `data` (a PNG up to 2048×2048 or a JPEG, up to 256 KiB), `width`, `height` (up to 512), `alt` |
+| `code` | `text`: monospaced text |
+
+`text` also takes `style`: `title`, `subtitle`, `muted`, `accent` or `danger`; colors and fonts
+come from the app's theme.
+
 Interactive items also take `hint` (a line of text under the item) and
 `disabled`. `buttons` (up to 3 of `{id, label, style}`) are drawn at the bottom
 of a dialog. The app validates the tree, shows it in its own window and keeps
 the last version; send it again to change it: values the user is typing are
 kept. Text cannot contain control or bidi override characters.
+
+## Windows
+
+`ui.window.show` opens a window with the same tree as a dialog and gives it a name, so a
+plugin can keep several (a main window, a log, a picker). Sending it again with the same
+`id`, or calling `ui.window.update`, changes the open window and keeps what the user is
+typing. The app adds the plugin's name to every window and draws all of it itself:
+there is no HTML or script. The plugin hears `window.*` events with the `window` id, and
+`window.close` when the user closes it. A window closes when the plugin stops or is
+disabled, and does not open while the app is locked with a passcode.
+
+```python
+@freshgram.on_command("board")
+def board(event):
+    freshgram.ui.window("board", "Board", [
+        {"type": "tabs", "id": "tabs", "tabs": [
+            {"id": "todo", "label": "To do", "items": [
+                {"type": "list", "items": [{"id": "t1", "title": "Write docs"}]}]},
+            {"id": "info", "label": "Info", "items": [{"type": "text", "text": "Hello"}]},
+        ]},
+    ], mode="window")
+
+@freshgram.on_window("board", "t1")
+def clicked(event):
+    freshgram.ui.close_window("board")
+```
 
 ## Python
 
@@ -301,7 +347,7 @@ def message(event):
 freshgram.run()
 ```
 
-`freshgram.on_settings_open`, `freshgram.on_dialog(item_id)`,
+`freshgram.on_settings_open`, `freshgram.on_dialog(item_id)`, `freshgram.on_window(window_id, item_id)`,
 `freshgram.on_timer(timer_id)` and `freshgram.on_chat_opened` register handlers
 for the settings page, dialogs, timers and opened chats; one failing handler is
 logged and does not stop the others. The namespaces follow the calls:

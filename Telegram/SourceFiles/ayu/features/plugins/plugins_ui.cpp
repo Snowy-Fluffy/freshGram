@@ -36,6 +36,7 @@
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
+#include "styles/style_widgets.h"
 #include "styles/style_window.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/boxes/single_choice_box.h"
@@ -50,6 +51,10 @@
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/fields/password_input.h"
 #include "ui/widgets/continuous_sliders.h"
+#include "ui/widgets/discrete_sliders.h"
+#include "ui/widgets/scroll_area.h"
+#include "ui/widgets/separate_panel.h"
+#include "ui/text/text_entity.h"
 #include "ui/basic_click_handlers.h"
 #include "window/window_peer_menu.h"
 #include "data/data_thread.h"
@@ -69,14 +74,18 @@
 #include "fgpl/permissions.h"
 #endif
 
+#include <QtCore/QBuffer>
 #include <QtCore/QDateTime>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QUrl>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QImageReader>
 #include <QtSvg/QSvgRenderer>
 
+#include <functional>
 #include <map>
+#include <tuple>
 
 namespace FreshPlugins {
 
@@ -504,14 +513,48 @@ void SendSetting(
 		const std::string &plugin,
 		const char *type,
 		const std::string &itemId,
-		std::optional<cbor::Value> value) {
+		std::optional<cbor::Value> value,
+		const std::string &window = std::string()) {
 	auto map = cbor::Map();
 	map.push_back({ "type", cbor::Value::FromText(type) });
 	map.push_back({ "id", cbor::Value::FromText(itemId) });
+	if (!window.empty()) {
+		map.push_back({ "window", cbor::Value::FromText(window) });
+	}
 	if (value) {
 		map.push_back({ "value", std::move(*value) });
 	}
 	Send(session, plugin, cbor::Value::FromMap(std::move(map)));
+}
+
+[[nodiscard]] const cbor::Array &ArrayOf(const cbor::Value &item, const char *name) {
+	static const auto empty = cbor::Array();
+	const auto field = item.find(name);
+	return (field && field->asArray()) ? *field->asArray() : empty;
+}
+
+void Flatten(const cbor::Value &item, std::vector<const cbor::Value*> &out) {
+	out.push_back(&item);
+	const auto type = TextOf(item, "type");
+	if (type == u"row"_q || type == u"column"_q || type == u"card"_q) {
+		for (const auto &child : ArrayOf(item, "items")) {
+			Flatten(child, out);
+		}
+	} else if (type == u"tabs"_q) {
+		for (const auto &tab : ArrayOf(item, "tabs")) {
+			for (const auto &child : ArrayOf(tab, "items")) {
+				Flatten(child, out);
+			}
+		}
+	}
+}
+
+[[nodiscard]] std::vector<const cbor::Value*> Flattened(const cbor::Value &page) {
+	auto result = std::vector<const cbor::Value*>();
+	for (const auto &item : ArrayOf(page, "items")) {
+		Flatten(item, result);
+	}
+	return result;
 }
 
 struct Page {
@@ -521,11 +564,10 @@ struct Page {
 	rpl::lifetime lifetime;
 
 	void apply(const cbor::Value &page) {
-		const auto items = page.find("items");
-		const auto list = (items && items->asArray()) ? *items->asArray() : cbor::Array();
+		const auto list = Flattened(page);
 		for (auto i = size_t(0); i != list.size() && i != update.size(); ++i) {
 			if (update[i]) {
-				update[i](list[i]);
+				update[i](*list[i]);
 			}
 		}
 	}
@@ -547,23 +589,41 @@ struct Page {
 }
 
 [[nodiscard]] QString StructureOf(const cbor::Value &page, bool withButtons = true) {
-	const auto items = page.find("items");
 	auto result = QStringList();
-	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
-		const auto type = TextOf(item, "type");
+	for (const auto item : Flattened(page)) {
+		const auto type = TextOf(*item, "type");
+		auto shape = QString();
+		if (type == u"slider"_q) {
+			shape = u"/%1/%2/%3"_q
+				.arg(IntOf(*item, "min"))
+				.arg(IntOf(*item, "max"))
+				.arg(IntOf(*item, "step"));
+		} else if (type == u"row"_q || type == u"column"_q || type == u"card"_q) {
+			shape = u"/n%1/"_q.arg(int(ArrayOf(*item, "items").size())) + TextOf(*item, "title");
+		} else if (type == u"tabs"_q) {
+			for (const auto &tab : ArrayOf(*item, "tabs")) {
+				shape += u"/%1:%2:%3"_q
+					.arg(TextOf(tab, "id"))
+					.arg(TextOf(tab, "label"))
+					.arg(int(ArrayOf(tab, "items").size()));
+			}
+		} else if (type == u"list"_q) {
+			for (const auto &entry : ArrayOf(*item, "items")) {
+				shape += '/' + TextOf(entry, "id") + ':' + TextOf(entry, "icon");
+			}
+		} else if (type == u"table"_q) {
+			shape = u"/%1x%2"_q
+				.arg(int(ArrayOf(*item, "columns").size()))
+				.arg(int(ArrayOf(*item, "rows").size()));
+		}
 		result.push_back(type
-			+ '/' + TextOf(item, "id")
-			+ (FlagOf(item, "multiline") ? u"/m"_q : QString())
-			+ (FlagOf(item, "password") ? u"/p"_q : QString())
-			+ (TextOf(item, "placeholder").isEmpty() ? QString() : u"/ph"_q)
-			+ '/' + TextOf(item, "icon")
-			+ '/' + TextOf(item, "style")
-			+ ((type == u"slider"_q)
-				? (u"/%1/%2/%3"_q
-					.arg(IntOf(item, "min"))
-					.arg(IntOf(item, "max"))
-					.arg(IntOf(item, "step")))
-				: QString()));
+			+ '/' + TextOf(*item, "id")
+			+ (FlagOf(*item, "multiline") ? u"/m"_q : QString())
+			+ (FlagOf(*item, "password") ? u"/p"_q : QString())
+			+ (TextOf(*item, "placeholder").isEmpty() ? QString() : u"/ph"_q)
+			+ '/' + TextOf(*item, "icon")
+			+ '/' + TextOf(*item, "style")
+			+ shape);
 	}
 	const auto buttons = withButtons ? page.find("buttons") : nullptr;
 	for (const auto &button : (buttons && buttons->asArray()) ? *buttons->asArray() : cbor::Array()) {
@@ -629,25 +689,95 @@ void AddProgress(
 	return style::margins(st.padding.left(), 0, st.padding.right(), 0);
 }
 
+enum class Target {
+	Settings,
+	Dialog,
+	Layer,
+	Panel,
+};
+
+[[nodiscard]] bool ButtonsInline(Target target) {
+	return (target == Target::Settings) || (target == Target::Panel);
+}
+
+[[nodiscard]] const char *ChangeType(Target target) {
+	return (target == Target::Settings)
+		? "settings.change"
+		: (target == Target::Dialog)
+		? "dialog.change"
+		: "window.change";
+}
+
+[[nodiscard]] const char *ClickType(Target target) {
+	return (target == Target::Settings)
+		? "settings.click"
+		: (target == Target::Dialog)
+		? "dialog.click"
+		: "window.click";
+}
+
+[[nodiscard]] const style::FlatLabel &TextLabelStyle(const QString &style) {
+	return (style == u"title"_q)
+		? st::boxTitle
+		: (style == u"subtitle"_q)
+		? st::defaultSubsectionTitle
+		: (style == u"muted"_q)
+		? st::boxDividerLabel
+		: st::boxLabel;
+}
+
+void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
+	if (style == u"accent"_q) {
+		label->setTextColorOverride(st::windowActiveTextFg->c);
+	} else if (style == u"danger"_q) {
+		label->setTextColorOverride(st::boxTextFgError->c);
+	}
+}
+
+[[nodiscard]] QImage DecodeImage(const QByteArray &bytes) {
+	constexpr auto kMaxPixels = 4 * 1024 * 1024;
+	auto buffer = QBuffer();
+	buffer.setData(bytes);
+	buffer.open(QIODevice::ReadOnly);
+	auto reader = QImageReader(&buffer);
+	const auto format = reader.format();
+	const auto size = reader.size();
+	if ((format != "png" && format != "jpeg")
+		|| size.isEmpty()
+		|| size.width() * size.height() > kMaxPixels) {
+		return QImage();
+	}
+	return reader.read();
+}
+
+[[nodiscard]] QByteArray BytesOf(const cbor::Value &item, const char *name) {
+	const auto field = item.find(name);
+	const auto bytes = field ? field->asBytes() : nullptr;
+	return bytes
+		? QByteArray(reinterpret_cast<const char*>(bytes->data()), int(bytes->size()))
+		: QByteArray();
+}
+
 [[nodiscard]] std::shared_ptr<Page> BuildSettingsContent(
-		not_null<Ui::VerticalLayout*> content,
+		not_null<Ui::VerticalLayout*> root,
 		not_null<Window::SessionController*> controller,
 		base::weak_ptr<Main::Session> weak,
 		const std::string &plugin,
 		const cbor::Value &page,
-		bool dialog) {
+		Target target,
+		const std::string &window) {
 	enum class Last {
 		None,
 		Row,
 		Block,
 		Section,
 	};
+	auto content = root;
 	auto result = std::make_shared<Page>();
-	result->structure = StructureOf(page, !dialog);
+	result->structure = StructureOf(page, ButtonsInline(target));
 	const auto raw = result.get();
-	const auto change = dialog ? "dialog.change" : "settings.change";
-	const auto click = dialog ? "dialog.click" : "settings.click";
-	const auto items = page.find("items");
+	const auto change = ChangeType(target);
+	const auto click = ClickType(target);
 	auto last = Last::None;
 	const auto space = [&](Last next) {
 		if (last == Last::None) {
@@ -718,346 +848,618 @@ void AddProgress(
 			hint(now);
 		};
 	};
-	for (const auto &item : (items && items->asArray()) ? *items->asArray() : cbor::Array()) {
-		const auto type = TextOf(item, "type");
-		const auto itemId = TextOf(item, "id").toStdString();
-		const auto icon = TextOf(item, "icon").isEmpty()
-			? ((type == u"link"_q)
-				? u"link"_q
-				: (type == u"chat"_q)
-				? u"chats"_q
-				: QString())
-			: TextOf(item, "icon");
-		const auto &rowSt = RowStyle(icon, TextOf(item, "style"));
-		const auto label = raw->lifetime.make_state<rpl::variable<QString>>(
-			TextOf(item, "label"));
-		const auto send = [=](const char *kind, std::optional<cbor::Value> value) {
-			if (const auto strong = weak.get()) {
-				SendSetting(strong, plugin, kind, itemId, std::move(value));
-			}
-		};
-		auto update = Fn<void(const cbor::Value &)>();
-		if (type == u"text"_q) {
-			space(Last::Block);
-			const auto text = content->add(
-				object_ptr<Ui::FlatLabel>(content, TextOf(item, "text"), st::boxLabel),
-				TextPadding(st::settingsButtonNoIcon));
-			text->setSelectable(true);
-			update = crl::guard(text, [=](const cbor::Value &now) {
-				text->setText(TextOf(now, "text"));
-			});
-		} else if (type == u"header"_q) {
-			if (last != Last::None) {
-				Ui::AddSkip(content);
-			}
-			last = Last::Section;
-			*label = TextOf(item, "text");
-			Ui::AddSubsectionTitle(content, label->value());
-			update = [=](const cbor::Value &now) {
-				*label = TextOf(now, "text");
+	auto buildItems = std::function<void(
+		not_null<Ui::VerticalLayout*>,
+		const cbor::Array &)>();
+	const auto nest = [&](not_null<Ui::VerticalLayout*> layout, const cbor::Array &list) {
+		const auto outerLast = last;
+		last = Last::None;
+		buildItems(layout, list);
+		last = outerLast;
+	};
+	buildItems = [&](not_null<Ui::VerticalLayout*> layout, const cbor::Array &list) {
+		const auto outerContent = content;
+		content = layout;
+		for (const auto &item : list) {
+			const auto type = TextOf(item, "type");
+			const auto itemId = TextOf(item, "id").toStdString();
+			const auto icon = TextOf(item, "icon").isEmpty()
+				? ((type == u"link"_q)
+					? u"link"_q
+					: (type == u"chat"_q)
+					? u"chats"_q
+					: QString())
+				: TextOf(item, "icon");
+			const auto &rowSt = RowStyle(icon, TextOf(item, "style"));
+			const auto label = raw->lifetime.make_state<rpl::variable<QString>>(
+				TextOf(item, "label"));
+			const auto send = [=](const char *kind, std::optional<cbor::Value> value) {
+				if (const auto strong = weak.get()) {
+					SendSetting(strong, plugin, kind, itemId, std::move(value), window);
+				}
 			};
-		} else if (type == u"divider"_q) {
-			if (last != Last::None) {
+			auto update = Fn<void(const cbor::Value &)>();
+			if (type == u"text"_q) {
+				space(Last::Block);
+				const auto textStyle = TextOf(item, "style");
+				const auto text = content->add(
+					object_ptr<Ui::FlatLabel>(content, TextOf(item, "text"), TextLabelStyle(textStyle)),
+					TextPadding(st::settingsButtonNoIcon));
+				text->setSelectable(true);
+				ApplyTextColor(text, textStyle);
+				update = crl::guard(text, [=](const cbor::Value &now) {
+					text->setText(TextOf(now, "text"));
+				});
+			} else if (type == u"code"_q) {
+				space(Last::Block);
+				const auto text = content->add(
+					object_ptr<Ui::FlatLabel>(content, st::boxLabel),
+					TextPadding(st::settingsButtonNoIcon));
+				text->setSelectable(true);
+				const auto show = [=](const QString &value) {
+					text->setMarkedText({
+						.text = value,
+						.entities = { EntityInText(EntityType::Pre, 0, int(value.size())) },
+					});
+				};
+				show(TextOf(item, "text"));
+				update = crl::guard(text, [=](const cbor::Value &now) {
+					show(TextOf(now, "text"));
+				});
+			} else if (type == u"header"_q) {
+				if (last != Last::None) {
+					Ui::AddSkip(content);
+				}
+				last = Last::Section;
+				*label = TextOf(item, "text");
+				Ui::AddSubsectionTitle(content, label->value());
+				update = [=](const cbor::Value &now) {
+					*label = TextOf(now, "text");
+				};
+			} else if (type == u"divider"_q) {
+				if (last != Last::None) {
+					Ui::AddSkip(content);
+					Ui::AddDivider(content);
+				}
+				last = Last::Section;
+			} else if (type == u"link"_q) {
+				const auto url = raw->lifetime.make_state<QString>(TextOf(item, "url"));
+				const auto host = raw->lifetime.make_state<rpl::variable<QString>>(
+					QUrl(*url).host());
+				const auto button = addRow(
+					label->value(),
+					icon,
+					QString(),
+					host->value());
+				button->addClickHandler([=] {
+					UrlClickHandler::Open(*url);
+				});
+				update = crl::guard(button, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					*url = TextOf(now, "url");
+					*host = QUrl(*url).host();
+				});
+			} else if (type == u"progress"_q) {
+				space(Last::Block);
+				const auto percent = raw->lifetime.make_state<rpl::variable<int>>(
+					int(IntOf(item, "value")));
+				const auto title = Settings::AddButtonWithLabel(
+					content,
+					label->value(),
+					percent->value() | rpl::map([](int value) {
+						return (value < 0) ? QString() : (QString::number(value) + '%');
+					}),
+					st::settingsButtonNoIcon);
+				title->setAttribute(Qt::WA_TransparentForMouseEvents);
+				AddProgress(content, percent->value());
+				update = [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					*percent = int(IntOf(now, "value"));
+				};
+			} else if (type == u"toggle"_q) {
+				const auto button = addRow(label->value(), icon, QString());
+				const auto on = button->lifetime().make_state<rpl::variable<bool>>(
+					FlagOf(item, "value"));
+				button->toggleOn(on->value(), true);
+				button->setDisabled(FlagOf(item, "disabled"));
+				button->addClickHandler([=] {
+					*on = !on->current();
+					send(change, Flag(on->current()));
+				});
+				update = crl::guard(button, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					*on = FlagOf(now, "value");
+					button->setDisabled(FlagOf(now, "disabled"));
+				});
+			} else if (type == u"button"_q) {
+				const auto button = addRow(label->value(), icon, TextOf(item, "style"));
+				button->setDisabled(FlagOf(item, "disabled"));
+				button->addClickHandler([=] {
+					send(click, std::nullopt);
+				});
+				update = crl::guard(button, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					button->setDisabled(FlagOf(now, "disabled"));
+				});
+			} else if (type == u"chat"_q) {
+				const auto chosen = raw->lifetime.make_state<int64_t>(IntOf(item, "value"));
+				const auto name = raw->lifetime.make_state<rpl::variable<QString>>(
+					ChatName(weak, *chosen));
+				const auto button = addRow(
+					label->value(),
+					icon,
+					QString(),
+					name->value());
+				button->setDisabled(FlagOf(item, "disabled"));
+				button->addClickHandler([=] {
+					Window::ShowChooseRecipientBox(
+						controller,
+						crl::guard(button, [=](not_null<Data::Thread*> thread) {
+							const auto peer = thread->peer();
+							if (FreshSecret::IsSecretPeerId(peer->id)) {
+								return false;
+							}
+							*chosen = int64_t(peer->id.value);
+							*name = peer->name();
+							send(change, Number(*chosen));
+							return true;
+						}),
+						label->value());
+				});
+				update = crl::guard(button, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					*chosen = IntOf(now, "value");
+					*name = ChatName(weak, *chosen);
+					button->setDisabled(FlagOf(now, "disabled"));
+				});
+			} else if (type == u"slider"_q) {
+				space(Last::Block);
+				const auto min = IntOf(item, "min");
+				const auto step = std::max<int64_t>(IntOf(item, "step"), 1);
+				const auto count = std::max(int((IntOf(item, "max") - min) / step) + 1, 2);
+				const auto title = Settings::AddButtonWithIcon(
+					content,
+					label->value(),
+					st::settingsButtonNoIcon);
+				title->setAttribute(Qt::WA_TransparentForMouseEvents);
+				auto made = Settings::MakeSliderWithLabel(
+					content,
+					st::autoDownloadLimitSlider,
+					st::settingsScaleLabel,
+					st::normalFont->spacew * 2,
+					st::settingsScaleLabel.style.font->width(QString::number(IntOf(item, "max"))),
+					true);
+				const auto slider = made.slider;
+				const auto value = made.label;
+				content->add(std::move(made.widget), st::recentStickersLimitPadding);
+				const auto show = [=](int64_t number) {
+					value->setText(QString::number(number));
+				};
+				show(IntOf(item, "value"));
+				slider->setPseudoDiscrete(
+					count,
+					[=](int index) { return int(min + index * step); },
+					int(IntOf(item, "value")),
+					show,
+					[=](int number) {
+						show(number);
+						send(change, Number(number));
+					});
+				slider->setDisabled(FlagOf(item, "disabled"));
+				update = crl::guard(slider, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					if (!slider->isChanging()) {
+						const auto number = IntOf(now, "value");
+						slider->setValue(count > 1 ? double(number - min) / (step * (count - 1)) : 0.);
+						show(number);
+					}
+					slider->setDisabled(FlagOf(now, "disabled"));
+				});
+			} else if (type == u"input"_q) {
+				space(Last::Block);
+				const auto max = int(std::max<int64_t>(IntOf(item, "max"), 1));
+				const auto getText = std::make_shared<Fn<QString()>>();
+				auto setText = Fn<void(const QString &)>();
+				auto focused = Fn<bool()>();
+				auto setEnabled = Fn<void(bool)>();
+				const auto pending = raw->lifetime.make_state<bool>(false);
+				const auto suppress = raw->lifetime.make_state<bool>(false);
+				const auto placeholder = raw->lifetime.make_state<rpl::variable<QString>>(
+					TextOf(item, "placeholder"));
+				if (!placeholder->current().isEmpty()) {
+					content->add(
+						object_ptr<Ui::FlatLabel>(content, label->value(), st::boxDividerLabel),
+						st::boxRowPadding);
+				}
+				auto fieldPlaceholder = rpl::combine(
+					label->value(),
+					placeholder->value()
+				) | rpl::map([](const QString &label, const QString &placeholder) {
+					return placeholder.isEmpty() ? label : placeholder;
+				});
+				const auto sendNow = crl::guard(content, [=] {
+					if (*pending) {
+						*pending = false;
+						send(change, Text((*getText)()));
+					}
+				});
+				const auto timer = raw->lifetime.make_state<base::Timer>(sendNow);
+				const auto edited = [=] {
+					if (*suppress) {
+						return;
+					}
+					*pending = true;
+					timer->callOnce(600);
+				};
+				if (FlagOf(item, "password")) {
+					const auto wrap = content->add(
+						object_ptr<Ui::RpWidget>(content),
+						st::boxRowPadding);
+					const auto field = Ui::CreateChild<Ui::PasswordInput>(
+						wrap,
+						st::defaultInputField,
+						std::move(fieldPlaceholder),
+						TextOf(item, "value"));
+					field->show();
+					field->heightValue() | rpl::on_next([=](int height) {
+						wrap->resize(wrap->width(), height);
+					}, field->lifetime());
+					wrap->widthValue() | rpl::on_next([=](int width) {
+						field->resizeToWidth(width);
+						field->moveToLeft(0, 0);
+					}, field->lifetime());
+					field->setMaxLength(max);
+					QObject::connect(field, &Ui::MaskedInputField::changed, edited);
+					QObject::connect(field, &Ui::MaskedInputField::blurred, sendNow);
+					*getText = [=] { return field->getLastText(); };
+					setText = [=](const QString &text) { field->setText(text); };
+					focused = [=] { return field->hasFocus(); };
+					setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
+				} else {
+					const auto multiline = FlagOf(item, "multiline");
+					const auto field = content->add(
+						object_ptr<Ui::InputField>(
+							content,
+							multiline ? st::newGroupDescription : st::defaultInputField,
+							multiline
+								? Ui::InputField::Mode::MultiLine
+								: Ui::InputField::Mode::SingleLine,
+							std::move(fieldPlaceholder),
+							TextOf(item, "value")),
+						st::boxRowPadding);
+					field->setMaxLength(max);
+					field->changes() | rpl::on_next(edited, field->lifetime());
+					field->focusedChanges(
+					) | rpl::filter(!rpl::mappers::_1) | rpl::on_next([=] {
+						sendNow();
+					}, field->lifetime());
+					*getText = [=] { return field->getLastText(); };
+					setText = [=](const QString &text) {
+						*suppress = true;
+						field->setText(text);
+						*suppress = false;
+					};
+					focused = [=] { return field->hasFocus(); };
+					setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
+				}
+				setEnabled(!FlagOf(item, "disabled"));
+				raw->flush.push_back(sendNow);
+				Ui::AddSkip(content, st::defaultVerticalListSkip);
+				update = crl::guard(content, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					*placeholder = TextOf(now, "placeholder");
+					const auto value = TextOf(now, "value");
+					if (!focused() && !*pending && (*getText)() != value) {
+						setText(value);
+					}
+					setEnabled(!FlagOf(now, "disabled"));
+				});
+			} else if (type == u"select"_q) {
+				struct Choice {
+					std::vector<std::string> values;
+					std::vector<QString> labels;
+					int selected = 0;
+				};
+				const auto choice = std::make_shared<Choice>();
+				const auto current = raw->lifetime.make_state<rpl::variable<QString>>();
+				const auto read = [=](const cbor::Value &now) {
+					choice->values.clear();
+					choice->labels.clear();
+					choice->selected = 0;
+					const auto chosen = TextOf(now, "value").toStdString();
+					const auto options = now.find("options");
+					for (const auto &option : (options && options->asArray()) ? *options->asArray() : cbor::Array()) {
+						const auto value = option.find("value");
+						if (!value || !value->asText()) {
+							continue;
+						}
+						if (*value->asText() == chosen) {
+							choice->selected = int(choice->values.size());
+						}
+						choice->values.push_back(*value->asText());
+						choice->labels.push_back(TextOf(option, "label"));
+					}
+					*current = choice->labels.empty()
+						? QString()
+						: choice->labels[choice->selected];
+				};
+				read(item);
+				if (choice->labels.empty()) {
+					result->update.push_back(nullptr);
+					continue;
+				}
+				const auto button = addRow(label->value(), icon, QString(), current->value());
+				button->setDisabled(FlagOf(item, "disabled"));
+				button->addClickHandler([=] {
+					const auto values = choice->values;
+					const auto labels = choice->labels;
+					controller->show(Box(SingleChoiceBox, SingleChoiceBoxArgs{
+						.title = label->value(),
+						.options = labels,
+						.initialSelection = choice->selected,
+						.callback = crl::guard(button, [=](int index) {
+							if (index < 0 || index >= int(values.size())) {
+								return;
+							}
+							const auto now = ranges::find(choice->values, values[index]);
+							choice->selected = int(now - begin(choice->values));
+							*current = labels[index];
+							send(change, cbor::Value::FromText(values[index]));
+						}),
+					}));
+				});
+				update = crl::guard(button, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					read(now);
+					button->setDisabled(FlagOf(now, "disabled"));
+				});
+			} else if (type == u"column"_q) {
+				space(Last::Block);
+				result->update.push_back(nullptr);
+				nest(
+					content->add(object_ptr<Ui::VerticalLayout>(content)),
+					ArrayOf(item, "items"));
+				continue;
+			} else if (type == u"row"_q) {
+				space(Last::Block);
+				result->update.push_back(nullptr);
+				const auto &children = ArrayOf(item, "items");
+				const auto wrap = content->add(object_ptr<Ui::RpWidget>(content));
+				auto cells = std::vector<not_null<Ui::VerticalLayout*>>();
+				for (auto i = size_t(0); i != children.size(); ++i) {
+					cells.push_back(Ui::CreateChild<Ui::VerticalLayout>(wrap));
+					cells.back()->show();
+				}
+				const auto relayout = [=] {
+					const auto count = int(cells.size());
+					const auto width = wrap->width();
+					if (!count || width <= 0) {
+						return;
+					}
+					const auto skip = st::defaultVerticalListSkip;
+					const auto each = std::max((width - skip * (count - 1)) / count, 1);
+					auto height = 0;
+					for (auto i = 0; i != count; ++i) {
+						cells[i]->resizeToWidth(each);
+						cells[i]->moveToLeft(i * (each + skip), 0);
+						height = std::max(height, cells[i]->height());
+					}
+					wrap->resize(width, height);
+				};
+				wrap->widthValue() | rpl::on_next(relayout, wrap->lifetime());
+				for (const auto cell : cells) {
+					cell->heightValue() | rpl::on_next(relayout, wrap->lifetime());
+				}
+				for (auto i = size_t(0); i != children.size(); ++i) {
+					nest(cells[i], cbor::Array{ children[i] });
+				}
+				continue;
+			} else if (type == u"card"_q) {
+				if (last != Last::None) {
+					Ui::AddSkip(content);
+				}
+				Ui::AddDivider(content);
+				if (const auto title = TextOf(item, "title"); !title.isEmpty()) {
+					Ui::AddSubsectionTitle(content, rpl::single(title));
+				}
+				result->update.push_back(nullptr);
+				last = Last::None;
+				buildItems(content, ArrayOf(item, "items"));
 				Ui::AddSkip(content);
 				Ui::AddDivider(content);
-			}
-			last = Last::Section;
-		} else if (type == u"link"_q) {
-			const auto url = raw->lifetime.make_state<QString>(TextOf(item, "url"));
-			const auto host = raw->lifetime.make_state<rpl::variable<QString>>(
-				QUrl(*url).host());
-			const auto button = addRow(
-				label->value(),
-				icon,
-				QString(),
-				host->value());
-			button->addClickHandler([=] {
-				UrlClickHandler::Open(*url);
-			});
-			update = crl::guard(button, [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				*url = TextOf(now, "url");
-				*host = QUrl(*url).host();
-			});
-		} else if (type == u"progress"_q) {
-			space(Last::Block);
-			const auto percent = raw->lifetime.make_state<rpl::variable<int>>(
-				int(IntOf(item, "value")));
-			const auto title = Settings::AddButtonWithLabel(
-				content,
-				label->value(),
-				percent->value() | rpl::map([](int value) {
-					return (value < 0) ? QString() : (QString::number(value) + '%');
-				}),
-				st::settingsButtonNoIcon);
-			title->setAttribute(Qt::WA_TransparentForMouseEvents);
-			AddProgress(content, percent->value());
-			update = [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				*percent = int(IntOf(now, "value"));
-			};
-		} else if (type == u"toggle"_q) {
-			const auto button = addRow(label->value(), icon, QString());
-			const auto on = button->lifetime().make_state<rpl::variable<bool>>(
-				FlagOf(item, "value"));
-			button->toggleOn(on->value(), true);
-			button->setDisabled(FlagOf(item, "disabled"));
-			button->addClickHandler([=] {
-				*on = !on->current();
-				send(change, Flag(on->current()));
-			});
-			update = crl::guard(button, [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				*on = FlagOf(now, "value");
-				button->setDisabled(FlagOf(now, "disabled"));
-			});
-		} else if (type == u"button"_q) {
-			const auto button = addRow(label->value(), icon, TextOf(item, "style"));
-			button->setDisabled(FlagOf(item, "disabled"));
-			button->addClickHandler([=] {
-				send(click, std::nullopt);
-			});
-			update = crl::guard(button, [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				button->setDisabled(FlagOf(now, "disabled"));
-			});
-		} else if (type == u"chat"_q) {
-			const auto chosen = raw->lifetime.make_state<int64_t>(IntOf(item, "value"));
-			const auto name = raw->lifetime.make_state<rpl::variable<QString>>(
-				ChatName(weak, *chosen));
-			const auto button = addRow(
-				label->value(),
-				icon,
-				QString(),
-				name->value());
-			button->setDisabled(FlagOf(item, "disabled"));
-			button->addClickHandler([=] {
-				Window::ShowChooseRecipientBox(
-					controller,
-					crl::guard(button, [=](not_null<Data::Thread*> thread) {
-						const auto peer = thread->peer();
-						if (FreshSecret::IsSecretPeerId(peer->id)) {
-							return false;
-						}
-						*chosen = int64_t(peer->id.value);
-						*name = peer->name();
-						send(change, Number(*chosen));
-						return true;
-					}),
-					label->value());
-			});
-			update = crl::guard(button, [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				*chosen = IntOf(now, "value");
-				*name = ChatName(weak, *chosen);
-				button->setDisabled(FlagOf(now, "disabled"));
-			});
-		} else if (type == u"slider"_q) {
-			space(Last::Block);
-			const auto min = IntOf(item, "min");
-			const auto step = std::max<int64_t>(IntOf(item, "step"), 1);
-			const auto count = std::max(int((IntOf(item, "max") - min) / step) + 1, 2);
-			const auto title = Settings::AddButtonWithIcon(
-				content,
-				label->value(),
-				st::settingsButtonNoIcon);
-			title->setAttribute(Qt::WA_TransparentForMouseEvents);
-			auto made = Settings::MakeSliderWithLabel(
-				content,
-				st::autoDownloadLimitSlider,
-				st::settingsScaleLabel,
-				st::normalFont->spacew * 2,
-				st::settingsScaleLabel.style.font->width(QString::number(IntOf(item, "max"))),
-				true);
-			const auto slider = made.slider;
-			const auto value = made.label;
-			content->add(std::move(made.widget), st::recentStickersLimitPadding);
-			const auto show = [=](int64_t number) {
-				value->setText(QString::number(number));
-			};
-			show(IntOf(item, "value"));
-			slider->setPseudoDiscrete(
-				count,
-				[=](int index) { return int(min + index * step); },
-				int(IntOf(item, "value")),
-				show,
-				[=](int number) {
-					show(number);
-					send(change, Number(number));
+				last = Last::Section;
+				continue;
+			} else if (type == u"tabs"_q) {
+				space(Last::Block);
+				const auto &tabs = ArrayOf(item, "tabs");
+				auto sections = std::vector<QString>();
+				auto ids = std::vector<std::string>();
+				for (const auto &tab : tabs) {
+					sections.push_back(TextOf(tab, "label"));
+					ids.push_back(TextOf(tab, "id").toStdString());
+				}
+				const auto chosen = raw->lifetime.make_state<std::string>(
+					TextOf(item, "value").toStdString());
+				const auto indexOf = [ids](const std::string &id) {
+					const auto i = ranges::find(ids, id);
+					return (i == ids.end()) ? 0 : int(i - ids.begin());
+				};
+				const auto slider = content->add(
+					object_ptr<Ui::SettingsSlider>(content, st::defaultTabsSlider));
+				slider->setSections(sections);
+				slider->setActiveSectionFast(indexOf(*chosen));
+				const auto wraps = std::make_shared<std::vector<not_null<Ui::SlideWrap<Ui::VerticalLayout>*>>>();
+				for (auto i = size_t(0); i != tabs.size(); ++i) {
+					wraps->push_back(content->add(object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+						content,
+						object_ptr<Ui::VerticalLayout>(content))));
+				}
+				const auto show = [=](int index) {
+					for (auto i = 0; i != int(wraps->size()); ++i) {
+						(*wraps)[i]->toggle(i == index, anim::type::instant);
+					}
+				};
+				show(indexOf(*chosen));
+				slider->sectionActivated() | rpl::on_next([=](int index) {
+					if (index >= 0 && index < int(ids.size())) {
+						show(index);
+						*chosen = ids[index];
+						send(change, cbor::Value::FromText(ids[index]));
+					}
+				}, slider->lifetime());
+				result->update.push_back(crl::guard(slider, [=](const cbor::Value &now) {
+					const auto value = TextOf(now, "value").toStdString();
+					if (value != *chosen) {
+						*chosen = value;
+						slider->setActiveSectionFast(indexOf(value));
+						show(indexOf(value));
+					}
+				}));
+				for (auto i = size_t(0); i != tabs.size(); ++i) {
+					nest((*wraps)[i]->entity(), ArrayOf(tabs[i], "items"));
+				}
+				continue;
+			} else if (type == u"image"_q) {
+				space(Last::Block);
+				const auto bytes = raw->lifetime.make_state<QByteArray>(BytesOf(item, "data"));
+				const auto image = raw->lifetime.make_state<QImage>(DecodeImage(*bytes));
+				const auto want = raw->lifetime.make_state<QSize>(
+					int(IntOf(item, "width")),
+					int(IntOf(item, "height")));
+				const auto wrap = content->add(
+					object_ptr<Ui::RpWidget>(content),
+					TextPadding(st::settingsButtonNoIcon));
+				wrap->setToolTip(TextOf(item, "alt"));
+				const auto fitted = [=](int available) {
+					if (image->isNull()) {
+						return QSize();
+					}
+					auto width = want->width() ? want->width() : image->width();
+					auto height = want->height()
+						? want->height()
+						: want->width()
+						? std::max(image->height() * width / image->width(), 1)
+						: image->height();
+					if (width > available && available > 0) {
+						height = std::max(height * available / width, 1);
+						width = available;
+					}
+					return QSize(width, height);
+				};
+				const auto relayout = [=] {
+					wrap->resize(wrap->width(), fitted(wrap->width()).height());
+					wrap->update();
+				};
+				wrap->widthValue() | rpl::on_next(relayout, wrap->lifetime());
+				wrap->paintOn([=](QPainter &p) {
+					auto hq = PainterHighQualityEnabler(p);
+					const auto size = fitted(wrap->width());
+					if (!size.isEmpty()) {
+						p.drawImage(QRect(QPoint(), size), *image);
+					}
 				});
-			slider->setDisabled(FlagOf(item, "disabled"));
-			update = crl::guard(slider, [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				if (!slider->isChanging()) {
-					const auto number = IntOf(now, "value");
-					slider->setValue(count > 1 ? double(number - min) / (step * (count - 1)) : 0.);
-					show(number);
+				update = crl::guard(wrap, [=](const cbor::Value &now) {
+					*want = QSize(int(IntOf(now, "width")), int(IntOf(now, "height")));
+					if (const auto data = BytesOf(now, "data"); data != *bytes) {
+						*bytes = data;
+						*image = DecodeImage(data);
+					}
+					relayout();
+				});
+			} else if (type == u"list"_q) {
+				struct Entry {
+					rpl::variable<QString> title;
+					rpl::variable<QString> subtitle;
+				};
+				const auto entries = raw->lifetime.make_state<std::vector<std::unique_ptr<Entry>>>();
+				for (const auto &entry : ArrayOf(item, "items")) {
+					const auto state = entries->emplace_back(std::make_unique<Entry>()).get();
+					state->title = TextOf(entry, "title");
+					state->subtitle = TextOf(entry, "subtitle");
+					const auto entryId = TextOf(entry, "id").toStdString();
+					addRow(
+						state->title.value(),
+						TextOf(entry, "icon"),
+						QString(),
+						state->subtitle.value()
+					)->addClickHandler([=] {
+						if (const auto strong = weak.get()) {
+							SendSetting(strong, plugin, click, entryId, std::nullopt, window);
+						}
+					});
 				}
-				slider->setDisabled(FlagOf(now, "disabled"));
-			});
-		} else if (type == u"input"_q) {
-			space(Last::Block);
-			const auto max = int(std::max<int64_t>(IntOf(item, "max"), 1));
-			const auto getText = std::make_shared<Fn<QString()>>();
-			auto setText = Fn<void(const QString &)>();
-			auto focused = Fn<bool()>();
-			auto setEnabled = Fn<void(bool)>();
-			const auto pending = raw->lifetime.make_state<bool>(false);
-			const auto suppress = raw->lifetime.make_state<bool>(false);
-			const auto placeholder = raw->lifetime.make_state<rpl::variable<QString>>(
-				TextOf(item, "placeholder"));
-			if (!placeholder->current().isEmpty()) {
-				content->add(
-					object_ptr<Ui::FlatLabel>(content, label->value(), st::boxDividerLabel),
-					st::boxRowPadding);
-			}
-			auto fieldPlaceholder = rpl::combine(
-				label->value(),
-				placeholder->value()
-			) | rpl::map([](const QString &label, const QString &placeholder) {
-				return placeholder.isEmpty() ? label : placeholder;
-			});
-			const auto sendNow = crl::guard(content, [=] {
-				if (*pending) {
-					*pending = false;
-					send(change, Text((*getText)()));
-				}
-			});
-			const auto timer = raw->lifetime.make_state<base::Timer>(sendNow);
-			const auto edited = [=] {
-				if (*suppress) {
-					return;
-				}
-				*pending = true;
-				timer->callOnce(600);
-			};
-			if (FlagOf(item, "password")) {
+				update = [=](const cbor::Value &now) {
+					const auto &list = ArrayOf(now, "items");
+					for (auto i = size_t(0); i != list.size() && i != entries->size(); ++i) {
+						(*entries)[i]->title = TextOf(list[i], "title");
+						(*entries)[i]->subtitle = TextOf(list[i], "subtitle");
+					}
+				};
+			} else if (type == u"table"_q) {
+				space(Last::Block);
+				const auto &head = ArrayOf(item, "columns");
+				const auto &body = ArrayOf(item, "rows");
+				const auto columns = int(head.size());
+				const auto rows = int(body.size());
 				const auto wrap = content->add(
 					object_ptr<Ui::RpWidget>(content),
 					st::boxRowPadding);
-				const auto field = Ui::CreateChild<Ui::PasswordInput>(
-					wrap,
-					st::defaultInputField,
-					std::move(fieldPlaceholder),
-					TextOf(item, "value"));
-				field->show();
-				field->heightValue() | rpl::on_next([=](int height) {
-					wrap->resize(wrap->width(), height);
-				}, field->lifetime());
-				wrap->widthValue() | rpl::on_next([=](int width) {
-					field->resizeToWidth(width);
-					field->moveToLeft(0, 0);
-				}, field->lifetime());
-				field->setMaxLength(max);
-				QObject::connect(field, &Ui::MaskedInputField::changed, edited);
-				QObject::connect(field, &Ui::MaskedInputField::blurred, sendNow);
-				*getText = [=] { return field->getLastText(); };
-				setText = [=](const QString &text) { field->setText(text); };
-				focused = [=] { return field->hasFocus(); };
-				setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
-			} else {
-				const auto multiline = FlagOf(item, "multiline");
-				const auto field = content->add(
-					object_ptr<Ui::InputField>(
-						content,
-						multiline ? st::newGroupDescription : st::defaultInputField,
-						multiline
-							? Ui::InputField::Mode::MultiLine
-							: Ui::InputField::Mode::SingleLine,
-						std::move(fieldPlaceholder),
-						TextOf(item, "value")),
-					st::boxRowPadding);
-				field->setMaxLength(max);
-				field->changes() | rpl::on_next(edited, field->lifetime());
-				field->focusedChanges(
-				) | rpl::filter(!rpl::mappers::_1) | rpl::on_next([=] {
-					sendNow();
-				}, field->lifetime());
-				*getText = [=] { return field->getLastText(); };
-				setText = [=](const QString &text) {
-					*suppress = true;
-					field->setText(text);
-					*suppress = false;
+				const auto cells = raw->lifetime.make_state<std::vector<not_null<Ui::FlatLabel*>>>();
+				const auto cellText = [](const cbor::Value &cell) {
+					return cell.asText() ? Utf8(*cell.asText()) : QString();
 				};
-				focused = [=] { return field->hasFocus(); };
-				setEnabled = [=](bool enabled) { field->setEnabled(enabled); };
-			}
-			setEnabled(!FlagOf(item, "disabled"));
-			raw->flush.push_back(sendNow);
-			Ui::AddSkip(content, st::defaultVerticalListSkip);
-			update = crl::guard(content, [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				*placeholder = TextOf(now, "placeholder");
-				const auto value = TextOf(now, "value");
-				if (!focused() && !*pending && (*getText)() != value) {
-					setText(value);
+				const auto addCell = [&](const QString &text, const style::FlatLabel &st) {
+					const auto cell = Ui::CreateChild<Ui::FlatLabel>(wrap, text, st);
+					cell->show();
+					cells->push_back(cell);
+				};
+				for (const auto &name : head) {
+					addCell(cellText(name), st::defaultSubsectionTitle);
 				}
-				setEnabled(!FlagOf(now, "disabled"));
-			});
-		} else if (type == u"select"_q) {
-			struct Choice {
-				std::vector<std::string> values;
-				std::vector<QString> labels;
-				int selected = 0;
-			};
-			const auto choice = std::make_shared<Choice>();
-			const auto current = raw->lifetime.make_state<rpl::variable<QString>>();
-			const auto read = [=](const cbor::Value &now) {
-				choice->values.clear();
-				choice->labels.clear();
-				choice->selected = 0;
-				const auto chosen = TextOf(now, "value").toStdString();
-				const auto options = now.find("options");
-				for (const auto &option : (options && options->asArray()) ? *options->asArray() : cbor::Array()) {
-					const auto value = option.find("value");
-					if (!value || !value->asText()) {
-						continue;
+				for (const auto &row : body) {
+					for (const auto &cell : *row.asArray()) {
+						addCell(cellText(cell), st::boxLabel);
 					}
-					if (*value->asText() == chosen) {
-						choice->selected = int(choice->values.size());
-					}
-					choice->values.push_back(*value->asText());
-					choice->labels.push_back(TextOf(option, "label"));
 				}
-				*current = choice->labels.empty()
-					? QString()
-					: choice->labels[choice->selected];
-			};
-			read(item);
-			if (choice->labels.empty()) {
-				result->update.push_back(nullptr);
-				continue;
-			}
-			const auto button = addRow(label->value(), icon, QString(), current->value());
-			button->setDisabled(FlagOf(item, "disabled"));
-			button->addClickHandler([=] {
-				const auto values = choice->values;
-				const auto labels = choice->labels;
-				controller->show(Box(SingleChoiceBox, SingleChoiceBoxArgs{
-					.title = label->value(),
-					.options = labels,
-					.initialSelection = choice->selected,
-					.callback = crl::guard(button, [=](int index) {
-						if (index < 0 || index >= int(values.size())) {
-							return;
+				const auto relayout = [=] {
+					const auto width = wrap->width();
+					if (width <= 0 || columns <= 0) {
+						return;
+					}
+					const auto skip = st::defaultVerticalListSkip;
+					const auto each = std::max((width - skip * (columns - 1)) / columns, 1);
+					auto top = 0;
+					for (auto row = 0; row <= rows; ++row) {
+						auto height = 0;
+						for (auto column = 0; column != columns; ++column) {
+							const auto cell = (*cells)[row * columns + column];
+							cell->resizeToWidth(each);
+							cell->moveToLeft(column * (each + skip), top);
+							height = std::max(height, cell->height());
 						}
-						const auto now = ranges::find(choice->values, values[index]);
-						choice->selected = int(now - begin(choice->values));
-						*current = labels[index];
-						send(change, cbor::Value::FromText(values[index]));
-					}),
-				}));
-			});
-			update = crl::guard(button, [=](const cbor::Value &now) {
-				*label = TextOf(now, "label");
-				read(now);
-				button->setDisabled(FlagOf(now, "disabled"));
-			});
+						top += height + skip;
+					}
+					wrap->resize(width, std::max(top - skip, 0));
+				};
+				wrap->widthValue() | rpl::on_next(relayout, wrap->lifetime());
+				update = crl::guard(wrap, [=](const cbor::Value &now) {
+					const auto &list = ArrayOf(now, "rows");
+					for (auto row = 0; row != rows && row != int(list.size()); ++row) {
+						const auto &line = *list[row].asArray();
+						for (auto column = 0; column != columns && column != int(line.size()); ++column) {
+							(*cells)[(row + 1) * columns + column]->setText(cellText(line[column]));
+						}
+					}
+					relayout();
+				});
+			}
+			result->update.push_back(withHint(std::move(update), addHint(item, rowSt)));
 		}
-		result->update.push_back(withHint(std::move(update), addHint(item, rowSt)));
-	}
+		content = outerContent;
+	};
+	buildItems(root, ArrayOf(page, "items"));
 	const auto buttons = page.find("buttons");
-	if (!dialog && buttons && buttons->asArray() && !buttons->asArray()->empty()) {
+	if (ButtonsInline(target) && buttons && buttons->asArray() && !buttons->asArray()->empty()) {
 		if (last != Last::None) {
 			Ui::AddSkip(content);
 			Ui::AddDivider(content);
@@ -1067,7 +1469,7 @@ void AddProgress(
 			const auto buttonId = TextOf(button, "id").toStdString();
 			addRow(rpl::single(TextOf(button, "label")), QString(), TextOf(button, "style"))->addClickHandler([=] {
 				if (const auto strong = weak.get()) {
-					SendSetting(strong, plugin, click, buttonId, std::nullopt);
+					SendSetting(strong, plugin, click, buttonId, std::nullopt, window);
 				}
 			});
 		}
@@ -1082,7 +1484,8 @@ void ShowPage(
 		base::weak_ptr<Main::Session> weak,
 		const std::string &plugin,
 		const cbor::Value *page,
-		bool dialog,
+		Target target,
+		const std::string &window,
 		std::shared_ptr<Page> &shown) {
 	if (!page) {
 		if (shown) {
@@ -1091,7 +1494,7 @@ void ShowPage(
 		shown = nullptr;
 		content->clear();
 		return;
-	} else if (shown && shown->structure == StructureOf(*page, !dialog)) {
+	} else if (shown && shown->structure == StructureOf(*page, ButtonsInline(target))) {
 		shown->apply(*page);
 		return;
 	}
@@ -1099,7 +1502,16 @@ void ShowPage(
 		shown->flushAll();
 	}
 	content->clear();
-	shown = BuildSettingsContent(content, controller, weak, plugin, *page, dialog);
+	shown = BuildSettingsContent(content, controller, weak, plugin, *page, target, window);
+}
+
+[[nodiscard]] style::margins SourcePadding() {
+	return TextPadding(st::settingsButtonNoIcon)
+		+ style::margins(0, st::defaultVerticalListSkip, 0, 0);
+}
+
+[[nodiscard]] QString SourceText(const QString &pluginName, const QString &suffix) {
+	return tr::fresh_PluginSource(tr::now, lt_plugin, pluginName) + suffix;
 }
 
 void AddSourceRow(
@@ -1109,10 +1521,9 @@ void AddSourceRow(
 	box->addRow(
 		object_ptr<Ui::FlatLabel>(
 			box,
-			tr::fresh_PluginSource(tr::now, lt_plugin, pluginName) + suffix,
+			SourceText(pluginName, suffix),
 			st::boxDividerLabel),
-		TextPadding(st::settingsButtonNoIcon)
-			+ style::margins(0, st::defaultVerticalListSkip, 0, 0));
+		SourcePadding());
 }
 
 void FillSettingsBox(
@@ -1136,7 +1547,7 @@ void FillSettingsBox(
 	const auto rebuild = [=] {
 		const auto page = PageOf(plugin, account);
 		*title = page ? TextOf(*page, "title") : QString();
-		ShowPage(content, controller, weak, plugin, page, false, *shown);
+		ShowPage(content, controller, weak, plugin, page, Target::Settings, std::string(), *shown);
 		if (!page) {
 			content->add(
 				object_ptr<Ui::FlatLabel>(
@@ -1591,15 +2002,29 @@ void FillDetailsBox(
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
+using DialogKey = std::tuple<std::string, std::string, std::string>;
+
 struct Dialogs {
-	std::map<std::pair<std::string, std::string>, cbor::Value> pages;
-	std::map<std::pair<std::string, std::string>, QPointer<Ui::GenericBox>> boxes;
-	rpl::event_stream<std::pair<std::string, std::string>> changes;
+	std::map<DialogKey, cbor::Value> pages;
+	std::map<DialogKey, QPointer<Ui::GenericBox>> boxes;
+	std::map<DialogKey, base::unique_qptr<Ui::SeparatePanel>> panels;
+	rpl::event_stream<DialogKey> changes;
 };
 
 [[nodiscard]] Dialogs &GetDialogs() {
 	static auto result = Dialogs();
 	return result;
+}
+
+void SendClosed(const std::string &plugin, const std::string &account, const std::string &window) {
+	auto map = cbor::Map();
+	map.push_back({ "type", cbor::Value::FromText(window.empty() ? "dialog.close" : "window.close") });
+	if (!window.empty()) {
+		map.push_back({ "window", cbor::Value::FromText(window) });
+	}
+	Post([=, event = cbor::Value::FromMap(std::move(map))](not_null<fgpl::PluginManager*> manager) {
+		manager->send(plugin, account, event);
+	}, false);
 }
 
 [[nodiscard]] Main::Session *SessionFor(const std::string &account) {
@@ -1629,8 +2054,10 @@ void FillDialogBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller,
 		std::string plugin,
-		std::string account) {
-	const auto key = std::make_pair(plugin, account);
+		std::string account,
+		std::string window) {
+	const auto key = DialogKey(plugin, account, window);
+	const auto target = window.empty() ? Target::Dialog : Target::Layer;
 	const auto session = SessionFor(account);
 	const auto weak = session ? base::make_weak(session) : base::weak_ptr<Main::Session>();
 	const auto suffix = session ? AccountSuffix(session) : QString();
@@ -1650,7 +2077,7 @@ void FillDialogBox(
 		}
 		const auto title = TextOf(i->second, "title");
 		box->setTitle(rpl::single(title.isEmpty() ? PluginName(plugin) : title));
-		ShowPage(content, controller, weak, plugin, &i->second, true, *shown);
+		ShowPage(content, controller, weak, plugin, &i->second, target, window, *shown);
 		const auto signature = StructureOf(cbor::Value::FromMap({
 			{ "buttons", i->second.find("buttons") ? *i->second.find("buttons") : cbor::Value() },
 		}));
@@ -1667,7 +2094,7 @@ void FillDialogBox(
 				rpl::single(TextOf(button, "label")),
 				[=] {
 					if (const auto strong = weak.get()) {
-						SendSetting(strong, plugin, "dialog.click", buttonId, std::nullopt);
+						SendSetting(strong, plugin, ClickType(target), buttonId, std::nullopt, window);
 					}
 				},
 				(style == u"danger"_q) ? st::attentionBoxButton : st::defaultBoxButton);
@@ -1710,17 +2137,105 @@ void FillDialogBox(
 		if (!*closedByPlugin) {
 			dialogs.pages.erase(key);
 			if (weak) {
-				Post([=](not_null<fgpl::PluginManager*> manager) {
-					manager->send(plugin, account, cbor::Value::FromMap({
-						{ "type", cbor::Value::FromText("dialog.close") },
-					}));
-				}, false);
+				SendClosed(plugin, account, window);
 			}
 		}
 	}, box->lifetime());
 	if (!buttonsShown->has_value()) {
 		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	}
+}
+
+void ShowPluginPanel(
+		not_null<Window::SessionController*> controller,
+		const DialogKey &key) {
+	const auto plugin = std::get<0>(key);
+	const auto account = std::get<1>(key);
+	const auto window = std::get<2>(key);
+	const auto session = SessionFor(account);
+	const auto weak = session ? base::make_weak(session) : base::weak_ptr<Main::Session>();
+	const auto name = PluginName(plugin);
+	auto panel = base::make_unique_q<Ui::SeparatePanel>(Ui::SeparatePanelArgs());
+	const auto raw = panel.get();
+	const auto title = raw->lifetime().make_state<rpl::variable<QString>>(name);
+	raw->setTitle(title->value());
+	raw->setInnerSize(QSize(st::boxWideWidth, st::boxWideWidth * 3 / 2));
+
+	auto inner = base::make_unique_q<Ui::RpWidget>(raw);
+	const auto scroll = Ui::CreateChild<Ui::ScrollArea>(inner.get(), st::boxScroll);
+	const auto holder = scroll->setOwnedWidget(object_ptr<Ui::VerticalLayout>(scroll)).data();
+	holder->add(
+		object_ptr<Ui::FlatLabel>(
+			holder,
+			SourceText(name, session ? AccountSuffix(session) : QString()),
+			st::boxDividerLabel),
+		SourcePadding());
+	const auto content = holder->add(object_ptr<Ui::VerticalLayout>(holder));
+	inner->sizeValue() | rpl::on_next([=](QSize size) {
+		scroll->setGeometry(QRect(QPoint(), size));
+		holder->resizeToWidth(size.width());
+	}, scroll->lifetime());
+
+	const auto shown = raw->lifetime().make_state<std::shared_ptr<Page>>();
+	const auto closedByPlugin = raw->lifetime().make_state<bool>(false);
+	const auto rebuild = [=] {
+		const auto &pages = GetDialogs().pages;
+		const auto i = pages.find(key);
+		if (i == pages.end() || !weak) {
+			return;
+		}
+		const auto pageTitle = TextOf(i->second, "title");
+		*title = pageTitle.isEmpty() ? name : pageTitle;
+		ShowPage(content, controller, weak, plugin, &i->second, Target::Panel, window, *shown);
+	};
+	rebuild();
+	const auto closeByPlugin = [=] {
+		*closedByPlugin = true;
+		raw->hideGetDuration();
+	};
+	GetDialogs().changes.events(
+	) | rpl::filter([=](const DialogKey &changed) {
+		return changed == key;
+	}) | rpl::on_next([=] {
+		if (!GetDialogs().pages.contains(key)) {
+			closeByPlugin();
+		} else {
+			Ui::PostponeCall(content, rebuild);
+		}
+	}, raw->lifetime());
+	ListChanges(
+	) | rpl::on_next([=] {
+		const auto snapshot = Snapshot();
+		const auto info = snapshot ? snapshot->plugin(plugin) : nullptr;
+		if (!info || !info->enabled || info->status != fgpl::PluginStatus::Running) {
+			GetDialogs().pages.erase(key);
+			closeByPlugin();
+		}
+	}, raw->lifetime());
+	raw->closeRequests() | rpl::on_next([=] {
+		raw->hideGetDuration();
+	}, raw->lifetime());
+	raw->closeEvents() | rpl::on_next([=] {
+		if (*shown) {
+			(*shown)->flushAll();
+		}
+		if (!*closedByPlugin) {
+			GetDialogs().pages.erase(key);
+			if (weak) {
+				SendClosed(plugin, account, window);
+			}
+		}
+		crl::on_main([=] {
+			auto &panels = GetDialogs().panels;
+			if (const auto i = panels.find(key); i != panels.end() && i->second.get() == raw) {
+				panels.erase(i);
+			}
+		});
+	}, raw->lifetime());
+
+	raw->showInner(std::move(inner));
+	raw->showAndActivate();
+	GetDialogs().panels[key] = std::move(panel);
 }
 
 [[nodiscard]] QString Age(crl::time opened) {
@@ -2677,12 +3192,14 @@ void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add) {
 	}
 }
 
-void ShowPluginDialog(
+void ShowPluginWindow(
 		const std::string &id,
 		const std::string &account,
+		const std::string &window,
+		const std::string &mode,
 		const cbor::Value *page) {
 	auto &dialogs = GetDialogs();
-	const auto key = std::make_pair(id, account);
+	const auto key = DialogKey(id, account, window);
 	if (!page) {
 		dialogs.pages.erase(key);
 		dialogs.changes.fire_copy(key);
@@ -2690,25 +3207,23 @@ void ShowPluginDialog(
 	}
 	const auto refuse = [&] {
 		dialogs.pages.erase(key);
-		Post([=](not_null<fgpl::PluginManager*> manager) {
-			manager->send(id, account, cbor::Value::FromMap({
-				{ "type", cbor::Value::FromText("dialog.close") },
-			}));
-		}, false);
+		SendClosed(id, account, window);
 	};
 	const auto session = SessionFor(account);
 	if (!session || Core::App().passcodeLocked()) {
 		refuse();
 		return;
 	}
-	if (const auto i = dialogs.boxes.find(key); i != dialogs.boxes.end() && i->second) {
+	const auto boxOpen = dialogs.boxes.find(key);
+	if ((boxOpen != dialogs.boxes.end() && boxOpen->second)
+		|| dialogs.panels.contains(key)) {
 		dialogs.pages[key] = *page;
 		dialogs.changes.fire_copy(key);
 		return;
 	}
 	dialogs.pages[key] = *page;
-	const auto ours = [&](Window::Controller *window) {
-		const auto controller = window ? window->sessionController() : nullptr;
+	const auto ours = [&](Window::Controller *other) {
+		const auto controller = other ? other->sessionController() : nullptr;
 		return (controller && &controller->session() == session) ? controller : nullptr;
 	};
 	const auto separate = Window::SeparateId(&session->account());
@@ -2720,9 +3235,20 @@ void ShowPluginDialog(
 		refuse();
 		return;
 	}
-	auto box = Box(FillDialogBox, controller, id, account);
+	if (mode == "window") {
+		ShowPluginPanel(controller, key);
+		return;
+	}
+	auto box = Box(FillDialogBox, controller, id, account, window);
 	dialogs.boxes[key] = box.data();
 	controller->show(std::move(box));
+}
+
+void ShowPluginDialog(
+		const std::string &id,
+		const std::string &account,
+		const cbor::Value *page) {
+	ShowPluginWindow(id, account, std::string(), "layer", page);
 }
 
 void ShowNetworkLog(not_null<Window::SessionController*> controller) {

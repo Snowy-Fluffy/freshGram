@@ -141,6 +141,17 @@ struct Service {
 			ShowPluginDialog(id, account, copy ? &*copy : nullptr);
 		});
 	};
+	config.services.window = [](
+			const std::string &id,
+			const std::string &account,
+			const std::string &window,
+			const std::string &mode,
+			const fgpl::cbor::Value *page) {
+		auto copy = page ? std::make_optional(*page) : std::nullopt;
+		crl::on_main([=] {
+			ShowPluginWindow(id, account, window, mode, copy ? &*copy : nullptr);
+		});
+	};
 
 	const auto installed = Installed();
 	if (!installed) {
@@ -169,7 +180,7 @@ struct Service {
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
-	config.environment.apiLevel = 2;
+	config.environment.apiLevel = 3;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}

@@ -48,6 +48,8 @@ constexpr auto kSendEachMs = 1000.;
 constexpr auto kToastEachMs = int64_t(2000);
 constexpr auto kDialogEachMs = int64_t(60000);
 constexpr auto kUserActionWindowMs = int64_t(10000);
+constexpr auto kMaxWindows = size_t(3);
+constexpr auto kWindowUpdateEachMs = int64_t(100);
 constexpr auto kMaxMessage = size_t(4096);
 constexpr auto kMaxSocketsPerKind = 16;
 constexpr auto kMaxSocketChunk = size_t(1) << 20;
@@ -518,11 +520,14 @@ cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
 	return api::Ok(cbor::Value::FromMap({ { "ticket", Int(ticket) } }));
 }
 
-void Broker::noteUserAction(std::string_view type) {
+void Broker::noteUserAction(std::string_view type, std::string_view window) {
 	const auto lock = std::scoped_lock(_limitsMutex);
 	_lastUserAction = _services.clockMs();
 	if (type == "dialog.close") {
 		_dialogOpen = false;
+	} else if (type == "window.close") {
+		_windows.erase(std::string(window));
+		_windowUpdated.erase(std::string(window));
 	}
 }
 
@@ -667,7 +672,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		return netFetch(args);
 	} else if (IsSocketCall(op)) {
 		return socketCall(op, args);
-	} else if (op.rfind("ui.dialog.", 0) == 0) {
+	} else if (op.rfind("ui.dialog.", 0) == 0 || op.rfind("ui.window.", 0) == 0) {
 		return uiCall(op, args);
 	} else if (op.rfind("timers.", 0) == 0) {
 		return timerCall(op, args);
@@ -950,7 +955,78 @@ cbor::Value Broker::uiCall(const std::string &op, const cbor::Value *args) {
 		_services.ui("dialog.close", cbor::Value());
 		return api::Ok();
 	}
-	return api::Fail(api::error::kInvalid, "unknown dialog operation");
+	const auto idField = Arg(args, "id");
+	const auto id = idField ? idField->asText() : nullptr;
+	if (!id || !ui::ValidWindowId(*id)) {
+		return api::Fail(api::error::kInvalid, "id");
+	}
+	if (op == "ui.window.close") {
+		{
+			const auto lock = std::scoped_lock(_limitsMutex);
+			_windows.erase(*id);
+			_windowUpdated.erase(*id);
+		}
+		_services.ui("window.close", cbor::Value::FromMap({ { "id", Text(*id) } }));
+		return api::Ok();
+	} else if (op != "ui.window.show" && op != "ui.window.update") {
+		return api::Fail(api::error::kInvalid, "unknown window operation");
+	}
+	const auto page = Arg(args, "page");
+	if (!page) {
+		return api::Fail(api::error::kInvalid, "page");
+	}
+	const auto checked = ui::ValidatePage(*page);
+	if (!checked.ok()) {
+		return api::Fail(api::error::kInvalid, checked.error());
+	}
+	auto mode = std::string("layer");
+	if (const auto field = Arg(args, "mode")) {
+		if (!field->asText() || (*field->asText() != "layer" && *field->asText() != "window")) {
+			return api::Fail(api::error::kInvalid, "mode");
+		}
+		mode = *field->asText();
+	}
+	auto opened = false;
+	{
+		const auto lock = std::scoped_lock(_limitsMutex);
+		const auto now = _services.clockMs();
+		const auto i = _windows.find(*id);
+		if (i != _windows.end()) {
+			mode = i->second;
+			auto &last = _windowUpdated[*id];
+			if (last && now - last < kWindowUpdateEachMs) {
+				return api::Fail(api::error::kLimit, "windows are updated too often");
+			}
+			last = now;
+		} else if (op == "ui.window.update") {
+			return api::Fail(api::error::kNotFound, "the window is not open");
+		} else {
+			const auto userAction = _lastUserAction
+				&& (now - _lastUserAction < kUserActionWindowMs);
+			if (_windows.size() >= kMaxWindows) {
+				return api::Fail(api::error::kLimit, "too many windows are open");
+			} else if (!userAction && _lastDialog && now - _lastDialog < kDialogEachMs) {
+				return api::Fail(api::error::kLimit, "windows open after a user action");
+			}
+			_lastDialog = now;
+			_windows[*id] = mode;
+			_windowUpdated[*id] = now;
+			opened = true;
+		}
+	}
+	auto payload = cbor::Value::FromMap({
+		{ "id", Text(*id) },
+		{ "mode", Text(mode) },
+		{ "page", checked.value() },
+	});
+	if (!_services.ui("window", payload)) {
+		if (opened) {
+			const auto lock = std::scoped_lock(_limitsMutex);
+			_windows.erase(*id);
+		}
+		return api::Fail(api::error::kUnavailable, "windows");
+	}
+	return api::Ok();
 }
 
 cbor::Value Broker::dataCall(const std::string &op, const cbor::Value *args) {

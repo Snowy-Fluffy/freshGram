@@ -20,9 +20,20 @@ constexpr auto kMaxButtons = size_t(3);
 constexpr auto kMaxButtonLabel = size_t(40);
 constexpr auto kMaxSliderValue = int64_t(1000000000);
 constexpr auto kMaxSliderSteps = int64_t(1000);
+constexpr auto kMaxDepth = size_t(4);
+constexpr auto kMaxNodes = size_t(256);
+constexpr auto kMaxRowItems = size_t(4);
+constexpr auto kMaxTabs = size_t(8);
+constexpr auto kMaxTableColumns = size_t(6);
+constexpr auto kMaxTableRows = size_t(32);
+constexpr auto kMaxCell = size_t(120);
+constexpr auto kMaxImageBytes = size_t(256 * 1024);
+constexpr auto kMaxImageDimension = uint32_t(2048);
+constexpr auto kMaxImageSide = int64_t(512);
 
 [[nodiscard]] bool SafeText(const std::string &text, size_t maxBytes, bool allowNewlines);
 [[nodiscard]] bool ValidIconName(const std::string &name);
+[[nodiscard]] bool ValidWindowId(const std::string &id);
 [[nodiscard]] const std::set<std::string> &BuiltinIcons();
 
 [[nodiscard]] Result<cbor::Value, std::string> ValidatePage(

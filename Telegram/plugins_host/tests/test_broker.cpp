@@ -200,7 +200,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 2);
+	CHECK(Payload(info).find("api")->asInt() == 3);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -220,6 +220,7 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "settings.read", Request("settings.read") },
 		{ "media.read", Request("media.get", { { "chat", Int(1) }, { "message", Int(100) } }) },
 		{ "ui.dialog", Request("ui.dialog.close") },
+		{ "ui.dialog", Request("ui.window.close", { { "id", Text("w") } }) },
 		{ "messages.transform_outgoing", Request("messages.set_outgoing", { { "text", Text("x") } }) },
 		{ "chats.list", Request("chats.list") },
 		{ "chat.info", Request("chat.info", { { "chat", Int(1) } }) },
@@ -749,6 +750,183 @@ void TestSettingsPage() {
 	auto none = Fixture({ "ui.settings_page" });
 	auto unavailable = none.make();
 	CHECK(Code(unavailable.call(Request("ui.settings.set", { { "page", good } }))) == "unavailable");
+}
+
+[[nodiscard]] cbor::Value Png(uint32_t width, uint32_t height) {
+	auto bytes = cbor::Bytes{
+		0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+		0, 0, 0, 13, 'I', 'H', 'D', 'R',
+	};
+	for (const auto number : { width, height }) {
+		for (auto shift = 24; shift >= 0; shift -= 8) {
+			bytes.push_back(uint8_t(number >> shift));
+		}
+	}
+	return cbor::Value::FromBytes(std::move(bytes));
+}
+
+[[nodiscard]] cbor::Value Label(const char *id, const char *text) {
+	return Item({ { "type", Text("button") }, { "id", Text(id) }, { "label", Text(text) } });
+}
+
+void TestTemplateTree() {
+	auto fixture = Fixture({ "ui.dialog" });
+	auto received = std::vector<cbor::Value>();
+	fixture.services.ui = [&](std::string_view kind, const cbor::Value &payload) {
+		received.push_back(payload);
+		return kind == "dialog";
+	};
+	auto broker = fixture.make();
+	const auto call = [&](cbor::Value page) {
+		return broker.call(Request("ui.dialog.show", { { "page", std::move(page) } }));
+	};
+	const auto array = [](std::vector<cbor::Value> list) {
+		return cbor::Value::FromArray(std::move(list));
+	};
+	const auto good = Page({
+		Item({ { "type", Text("text") }, { "text", Text("Big") }, { "style", Text("title") } }),
+		Item({ { "type", Text("row") }, { "items", array({
+			Label("a", "A"),
+			Label("b", "B"),
+		}) } }),
+		Item({ { "type", Text("card") }, { "title", Text("Card") }, { "items", array({
+			Item({ { "type", Text("code") }, { "text", Text("x = 1\ny = 2") } }),
+			Item({ { "type", Text("column") }, { "items", array({ Label("c", "C") }) } }),
+		}) } }),
+		Item({ { "type", Text("tabs") }, { "id", Text("tabs") }, { "tabs", array({
+			Item({ { "id", Text("one") }, { "label", Text("One") }, { "items", array({
+				Item({ { "type", Text("divider") } }),
+			}) } }),
+			Item({ { "id", Text("two") }, { "label", Text("Two") }, { "items", array({ Label("d", "D") }) } }),
+		}) }, { "value", Text("two") } }),
+		Item({ { "type", Text("image") }, { "data", Png(64, 32) }, { "width", Int(64) }, { "alt", Text("logo") } }),
+		Item({ { "type", Text("list") }, { "items", array({
+			Item({ { "id", Text("first") }, { "title", Text("First") }, { "subtitle", Text("sub") } }),
+			Item({ { "id", Text("second") }, { "title", Text("Second") }, { "icon", Text("star") } }),
+		}) } }),
+		Item({ { "type", Text("table") },
+			{ "columns", array({ Text("Name"), Text("Qty") }) },
+			{ "rows", array({ array({ Text("a"), Text("1") }), array({ Text("b"), Text("2") }) }) } }),
+	});
+	CHECK(IsOk(call(good)));
+	CHECK(received.size() == 1);
+	const auto &items = *received[0].find("items")->asArray();
+	CHECK(items.size() == 7);
+	CHECK(*items[0].find("style")->asText() == "title");
+	CHECK(items[1].find("items")->asArray()->size() == 2);
+	CHECK(*items[3].find("value")->asText() == "two");
+	CHECK(items[4].find("height")->asInt() == 0);
+	CHECK(*items[5].find("items")->asArray()->at(0).find("subtitle")->asText() == "sub");
+
+	const auto bad = [&](cbor::Value page) {
+		return Code(call(std::move(page))) == "invalid";
+	};
+	const auto wrap = [&](cbor::Value inner) { return Page({ std::move(inner) }); };
+	auto deep = Label("deep", "x");
+	for (auto i = 0; i != 3; ++i) {
+		deep = Item({ { "type", Text("column") }, { "items", array({ std::move(deep) }) } });
+	}
+	CHECK(IsOk(call(wrap(deep))));
+	CHECK(bad(wrap(Item({ { "type", Text("column") }, { "items", array({ deep }) } }))));
+	CHECK(bad(Page({ Label("a", "A"), Item({ { "type", Text("row") }, { "items", array({ Label("a", "A2") }) } }) })));
+	CHECK(bad(wrap(Item({ { "type", Text("row") }, { "items", array({}) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("row") }, { "items", array({
+		Label("a", "A"), Label("b", "B"), Label("c", "C"), Label("d", "D"), Label("e", "E"),
+	}) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("row") }, { "items", array({ Label("a", "A") }) }, { "gap", Int(4) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("tabs") }, { "id", Text("t") }, { "value", Text("nope") }, { "tabs", array({
+		Item({ { "id", Text("one") }, { "label", Text("One") }, { "items", array({}) } }),
+	}) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("text") }, { "text", Text("x") }, { "style", Text("blink") } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("image") }, { "data", Png(4096, 4) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("image") }, { "data", Png(0, 4) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("image") }, { "data", cbor::Value::FromBytes({ '<', 's', 'v', 'g', '>' }) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("image") }, { "data", Png(8, 8) }, { "width", Int(5000) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("image") }, { "data", Text("http://example.org/a.png") } }))));
+	auto huge = cbor::Bytes{ 0xFF, 0xD8, 0xFF };
+	huge.resize(300 * 1024);
+	CHECK(bad(wrap(Item({ { "type", Text("image") }, { "data", cbor::Value::FromBytes(std::move(huge)) } }))));
+	CHECK(IsOk(call(wrap(Item({ { "type", Text("image") }, { "data", cbor::Value::FromBytes({ 0xFF, 0xD8, 0xFF, 0xE0 }) } })))));
+	CHECK(bad(wrap(Item({ { "type", Text("table") },
+		{ "columns", array({ Text("A"), Text("B") }) },
+		{ "rows", array({ array({ Text("only one") }) }) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("table") }, { "columns", array({}) }, { "rows", array({}) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("list") }, { "items", array({}) } }))));
+	CHECK(bad(wrap(Item({ { "type", Text("list") }, { "items", array({
+		Item({ { "id", Text("x") }, { "title", Text("X") }, { "icon", Text("Not Valid") } }),
+	}) } }))));
+	auto many = std::vector<cbor::Value>();
+	for (auto i = 0; i != 5; ++i) {
+		auto cells = std::vector<cbor::Value>();
+		for (auto k = 0; k != 4; ++k) {
+			auto column = std::vector<cbor::Value>();
+			for (auto j = 0; j != 14; ++j) {
+				column.push_back(Item({ { "type", Text("divider") } }));
+			}
+			cells.push_back(Item({ { "type", Text("column") }, { "items", array(std::move(column)) } }));
+		}
+		many.push_back(Item({ { "type", Text("row") }, { "items", array(std::move(cells)) } }));
+	}
+	CHECK(bad(Page(std::move(many))));
+}
+
+void TestWindows() {
+	auto fixture = Fixture({ "ui.dialog" });
+	fixture.time = 100000;
+	auto calls = std::vector<std::pair<std::string, cbor::Value>>();
+	fixture.services.ui = [&](std::string_view kind, const cbor::Value &payload) {
+		calls.emplace_back(std::string(kind), payload);
+		return true;
+	};
+	auto broker = fixture.make();
+	const auto page = Page({ Label("go", "Go") });
+	const auto show = [&](const char *id, const char *mode = nullptr, const char *op = "ui.window.show") {
+		auto args = cbor::Map{
+			{ "id", Text(id) },
+			{ "page", page },
+		};
+		if (mode) {
+			args.push_back({ "mode", Text(mode) });
+		}
+		return broker.call(Request(op, std::move(args)));
+	};
+	const auto close = [&](const char *id) {
+		return broker.call(Request("ui.window.close", { { "id", Text(id) } }));
+	};
+	CHECK(Code(show("Bad Id")) == "invalid");
+	CHECK(Code(show("w", "fullscreen")) == "invalid");
+	CHECK(Code(show("w", nullptr, "ui.window.update")) == "not_found");
+	CHECK(calls.empty());
+
+	CHECK(IsOk(show("w", "window")));
+	CHECK(calls.size() == 1 && calls[0].first == "window");
+	CHECK(*calls[0].second.find("id")->asText() == "w");
+	CHECK(*calls[0].second.find("mode")->asText() == "window");
+	CHECK(Code(show("w", "layer", "ui.window.update")) == "limit");
+	fixture.time += 100;
+	CHECK(IsOk(show("w", "layer", "ui.window.update")));
+	CHECK(*calls.back().second.find("mode")->asText() == "window");
+
+	CHECK(Code(show("x")) == "limit");
+	broker.noteUserAction("menu.click");
+	CHECK(IsOk(show("x")));
+	CHECK(IsOk(show("y")));
+	CHECK(Code(show("z")) == "limit");
+	CHECK(IsOk(close("y")));
+	CHECK(calls.back().first == "window.close");
+	CHECK(IsOk(show("z")));
+	CHECK(Code(show("y")) == "limit");
+	broker.noteUserAction("window.close", "z");
+	CHECK(IsOk(show("y")));
+	CHECK(Code(close("Bad Id")) == "invalid");
+
+	auto denied = Fixture({ "ui.toast" });
+	denied.services.ui = fixture.services.ui;
+	auto refused = denied.make();
+	CHECK(Code(refused.call(Request("ui.window.show", { { "id", Text("w") }, { "page", page } }))) == "denied");
+	auto none = Fixture({ "ui.dialog" });
+	auto unavailable = none.make();
+	CHECK(Code(unavailable.call(Request("ui.window.show", { { "id", Text("w") }, { "page", page } }))) == "unavailable");
 }
 
 void TestTargetedEvents() {
@@ -1297,6 +1475,8 @@ int main() {
 	TestPluginMessages();
 	TestDataIsFilteredByTheBroker();
 	TestSettingsPage();
+	TestTemplateTree();
+	TestWindows();
 	TestTargetedEvents();
 	TestChatScope();
 	TestRateLimit();
