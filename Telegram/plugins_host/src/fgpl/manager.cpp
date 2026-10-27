@@ -1224,7 +1224,12 @@ bool PluginManager::send(
 		if (!has("ui.settings_page") || !parsed->settingsPage) {
 			return false;
 		}
-	} else if (*type == "dialog.click" || *type == "dialog.change" || *type == "dialog.close") {
+	} else if (*type == "dialog.click"
+		|| *type == "dialog.change"
+		|| *type == "dialog.close"
+		|| *type == "window.click"
+		|| *type == "window.change"
+		|| *type == "window.close") {
 		if (!has("ui.dialog")) {
 			return false;
 		}
@@ -1246,7 +1251,7 @@ bool PluginManager::send(
 		++record.stats.dropped;
 		return false;
 	}
-	instance->broker->noteUserAction(*type);
+	instance->broker->noteUserAction(*type, text("window"));
 	const auto filtered = instance->broker->filterTargeted(event);
 	const auto size = EncodedSize(filtered);
 	{
@@ -1415,8 +1420,9 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		? _config.services.settingsPage
 		: nullptr;
 	const auto dialog = _config.services.dialog;
+	const auto window = _config.services.window;
 	const auto pluginId = record.id;
-	services.ui = [settings, dialog, pluginId, account](std::string_view kind, const cbor::Value &payload) {
+	services.ui = [settings, dialog, window, pluginId, account](std::string_view kind, const cbor::Value &payload) {
 		if (kind == "settings" && settings) {
 			settings(pluginId, account, payload);
 			return true;
@@ -1425,6 +1431,22 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 			return true;
 		} else if (kind == "dialog.close" && dialog) {
 			dialog(pluginId, account, nullptr);
+			return true;
+		} else if (kind == "window" && window) {
+			const auto id = payload.find("id");
+			const auto mode = payload.find("mode");
+			const auto page = payload.find("page");
+			if (!id || !id->asText() || !mode || !mode->asText() || !page) {
+				return false;
+			}
+			window(pluginId, account, *id->asText(), *mode->asText(), page);
+			return true;
+		} else if (kind == "window.close" && window) {
+			const auto id = payload.find("id");
+			if (!id || !id->asText()) {
+				return false;
+			}
+			window(pluginId, account, *id->asText(), std::string(), nullptr);
 			return true;
 		}
 		return false;

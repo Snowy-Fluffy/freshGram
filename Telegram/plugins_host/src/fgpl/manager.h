@@ -74,6 +74,13 @@ struct ManagerServices {
 		const std::string &id,
 		const std::string &account,
 		const cbor::Value *page)> dialog;
+	// A window of the plugin: `mode` is "layer" or "window"; no page closes it.
+	std::function<void(
+		const std::string &id,
+		const std::string &account,
+		const std::string &window,
+		const std::string &mode,
+		const cbor::Value *page)> window;
 	DataProvider *data = nullptr;
 	std::function<DataProvider*(const std::string &account)> dataFor;
 	Transport *transport = nullptr;

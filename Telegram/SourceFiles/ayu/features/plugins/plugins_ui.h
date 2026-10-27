@@ -48,6 +48,13 @@ void ShowPluginDialog(
 	const std::string &account,
 	const fgpl::cbor::Value *page);
 
+void ShowPluginWindow(
+	const std::string &id,
+	const std::string &account,
+	const std::string &window,
+	const std::string &mode,
+	const fgpl::cbor::Value *page);
+
 struct PluginHeader {
 	QString name;
 	QString version;
