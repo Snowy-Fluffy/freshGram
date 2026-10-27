@@ -149,7 +149,7 @@ public:
 	}
 
 	[[nodiscard]] QByteArray serialize() const;
-	void addFromSerialized(const QByteArray &serialized);
+	void addFromSerialized(const QByteArray &serialized, int writerVersion);
 
 	[[nodiscard]] bool adaptiveForWide() const {
 		return _adaptiveForWide.current();
