@@ -5,6 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
+#include "ayu/features/plugins/plugins_ui.h"
 #include "info/media/info_media_list_widget.h"
 
 #include "info/global_media/info_global_media_provider.h"
@@ -1603,6 +1604,10 @@ void ListWidget::showContextMenu(
 				}),
 				&st::menuIconDelete);
 		}
+		FreshPlugins::AddSharedMediaMenuItems(
+			_contextMenu,
+			&_controller->session(),
+			collectSelectedIds());
 		_contextMenu->addAction(
 			tr::lng_context_clear_selection(tr::now),
 			crl::guard(this, [this] {
@@ -1686,6 +1691,10 @@ void ListWidget::showContextMenu(
 					&st::menuIconReport);
 			}
 		}
+		FreshPlugins::AddSharedMediaMenuItems(
+			_contextMenu,
+			&_controller->session(),
+			{ globalId.itemId });
 		if (_selectOnClick || !_provider->hasSelectRestriction()) {
 			if (isSelectedItem(_selected.find(item))) {
 				_contextMenu->addAction(

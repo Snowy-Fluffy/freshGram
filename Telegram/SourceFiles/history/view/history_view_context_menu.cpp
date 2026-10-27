@@ -1310,6 +1310,15 @@ bool AddClearSelectionAction(
 	if (!request.overSelection || request.selectedItems.empty()) {
 		return false;
 	}
+	auto ids = std::vector<FullMsgId>();
+	ids.reserve(request.selectedItems.size());
+	for (const auto &selected : request.selectedItems) {
+		ids.push_back(selected.msgId);
+	}
+	FreshPlugins::AddSelectionMenuItems(
+		menu,
+		&list->controller()->session(),
+		ids);
 	menu->addAction(tr::lng_context_clear_selection(tr::now), [=] {
 		list->cancelSelection();
 	}, &st::menuIconSelect);

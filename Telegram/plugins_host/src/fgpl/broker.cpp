@@ -1806,7 +1806,7 @@ cbor::Value Broker::filterTargeted(const cbor::Value &event) const {
 			if (!visible) {
 				continue;
 			}
-		} else if (entry.key == "message" || entry.key == "from") {
+		} else if (entry.key == "message" || entry.key == "from" || entry.key == "ids") {
 			if (!visible || !reading) {
 				continue;
 			}

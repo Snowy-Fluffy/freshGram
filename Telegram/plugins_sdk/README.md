@@ -108,7 +108,7 @@ everywhere. If it cannot work without some capability of the app, list it in
 `compat.requires`; an app that lacks one refuses the plugin with a clear reason.
 Capabilities are the permission ids (`net.udp`, `ui.dialog`, `plugins.message`,
 ...) and the menu surfaces `menu.message`, `menu.chat`, `menu.profile`,
-`menu.composer`, `menu.main_menu` and `menu.tray` (missing where the system has
+`menu.composer`, `menu.main_menu`, `menu.tray`, `menu.selection` and `menu.shared_media` (missing where the system has
 no tray).
 
 Set `compat.testedWith` to the freshGram version you tested with: when the app's
@@ -280,11 +280,25 @@ icon is refused at install; a page item with an unknown icon shows the default o
 }
 ```
 
+Surfaces: `message` (a message's context menu), `selection` (the menu of several selected
+messages in a chat, a list of up to 100 messages of one chat), `shared_media` (the context menu
+of an item, or of the selected items, in a chat's shared media), `chat`, `profile`, `composer`,
+`main_menu` and `tray`. `selection` and `shared_media` are never offered for secret chats.
+
+An item may carry `"when": {...}` to appear only where it fits. `chat_type` (a list of
+`user`, `bot`, `self`, `group`, `supergroup`, `forum`, `channel`) works on every surface that
+has a chat. The message keys work on `message`, `selection` and `shared_media` only: `out`,
+`has_text`, `has_media` and `forwarded` (booleans) and `media` (a list of `photo`, `video`,
+`gif`, `round`, `voice`, `audio`, `file`, `sticker`, `poll`, `contact`, `location`,
+`webpage`, `other`). `has_media` is false for a message that only has a link preview. For
+several messages every one of them has to fit. The user can hide any item in the plugin's
+details ("Menu items"); a hidden item is not offered.
+
 Activations come back as events:
 
 | Event | Fields |
 |---|---|
-| `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); the `composer` surface is a button next to the input field and needs `ui.composer_button`, its click also has `topic` and `reply_to` like `command` (the reply is then taken off the input field) |
+| `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`, `selection`, `shared_media`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); `selection` and `shared_media` carry `chat` and `ids` (message ids, `ids` only with `messages.read`) instead of `message`; the `composer` surface is a button next to the input field and needs `ui.composer_button`, its click also has `topic` and `reply_to` like `command` (the reply is then taken off the input field) |
 | `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope, `reply_to` when the user was replying to a message of that chat (the reply is then taken off the input field, so answer with `messages.send` and `reply_to`); the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
 | `settings.open` | the user opened the plugin's settings; send the page now (the plugin is started for it) |
 | `settings.change` | `id`, `value` of a toggle, input, select, slider (a number) or chat picker (a chat id) |

@@ -26,12 +26,47 @@ struct PermissionRequest {
 	bool required = false;
 };
 
+// Declarative visibility of a menu item.
+struct MenuWhen {
+	std::set<std::string> chatTypes;
+	std::optional<bool> out;
+	std::optional<bool> hasMedia;
+	std::optional<bool> hasText;
+	std::optional<bool> forwarded;
+	std::set<std::string> media;
+
+	[[nodiscard]] bool empty() const {
+		return chatTypes.empty()
+			&& !out
+			&& !hasMedia
+			&& !hasText
+			&& !forwarded
+			&& media.empty();
+	}
+};
+
+// What the app knows about the chat and the message a menu opens for.
+struct MenuContext {
+	std::string chatType;
+	bool out = false;
+	std::string media;
+	bool hasText = false;
+	bool forwarded = false;
+};
+
 struct MenuItem {
 	std::string surface;
 	std::string id;
 	Localized title;
 	std::string icon;
+	MenuWhen when;
 };
+
+[[nodiscard]] const std::set<std::string> &MenuSurfaces();
+// Surfaces that open for messages and may use the message keys of `when`.
+[[nodiscard]] bool MenuSurfaceHasMessages(const std::string &surface);
+[[nodiscard]] const std::set<std::string> &MenuMediaKinds();
+[[nodiscard]] bool Matches(const MenuWhen &when, const MenuContext &context);
 
 struct Command {
 	std::string name;

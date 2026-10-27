@@ -989,6 +989,20 @@ void TestTargetedEvents() {
 	auto reader = reading.make();
 	CHECK(reader.filterTargeted(click(1, false)).find("text") != nullptr);
 	CHECK(reader.filterTargeted(click(1, true)).find("text") == nullptr);
+
+	const auto selection = [&](int64_t chat, bool secret) {
+		return Item({
+			{ "type", Text("menu.click") }, { "surface", Text("selection") }, { "id", Text("x") },
+			{ "chat", Int(chat) }, { "ids", cbor::Value::FromArray({ Int(5), Int(6) }) },
+			{ "secret", cbor::Value::FromBool(secret) },
+		});
+	};
+	CHECK(!broker.filterTargeted(selection(1, false)).find("ids"));
+	CHECK(broker.filterTargeted(selection(1, false)).find("chat") != nullptr);
+	const auto listed = readingFixture.make().filterTargeted(selection(1, false));
+	CHECK(listed.find("ids") && listed.find("ids")->asArray()->size() == 2);
+	CHECK(!readingFixture.make().filterTargeted(selection(2, false)).find("ids"));
+	CHECK(!readingFixture.make().filterTargeted(selection(1, true)).find("ids"));
 }
 
 void TestChatScope() {

@@ -205,6 +205,16 @@
 "fresh_PermChatsActivity" = "Tippen, Lesemarkierungen und Beitritte oder Austritte in Chats sehen";
 "fresh_PermUsersPresence" = "Sehen, wann Leute online sind";
 "fresh_PermAppActivity" = "Wissen, ob die App im Fokus ist";
+"fresh_PluginMenuItems" = "Menüeinträge";
+"fresh_PluginMenuSurfaceMessage" = "Nachrichtenmenü";
+"fresh_PluginMenuSurfaceChat" = "Chatmenü";
+"fresh_PluginMenuSurfaceProfile" = "Profilmenü";
+"fresh_PluginMenuSurfaceComposer" = "Schaltflächen im Eingabefeld";
+"fresh_PluginMenuSurfaceMainMenu" = "Hauptmenü";
+"fresh_PluginMenuSurfaceTray" = "Tray-Menü";
+"fresh_PluginMenuSurfaceSelection" = "Menü für ausgewählte Nachrichten";
+"fresh_PluginMenuSurfaceSharedMedia" = "Menü der geteilten Medien";
+"fresh_PluginMenuItemsAbout" = "Lege fest, welche Einträge dieses Plugins in den Menüs erscheinen.";
 "fresh_RiskChangesMessages" = "Kann von dir gesendete Nachrichten bearbeiten oder löschen";
 "fresh_PluginChatNone" = "Nicht gewählt";
 "fresh_PluginSettingsLoading" = "Einstellungen werden geladen…";

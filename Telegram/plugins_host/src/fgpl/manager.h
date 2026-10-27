@@ -195,6 +195,14 @@ struct ContributedMenu {
 	std::string id;
 	std::string title;
 	std::string icon;
+	MenuWhen when;
+};
+
+struct ContributedTranslator {
+	bool declared = false;
+	std::string name;
+	std::vector<std::string> languages;
+	int maxChars = 0;
 };
 
 struct ContributedCommand {
