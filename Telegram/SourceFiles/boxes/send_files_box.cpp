@@ -45,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/scroll_content_shadow.h"
 #include "ui/text/format_values.h"
 #include "ui/widgets/fields/number_input.h"
+#include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/popup_menu.h"
@@ -2189,6 +2190,71 @@ void SendFilesBox::setupCaption() {
 		.show = _show,
 		.chatStyle = chatStyle,
 	});
+	setupTranslateButton();
+}
+
+void SendFilesBox::setupTranslateButton() {
+	_translateButton = Ui::CreateChild<Ui::IconButton>(
+		this,
+		st::boxCaptionTranslateButton);
+	_translateButton->setAccessibleName(
+		tr::fresh_MessageFieldElementTranslate(tr::now));
+	_translateButton->setAcceptBoth(true);
+	_translateButton->clicks(
+	) | rpl::on_next([=](Qt::MouseButton button) {
+		if (button == Qt::RightButton) {
+			if (const auto window = Core::App().findWindow(this)) {
+				if (const auto controller = window->sessionController()) {
+					Ayu::OpenTranslateSettings(controller);
+				}
+			}
+		} else {
+			translateCaption();
+		}
+	}, _translateButton->lifetime());
+
+	const auto &settings = AyuSettings::getInstance();
+	rpl::combine(
+		settings.autoTranslateOutgoingValue(),
+		settings.showTranslateButtonInMessageFieldValue()
+	) | rpl::on_next([=](bool autoTranslate, bool) {
+		_translateButton->setIconOverride(
+			autoTranslate ? &st::historyTranslateIconOn : nullptr,
+			autoTranslate ? &st::historyTranslateIconOn : nullptr);
+		updateCaptionVisibility();
+		updateControlsGeometry();
+	}, _translateButton->lifetime());
+
+	updateCaptionVisibility();
+}
+
+void SendFilesBox::translateCaption() {
+	if (_translating || (_translator && _translator->busy())) {
+		return;
+	}
+	const auto source = fieldText();
+	auto text = TextWithEntities{
+		source.text,
+		TextUtilities::ConvertTextTagsToEntities(source.tags),
+	};
+	if (!Ayu::WorthTranslating(text)) {
+		return;
+	}
+	if (!_translator) {
+		_translator = std::make_unique<Ayu::ComposeTranslator>();
+	}
+	_translator->start(_show, _toPeer, std::move(text), crl::guard(this, [=](
+			std::optional<TextWithEntities> result) {
+		if (!result) {
+			return;
+		}
+		_caption->setTextWithTags(
+			TextWithTags{
+				result->text,
+				TextUtilities::ConvertEntitiesToTextTags(result->entities),
+			},
+			Ui::InputField::HistoryAction::NewEntry);
+	}), false);
 }
 
 void SendFilesBox::setupCaptionAutocomplete() {
@@ -2572,6 +2638,16 @@ void SendFilesBox::updateControlsGeometry() {
 		if (_aiButton) {
 			Ui::UpdateCaptionAiButtonGeometry(_aiButton, _caption.data());
 			_aiButton->raise();
+		}
+		if (_translateButton && !_translateButton->isHidden()) {
+			_translateButton->moveToLeft(
+				(st::boxPhotoPadding.left()
+					+ st::sendMediaPreviewSize
+					- _translateButton->width()),
+				_caption->y()
+					+ st::boxAttachEmojiTop
+					- _translateButton->height());
+			_translateButton->raise();
 		}
 	}
 	const auto pairs = std::array<std::pair<RpWidget*, int>, 5>{ {

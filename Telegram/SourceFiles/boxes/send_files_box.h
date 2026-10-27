@@ -47,6 +47,7 @@ class InputField;
 struct GroupMediaLayout;
 struct PreparedBundle;
 class EmojiButton;
+class IconButton;
 class AlbumPreview;
 class VerticalLayout;
 class FlatLabel;
@@ -278,6 +279,8 @@ private:
 	[[nodiscard]] bool translateCaptions(
 		Api::SendOptions options,
 		bool ctrlShiftEnter);
+	void setupTranslateButton();
+	void translateCaption();
 	void translateCaptionAt(
 		std::vector<int> indices,
 		int position,
@@ -371,6 +374,7 @@ private:
 	TextWithTags _prefilledCaptionText;
 	object_ptr<Ui::EmojiButton> _emojiToggle = { nullptr };
 	HistoryView::Controls::ComposeAiButton *_aiButton = nullptr;
+	Ui::IconButton *_translateButton = nullptr;
 	base::unique_qptr<ChatHelpers::TabbedPanel> _emojiPanel;
 	base::unique_qptr<QObject> _emojiFilter;
 	using CharactersLimitLabel = HistoryView::Controls::CharactersLimitLabel;
