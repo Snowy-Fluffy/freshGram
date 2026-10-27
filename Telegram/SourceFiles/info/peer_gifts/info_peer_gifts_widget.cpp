@@ -496,6 +496,9 @@ void InnerWidget::applyUpdateTo(
 				--view.index;
 			}
 		}
+		if (_dragging.index >= 0) {
+			cancelDragging();
+		}
 		if (list.empty()) {
 			refreshAbout();
 		}
@@ -1657,6 +1660,9 @@ void InnerWidget::removeGiftFromCollection(
 					_list->erase(it);
 					if (_entries->total > 0) {
 						--_entries->total;
+					}
+					if (_dragging.index >= 0) {
+						cancelDragging();
 					}
 					refreshButtons();
 				}
