@@ -528,6 +528,12 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 		}
 	}
 	if (const auto description = reader.localized(document, "description", "", false, 1000)) {
+		for (const auto &[language, text] : description->text) {
+			if (!ui::SafeText(text, 1000, true)) {
+				reader.error("description", "has control or bidirectional characters");
+				break;
+			}
+		}
 		manifest.description = *description;
 	}
 	if (const auto author = reader.object(document, "author", "", false, { "name", "url", "contact" })) {
