@@ -7,6 +7,9 @@
 #include "ayu/features/plugins/plugins_log_view.h"
 #include "ayu/features/plugins/plugins_runtime.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "data/stickers/data_custom_emoji.h"
+#include "ui/dynamic_image.h"
+#include "ui/dynamic_thumbnails.h"
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/secret/secret_peer.h"
 #include "core/application.h"
@@ -388,6 +391,40 @@ void AddPluginAction(
 	}
 }
 
+// peer:<id> and emoji:<id>, or nothing when this plugin may not show it.
+[[nodiscard]] std::shared_ptr<Ui::DynamicImage> RichIconImage(
+		const std::string &plugin,
+		const std::string &name) {
+	const auto colon = name.find(':');
+	const auto session = Core::App().activeAccount().maybeSession();
+	if (colon == std::string::npos || !session) {
+		return nullptr;
+	}
+	const auto kind = name.substr(0, colon);
+	const auto id = uint64(std::strtoull(name.c_str() + colon + 1, nullptr, 10));
+	if (kind == "emoji") {
+		return Ui::MakeEmojiThumbnail(
+			&session->data(),
+			Data::SerializeCustomEmojiId(DocumentId(id)));
+	} else if (kind != "peer") {
+		return nullptr;
+	}
+	const auto snapshot = Snapshot();
+	const auto grant = snapshot ? snapshot->grantsOf(plugin) : std::nullopt;
+	if (!grant
+		|| !(grant->granted.contains("chat.info") || grant->granted.contains("chats.list"))
+		|| (grant->chats && !grant->chats->contains(int64_t(id)))
+		|| int64_t(id) == fgpl::api::kServiceChat
+		|| AyuSettings::getInstance().streamerMode()) {
+		return nullptr;
+	}
+	const auto peer = session->data().peerLoaded(PeerId(id));
+	if (!peer || FreshSecret::IsSecretPeerId(peer->id)) {
+		return nullptr;
+	}
+	return Ui::MakeUserpicThumbnail(peer);
+}
+
 void AddButtonIcon(
 		not_null<Ui::RpWidget*> button,
 		const style::SettingsButton &st,
@@ -400,6 +437,16 @@ void AddButtonIcon(
 	button->sizeValue() | rpl::on_next([=](QSize size) {
 		icon->moveToLeft(left.value_or(st.iconLeft), (size.height() - icon->height()) / 2);
 	}, icon->lifetime());
+	if (const auto image = RichIconImage(plugin, name)) {
+		const auto held = icon->lifetime().make_state<std::shared_ptr<Ui::DynamicImage>>(image);
+		image->subscribeToUpdates([=] { icon->update(); });
+		icon->paintOn([=](QPainter &p) {
+			const auto side = icon->width();
+			p.drawImage(QRect(0, 0, side, side), (*held)->image(side));
+		});
+		icon->show();
+		return;
+	}
 	icon->paintOn([=](QPainter &p) {
 		PaintPluginIcon(p, QPoint(), icon->width(), plugin, name, st::menuIconBot, st::menuIconColor->c);
 	});
@@ -810,6 +857,20 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 		: QByteArray();
 }
 
+struct SubPage {
+	cbor::Value item;
+	rpl::event_stream<> changed;
+};
+
+void FillSubPageBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller,
+	base::weak_ptr<Main::Session> weak,
+	std::string plugin,
+	std::shared_ptr<SubPage> sub,
+	Target target,
+	std::string window);
+
 [[nodiscard]] std::shared_ptr<Page> BuildSettingsContent(
 		not_null<Ui::VerticalLayout*> root,
 		not_null<Window::SessionController*> controller,
@@ -871,6 +932,7 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 			const style::SettingsButton &st) -> Fn<void(const cbor::Value &)> {
 		static const auto interactive = std::set<QString>{
 			u"toggle"_q, u"button"_q, u"input"_q, u"slider"_q, u"chat"_q, u"select"_q,
+			u"page"_q,
 		};
 		if (!interactive.contains(TextOf(item, "type"))) {
 			return nullptr;
@@ -1265,6 +1327,27 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 					read(now);
 					button->setDisabled(FlagOf(now, "disabled"));
 				});
+			} else if (type == u"page"_q) {
+				const auto sub = raw->lifetime.make_state<std::shared_ptr<SubPage>>(
+					std::make_shared<SubPage>(SubPage{ item }));
+				const auto button = addRow(label->value(), icon, QString());
+				button->setDisabled(FlagOf(item, "disabled"));
+				button->addClickHandler([=] {
+					controller->show(Box(
+						FillSubPageBox,
+						controller,
+						weak,
+						plugin,
+						*sub,
+						target,
+						window));
+				});
+				update = crl::guard(button, [=](const cbor::Value &now) {
+					*label = TextOf(now, "label");
+					button->setDisabled(FlagOf(now, "disabled"));
+					(*sub)->item = now;
+					(*sub)->changed.fire({});
+				});
 			} else if (type == u"column"_q) {
 				space(Last::Block);
 				result->update.push_back(nullptr);
@@ -1555,6 +1638,43 @@ void ShowPage(
 	}
 	content->clear();
 	shown = BuildSettingsContent(content, controller, weak, plugin, *page, target, window);
+}
+
+void FillSubPageBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller,
+		base::weak_ptr<Main::Session> weak,
+		std::string plugin,
+		std::shared_ptr<SubPage> sub,
+		Target target,
+		std::string window) {
+	box->setWidth(st::boxWideWidth);
+	const auto title = box->lifetime().make_state<rpl::variable<QString>>(
+		TextOf(sub->item, "label"));
+	box->setTitle(title->value());
+	const auto content = box->addRow(
+		object_ptr<Ui::VerticalLayout>(box),
+		style::margins());
+	const auto shown = box->lifetime().make_state<std::shared_ptr<Page>>();
+	const auto rebuild = [=] {
+		*title = TextOf(sub->item, "label");
+		const auto page = cbor::Value::FromMap({
+			{ "title", cbor::Value::FromText(TextOf(sub->item, "label").toStdString()) },
+			{ "items", cbor::Value::FromArray(cbor::Array(ArrayOf(sub->item, "items"))) },
+		});
+		ShowPage(content, controller, weak, plugin, &page, target, window, *shown);
+	};
+	rebuild();
+	sub->changed.events(
+	) | rpl::on_next([=] {
+		Ui::PostponeCall(content, rebuild);
+	}, content->lifetime());
+	box->boxClosing() | rpl::on_next([=] {
+		if (*shown) {
+			(*shown)->flushAll();
+		}
+	}, box->lifetime());
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
 [[nodiscard]] style::margins SourcePadding() {

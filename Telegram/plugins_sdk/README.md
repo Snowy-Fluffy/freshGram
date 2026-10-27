@@ -281,8 +281,11 @@ app draws them with the plugin's name next to the title. Every `composer` item b
 own button next to the message field, for every plugin; when there are more than three, the
 last button opens a menu with the rest.
 
-Icons: a menu item, and the `toggle`, `button`, `link`, `select` and `chat` items of a page,
-take `icon`, either a built-in name or one of the plugin's own icons. The plugin lists its own
+Icons: a menu item, and the `toggle`, `button`, `link`, `select`, `chat` and `page` items of a page,
+take `icon`, either a built-in name or one of the plugin's own icons. On a page (not in a menu) an
+icon may also be `peer:<chat id>`, the avatar of a chat (needs `chat.info` or `chats.list`, the chat
+in scope; never for secret chats, 777000 or in streamer mode), or `emoji:<id>`, a custom emoji; a
+page may have at most 32 of those and the app draws what it has, else the default icon. The plugin lists its own
 icons in `contributes.icons` as `{"name": "icons/name.svg"}` (up to 32 `.svg` or `.png` files
 from `files`, each up to 64 KiB). The app draws every icon as a mask in its own icon color, so
 draw them in one color on a transparent background, 24×24. Built-in names: `add`, `archive`,
@@ -364,6 +367,7 @@ windows (all ids stay unique across the whole page; at most 4 levels and 256 ite
 | `table` | `columns` (up to 6 titles), `rows` (up to 32 lists of texts, one per column) |
 | `image` | `data` (a PNG up to 2048×2048 or a JPEG, up to 256 KiB), `width`, `height` (up to 512), `alt` |
 | `code` | `text`: monospaced text |
+| `page` | `id`, `label`, `icon`, `hint`, `disabled`, `items`: a row that opens a sub-page with these items in its own box; its ids are part of the same page, so events need no path |
 
 `text` also takes `style`: `title`, `subtitle`, `muted`, `accent` or `danger`; colors and fonts
 come from the app's theme.

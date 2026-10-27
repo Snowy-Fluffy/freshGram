@@ -665,6 +665,58 @@ void TestDataIsFilteredByTheBroker() {
 	});
 }
 
+void TestRichIconsAndSubPages() {
+	auto fixture = Fixture({ "ui.settings_page" });
+	auto received = std::vector<cbor::Value>();
+	fixture.services.ui = [&](std::string_view, const cbor::Value &page) {
+		received.push_back(page);
+		return true;
+	};
+	auto broker = fixture.make();
+	const auto call = [&](cbor::Value page) {
+		return Code(broker.call(Request("ui.settings.set", { { "page", std::move(page) } })));
+	};
+	const auto button = [](const char *id, const char *icon) {
+		return Item({ { "type", Text("button") }, { "id", Text(id) }, { "label", Text("x") }, { "icon", Text(icon) } });
+	};
+	CHECK(call(Page({ button("a", "peer:777"), button("b", "emoji:5368324170671202286") })) == "");
+	CHECK(call(Page({ button("a", "peer:") })) == "invalid");
+	CHECK(call(Page({ button("a", "peer:-5") })) == "invalid");
+	CHECK(call(Page({ button("a", "peer:12x") })) == "invalid");
+	CHECK(call(Page({ button("a", "sticker:1") })) == "invalid");
+	CHECK(call(Page({ button("a", "emoji:123456789012345678901") })) == "invalid");
+	auto many = std::vector<cbor::Value>();
+	for (auto i = 0; i != 33; ++i) {
+		many.push_back(button(("b" + std::to_string(i)).c_str(), "emoji:5"));
+	}
+	CHECK(call(Page(std::move(many))) == "invalid");
+	auto allowed = std::vector<cbor::Value>();
+	for (auto i = 0; i != 32; ++i) {
+		allowed.push_back(button(("b" + std::to_string(i)).c_str(), "emoji:5"));
+	}
+	CHECK(call(Page(std::move(allowed))) == "");
+
+	const auto subpage = [&](const char *id, std::vector<cbor::Value> items) {
+		return Item({
+			{ "type", Text("page") }, { "id", Text(id) }, { "label", Text("More") },
+			{ "icon", Text("settings") }, { "hint", Text("Extra options") },
+			{ "items", cbor::Value::FromArray(std::move(items)) },
+		});
+	};
+	received.clear();
+	const auto toggle = Item({ { "type", Text("toggle") }, { "id", Text("deep") }, { "label", Text("Deep") } });
+	CHECK(call(Page({ subpage("more", { toggle }) })) == "");
+	const auto &first = received.back().find("items")->asArray()->front();
+	CHECK(*first.find("label")->asText() == "More" && first.find("items")->asArray()->size() == 1);
+	CHECK(call(Page({ subpage("more", {}) })) == "invalid");
+	CHECK(call(Page({ subpage("more", { Item({ { "type", Text("divider") } }) }), toggle })) == "");
+	CHECK(call(Page({ subpage("more", { toggle }), toggle })) == "invalid");
+	CHECK(call(Page({ Item({ { "type", Text("page") }, { "id", Text("p") },
+		{ "items", cbor::Value::FromArray({ toggle }) } }) })) == "invalid");
+	CHECK(call(Page({ subpage("one", { subpage("two", { subpage("three", { subpage("four", { subpage("five", { toggle }) }) }) }) }) })) == "invalid");
+	CHECK(call(Page({ subpage("one", { subpage("two", { toggle }) }) })) == "");
+}
+
 void TestSettingsPage() {
 	auto fixture = Fixture({ "ui.settings_page" });
 	auto received = std::vector<cbor::Value>();
@@ -1750,6 +1802,7 @@ int main() {
 	TestOutgoingAndUnload();
 	TestPluginMessages();
 	TestDataIsFilteredByTheBroker();
+	TestRichIconsAndSubPages();
 	TestSettingsPage();
 	TestTemplateTree();
 	TestWindows();
