@@ -29,6 +29,7 @@ struct UserpicInRow {
 	bool speaking = false;
 	mutable Ui::PeerUserpicView view;
 	mutable InMemoryKey uniqueKey;
+	mutable uint8 ayuState = 0;
 };
 
 void GenerateUserpicsInRow(
