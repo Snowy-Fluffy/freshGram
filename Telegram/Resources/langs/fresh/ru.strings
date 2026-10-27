@@ -206,6 +206,17 @@
 "fresh_PermUsersPresence" = "Видеть, когда люди в сети";
 "fresh_PermAppActivity" = "Знать, находится ли приложение в фокусе";
 "fresh_PermTranslateProvide" = "Переводить тексты для вас";
+"fresh_PluginSettingsExport" = "Экспорт настроек";
+"fresh_PluginSettingsImport" = "Импорт настроек";
+"fresh_PluginSettingsExported" = "Настройки сохранены.";
+"fresh_PluginSettingsImported" = "Настройки импортированы.";
+"fresh_PluginSettingsImportAsk" = "Заменить настройки {name} настройками из этого файла? Плагин перезапустится.";
+"fresh_PluginSettingsImportReplace" = "Заменить";
+"fresh_PluginSettingsError" = "Настройки не перенесены: {reason}";
+"fresh_PluginSettingsErrorInvalid" = "это не файл настроек этого плагина";
+"fresh_PluginSettingsErrorNewer" = "файл создан в более новой версии плагина";
+"fresh_PluginSettingsErrorQuota" = "файл не помещается в хранилище плагина";
+"fresh_PluginSettingsErrorUnavailable" = "плагин не умеет экспортировать настройки";
 "fresh_PluginMenuItems" = "Пункты меню";
 "fresh_PluginMenuSurfaceMessage" = "Меню сообщения";
 "fresh_PluginMenuSurfaceChat" = "Меню чата";

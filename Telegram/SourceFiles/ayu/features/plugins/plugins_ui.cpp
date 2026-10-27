@@ -44,6 +44,7 @@
 #include "styles/style_settings.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
+#include "core/file_utilities.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/boxes/single_choice_box.h"
 #include "ui/toast/toast.h"
@@ -1920,6 +1921,117 @@ void FillPermissionsBox(
 	return {};
 }
 
+[[nodiscard]] QString SettingsErrorText(const QString &code) {
+	const auto reason = (code == u"newer"_q)
+		? tr::fresh_PluginSettingsErrorNewer(tr::now)
+		: (code == u"quota"_q)
+		? tr::fresh_PluginSettingsErrorQuota(tr::now)
+		: (code == u"unavailable"_q)
+		? tr::fresh_PluginSettingsErrorUnavailable(tr::now)
+		: tr::fresh_PluginSettingsErrorInvalid(tr::now);
+	return tr::fresh_PluginSettingsError(tr::now, lt_reason, reason);
+}
+
+void ExportPluginSettings(
+		not_null<Window::SessionController*> controller,
+		const std::string &plugin) {
+	const auto weak = base::make_weak(controller);
+	Post([=](not_null<fgpl::PluginManager*> manager) {
+		auto result = manager->exportSettings(plugin);
+		auto data = QByteArray();
+		auto error = QString();
+		if (result.ok()) {
+			data = QByteArray(
+				reinterpret_cast<const char*>(result.value().data()),
+				qsizetype(result.value().size()));
+		} else {
+			error = Utf8(result.error());
+		}
+		crl::on_main([=] {
+			const auto strong = weak.get();
+			if (!strong) {
+				return;
+			} else if (!error.isEmpty()) {
+				strong->showToast(SettingsErrorText(error));
+				return;
+			}
+			FileDialog::GetWritePath(
+				strong->widget().get(),
+				tr::fresh_PluginSettingsExport(tr::now),
+				u"Plugin settings (*.fgpls)"_q,
+				Utf8(plugin) + u".fgpls"_q,
+				[=](QString &&path) {
+					auto file = QFile(path);
+					const auto good = file.open(QIODevice::WriteOnly)
+						&& (file.write(data) == data.size());
+					if (const auto again = weak.get()) {
+						again->showToast(good
+							? tr::fresh_PluginSettingsExported(tr::now)
+							: SettingsErrorText(file.errorString()));
+					}
+				});
+		});
+	}, false);
+}
+
+void ImportPluginSettings(
+		not_null<Window::SessionController*> controller,
+		const std::string &plugin,
+		const QString &name) {
+	constexpr auto kMaxSettingsFile = qint64(16) << 20;
+	const auto weak = base::make_weak(controller);
+	FileDialog::GetOpenPath(
+		controller->widget().get(),
+		tr::fresh_PluginSettingsImport(tr::now),
+		u"Plugin settings (*.fgpls)"_q,
+		[=](FileDialog::OpenResult &&result) {
+			const auto strong = weak.get();
+			if (!strong || result.paths.isEmpty()) {
+				return;
+			}
+			auto file = QFile(result.paths.front());
+			if (!file.open(QIODevice::ReadOnly)) {
+				strong->showToast(SettingsErrorText(file.errorString()));
+				return;
+			} else if (file.size() > kMaxSettingsFile) {
+				strong->showToast(SettingsErrorText(u"quota"_q));
+				return;
+			}
+			const auto data = file.readAll();
+			const auto account = AccountOf(&strong->session());
+			strong->show(Ui::MakeConfirmBox({
+				.text = tr::fresh_PluginSettingsImportAsk(
+					tr::now,
+					lt_name,
+					name),
+				.confirmed = [=](Fn<void()> &&close) {
+					close();
+					Post([=](not_null<fgpl::PluginManager*> manager) {
+						const auto outcome = manager->importSettings(
+							plugin,
+							std::span<const uint8_t>(
+								reinterpret_cast<const uint8_t*>(data.constData()),
+								size_t(data.size())));
+						const auto error = outcome.ok()
+							? QString()
+							: Utf8(outcome.error());
+						if (outcome.ok()) {
+							manager->startEnabled(account);
+						}
+						crl::on_main([=] {
+							if (const auto again = weak.get()) {
+								again->showToast(error.isEmpty()
+									? tr::fresh_PluginSettingsImported(tr::now)
+									: SettingsErrorText(error));
+							}
+						});
+					}, false);
+				},
+				.confirmText = tr::fresh_PluginSettingsImportReplace(),
+			}));
+		});
+}
+
 void FillMenuItemsBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller,
@@ -2170,6 +2282,24 @@ void BuildDetails(
 	)->addClickHandler([=] {
 		AyuUi::ChoosePluginFile(controller);
 	});
+	if (parsed && parsed->storageExport.declared) {
+		Settings::AddButtonWithIcon(
+			content,
+			tr::fresh_PluginSettingsExport(),
+			st::settingsButton,
+			{ &st::menuIconExport }
+		)->addClickHandler([=] {
+			ExportPluginSettings(controller, plugin);
+		});
+		Settings::AddButtonWithIcon(
+			content,
+			tr::fresh_PluginSettingsImport(),
+			st::settingsButton,
+			{ &st::menuIconDownload }
+		)->addClickHandler([=] {
+			ImportPluginSettings(controller, plugin, name);
+		});
+	}
 	Ui::AddSkip(content);
 	Ui::AddDividerText(
 		content,

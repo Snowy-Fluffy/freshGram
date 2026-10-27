@@ -206,6 +206,17 @@
 "fresh_PermUsersPresence" = "Sehen, wann Leute online sind";
 "fresh_PermAppActivity" = "Wissen, ob die App im Fokus ist";
 "fresh_PermTranslateProvide" = "Texte für dich übersetzen";
+"fresh_PluginSettingsExport" = "Einstellungen exportieren";
+"fresh_PluginSettingsImport" = "Einstellungen importieren";
+"fresh_PluginSettingsExported" = "Einstellungen gespeichert.";
+"fresh_PluginSettingsImported" = "Einstellungen importiert.";
+"fresh_PluginSettingsImportAsk" = "Die Einstellungen von {name} durch die aus dieser Datei ersetzen? Das Plugin wird neu gestartet.";
+"fresh_PluginSettingsImportReplace" = "Ersetzen";
+"fresh_PluginSettingsError" = "Die Einstellungen wurden nicht übertragen: {reason}";
+"fresh_PluginSettingsErrorInvalid" = "das ist keine Einstellungsdatei dieses Plugins";
+"fresh_PluginSettingsErrorNewer" = "die Datei stammt aus einer neueren Version des Plugins";
+"fresh_PluginSettingsErrorQuota" = "die Datei passt nicht in den Speicher des Plugins";
+"fresh_PluginSettingsErrorUnavailable" = "das Plugin kann seine Einstellungen nicht exportieren";
 "fresh_PluginMenuItems" = "Menüeinträge";
 "fresh_PluginMenuSurfaceMessage" = "Nachrichtenmenü";
 "fresh_PluginMenuSurfaceChat" = "Chatmenü";

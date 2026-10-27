@@ -338,6 +338,15 @@ public:
 		int timeoutMs,
 		std::function<void(OutgoingResult)> done);
 
+	// The plugin's settings listed in storage.export, as a .fgpls file.
+	[[nodiscard]] Result<cbor::Bytes, std::string> exportSettings(
+		const std::string &id);
+	// Replaces those settings from such a file and stops the plugin so that
+	// it starts again with them; returns the number of values.
+	[[nodiscard]] Result<size_t, std::string> importSettings(
+		const std::string &id,
+		std::span<const uint8_t> data);
+
 	// Asks a plugin with contributes.translator; done is called exactly once,
 	// possibly from another thread.
 	void translateAsync(

@@ -1,4 +1,5 @@
 #include "fgpl/manager.h"
+#include "fgpl/ui_tree.h"
 
 #include "fgpl/base64.h"
 #include "fgpl/json.h"
@@ -2460,6 +2461,112 @@ void PluginManager::advanceOutgoing() {
 	for (const auto &chain : finished) {
 		chain->done(std::move(chain->result));
 	}
+}
+
+constexpr auto kSettingsFormat = "freshgram.plugin-settings";
+constexpr auto kMaxSettingsKeys = size_t(4096);
+constexpr auto kMaxSettingsValue = size_t(1) << 20;
+
+Result<cbor::Bytes, std::string> PluginManager::exportSettings(
+		const std::string &id) {
+	const auto found = _records.find(id);
+	const auto parsed = manifest(id);
+	if (found == _records.end() || !parsed || !parsed->storageExport.declared) {
+		return std::string("unavailable");
+	}
+	auto &record = found->second;
+	const auto store = storeOf(record);
+	auto items = cbor::Map();
+	for (const auto &key : store->keys(std::string(), kMaxSettingsKeys)) {
+		if (!parsed->storageExport.includes(key)) {
+			continue;
+		}
+		const auto stored = store->get(key);
+		const auto decoded = stored ? cbor::Decode(*stored) : Result<cbor::Value, cbor::Error>(cbor::Error::Malformed);
+		if (decoded.ok()) {
+			items.push_back({ key, decoded.value() });
+		}
+	}
+	auto bytes = cbor::Bytes();
+	if (!cbor::Encode(cbor::Value::FromMap({
+			{ "format", Text(kSettingsFormat) },
+			{ "v", cbor::Value::FromInt(1) },
+			{ "plugin", Text(id) },
+			{ "pluginVersion", Text(record.current) },
+			{ "storageSchema", cbor::Value::FromInt(parsed->storageSchema) },
+			{ "exported", cbor::Value::FromInt(now() / 1000) },
+			{ "items", cbor::Value::FromMap(std::move(items)) },
+		}), bytes, 20)) {
+		return std::string("invalid");
+	}
+	return bytes;
+}
+
+Result<size_t, std::string> PluginManager::importSettings(
+		const std::string &id,
+		std::span<const uint8_t> data) {
+	const auto found = _records.find(id);
+	const auto parsed = manifest(id);
+	if (found == _records.end() || !parsed || !parsed->storageExport.declared) {
+		return std::string("unavailable");
+	}
+	const auto document = cbor::Decode(data);
+	const auto text = [&](const char *key) -> std::string {
+		const auto field = document.ok() ? document.value().find(key) : nullptr;
+		return (field && field->asText()) ? *field->asText() : std::string();
+	};
+	const auto items = document.ok() ? document.value().find("items") : nullptr;
+	const auto version = document.ok() ? document.value().find("v") : nullptr;
+	const auto schema = document.ok() ? document.value().find("storageSchema") : nullptr;
+	if (!items
+		|| !items->asMap()
+		|| text("format") != kSettingsFormat
+		|| !version
+		|| version->asInt() != std::optional<int64_t>(1)
+		|| !schema
+		|| !schema->asInt()) {
+		return std::string("invalid");
+	} else if (text("plugin") != id) {
+		return std::string("wrong_plugin");
+	} else if (*schema->asInt() > parsed->storageSchema) {
+		return std::string("newer");
+	}
+	auto &record = found->second;
+	const auto store = storeOf(record);
+	auto prepared = std::vector<std::pair<std::string, cbor::Bytes>>();
+	for (const auto &entry : *items->asMap()) {
+		auto bytes = cbor::Bytes();
+		if (entry.key.empty()
+			|| entry.key.size() > 128
+			|| !ui::SafeText(entry.key, 128, false)
+			|| !parsed->storageExport.includes(entry.key)
+			|| !cbor::Encode(entry.value, bytes, 16)
+			|| bytes.empty()
+			|| bytes.size() > kMaxSettingsValue) {
+			return std::string("invalid");
+		}
+		prepared.emplace_back(entry.key, std::move(bytes));
+	}
+	auto used = store->usedBytes();
+	auto count = store->count();
+	for (const auto &[key, bytes] : prepared) {
+		if (const auto existing = store->get(key)) {
+			used -= std::min<uint64_t>(used, key.size() + existing->size());
+			--count;
+		}
+		used += key.size() + bytes.size();
+		++count;
+	}
+	if (count > kMaxSettingsKeys || used > (uint64_t(parsed->storageMb) << 20)) {
+		return std::string("quota");
+	}
+	stopPlugin(id);
+	for (auto &[key, bytes] : prepared) {
+		store->set(key, std::move(bytes));
+	}
+	store->flush();
+	addLog(record, "settings imported (" + std::to_string(prepared.size()) + " values)");
+	return prepared.size();
 }
 
 constexpr auto kMaxTranslateRequests = size_t(8);

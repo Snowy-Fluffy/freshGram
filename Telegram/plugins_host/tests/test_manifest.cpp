@@ -371,6 +371,33 @@ void TestCompatibility() {
 	CHECK(CheckCompatibility(manifest, environment()).size() == 3);
 }
 
+void TestStorageExport() {
+	const auto withExport = [](cbor::Value value) {
+		return [=](cbor::Value &d) { Set(d, "storage.export", value); };
+	};
+	ExpectError("export key", withExport(cbor::Value::FromMap({
+		{ "prefixes", Array({ "a" }) }, { "all", Int(1) } })), "all");
+	ExpectError("export without prefixes", withExport(cbor::Value::FromMap({})), "prefix");
+	ExpectError("export bad prefix", withExport(cbor::Value::FromMap({
+		{ "prefixes", Array({ "a\nb" }) } })), "prefix");
+	auto document = ValidDocument();
+	withExport(cbor::Value::FromMap({
+		{ "prefixes", Array({ "settings.", "theme" }) },
+		{ "exclude", Array({ "settings.token" }) },
+	}))(document);
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (parsed.ok()) {
+		const auto &decl = parsed.value().storageExport;
+		CHECK(decl.includes("settings.volume") && decl.includes("theme"));
+		CHECK(!decl.includes("settings.token") && !decl.includes("other"));
+		CHECK(!StorageExport().includes("settings.volume"));
+	}
+	ExpectError("description control", [](auto &d) {
+		Set(d, "description", Text("bad \x01 text"));
+	}, "description");
+}
+
 void TestTranslatorManifest() {
 	const auto withTranslator = [](cbor::Value translator, bool permission = true) {
 		return [=](cbor::Value &d) {
@@ -580,5 +607,6 @@ int main() {
 	TestOutgoingFilter();
 	TestMenuConditions();
 	TestTranslatorManifest();
+	TestStorageExport();
 	return Failures() ? 1 : 0;
 }

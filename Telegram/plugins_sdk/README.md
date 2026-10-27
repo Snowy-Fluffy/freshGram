@@ -264,6 +264,24 @@ own instance, and every event, call and message belongs to the account it came
 from (`init` carries `account`). The instances of one plugin handle their events
 one at a time, so storage updates from two accounts never interleave.
 
+## Exporting settings
+
+A plugin that keeps its settings in `storage` can let the user move them to another
+device. The manifest lists the keys:
+
+```json
+"storage": { "schema": 2, "export": { "prefixes": ["settings."], "exclude": ["settings.token"] } }
+```
+
+`prefixes` (up to 32, at least one) pick the keys, `exclude` removes some of them. Then
+the plugin's details have "Export settings" and "Import settings", which write and read a
+`.fgpls` file: CBOR `{format: "freshgram.plugin-settings", v: 1, plugin, pluginVersion,
+storageSchema, exported, items}` with the listed values. An import is refused for another
+plugin, for a `storageSchema` newer than the installed `storage.schema` (raise it when your
+keys change their meaning), for keys outside `export`, and when the values would not fit the
+key and quota limits. After the user confirms, the plugin stops, the values are replaced and
+it starts again. Keys that are not in the file stay as they are.
+
 ## Activation and unloading
 
 `activation.on` lists what may start the plugin: `startup`, `event`, `command`,
