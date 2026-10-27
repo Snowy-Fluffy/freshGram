@@ -9,6 +9,7 @@ const auto kReadingPermissions = std::set<std::string>{
 	"messages.read", "messages.read_deleted", "messages.history", "chats.list",
 	"chat.info", "account.info", "contacts.list", "composer.draft", "media.read",
 	"folders.list", "settings.read", "stars.balance", "users.info", "chats.active",
+	"chats.activity", "users.presence", "app.activity", "translate.provide",
 };
 
 [[nodiscard]] bool Has(

@@ -673,6 +673,57 @@ def on_chat_opened(function):
     return function
 
 
+def on_typing(function):
+    """Run when someone types or sends something in a chat (chats.activity).
+
+    The event has chat, user, action ("typing", "record_voice", ...) and
+    cancelled (true when they stopped).
+    """
+    _event_handlers.append(("chat.typing", function))
+    return function
+
+
+def on_read(function):
+    """Run when messages of a chat are read (chats.activity).
+
+    The event has chat, read_till (a message id) and outbox: true when the
+    other side read your messages, false when you read theirs.
+    """
+    _event_handlers.append(("chat.read", function))
+    return function
+
+
+def on_member(function):
+    """Run when someone joins or leaves a group or channel (chats.activity).
+
+    The event has chat, user and joined.
+    """
+    _event_handlers.append(("chat.member", function))
+    return function
+
+
+def on_user_status(function):
+    """Run when a user's online status changes (users.presence).
+
+    The event has user, status (as in users.info) and last_seen. Statuses
+    that a user hides, bots and your own are not reported.
+    """
+    _event_handlers.append(("user.status", function))
+    return function
+
+
+def on_app_focus(function):
+    """Run when the app window gets the focus (app.activity)."""
+    _event_handlers.append(("app.focus", function))
+    return function
+
+
+def on_app_blur(function):
+    """Run when the app window loses the focus (app.activity)."""
+    _event_handlers.append(("app.blur", function))
+    return function
+
+
 def _matches(pattern, name):
     if pattern.endswith("*"):
         return name.startswith(pattern[:-1])

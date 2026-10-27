@@ -13,6 +13,39 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Data {
 
+namespace {
+
+[[nodiscard]] SendActionManager::Activity ActivityOf(
+		not_null<History*> history,
+		MsgId rootId,
+		not_null<UserData*> user,
+		const MTPSendMessageAction &action) {
+	auto result = SendActionManager::Activity{
+		.history = history,
+		.rootId = rootId,
+		.user = user,
+		.kind = u"other"_q,
+	};
+	switch (action.type()) {
+	case mtpc_sendMessageTypingAction: result.kind = u"typing"_q; break;
+	case mtpc_sendMessageCancelAction:
+		result.kind = u"typing"_q;
+		result.cancelled = true;
+		break;
+	case mtpc_sendMessageRecordVideoAction: result.kind = u"record_video"_q; break;
+	case mtpc_sendMessageUploadVideoAction: result.kind = u"upload_video"_q; break;
+	case mtpc_sendMessageRecordAudioAction: result.kind = u"record_voice"_q; break;
+	case mtpc_sendMessageUploadAudioAction: result.kind = u"upload_voice"_q; break;
+	case mtpc_sendMessageUploadPhotoAction: result.kind = u"upload_photo"_q; break;
+	case mtpc_sendMessageUploadDocumentAction: result.kind = u"upload_file"_q; break;
+	case mtpc_sendMessageRecordRoundAction: result.kind = u"record_round"_q; break;
+	case mtpc_sendMessageChooseStickerAction: result.kind = u"choose_sticker"_q; break;
+	}
+	return result;
+}
+
+} // namespace
+
 SendActionManager::SendActionManager()
 : _animation([=](crl::time now) { return callback(now); }) {
 }
@@ -52,6 +85,9 @@ void SendActionManager::registerFor(
 		TimeId when) {
 	if (history->peer->isSelf()) {
 		return;
+	}
+	if (_activity.has_consumers()) {
+		_activity.fire(ActivityOf(history, rootId, user, action));
 	}
 	const auto sendAction = lookupPainter(history, rootId);
 	if (!sendAction) {

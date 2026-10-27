@@ -366,6 +366,7 @@ void ApplyChatUpdate(
 		++chat->count;
 		return;
 	}
+	session->data().notifyChatMemberChanged({ chat, user, true });
 	if (chat->participants.empty()) {
 		if (chat->count > 0) { // If the count is known.
 			++chat->count;
@@ -406,6 +407,7 @@ void ApplyChatUpdate(
 		--chat->count;
 		return;
 	}
+	chat->session().data().notifyChatMemberChanged({ chat, user, false });
 	if (chat->participants.empty()) {
 		if (chat->count > 0) {
 			chat->count--;

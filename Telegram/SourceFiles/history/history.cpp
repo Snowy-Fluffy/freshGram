@@ -2279,6 +2279,7 @@ void History::inboxRead(MsgId upTo, std::optional<int> stillUnread) {
 
 	_firstUnreadView = nullptr;
 	Core::App().notifications().clearIncomingFromHistory(this);
+	session().changes().historyUpdated(this, UpdateFlag::InboxRead);
 }
 
 void History::inboxRead(not_null<const HistoryItem*> wasRead) {

@@ -159,8 +159,9 @@ struct HistoryUpdate {
 		UnreadPollVotes    = (1U << 15),
 		StreamedDrafts     = (1U << 16),
 		ComposeStash       = (1U << 17),
+		InboxRead          = (1U << 18),
 
-		LastUsedBit        = (1U << 17),
+		LastUsedBit        = (1U << 18),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }

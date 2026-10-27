@@ -1044,6 +1044,46 @@ void TestAuditTrail() {
 	CHECK(fixture.audit.size() == 2 && fixture.audit[1] == "account.info:denied");
 }
 
+void TestActivityEvents() {
+	const auto chatEvent = [](const char *type, int64_t chat, bool secret = false) {
+		return cbor::Value::FromMap({
+			{ "type", Text(type) },
+			{ "chat", Int(chat) },
+			{ "secret", cbor::Value::FromBool(secret) },
+			{ "user", Int(7) },
+		});
+	};
+	const auto plain = [](const char *type) {
+		return cbor::Value::FromMap({ { "type", Text(type) }, { "user", Int(7) } });
+	};
+	for (const auto type : { "chat.typing", "chat.read", "chat.member" }) {
+		CHECK(!Fixture({}).make().filterEvent(chatEvent(type, 1)));
+		CHECK(!Fixture({ "messages.read" }).make().filterEvent(chatEvent(type, 1)));
+		auto fixture = Fixture({ "chats.activity" });
+		auto broker = fixture.make();
+		const auto kept = broker.filterEvent(chatEvent(type, 1));
+		CHECK(kept && kept->find("secret") == nullptr && kept->find("user"));
+		CHECK(!broker.filterEvent(chatEvent(type, api::kServiceChat)));
+		CHECK(!broker.filterEvent(chatEvent(type, 3, true)));
+		fixture.grants.chats = std::set<int64_t>{ 2 };
+		auto scoped = fixture.make();
+		CHECK(!scoped.filterEvent(chatEvent(type, 1)));
+		CHECK(scoped.filterEvent(chatEvent(type, 2)).has_value());
+	}
+	CHECK(!Fixture({ "chats.activity" }).make().filterEvent(plain("user.status")));
+	CHECK(Fixture({ "users.presence" }).make().filterEvent(plain("user.status")).has_value());
+	{
+		auto fixture = Fixture({ "users.presence" });
+		fixture.grants.chats = std::set<int64_t>{ 2 };
+		CHECK(fixture.make().filterEvent(plain("user.status")).has_value());
+	}
+	for (const auto type : { "app.focus", "app.blur" }) {
+		CHECK(!Fixture({ "users.presence" }).make().filterEvent(plain(type)));
+		CHECK(Fixture({ "app.activity" }).make().filterEvent(plain(type)).has_value());
+	}
+	CHECK(!Fixture({ "chats.activity" }).make().filterEvent(chatEvent("chat.unknown", 1)));
+}
+
 void TestEvents() {
 	const auto event = [](const char *type, int64_t chat, bool secret = false) {
 		return cbor::Value::FromMap({
@@ -1612,6 +1652,7 @@ int main() {
 	TestMalformedRequests();
 	TestAuditTrail();
 	TestEvents();
+	TestActivityEvents();
 	TestAwaitableCalls();
 	TestRateLimits();
 	TestClosedBrokerDropsAwaitedWork();

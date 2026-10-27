@@ -1982,6 +1982,15 @@ bool ValidScheduleTime(TimeId when) {
 	return (when > now + 10) && (when <= now + kMaxScheduleSeconds);
 }
 
+std::string UserStatus(not_null<UserData*> user, int64_t &lastSeen) {
+	return StatusOf(user, lastSeen);
+}
+
+bool WantsEvent(const char *type) {
+	const auto snapshot = Snapshot();
+	return snapshot && snapshot->wants(type);
+}
+
 bool WantsEvents() {
 	const auto snapshot = Snapshot();
 	return snapshot && snapshot->wantsEvents;
@@ -2108,6 +2117,14 @@ std::string MessageMediaKind(not_null<const HistoryItem*>) {
 }
 
 bool ValidScheduleTime(TimeId) {
+	return false;
+}
+
+std::string UserStatus(not_null<UserData*>, int64_t &) {
+	return {};
+}
+
+bool WantsEvent(const char *) {
 	return false;
 }
 

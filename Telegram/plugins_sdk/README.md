@@ -138,6 +138,20 @@ Every `message.*` event carries `id`, `chat`, `chat_title`, `chat_type`, `from`,
 
 `chat.opened` `{chat, chat_title, topic}` comes when the user opens a chat; it
 needs `chats.active` instead of `messages.read` and follows the same chat scope.
+
+More events, each listed in `contributes.events` and needing its own permission.
+The ones with a `chat` follow the plugin's chat scope and never come for secret
+chats or 777000. Nothing is reported about blocked users. While Ghost Mode is on
+for the account, reads you make (`chat.read` with `outbox: false`) and
+`app.focus`/`app.blur` are not reported, since Ghost Mode hides them from others.
+
+| Event | Permission | Payload |
+|---|---|---|
+| `chat.typing` | `chats.activity` | `{chat, user, action, cancelled}`; `action` is `typing`, `upload_photo`, `upload_video`, `upload_file`, `record_voice`, `upload_voice`, `record_video`, `record_round`, `choose_sticker` or `other`; comes at most once every 3 seconds per chat, user and action; `topic` is added in a forum topic |
+| `chat.read` | `chats.activity` | `{chat, read_till, outbox}`; `outbox` is true when the other side read your messages up to `read_till`, false when you read theirs (also when you read them on another device); only when `read_till` grows |
+| `chat.member` | `chats.activity` | `{chat, user, joined}`; someone joined or left a group or supergroup (not for channels) |
+| `user.status` | `users.presence` | `{user, status, last_seen}` with the values of `users.info`; not for yourself, bots, or users who hide their status |
+| `app.focus`, `app.blur` | `app.activity` | `{}`; the app window got or lost the focus |
 `timer` `{id}` comes when a timer set with `timers.set` fires; it is not listed
 in `contributes.events`.
 

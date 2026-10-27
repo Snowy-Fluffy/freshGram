@@ -229,6 +229,7 @@ struct ManagerSnapshot {
 	HostEnvironment environment;
 	bool loaded = false;
 	bool wantsEvents = false;
+	std::set<std::string> wantedEvents;
 	bool locked = false;
 	bool hidden = false;
 
@@ -247,6 +248,9 @@ struct ManagerSnapshot {
 	[[nodiscard]] std::vector<Contribution> contributions(
 		const std::string &account,
 		const std::string &language) const;
+	[[nodiscard]] bool wants(const char *event) const {
+		return wantedEvents.contains(event);
+	}
 	[[nodiscard]] bool transformsOutgoing(const OutgoingInfo &info) const;
 	[[nodiscard]] bool transformsOutgoing(int64_t chat, bool secret) const;
 };
@@ -333,7 +337,7 @@ public:
 	[[nodiscard]] size_t runningCount() const {
 		return _instances.size();
 	}
-	[[nodiscard]] bool wantsEvents() const;
+	[[nodiscard]] bool wantsEvents(const char *event = nullptr) const;
 
 private:
 	struct StoredGrant {

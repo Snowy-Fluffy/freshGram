@@ -1,4 +1,5 @@
 #include "fgpl/broker.h"
+#include "fgpl/manifest.h"
 #include "fgpl/ui_tree.h"
 
 #include "fgpl/net_policy.h"
@@ -1834,46 +1835,40 @@ std::optional<cbor::Value> FilterEvent(const Grants &grants, const cbor::Value &
 	const auto has = [&](const char *permission) {
 		return grants.permissions.contains(permission);
 	};
+	const auto permission = EventPermission(*name);
+	if (!permission || !has(permission)) {
+		return std::nullopt;
+	} else if (!EventIsChatScoped(*name)) {
+		return event;
+	}
 	const auto chat = event.find("chat");
 	const auto id = chat ? chat->asInt() : std::nullopt;
 	const auto secret = event.find("secret");
-	if (name->rfind("message.", 0) == 0) {
-		if (!has("messages.read") || !id) {
-			return std::nullopt;
-		}
-		const auto isSecret = secret && secret->asBool().value_or(false);
-		if (isSecret
-			|| *id == api::kServiceChat
-			|| (grants.chats && !grants.chats->contains(*id))) {
-			return std::nullopt;
-		}
-		if (*name == "message.deleted" && !has("messages.read_deleted")) {
-			auto reduced = cbor::Map();
-			for (const auto &entry : *event.asMap()) {
-				if (entry.key != "text" && entry.key != "old_text") {
-					reduced.push_back(entry);
-				}
-			}
-			return cbor::Value::FromMap(std::move(reduced));
-		}
-		return event;
-	} else if (*name == "chat.opened") {
-		const auto isSecret = secret && secret->asBool().value_or(false);
-		if (!has("chats.active")
-			|| !id
-			|| isSecret
-			|| *id == api::kServiceChat
-			|| (grants.chats && !grants.chats->contains(*id))) {
-			return std::nullopt;
-		}
+	const auto isSecret = secret && secret->asBool().value_or(false);
+	if (!id
+		|| isSecret
+		|| *id == api::kServiceChat
+		|| (grants.chats && !grants.chats->contains(*id))) {
+		return std::nullopt;
+	}
+	if (*name == "message.deleted" && !has("messages.read_deleted")) {
 		auto reduced = cbor::Map();
 		for (const auto &entry : *event.asMap()) {
-			if (entry.key != "secret") {
+			if (entry.key != "text" && entry.key != "old_text") {
 				reduced.push_back(entry);
 			}
 		}
 		return cbor::Value::FromMap(std::move(reduced));
+	} else if (name->rfind("message.", 0) == 0) {
+		return event;
 	}
+	auto reduced = cbor::Map();
+	for (const auto &entry : *event.asMap()) {
+		if (entry.key != "secret") {
+			reduced.push_back(entry);
+		}
+	}
+	return cbor::Value::FromMap(std::move(reduced));
 	return std::nullopt;
 }
 
