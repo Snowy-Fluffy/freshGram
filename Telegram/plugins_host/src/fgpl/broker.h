@@ -164,6 +164,15 @@ struct OutgoingEdit {
 	std::string dropReason;
 };
 
+struct ToastAction {
+	std::string plugin;
+	std::string text;
+	std::string id;
+	std::string label;
+	bool undo = false;
+	int seconds = 5;
+};
+
 struct SendResult {
 	std::string error;
 	int64_t localId = 0;
@@ -228,6 +237,10 @@ public:
 	virtual bool setDraft(int64_t chat, const std::string &text) = 0;
 	virtual bool send(int64_t chat, const std::string &text) = 0;
 	virtual void toast(const std::string &text) = 0;
+	// A toast with a button; the app tells the plugin about the click and the end.
+	virtual void toastAction(const ToastAction &toast) {
+		this->toast(toast.text);
+	}
 	[[nodiscard]] virtual std::vector<Contact> contacts(size_t limit) {
 		(void)limit;
 		return {};
@@ -506,6 +519,8 @@ struct BrokerServices {
 	std::function<std::string(const std::string &id, int64_t delayMs, bool repeat)> setTimer;
 	std::function<bool(const std::string &id)> clearTimer;
 	std::function<std::vector<std::string>()> timers;
+	// Remembers an action id that may come back as toast.click.
+	std::function<void(const std::string &id)> toastOffered;
 	// Answers an empty string, or an error code (not_found, invalid).
 	std::function<std::string(
 		int64_t ticket,

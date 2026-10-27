@@ -1276,6 +1276,25 @@ bool PluginManager::send(
 		if (!has("ui.settings_page") || !parsed->settingsPage) {
 			return false;
 		}
+	} else if (*type == "toast.click" || *type == "toast.close") {
+		const auto offered = [&] {
+			const auto lock = std::scoped_lock(_toastMutex);
+			const auto i = _toastActions.find(Key{ id, account });
+			if (i == _toastActions.end()) {
+				return false;
+			}
+			auto &list = i->second;
+			const auto found = std::find(list.begin(), list.end(), text("id"));
+			if (found == list.end()) {
+				return false;
+			} else if (*type == "toast.close") {
+				list.erase(found);
+			}
+			return true;
+		}();
+		if (!has("ui.toast") || !offered) {
+			return false;
+		}
 	} else if (*type == "dialog.click"
 		|| *type == "dialog.change"
 		|| *type == "dialog.close"
@@ -1295,6 +1314,8 @@ bool PluginManager::send(
 		? "command"
 		: (type->rfind("settings.", 0) == 0)
 		? "settings"
+		: (type->rfind("toast.", 0) == 0)
+		? "toast"
 		: nullptr;
 	auto *instance = trigger
 		? ensure(record, account, trigger)
@@ -1509,6 +1530,16 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		return peers(pluginId, account);
 	};
 	const auto key = Key{ pluginId, account };
+	services.toastOffered = [this, key = Key{ pluginId, account }](const std::string &id) {
+		const auto lock = std::scoped_lock(_toastMutex);
+		auto &offered = _toastActions[key];
+		if (std::find(offered.begin(), offered.end(), id) == offered.end()) {
+			offered.push_back(id);
+			while (offered.size() > 16) {
+				offered.pop_front();
+			}
+		}
+	};
 	services.translateReply = [this, pluginId, account](
 			int64_t ticket,
 			std::vector<std::string> items,

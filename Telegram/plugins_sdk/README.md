@@ -79,7 +79,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `stars.balance` | `stars.balance` | read only |
 | `composer.draft`, `composer.set_draft` `{chat, text, replace}` | `composer.draft` | setting a draft never switches the chat; a non-empty draft is kept unless `replace: true` |
 | `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
-| `ui.toast` `{text}` | `ui.toast` | the plugin name is prefixed |
+| `ui.toast` `{text, action, style, duration}` | `ui.toast` | the plugin id is prefixed; `action` is `{id, label}` and adds a button (the plugin gets `toast.click` `{id}` when it is pressed and `toast.close` `{id, reason}` when the toast goes, `reason` is `action` or `timeout`); `style: "undo"` needs an action and labels the button "Undo" when `label` is empty; `duration` is 1 to 8 seconds (5 for a toast with a button); an action id is up to 32 bytes, a label up to 40 |
 | `time.sleep` `{ms}` | none | awaitable only; up to 60000 ms |
 
 Every call counts against a budget of 200 calls a second; a plugin may make at
@@ -326,6 +326,7 @@ Activations come back as events:
 |---|---|
 | `menu.click` | `surface` (`message`, `chat`, `profile`, `main_menu`, `tray`, `composer`, `selection`, `shared_media`), `id`, and when the plugin may see the chat: `chat`, `message`, `from`, `text` (`text` only with `messages.read`); `selection` and `shared_media` carry `chat` and `ids` (message ids, `ids` only with `messages.read`) instead of `message`; the `composer` surface is a button next to the input field and needs `ui.composer_button`, its click also has `topic` and `reply_to` like `command` (the reply is then taken off the input field) |
 | `command` | `name`, `args` (the text after `/name`), `chat` and `topic` when in scope, `reply_to` when the user was replying to a message of that chat (the reply is then taken off the input field, so answer with `messages.send` and `reply_to`); the command is offered in the input field's autocomplete, a bot's command with the same name wins, and `/name@plugin.id` always reaches the plugin |
+| `toast.click`, `toast.close` | `id` of the action offered with `ui.toast`; `toast.close` also has `reason`; only the ids the plugin offered (up to 16 at a time) come back, also after the plugin unloaded itself (an `activation.on` list must contain `toast`) |
 | `settings.open` | the user opened the plugin's settings; send the page now (the plugin is started for it) |
 | `settings.change` | `id`, `value` of a toggle, input, select, slider (a number) or chat picker (a chat id) |
 | `settings.click` | `id` of a button or of one of the page's `buttons` |

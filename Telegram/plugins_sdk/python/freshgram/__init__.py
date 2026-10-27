@@ -187,8 +187,20 @@ class _Net(_Namespace):
 
 
 class _Ui(_Namespace):
-    def toast(self, text):
-        return self._call("ui.toast", _nothing, text=text)
+    def toast(self, text, action=None, label=None, undo=False, duration=None):
+        """Show a toast. With an action id the toast gets a button (label, or "Undo"
+        for undo=True) and on_toast(action) runs when it is pressed.
+
+        duration is in seconds, from 1 to 8 (5 for a toast with a button).
+        """
+        arguments = {}
+        if action is not None:
+            arguments["action"] = {"id": action, **_given(label=label)}
+        if undo:
+            arguments["style"] = "undo"
+        if duration is not None:
+            arguments["duration"] = duration
+        return self._call("ui.toast", _nothing, text=text, **arguments)
 
     def settings_page(self, title, items, buttons=None):
         """Describe the plugin's settings page; the app draws it.
@@ -718,6 +730,33 @@ def on_translate(function=None, markdown=False):
         _event_handlers.append(("translate.request", wrapper))
         return handler
     return register(function) if function is not None else register
+
+
+def on_toast(action_id=None):
+    """Run when the button of a toast shown by ui.toast(..., action=...) is pressed.
+
+    The event has the action id. Without an id every button of the plugin
+    is handled.
+    """
+    def register(function):
+        def wrapper(event):
+            if action_id is None or event.get("id") == action_id:
+                return function(event)
+        _event_handlers.append(("toast.click", wrapper))
+        return function
+    return register
+
+
+def on_toast_close(action_id=None):
+    """Run when a toast with a button goes away; the event has the action id
+    and reason: "action" after a press, "timeout" otherwise."""
+    def register(function):
+        def wrapper(event):
+            if action_id is None or event.get("id") == action_id:
+                return function(event)
+        _event_handlers.append(("toast.close", wrapper))
+        return function
+    return register
 
 
 def on_typing(function):

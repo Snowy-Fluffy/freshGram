@@ -3,6 +3,7 @@
 
 #include "ayu/ayu_settings.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "ayu/ui/toasts.h"
 #include "ayu/secret/secret_peer.h"
 #include "api/api_common.h"
 #include "api/api_editing.h"
@@ -1362,6 +1363,42 @@ public:
 	void toast(const std::string &text) override {
 		OnMain<bool>([=] {
 			Ui::Toast::Show(QString::fromStdString(text));
+			return true;
+		}, false);
+	}
+
+	void toastAction(const fgpl::ToastAction &toast) override {
+		OnMain<bool>([=] {
+			const auto account = _account;
+			const auto clicked = std::make_shared<bool>(false);
+			const auto notify = [=](const char *type, const char *reason) {
+				using Value = fgpl::cbor::Value;
+				auto map = fgpl::cbor::Map{
+					{ "type", Value::FromText(type) },
+					{ "id", Value::FromText(toast.id) },
+				};
+				if (reason) {
+					map.push_back({ "reason", Value::FromText(reason) });
+				}
+				Post([=, event = Value::FromMap(std::move(map))](
+						not_null<fgpl::PluginManager*> manager) {
+					manager->send(toast.plugin, account, event);
+				}, false);
+			};
+			auto config = Ui::Toast::Config{
+				.text = TextWithEntities{ QString::fromStdString(toast.text) },
+				.adaptive = true,
+				.duration = crl::time(toast.seconds) * 1000,
+			};
+			const auto label = toast.label.empty()
+				? tr::lng_translate_undo(tr::now)
+				: QString::fromStdString(toast.label);
+			Ayu::Ui::ShowToastWithAction(std::move(config), label, [=] {
+				*clicked = true;
+				notify("toast.click", nullptr);
+			}, [=] {
+				notify("toast.close", *clicked ? "action" : "timeout");
+			});
 			return true;
 		}, false);
 	}

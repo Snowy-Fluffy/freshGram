@@ -10,7 +10,8 @@ namespace Ayu::Ui {
 void ShowToastWithAction(
 		::Ui::Toast::Config &&config,
 		const QString &buttonText,
-		Fn<void()> callback) {
+		Fn<void()> callback,
+		Fn<void()> closed) {
 	const auto st = std::make_shared<style::Toast>(*config.st);
 	st->padding.setRight(st::historyPremiumViewSet.style.font->width(buttonText)
 		- st::historyPremiumViewSet.width);
@@ -24,6 +25,9 @@ void ShowToastWithAction(
 	}
 	const auto widget = strong->widget();
 	widget->lifetime().add([st] {});
+	if (closed) {
+		widget->lifetime().add(std::move(closed));
+	}
 	const auto hideToast = [weak] {
 		if (const auto strong = weak.get()) {
 			strong->hideAnimated();

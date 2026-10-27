@@ -74,6 +74,9 @@ public:
 	void toast(const std::string &text) override {
 		toasts.push_back(text);
 	}
+	void toastAction(const ToastAction &toast) override {
+		toastActions.push_back(toast);
+	}
 	std::vector<Contact> contacts(size_t) override {
 		return {
 			{ 7, "Bob", "bob", "+10000000001" },
@@ -193,6 +196,7 @@ public:
 	std::vector<OutgoingMedia> sentMedia;
 	std::vector<OutgoingMediaEdit> editedMedia;
 	std::vector<std::string> toasts;
+	std::vector<ToastAction> toastActions;
 	std::vector<std::string> actions;
 	std::string clipboard;
 	bool cancelPick = false;
