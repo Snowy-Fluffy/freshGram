@@ -2617,17 +2617,21 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		const auto reason = Utf8(request->reason.get(Language()));
 		about.push_back(reason.isEmpty() ? Utf8(request->id) : reason);
 		const auto title = PermissionTitle(request->id, request->scope);
+		const auto danger = fgpl::PermissionDanger(request->id, request->scope);
 		const auto button = AddDetailedSettingsButton(
 			container,
 			rpl::single(title),
 			rpl::single(about.join(u" · "_q)),
 			{
 				.icon = PermissionIcon(request->id),
-				.background = backgroundFor(
-					fgpl::PermissionDanger(request->id, request->scope)),
+				.background = backgroundFor(danger),
 			},
 			rpl::single(checked),
-			st::pluginPermissionButtonStyle);
+			(danger == fgpl::Danger::High)
+				? st::pluginPermissionButtonStyleHigh
+				: (danger == fgpl::Danger::Medium)
+				? st::pluginPermissionButtonStyleMedium
+				: st::pluginPermissionButtonStyleLow);
 		button->setIconColor(&st::windowFgActive);
 		if (request->required) {
 			button->setToggleLocked(true);
@@ -2643,11 +2647,18 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		checks->emplace_back(request->id, button.get());
 	};
 	auto required = std::vector<const fgpl::PermissionRequest*>();
+	auto optional = std::vector<const fgpl::PermissionRequest*>();
 	for (const auto &request : manifest.permissions) {
-		if (request.required) {
-			required.push_back(&request);
-		}
+		(request.required ? required : optional).push_back(&request);
 	}
+	const auto byDanger = [](
+			const fgpl::PermissionRequest *a,
+			const fgpl::PermissionRequest *b) {
+		return int(fgpl::PermissionDanger(a->id, a->scope))
+			> int(fgpl::PermissionDanger(b->id, b->scope));
+	};
+	ranges::stable_sort(required, byDanger);
+	ranges::stable_sort(optional, byDanger);
 	if (!required.empty()) {
 		Ui::AddSkip(container);
 		Ui::AddSubsectionTitle(
@@ -2661,32 +2672,12 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 			container,
 			tr::fresh_PluginPermissionsRequiredAbout());
 	}
-	for (const auto danger : { fgpl::Danger::High, fgpl::Danger::Medium, fgpl::Danger::Low }) {
-		auto group = std::vector<const fgpl::PermissionRequest*>();
-		for (const auto &request : manifest.permissions) {
-			if (!request.required
-				&& fgpl::PermissionDanger(request.id, request.scope) == danger) {
-				group.push_back(&request);
-			}
-		}
-		if (group.empty()) {
-			continue;
-		}
+	if (!optional.empty()) {
 		Ui::AddSkip(container);
 		Ui::AddSubsectionTitle(
 			container,
-			(danger == fgpl::Danger::High)
-				? tr::fresh_PluginDangerHigh()
-				: (danger == fgpl::Danger::Medium)
-				? tr::fresh_PluginDangerMedium()
-				: tr::fresh_PluginDangerLow(),
-			style::margins(),
-			(danger == fgpl::Danger::High)
-				? &st::pluginDangerTitleHigh
-				: (danger == fgpl::Danger::Medium)
-				? &st::pluginDangerTitleMedium
-				: &st::pluginDangerTitleLow);
-		for (const auto request : group) {
+			tr::fresh_PluginPermissionOptionalShort());
+		for (const auto request : optional) {
 			addRow(request);
 		}
 	}

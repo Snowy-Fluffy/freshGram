@@ -8878,9 +8878,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPermissionsAllAccounts" = "The permissions and data of a plugin are shared by all your accounts.";
 "fresh_PluginAcceptsFrom" = "Accepts messages from: {list}";
 "fresh_PluginAcceptsAny" = "any plugin";
-"fresh_PluginDangerLow" = "Safe";
-"fresh_PluginDangerMedium" = "Needs attention";
-"fresh_PluginDangerHigh" = "Dangerous";
 "fresh_PluginUpdateTitle" = "Update plugin";
 "fresh_PluginInstalledTitle" = "Plugin installed";
 "fresh_PluginUpdateFrom" = "Installed: {from}, this file: {to}";
@@ -8999,6 +8996,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginSupport" = "Support";
 "fresh_PluginLicense" = "License: {license}";
 "fresh_PluginPermissionRequiredShort" = "Required";
+"fresh_PluginPermissionOptionalShort" = "Optional";
 "fresh_PluginPermissionNewShort" = "New";
 "fresh_PluginPermissionsRequiredAbout" = "The plugin cannot work without these permissions, so they are always on.";
 "fresh_PluginPermissionRequiredToast" = "{permission} is required: the plugin cannot work without it.";
