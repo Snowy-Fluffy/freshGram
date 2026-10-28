@@ -91,6 +91,11 @@ struct Chat {
 	bool pinned = false;
 	bool secret = false;
 	bool archived = false;
+
+	// Secret chats and Saved Messages are never shown to plugins.
+	[[nodiscard]] bool restricted() const {
+		return secret || type == "self";
+	}
 };
 
 struct StickerInfo {

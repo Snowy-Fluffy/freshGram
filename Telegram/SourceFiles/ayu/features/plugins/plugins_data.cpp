@@ -254,6 +254,17 @@ template <typename T>
 	return "channel";
 }
 
+[[nodiscard]] bool HiddenPeer(not_null<PeerData*> peer) {
+	return FreshSecret::IsSecretPeerId(peer->id) || peer->isSelf();
+}
+
+[[nodiscard]] bool HiddenPeerId(
+		not_null<Main::Session*> session,
+		PeerId peerId) {
+	return FreshSecret::IsSecretPeerId(peerId)
+		|| peerId == session->userPeerId();
+}
+
 [[nodiscard]] fgpl::Chat ChatOf(not_null<History*> history) {
 	const auto peer = history->peer;
 	auto result = fgpl::Chat();
@@ -825,7 +836,7 @@ public:
 		auto result = OnMain<std::vector<fgpl::Message>>([=] {
 			auto result = std::vector<fgpl::Message>();
 			const auto history = historyOf(chat);
-			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
+			if (!history || HiddenPeer(history->peer)) {
 				return result;
 			}
 			for (auto b = history->blocks.rbegin(); b != history->blocks.rend(); ++b) {
@@ -856,7 +867,7 @@ public:
 				Fn<void(std::vector<fgpl::Message>)> done) {
 			const auto session = FindSession(_account);
 			const auto history = historyOf(chat);
-			if (!session || !history || FreshSecret::IsSecretPeerId(history->peer->id)) {
+			if (!session || !history || HiddenPeer(history->peer)) {
 				done({});
 				return;
 			}
@@ -946,7 +957,7 @@ public:
 	std::string draft(int64_t chat) override {
 		return OnMain<std::string>([=] {
 			const auto history = historyOf(chat);
-			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
+			if (!history || HiddenPeer(history->peer)) {
 				return std::string();
 			}
 			const auto draft = history->localDraft({}, {});
@@ -957,7 +968,7 @@ public:
 	bool setDraft(int64_t chat, const std::string &text) override {
 		return OnMain<bool>([=] {
 			const auto history = historyOf(chat);
-			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
+			if (!history || HiddenPeer(history->peer)) {
 				return false;
 			}
 			const auto textWithTags = TextWithTags{ QString::fromStdString(text) };
@@ -986,7 +997,7 @@ public:
 			const auto session = FindSession(_account);
 			const auto history = historyOf(chat);
 			if (!session || !history
-				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				|| HiddenPeer(history->peer)) {
 				return false;
 			}
 			if (!Data::CanSendTexts(history->peer)
@@ -1194,7 +1205,7 @@ public:
 			const auto history = historyOf(chat);
 			const auto document = findSticker(session, DocumentId(id));
 			if (!session || !history || !document
-				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				|| HiddenPeer(history->peer)) {
 				return { .error = fgpl::api::error::kNotFound };
 			}
 			const auto target = ResolveTarget(
@@ -1289,7 +1300,7 @@ public:
 			const auto session = FindSession(_account);
 			const auto target = historyOf(to);
 			if (!session || !target
-				|| FreshSecret::IsSecretPeerId(target->peer->id)) {
+				|| HiddenPeer(target->peer)) {
 				return fgpl::api::error::kNotFound;
 			} else if (!Data::CanSendTexts(target)) {
 				return fgpl::api::error::kDenied;
@@ -1317,7 +1328,7 @@ public:
 	std::string markRead(int64_t chat) override {
 		return OnMain<std::string>([=]() -> std::string {
 			const auto history = historyOf(chat);
-			if (!history || FreshSecret::IsSecretPeerId(history->peer->id)) {
+			if (!history || HiddenPeer(history->peer)) {
 				return fgpl::api::error::kNotFound;
 			}
 			history->owner().histories().readInbox(history);
@@ -1337,7 +1348,7 @@ public:
 			const auto session = FindSession(_account);
 			const auto history = historyOf(chat);
 			if (!session || !history
-				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				|| HiddenPeer(history->peer)) {
 				return fgpl::api::error::kNotFound;
 			}
 			auto &progress = session->sendProgressManager();
@@ -1359,7 +1370,7 @@ public:
 			const auto session = FindSession(_account);
 			const auto history = historyOf(chat);
 			if (!session || !history
-				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				|| HiddenPeer(history->peer)) {
 				done({});
 				return;
 			}
@@ -1527,7 +1538,7 @@ public:
 			const auto session = FindSession(_account);
 			const auto history = historyOf(chat);
 			if (!session || !history
-				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				|| HiddenPeer(history->peer)) {
 				done({});
 				return;
 			}
@@ -2091,7 +2102,7 @@ public:
 				folder.title = Utf8(filter.title().text.text);
 				for (const auto &row : *filters.chatsList(filter.id())->indexed()) {
 					const auto history = row->history();
-					if (history && !FreshSecret::IsSecretPeerId(history->peer->id)) {
+					if (history && !HiddenPeer(history->peer)) {
 						folder.chats.push_back(ChatId(history->peer));
 					}
 				}
@@ -2125,7 +2136,7 @@ public:
 		const auto source = OnMain<std::optional<Source>>([=]() -> std::optional<Source> {
 			const auto session = FindSession(_account);
 			const auto peerId = PeerId(uint64(chat));
-			if (!session || FreshSecret::IsSecretPeerId(peerId)) {
+			if (!session || HiddenPeerId(session, peerId)) {
 				return std::nullopt;
 			}
 			const auto item = session->data().message(peerId, MsgId(message));
@@ -2238,7 +2249,7 @@ private:
 		const auto session = FindSession(_account);
 		const auto history = historyOf(outgoing.chat);
 		if (!session || !history
-			|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+			|| HiddenPeer(history->peer)) {
 			return { .error = fgpl::api::error::kNotFound };
 		}
 		const auto target = ResolveTarget(
@@ -2307,7 +2318,7 @@ private:
 		const auto session = FindSession(_account);
 		const auto history = historyOf(message.chat);
 		if (!session || !history
-			|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+			|| HiddenPeer(history->peer)) {
 			return { .error = fgpl::api::error::kNotFound };
 		} else if (history->peer->starsPerMessageChecked() > 0) {
 			return { .error = fgpl::api::error::kDenied };
@@ -2526,7 +2537,7 @@ private:
 			Fn<void(HistoryItem*, std::string error)> done) {
 		const auto session = FindSession(_account);
 		const auto peerId = PeerId(uint64(chat));
-		if (!session || FreshSecret::IsSecretPeerId(peerId)) {
+		if (!session || HiddenPeerId(session, peerId)) {
 			done(nullptr, fgpl::api::error::kNotFound);
 			return;
 		}
@@ -2623,7 +2634,7 @@ private:
 	[[nodiscard]] HistoryItem *messageOf(int64_t chat, int64_t id) const {
 		const auto session = FindSession(_account);
 		const auto peerId = PeerId(uint64(chat));
-		return (session && !FreshSecret::IsSecretPeerId(peerId))
+		return (session && !HiddenPeerId(session, peerId))
 			? session->data().message(peerId, MsgId(id))
 			: nullptr;
 	}
@@ -2764,6 +2775,7 @@ void SendMessageEvent(
 		{ "out", Value::FromBool(item->out()) },
 		{ "forwarded", Value::FromBool(item->Has<HistoryMessageForwarded>()) },
 		{ "secret", Value::FromBool(FreshSecret::IsSecretPeerId(peer->id)) },
+		{ "self", Value::FromBool(peer->isSelf()) },
 	};
 	const auto optionalInt = [&](const char *key, int64_t value) {
 		if (value) {

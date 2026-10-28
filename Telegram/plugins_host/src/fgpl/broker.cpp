@@ -1387,7 +1387,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			int64_t(kMaxChats)));
 		auto result = cbor::Array();
 		for (const auto &chat : data->chats(kMaxChatsScanned)) {
-			if (chatVisible(chat.id, chat.secret) && result.size() < limit) {
+			if (chatVisible(chat.id, chat.restricted()) && result.size() < limit) {
 				result.push_back(ChatValue(chat));
 			}
 		}
@@ -1404,7 +1404,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
 		const auto chat = data->chat(*id);
-		if (!chat || chat->secret) {
+		if (!chat || chat->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		} else if (op == "chat.info") {
 			return api::Ok(ChatValue(*chat));
@@ -1454,7 +1454,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
 		const auto chat = data->chat(*id);
-		if (!chat || chat->secret) {
+		if (!chat || chat->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		} else if (op == "composer.draft") {
 			return api::Ok(Text(data->draft(*id)));
@@ -1491,7 +1491,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
 		const auto chat = data->chat(*id);
-		if (!chat || chat->secret) {
+		if (!chat || chat->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		}
 		return Sent(data->sendMessage({
@@ -1520,7 +1520,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
 		const auto chat = data->chat(*id);
-		if (!chat || chat->secret) {
+		if (!chat || chat->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		}
 		return Sent(
@@ -1619,7 +1619,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
 		const auto info = data->chat(*chat);
-		if (!info || info->secret) {
+		if (!info || info->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		}
 		auto media = data->media(*chat, *message, *thumbnail, kMaxMedia);
@@ -1660,7 +1660,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
 		const auto info = data->chat(*chat);
-		if (!info || info->secret) {
+		if (!info || info->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		}
 		const auto limit = size_t(std::clamp<int64_t>(
@@ -1747,7 +1747,7 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			return api::Fail(api::error::kDenied, "this chat");
 		}
 		const auto chat = data->chat(*id);
-		if (!chat || chat->secret) {
+		if (!chat || chat->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		}
 		return *id;
@@ -2238,7 +2238,9 @@ cbor::Value Broker::filterTargeted(const cbor::Value &event) const {
 	const auto chat = event.find("chat");
 	const auto id = chat ? chat->asInt() : std::nullopt;
 	const auto secret = event.find("secret");
-	const auto isSecret = secret && secret->asBool().value_or(false);
+	const auto self = event.find("self");
+	const auto isSecret = (secret && secret->asBool().value_or(false))
+		|| (self && self->asBool().value_or(false));
 	const auto visible = id && chatVisible(*id, isSecret);
 	const auto reading = has("messages.read");
 	auto reduced = cbor::Map();
@@ -2255,7 +2257,7 @@ cbor::Value Broker::filterTargeted(const cbor::Value &event) const {
 			if (!visible || !reading) {
 				continue;
 			}
-		} else if (entry.key == "secret") {
+		} else if (entry.key == "secret" || entry.key == "self") {
 			continue;
 		}
 		reduced.push_back(entry);
@@ -2285,7 +2287,9 @@ std::optional<cbor::Value> FilterEvent(const Grants &grants, const cbor::Value &
 	const auto chat = event.find("chat");
 	const auto id = chat ? chat->asInt() : std::nullopt;
 	const auto secret = event.find("secret");
-	const auto isSecret = secret && secret->asBool().value_or(false);
+	const auto self = event.find("self");
+	const auto isSecret = (secret && secret->asBool().value_or(false))
+		|| (self && self->asBool().value_or(false));
 	if (!id
 		|| isSecret
 		|| *id == api::kServiceChat
@@ -2305,7 +2309,7 @@ std::optional<cbor::Value> FilterEvent(const Grants &grants, const cbor::Value &
 	}
 	auto reduced = cbor::Map();
 	for (const auto &entry : *event.asMap()) {
-		if (entry.key != "secret") {
+		if (entry.key != "secret" && entry.key != "self") {
 			reduced.push_back(entry);
 		}
 	}

@@ -1568,6 +1568,9 @@ void TestEventsAreFilteredBeforeStart() {
 	auto secret = Event(1);
 	secret.asMap()->push_back({ "secret", cbor::Value::FromBool(true) });
 	CHECK(manager.dispatch("A", secret).queued == 0);
+	auto saved = Event(1);
+	saved.asMap()->push_back({ "self", cbor::Value::FromBool(true) });
+	CHECK(manager.dispatch("A", saved).queued == 0);
 	CHECK(manager.dispatch("A", Event(2)).queued == 0);
 	CHECK(manager.dispatch("A", Event(api::kServiceChat)).queued == 0);
 	CHECK(manager.runningCount() == 0);
