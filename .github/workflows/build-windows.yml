@@ -173,7 +173,7 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
         run: |
           cd freshGram\Telegram
-          call configure.bat ${{ matrix.arch }} -D TDESKTOP_API_ID=%API_ID% -D TDESKTOP_API_HASH=%API_HASH% -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          call configure.bat ${{ matrix.arch == 'arm64' && 'arm' || matrix.arch }} -D TDESKTOP_API_ID=%API_ID% -D TDESKTOP_API_HASH=%API_HASH% -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
 
       - name: Build
         id: build
