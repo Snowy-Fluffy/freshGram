@@ -1907,6 +1907,11 @@ StoriesSlice ParseStoriesSlice(
 	return result;
 }
 
+bool IsSvgFormat(const QByteArray &format) {
+	const auto lower = format.toLower();
+	return (lower == "svg") || (lower == "svgz");
+}
+
 std::pair<QString, QSize> WriteImageThumb(
 		const QString &basePath,
 		const QString &largePath,
@@ -1919,7 +1924,7 @@ std::pair<QString, QSize> WriteImageThumb(
 	}
 	const auto path = basePath + largePath;
 	QImageReader reader(path);
-	if (!reader.canRead()) {
+	if (!reader.canRead() || IsSvgFormat(reader.format())) {
 		return {};
 	}
 	const auto size = reader.size();
