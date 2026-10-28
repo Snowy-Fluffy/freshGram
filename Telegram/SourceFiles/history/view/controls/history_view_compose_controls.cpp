@@ -4581,7 +4581,7 @@ void ComposeControls::initVoiceRecordBar() {
 		updateAiButtonVisibility();
 		updateSendAsFileVisibility();
 		updateExpandButtonVisibility();
-	}, _wrap->lifetime());
+	}, _recordingStateLifetime);
 
 	_voiceRecordBar->setStartRecordingFilter([=] {
 		const auto error = [&]() -> Data::SendError {
