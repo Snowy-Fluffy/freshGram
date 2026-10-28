@@ -120,7 +120,7 @@ if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 		endif()
 	endif()
 
-	foreach (name test_cbor test_vfs test_cache test_formats test_zip test_manifest test_package test_runtime test_broker test_runtime_bundle)
+	foreach (name test_cbor test_vfs test_cache test_storage test_formats test_zip test_manifest test_package test_runtime test_broker test_runtime_bundle)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
 		if (name STREQUAL "test_runtime" OR name STREQUAL "test_broker"

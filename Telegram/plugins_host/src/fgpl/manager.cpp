@@ -1816,7 +1816,8 @@ void PluginManager::run(Instance &instance) {
 				{},
 			});
 		}
-		instance.storage->flush();
+		instance.storage->flushIfDue(
+			std::chrono::milliseconds(_config.storageFlushMs));
 		if (result.ok()) {
 			post({
 				instance.id,
@@ -1879,7 +1880,20 @@ size_t SharedStorage::count() {
 
 bool SharedStorage::flush() {
 	const auto lock = std::scoped_lock(_mutex);
+	_flushed = std::chrono::steady_clock::now();
 	return !_storage || _storage->flush();
+}
+
+void SharedStorage::flushIfDue(std::chrono::milliseconds interval) {
+	auto lock = std::unique_lock(_mutex, std::try_to_lock);
+	if (!lock.owns_lock() || !_storage || !_storage->dirty()) {
+		return;
+	}
+	const auto now = std::chrono::steady_clock::now();
+	if (now - _flushed >= interval) {
+		_flushed = now;
+		_storage->flush();
+	}
 }
 
 void SharedStorage::discard() {
@@ -2060,6 +2074,12 @@ void PluginManager::commitUpdate(Record &record) {
 int PluginManager::pump() {
 	deliverMail();
 	fireTimers();
+	for (const auto &[id, record] : _records) {
+		if (record.store) {
+			record.store->flushIfDue(
+				std::chrono::milliseconds(_config.storageFlushMs));
+		}
+	}
 	auto batch = std::deque<Completion>();
 	{
 		const auto lock = std::scoped_lock(_outboxMutex);

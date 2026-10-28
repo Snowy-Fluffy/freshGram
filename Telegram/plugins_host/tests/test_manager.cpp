@@ -134,6 +134,7 @@ struct Lab {
 		result.python.library = fs::path(FGPL_CPYTHON_DIR) / "lib";
 		result.python.sdk = FGPL_PYTHON_SDK_DIR;
 		result.cache = cacheSettings;
+		result.storageFlushMs = 0;
 		result.environment = environment;
 		result.services = services;
 		result.stateKey = key;
