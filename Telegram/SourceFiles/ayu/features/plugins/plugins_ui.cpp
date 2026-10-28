@@ -3747,9 +3747,13 @@ void RefreshBadgeViews(int64_t user) {
 				continue;
 			}
 			session->data().requestViewsResize([&](not_null<const HistoryItem*> item) {
+				// WHY: the name may show another peer than the sender,
+				// e.g. the author of a channel post.
 				const auto from = item->from();
+				const auto shown = item->displayFrom();
 				return all
-					|| (from && users.contains(int64_t(from->id.value)));
+					|| (from && users.contains(int64_t(from->id.value)))
+					|| (shown && users.contains(int64_t(shown->id.value)));
 			});
 		}
 	});
@@ -3860,9 +3864,11 @@ void ForgetBadges(const std::string &plugin) {
 
 std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer) {
 	const auto &store = GetBadgeStore();
-	if (store.users.empty() || !peer->isUser()) {
+	if (store.users.empty()) {
 		return {};
 	}
+	// WHY: the key is the peer id as the plugin API shows it, so a group or
+	// a channel (a type in the high bits) never clashes with a user id.
 	const auto user = int64_t(peer->id.value);
 	const auto i = store.users.find({ AccountOf(&peer->session()), user });
 	const auto snapshot = Snapshot();

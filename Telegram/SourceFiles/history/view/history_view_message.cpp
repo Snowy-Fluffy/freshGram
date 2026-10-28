@@ -2633,10 +2633,13 @@ void Message::paintFromName(
 	const auto viaSkipWidth = viaShown
 		? (via->width + st::msgServiceFont->spacew)
 		: 0;
+	// WHY: the name is elided to what is left after the badges, otherwise a
+	// long name takes all the width and the badges are never painted.
+	const auto badgesSkipWidth = PluginBadgesSkip(PluginBadgesOf(from));
 	const auto nameAvailableWidth = std::max(
 		((statusWidth && availableWidth > statusWidth)
 			? (availableWidth - statusWidth)
-			: availableWidth) - viaSkipWidth,
+			: availableWidth) - viaSkipWidth - badgesSkipWidth,
 		0);
 	if (statusWidth && availableWidth > statusWidth) {
 		const auto x = availableLeft
@@ -4396,7 +4399,9 @@ bool Message::getStateFromName(
 		const auto nameAvailableWidth = std::max(
 			((statusWidth && availableWidth > statusWidth)
 				? (availableWidth - statusWidth)
-				: availableWidth) - viaSkipWidth,
+				: availableWidth)
+				- viaSkipWidth
+				- PluginBadgesSkip(PluginBadgesOf(from)),
 			0);
 		const auto nameWidth = std::min(
 			nameText->maxWidth(),
