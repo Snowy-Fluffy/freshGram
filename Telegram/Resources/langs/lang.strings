@@ -8986,7 +8986,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsBlockAbout" = "Applies to every plugin on top of its own permissions. Open connections of a blocked kind are closed.";
 "fresh_PluginsProxy" = "Proxy for plugins";
 "fresh_PluginsProxyOff" = "Off";
-"fresh_PluginsProxyUse" = "Use a proxy for plugins";
 "fresh_PluginsProxyAbout" = "Only plugin traffic goes through this proxy. If the proxy fails, plugins get an error instead of connecting directly. UDP works only with SOCKS5. Host names are resolved by the proxy.";
 "fresh_PermMessagesEdit" = "Edit messages you sent";
 "fresh_PermMessagesDelete" = "Delete messages you sent";
@@ -9034,7 +9033,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPermissionOptionalShort" = "Optional";
 "fresh_PluginPermissionNewShort" = "New";
 "fresh_PluginPermissionsRequiredAbout" = "The plugin cannot work without these permissions, so they are always on.";
-"fresh_PluginPermissionRequiredToast" = "{permission} is required: the plugin cannot work without it.";
 "fresh_PluginLogTabAll" = "All";
 "fresh_PluginLogTabProblems" = "Problems";
 "fresh_PluginLogSearch" = "Search";

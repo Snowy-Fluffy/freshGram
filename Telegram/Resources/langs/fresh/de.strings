@@ -203,7 +203,6 @@
 "fresh_PluginsBlockAbout" = "Gilt zusätzlich zu den eigenen Berechtigungen jedes Plugins. Offene Verbindungen der blockierten Art werden geschlossen.";
 "fresh_PluginsProxy" = "Proxy für Plugins";
 "fresh_PluginsProxyOff" = "Aus";
-"fresh_PluginsProxyUse" = "Proxy für Plugins verwenden";
 "fresh_PluginsProxyAbout" = "Nur der Datenverkehr der Plugins läuft über diesen Proxy. Fällt der Proxy aus, erhalten Plugins einen Fehler, statt direkt zu verbinden. UDP funktioniert nur mit SOCKS5. Hostnamen löst der Proxy auf.";
 "fresh_PermMessagesEdit" = "Von dir gesendete Nachrichten bearbeiten";
 "fresh_PermMessagesDelete" = "Von dir gesendete Nachrichten löschen";
@@ -250,7 +249,6 @@
 "fresh_PluginPermissionRequiredShort" = "Erforderlich";
 "fresh_PluginPermissionNewShort" = "Neu";
 "fresh_PluginPermissionsRequiredAbout" = "Ohne diese Berechtigungen funktioniert das Plugin nicht, deshalb sind sie immer aktiv.";
-"fresh_PluginPermissionRequiredToast" = "„{permission}“ ist erforderlich: Ohne sie funktioniert das Plugin nicht.";
 "fresh_PluginLogTabAll" = "Alle";
 "fresh_PluginLogTabProblems" = "Probleme";
 "fresh_PluginLogSearch" = "Suchen";

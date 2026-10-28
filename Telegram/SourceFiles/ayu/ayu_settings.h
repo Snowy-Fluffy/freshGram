@@ -40,6 +40,14 @@ struct PluginsProxy {
 		return !host.empty() && port > 0 && port < 65536;
 	}
 
+	[[nodiscard]] bool sameEndpoint(const PluginsProxy &other) const {
+		return type == other.type
+			&& host == other.host
+			&& port == other.port
+			&& user == other.user
+			&& password == other.password;
+	}
+
 	friend inline bool operator==(
 		const PluginsProxy &,
 		const PluginsProxy &) = default;
@@ -531,6 +539,7 @@ public:
 	[[nodiscard]] bool pluginsBlockTcp() const { return _pluginsBlockTcp.current(); }
 	[[nodiscard]] bool pluginsBlockUdp() const { return _pluginsBlockUdp.current(); }
 	[[nodiscard]] const PluginsProxy &pluginsProxy() const { return _pluginsProxy.current(); }
+	[[nodiscard]] const std::vector<PluginsProxy> &pluginsProxyList() const { return _pluginsProxyList.current(); }
 	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
@@ -703,6 +712,7 @@ public:
 	void setPluginsBlockTcp(bool val);
 	void setPluginsBlockUdp(bool val);
 	void setPluginsProxy(PluginsProxy val);
+	void setPluginsProxyList(std::vector<PluginsProxy> val);
 	void setAvatarCorners(int val);
 	void setSingleCornerRadius(bool val);
 	void setStreamerMode(bool val);
@@ -938,6 +948,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> pluginsBlockTcpValue() const { return _pluginsBlockTcp.value(); }
 	[[nodiscard]] rpl::producer<bool> pluginsBlockUdpValue() const { return _pluginsBlockUdp.value(); }
 	[[nodiscard]] rpl::producer<PluginsProxy> pluginsProxyValue() const { return _pluginsProxy.value(); }
+	[[nodiscard]] rpl::producer<std::vector<PluginsProxy>> pluginsProxyListValue() const { return _pluginsProxyList.value(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersValue() const { return _avatarCorners.value(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersChanges() const { return _avatarCorners.changes(); }
 	[[nodiscard]] rpl::producer<bool> singleCornerRadiusValue() const { return _singleCornerRadius.value(); }
@@ -1125,6 +1136,7 @@ private:
 	rpl::variable<bool> _pluginsBlockTcp = false;
 	rpl::variable<bool> _pluginsBlockUdp = false;
 	rpl::variable<PluginsProxy> _pluginsProxy;
+	rpl::variable<std::vector<PluginsProxy>> _pluginsProxyList;
 	rpl::variable<int> _avatarCorners = 23;
 	rpl::variable<bool> _singleCornerRadius = false;
 	rpl::variable<bool> _streamerMode = false;

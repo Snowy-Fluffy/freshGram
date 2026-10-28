@@ -15,4 +15,8 @@ void AddPluginsSettings(
 	not_null<Ui::VerticalLayout*> container,
 	not_null<Window::SessionController*> controller);
 
+void AddPluginsNetworkSettings(
+	not_null<Ui::VerticalLayout*> container,
+	not_null<Window::SessionController*> controller);
+
 } // namespace AyuUi
