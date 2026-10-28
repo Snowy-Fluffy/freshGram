@@ -689,6 +689,11 @@ void Start() {
 				manager->onUnlock();
 			}
 		});
+		if (!locked) {
+			// The domain starts only after the passcode is entered, and no
+			// account change is reported for that.
+			SyncAccounts();
+		}
 		Refresh();
 	}, service.lifetime);
 
