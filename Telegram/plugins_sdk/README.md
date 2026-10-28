@@ -69,7 +69,12 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `messages.search` `{chat, query, limit}` | `messages.history` | searches the chat on the server; the same message fields as the history |
 | `chats.mark_read` `{chat}` | `messages.send` | |
 | `chats.action` `{chat, kind, topic}` | `messages.send` | `typing` (default), `upload_photo`, `upload_video`, `upload_file`, `record_voice`, `upload_voice`, `record_video`, `record_round`, `choose_sticker` or `cancel`; once per 3 seconds per chat |
-| `users.info` `{id}` | `users.info` | `id, name, username, bot, premium, contact, self, status, last_seen`; `status` is `online`, `offline` (with `last_seen`), `recently`, `week`, `month`, `long_ago`, `hidden` or `bot` |
+| `users.info` `{id}` | `users.info` | `id, name, username, bot, premium, contact, self, status, last_seen, has_photo`; `status` is `online`, `offline` (with `last_seen`), `recently`, `week`, `month`, `long_ago`, `hidden` or `bot` |
+| `users.resolve` `{username}` | `users.info` | a user found by `@username` (with or without `@`); returns the same fields as `users.info`; asks the server for unknown names, once per second |
+| `users.photo` `{id}` | `users.info` | `{mime, data}`: the current profile photo in full size as JPEG bytes (`image/jpeg`), or MP4 bytes (`video/mp4`) when the user has a video avatar; falls back to the small cached JPEG if the server does not answer; `not_found` when the user has none |
+| `channels.info` `{id}` | `chat.info` | `id, title, username, type, about, members, verified, scam, fake, has_photo`; `type` is `channel` or `supergroup`, `members` is absent when unknown; other chats give `not_found` |
+| `channels.resolve` `{username}` | `chat.info` | the same fields for a channel found by `@username`; once per second |
+| `channels.photo` `{id}` | `chat.info` | `{mime, data}` like `users.photo` |
 | `notify.show` `{title, text}` | `notifications` | a system notification (a toast when the app's notifications are off); once per 5 seconds; clicking it opens Saved Messages |
 | `clipboard.write` `{text}`, `clipboard.read` | `clipboard` | only within 10 seconds after a user action; up to 64 KiB |
 | `files.pick` `{title, filter}` | `fs.user_selected` | awaitable only, after a user action; the user picks a file in the system dialog; returns `{name, data}` (up to 100 MiB) or nothing when cancelled; `filter` is like `Images (*.png *.jpg)` |
@@ -124,7 +129,7 @@ chats or chat 777000; `message.deleted` loses its text without
 `messages.read_deleted`. A plugin only receives the `message.*` events it lists
 in `contributes.events`.
 
-Every `message.*` event carries `id`, `chat`, `chat_title`, `chat_type`, `from`,
+Every `message.*` event carries `id`, `chat`, `chat_title`, `chat_type`, `from`, `from_kind` (the type of the sender: `user`, `bot`, `self`, `channel`, `supergroup`, `group` or `forum`; a post or an anonymous admin shows the channel or the group),
 `sender_name`, `date`, `text`, `out` and `forwarded`, and when they apply
 `reply_to`, `topic`, `grouped` (album id), `media` (`photo`, `video`, `round`,
 `gif`, `voice`, `audio`, `sticker`, `file`, `poll`, `contact`, `location`,
@@ -472,7 +477,7 @@ logged and does not stop the others. The namespaces follow the calls:
 `messages.send_media(chat, data, name, caption=...)`, `media.list`,
 `media.get(..., download=True)`, `messages.edit`,
 `messages.delete`, `messages.react`, `messages.forward`, `messages.search`,
-`chats.mark_read`, `chats.action`, `users.info`, `notify.show`,
+`chats.mark_read`, `chats.action`, `users.info`, `users.resolve`, `users.photo`, `channels.info`, `channels.resolve`, `channels.photo`, `notify.show`,
 `clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`
 and `files.save` exist only in `freshgram.aio`.
 

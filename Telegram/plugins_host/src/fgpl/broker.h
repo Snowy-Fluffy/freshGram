@@ -104,6 +104,7 @@ struct Message {
 	bool out = false;
 	bool deleted = false;
 	std::string media;
+	std::string fromKind;
 };
 
 struct Account {
@@ -209,6 +210,20 @@ struct UserInfo {
 	bool self = false;
 	std::string status;
 	int64_t lastSeen = 0;
+	bool hasPhoto = false;
+};
+
+struct ChannelInfo {
+	int64_t id = 0;
+	std::string title;
+	std::string username;
+	std::string type;
+	std::string about;
+	int64_t members = -1;
+	bool verified = false;
+	bool scam = false;
+	bool fake = false;
+	bool hasPhoto = false;
 };
 
 struct PickedFile {
@@ -374,6 +389,29 @@ public:
 	[[nodiscard]] virtual std::optional<UserInfo> user(int64_t id) {
 		(void)id;
 		return std::nullopt;
+	}
+	[[nodiscard]] virtual Result<UserInfo, std::string> resolveUser(
+			const std::string &username) {
+		(void)username;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual Result<Media, std::string> peerPhoto(
+			int64_t id,
+			bool channel,
+			size_t maxBytes) {
+		(void)id;
+		(void)channel;
+		(void)maxBytes;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual Result<ChannelInfo, std::string> channel(int64_t id) {
+		(void)id;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual Result<ChannelInfo, std::string> resolveChannel(
+			const std::string &username) {
+		(void)username;
+		return std::string(api::error::kUnavailable);
 	}
 	[[nodiscard]] virtual std::string notify(
 			const std::string &title,
@@ -624,6 +662,7 @@ private:
 	int64_t _sendRefilled = 0;
 	int64_t _lastToast = 0;
 	int64_t _lastNotify = 0;
+	int64_t _lastResolve = 0;
 	std::map<int64_t, int64_t> _lastChatAction;
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;

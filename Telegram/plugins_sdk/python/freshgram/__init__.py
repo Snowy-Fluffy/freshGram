@@ -426,6 +426,28 @@ class _Users(_Namespace):
         """Name, username, bot, premium, contact and online status of a user."""
         return self._call("users.info", id=user)
 
+    def resolve(self, username):
+        """Find a user by @username (users.info); the same dict as info(), once per second."""
+        return self._call("users.resolve", username=username)
+
+    def photo(self, user):
+        """The current profile photo of a user in full size as {"mime", "data"} (users.info): MP4 video bytes (video/mp4) if the user has a video avatar, otherwise JPEG bytes."""
+        return self._call("users.photo", id=user)
+
+
+class _Channels(_Namespace):
+    def info(self, channel):
+        """Title, username, type, about, members and flags of a channel or supergroup (chat.info)."""
+        return self._call("channels.info", id=channel)
+
+    def resolve(self, username):
+        """Find a channel or supergroup by @username (chat.info), once per second."""
+        return self._call("channels.resolve", username=username)
+
+    def photo(self, channel):
+        """The profile photo of a channel as {"mime", "data"} (chat.info), see users.photo."""
+        return self._call("channels.photo", id=channel)
+
 
 class _Badges(_Namespace):
     def set(self, user, items):
@@ -572,6 +594,7 @@ folders = _Folders(_sync_call)
 settings = _Settings(_sync_call)
 media = _Media(_sync_call)
 users = _Users(_sync_call)
+channels = _Channels(_sync_call)
 notify = _Notify(_sync_call)
 badges = _Badges(_sync_call)
 clipboard = _Clipboard(_sync_call)
