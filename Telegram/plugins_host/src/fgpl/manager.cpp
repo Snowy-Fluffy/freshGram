@@ -1884,6 +1884,16 @@ bool SharedStorage::flush() {
 	return !_storage || _storage->flush();
 }
 
+bool SharedStorage::healthy() {
+	const auto lock = std::scoped_lock(_mutex);
+	return !_storage || _storage->healthy();
+}
+
+bool SharedStorage::recovered() {
+	const auto lock = std::scoped_lock(_mutex);
+	return _storage && _storage->recovered();
+}
+
 void SharedStorage::flushIfDue(std::chrono::milliseconds interval) {
 	auto lock = std::unique_lock(_mutex, std::try_to_lock);
 	if (!lock.owns_lock() || !_storage || !_storage->dirty()) {
@@ -1926,6 +1936,11 @@ std::shared_ptr<SharedStorage> PluginManager::storeOf(Record &record) {
 		}
 	}
 	record.store = std::make_shared<SharedStorage>(file);
+	if (record.store->recovered()) {
+		AppendLog(*record.log, _config.logLines, "failure: the storage file was damaged, restored the previous copy, the latest changes may be lost", true);
+	} else if (!record.store->healthy()) {
+		AppendLog(*record.log, _config.logLines, "failure: the storage file was damaged and there was no copy, started with empty storage", true);
+	}
 	return record.store;
 }
 

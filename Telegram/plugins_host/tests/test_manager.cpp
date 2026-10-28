@@ -448,6 +448,40 @@ void TestLockHiddenAndLogout() {
 #endif
 }
 
+void TestStorageRecoveryIsLogged() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-recovery");
+	const auto id = std::string("com.example.counter");
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
+		Prepare(manager, id);
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+		manager.shutdown();
+	}
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+		manager.shutdown();
+	}
+	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
+	const auto file = lab.root / "plugins" / id / "data" / "store.cbor";
+	{
+		auto stream = std::ofstream(file, std::ios::binary | std::ios::trunc);
+		stream << "not a cbor document";
+	}
+	auto manager = PluginManager(lab.config());
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	auto logged = false;
+	for (const auto &line : manager.log(id)) {
+		logged = logged || line.find("restored the previous copy") != std::string::npos;
+	}
+	CHECK(logged);
+	manager.shutdown();
+	CHECK(lab.stored(id, "A", "count")->asInt() == 2);
+#endif
+}
+
 void TestUninstallAndDamage() {
 #ifdef FGPL_COUNTER_WASM
 	auto lab = Lab("fgpl-manager-damage");
@@ -1659,6 +1693,7 @@ int main(int argc, char **argv) {
 	run("update", TestUpdatesAndRollback);
 	run("crash", TestCrashLoopDisablesThePlugin);
 	run("lock", TestLockHiddenAndLogout);
+	run("recovery", TestStorageRecoveryIsLogged);
 	run("damage", TestUninstallAndDamage);
 	run("python", TestPythonPlugin);
 	run("ui", TestUiContributions);
