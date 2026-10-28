@@ -10,6 +10,7 @@ namespace FreshDatabaseBackup {
 void startPeriodic();
 void removeAll();
 void purgeUser(long long userId);
+void purgeSecrets();
 void configure(int keepCount, int intervalHours);
 
 // The richest copy outlives the rotation only while the files are kept.

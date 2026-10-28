@@ -1,6 +1,7 @@
 #include "ayu/secret/secret_policy.h"
 
 #include "ayu/ayu_settings.h"
+#include "ayu/data/fresh_database_backup.h"
 #include "ayu/secret/secret_manager.h"
 #include "core/application.h"
 #include "lang/lang_keys.h"
@@ -32,6 +33,7 @@ void HandlePasscodeChange() {
 	if (PasscodeSet()) {
 		return;
 	}
+	FreshDatabaseBackup::purgeSecrets();
 	auto purged = false;
 	for (const auto &entry : Core::App().domain().accounts()) {
 		if (const auto session = entry.account->maybeSession()) {
