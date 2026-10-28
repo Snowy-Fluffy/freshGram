@@ -2255,20 +2255,7 @@ void TopBar::updateStatusPosition(float64 progressCurrent) {
 					}));
 			}, _statusScroll->lifetime());
 		}
-		const auto ratio = style::DevicePixelRatio();
-		_statusTape = QImage(
-			_status->size() * ratio,
-			QImage::Format_ARGB32_Premultiplied);
-		_statusTape.setDevicePixelRatio(ratio);
-		_statusTape.fill(Qt::transparent);
-		{
-			auto q = QPainter(&_statusTape);
-			_status->render(
-				&q,
-				QPoint(),
-				QRegion(),
-				QWidget::DrawChildren);
-		}
+		_statusTape = Ui::GrabWidgetToImage(_status.data());
 		_statusScroll->setGeometry(
 			int(statusLeft + statusShift),
 			statusTop,
