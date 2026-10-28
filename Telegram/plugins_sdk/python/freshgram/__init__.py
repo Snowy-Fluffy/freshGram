@@ -304,8 +304,12 @@ class _Messages(_Namespace):
             before=before,
             **_given(topic=topic))
 
-    def send(self, chat, text, reply_to=0, topic=0, silent=False, schedule=0, markdown=False):
+    def send(self, chat, text, reply_to=0, topic=0, silent=False, schedule=0, markdown=False,
+             custom_emoji=None):
         """Send a message; schedule is a unix time, markdown parses **bold** and the like.
+
+        custom_emoji is a list of {"offset", "length", "id"}: the part of the text
+        (UTF-16 units) that is shown as the custom emoji with this id (Premium).
 
         Returns Sent. With messages.ids the call waits for the server, so await it
         (freshgram.aio) instead of blocking the event.
@@ -316,6 +320,7 @@ class _Messages(_Namespace):
             chat=chat,
             text=text,
             **_given(reply_to=reply_to, topic=topic, silent=silent, schedule=schedule),
+            **({"custom_emoji": list(custom_emoji)} if custom_emoji else {}),
             **_format(markdown))
 
     def send_media(self, chat, data, name, caption="", kind="auto", markdown=False,
@@ -375,9 +380,22 @@ class _Messages(_Namespace):
         """Delete messages you sent (messages.delete), for everyone when possible."""
         return self._call("messages.delete", _nothing, chat=chat, ids=[_ref(message) for message in messages], everyone=everyone)
 
-    def react(self, chat, message, emoji=""):
-        """Put an emoji reaction on a message, or remove yours with an empty emoji."""
+    def react(self, chat, message, emoji="", custom_emoji=0):
+        """Put an emoji (or custom_emoji id) reaction on a message, or remove yours with neither."""
+        if custom_emoji:
+            return self._call(
+                "messages.react", _nothing, chat=chat, id=_ref(message), custom_emoji=custom_emoji)
         return self._call("messages.react", _nothing, chat=chat, id=_ref(message), emoji=emoji)
+
+    def reactions(self, chat, message, emoji=None, custom_emoji=0, limit=50):
+        """Who reacted to a message (messages.read): a list of {user, name, date} and
+        emoji, custom_emoji or paid; filter by emoji or custom_emoji."""
+        arguments = {"chat": chat, "id": _ref(message), "limit": limit}
+        if custom_emoji:
+            arguments["custom_emoji"] = custom_emoji
+        elif emoji:
+            arguments["emoji"] = emoji
+        return self._call("messages.reactions", **arguments)
 
     def forward(self, from_chat, messages, to_chat, silent=False):
         """Forward messages (messages.send and messages.read)."""
@@ -447,6 +465,25 @@ class _Channels(_Namespace):
     def photo(self, channel):
         """The profile photo of a channel as {"mime", "data"} (chat.info), see users.photo."""
         return self._call("channels.photo", id=channel)
+
+
+class _Stickers(_Namespace):
+    def send(self, chat, sticker, reply_to=0, topic=0, silent=False):
+        """Send a sticker by its id (messages.send); returns Sent like messages.send."""
+        return self._call(
+            "stickers.send",
+            Sent,
+            chat=chat,
+            id=sticker,
+            **_given(reply_to=reply_to, topic=topic, silent=silent))
+
+    def search(self, emoji, limit=20):
+        """Installed stickers for an emoji (messages.send): [{id, emoji, set, animated, video}]."""
+        return self._call("stickers.search", emoji=emoji, limit=limit)
+
+    def recent(self, limit=20):
+        """Recently used stickers (messages.send), same fields as search."""
+        return self._call("stickers.recent", limit=limit)
 
 
 class _Badges(_Namespace):
@@ -595,6 +632,7 @@ settings = _Settings(_sync_call)
 media = _Media(_sync_call)
 users = _Users(_sync_call)
 channels = _Channels(_sync_call)
+stickers = _Stickers(_sync_call)
 notify = _Notify(_sync_call)
 badges = _Badges(_sync_call)
 clipboard = _Clipboard(_sync_call)

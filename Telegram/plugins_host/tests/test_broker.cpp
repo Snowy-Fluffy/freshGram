@@ -1620,6 +1620,39 @@ void TestLevelTwoCalls() {
 	CHECK(Code(broker.call(Request("channels.photo", { { "id", Int(3) } }))) == "not_found");
 	fixture.time += 1000;
 
+	const auto reactors = broker.call(Request("messages.reactions", { { "chat", Int(1) }, { "id", Int(100) } }));
+	CHECK(IsOk(reactors) && Payload(reactors).asArray()->size() == 2);
+	CHECK(Payload(reactors).asArray()->at(1).find("custom_emoji") != nullptr);
+	const auto filtered = broker.call(Request("messages.reactions", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "emoji", Text("x") } }));
+	CHECK(IsOk(filtered) && Payload(filtered).asArray()->size() == 1);
+	CHECK(Code(broker.call(Request("messages.reactions", { { "chat", Int(1) }, { "id", Int(5) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.reactions", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "emoji", Text("x") }, { "custom_emoji", Int(5) } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.react", { { "chat", Int(1) }, { "id", Int(100) }, { "custom_emoji", Int(55) } }))));
+	CHECK(data.actions.back().find("custom55") != std::string::npos);
+	CHECK(Code(broker.call(Request("messages.react", { { "chat", Int(1) }, { "id", Int(100) }, { "custom_emoji", Int(-1) } }))) == "invalid");
+
+	const auto searched = broker.call(Request("stickers.search", { { "emoji", Text("x") } }));
+	CHECK(IsOk(searched) && *Payload(searched).asArray()->at(0).find("id")->asInt() == 321);
+	CHECK(IsOk(broker.call(Request("stickers.recent"))));
+	CHECK(Code(broker.call(Request("stickers.search"))) == "invalid");
+	fixture.time += 5000;
+	CHECK(IsOk(broker.call(Request("stickers.send", { { "chat", Int(1) }, { "id", Int(321) } }))));
+	CHECK(data.actions.back() == "sticker 1 321");
+	CHECK(Code(broker.call(Request("stickers.send", { { "chat", Int(1) }, { "id", Int(5) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("stickers.send", { { "chat", Int(9) }, { "id", Int(321) } }))) == "denied");
+	fixture.time += 5000;
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("a") },
+		{ "custom_emoji", cbor::Value::FromArray({ cbor::Value::FromMap({
+			{ "offset", Int(0) }, { "length", Int(0) }, { "id", Int(5) } }) }) } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("a") },
+		{ "custom_emoji", cbor::Value::FromArray({ cbor::Value::FromMap({
+			{ "offset", Int(0) }, { "length", Int(1) }, { "id", Int(5) } }) }) } }))));
+	fixture.time += 5000;
+
 	CHECK(IsOk(broker.call(Request("notify.show", { { "title", Text("T") }, { "text", Text("x") } }))));
 	CHECK(Code(broker.call(Request("notify.show", { { "text", Text("x") } }))) == "limit");
 	fixture.time += 5000;

@@ -39,6 +39,9 @@
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
+#include "data/stickers/data_stickers.h"
+#include "data/stickers/data_custom_emoji.h"
+#include "ui/emoji_config.h"
 #include "data/data_user.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
@@ -272,6 +275,81 @@ template <typename T>
 
 [[nodiscard]] std::string MediaKindOf(not_null<const HistoryItem*> item);
 
+[[nodiscard]] fgpl::ReactionKind ReactionKindOf(const Data::ReactionId &id) {
+	if (id.paid()) {
+		return { .paid = true };
+	} else if (const auto custom = std::get_if<DocumentId>(&id.data)) {
+		return { .customEmoji = int64_t(*custom) };
+	}
+	return { .emoji = Utf8(id.emoji()) };
+}
+
+[[nodiscard]] fgpl::StickerInfo StickerInfoOf(not_null<DocumentData*> document) {
+	auto result = fgpl::StickerInfo();
+	result.id = int64_t(document->id);
+	if (const auto sticker = document->sticker()) {
+		result.emoji = Utf8(sticker->alt);
+		result.animated = sticker->isLottie() || sticker->isAnimated();
+		result.video = sticker->isWebm();
+		auto set = sticker->set.shortName;
+		if (set.isEmpty() && sticker->set.id) {
+			const auto &sets = document->owner().stickers().sets();
+			const auto i = sets.find(sticker->set.id);
+			if (i != sets.end()) {
+				set = i->second->shortName;
+			}
+		}
+		result.set = Utf8(set);
+	}
+	return result;
+}
+
+[[nodiscard]] std::vector<fgpl::TextEmoji> CustomEmojiOf(
+		const TextWithEntities &text) {
+	auto result = std::vector<fgpl::TextEmoji>();
+	for (const auto &entity : text.entities) {
+		if (entity.type() == EntityType::CustomEmoji) {
+			result.push_back({
+				.offset = entity.offset(),
+				.length = entity.length(),
+				.id = int64_t(Data::ParseCustomEmojiData(entity.data())),
+			});
+		}
+	}
+	return result;
+}
+
+// Only emoji and custom emoji (and spaces), like the big emoji in a chat.
+[[nodiscard]] bool IsEmojiOnly(const TextWithEntities &text) {
+	const auto length = int(text.text.size());
+	auto found = false;
+	for (auto i = 0; i != length;) {
+		if (text.text[i].isSpace()) {
+			++i;
+			continue;
+		}
+		const auto custom = ranges::find_if(text.entities, [&](
+				const EntityInText &entity) {
+			return entity.type() == EntityType::CustomEmoji
+				&& entity.offset() == i
+				&& entity.length() > 0;
+		});
+		if (custom != text.entities.end()) {
+			i += custom->length();
+		} else {
+			auto emojiLength = 0;
+			if (!Ui::Emoji::Find(
+					QStringView(text.text).mid(i),
+					&emojiLength)) {
+				return false;
+			}
+			i += emojiLength;
+		}
+		found = true;
+	}
+	return found;
+}
+
 [[nodiscard]] fgpl::Message MessageOf(not_null<const HistoryItem*> item) {
 	auto result = fgpl::Message();
 	result.id = item->id.bare;
@@ -279,7 +357,24 @@ template <typename T>
 	result.from = ChatId(item->from());
 	result.fromKind = KindOf(item->from());
 	result.date = item->date();
-	result.text = Utf8(item->originalText().text);
+	const auto &original = item->originalText();
+	result.text = Utf8(original.text);
+	result.emojiOnly = IsEmojiOnly(original);
+	result.customEmoji = CustomEmojiOf(original);
+	if (const auto media = item->media()) {
+		if (const auto document = media->document()) {
+			if (document->sticker()) {
+				result.sticker = StickerInfoOf(document);
+			}
+		}
+	}
+	for (const auto &reaction : item->reactions()) {
+		result.reactions.push_back({
+			.kind = ReactionKindOf(reaction.id),
+			.count = reaction.count,
+			.my = reaction.my,
+		});
+	}
 	result.topic = item->topicRootId().bare;
 	result.replyTo = item->replyToId().bare;
 	result.out = item->out();
@@ -985,7 +1080,7 @@ public:
 	std::string react(
 			int64_t chat,
 			int64_t id,
-			const std::string &emoji) override {
+			const fgpl::ReactionKind &reaction) override {
 		return OnMainAsync<std::string>([=](Fn<void(std::string)> done) {
 			resolveMessage(chat, id, [=](HistoryItem *item, std::string error) {
 				if (!error.empty()) {
@@ -996,19 +1091,191 @@ public:
 					return;
 				}
 				const auto chosen = item->chosenReactions();
-				const auto wanted = Data::ReactionId{ QString::fromStdString(emoji) };
-				if (emoji.empty()) {
-					for (const auto &reaction : chosen) {
-						if (!reaction.paid()) {
-							item->toggleReaction(reaction, HistoryReactionSource::Existing);
+				const auto remove = reaction.emoji.empty()
+					&& !reaction.customEmoji
+					&& !reaction.paid;
+				if (reaction.paid) {
+					done(fgpl::api::error::kInvalid);
+					return;
+				} else if (remove) {
+					for (const auto &existing : chosen) {
+						if (!existing.paid()) {
+							item->toggleReaction(existing, HistoryReactionSource::Existing);
 						}
 					}
-				} else if (!ranges::contains(chosen, wanted)) {
+					done({});
+					return;
+				}
+				const auto wanted = reaction.customEmoji
+					? Data::ReactionId{ DocumentId(reaction.customEmoji) }
+					: Data::ReactionId{ QString::fromStdString(reaction.emoji) };
+				if (!ranges::contains(chosen, wanted)) {
 					item->toggleReaction(wanted, HistoryReactionSource::Selector);
 				}
 				done({});
 			});
 		}, fgpl::api::error::kUnavailable, kWaitSend);
+	}
+
+	fgpl::Result<std::vector<fgpl::ReactionEntry>, std::string> reactionsList(
+			int64_t chat,
+			int64_t id,
+			const std::optional<fgpl::ReactionKind> &filter,
+			size_t limit) override {
+		struct Loaded {
+			std::string error;
+			std::vector<fgpl::ReactionEntry> list;
+		};
+		const auto loaded = OnMainAsync<Loaded>([=](Fn<void(Loaded)> done) {
+			resolveMessage(chat, id, [=](HistoryItem *item, std::string error) {
+				const auto session = FindSession(_account);
+				if (!error.empty() || !session) {
+					done({ .error = error.empty()
+						? std::string(fgpl::api::error::kNotFound)
+						: error });
+					return;
+				} else if (item->isLocal() || item->isService()) {
+					done({ .error = fgpl::api::error::kNotFound });
+					return;
+				}
+				using Flag = MTPmessages_GetMessageReactionsList::Flag;
+				const auto wanted = filter
+					? (filter->customEmoji
+						? Data::ReactionId{ DocumentId(filter->customEmoji) }
+						: Data::ReactionId{ QString::fromStdString(filter->emoji) })
+					: Data::ReactionId();
+				session->api().request(MTPmessages_GetMessageReactionsList(
+					MTP_flags(filter ? Flag::f_reaction : Flag(0)),
+					item->history()->peer->input(),
+					MTP_int(item->id),
+					filter ? Data::ReactionToMTP(wanted) : MTPReaction(),
+					MTPstring(),
+					MTP_int(int(limit))
+				)).done([=](const MTPmessages_MessageReactionsList &result) {
+					const auto &data = result.data();
+					session->data().processUsers(data.vusers());
+					session->data().processChats(data.vchats());
+					auto list = std::vector<fgpl::ReactionEntry>();
+					for (const auto &entry : data.vreactions().v) {
+						const auto &reaction = entry.data();
+						const auto peerId = peerFromMTP(reaction.vpeer_id());
+						auto out = fgpl::ReactionEntry();
+						out.user = int64_t(peerId.value);
+						if (const auto peer = session->data().peerLoaded(peerId)) {
+							out.name = Utf8(peer->name());
+						}
+						out.kind = ReactionKindOf(
+							Data::ReactionFromMTP(reaction.vreaction()));
+						out.date = reaction.vdate().v;
+						list.push_back(std::move(out));
+					}
+					done({ .list = std::move(list) });
+				}).fail([=] {
+					done({ .error = fgpl::api::error::kFailed });
+				}).send();
+			});
+		}, Loaded{ .error = fgpl::api::error::kUnavailable });
+		if (!loaded.error.empty()) {
+			return loaded.error;
+		}
+		return loaded.list;
+	}
+
+	fgpl::SendResult sendSticker(
+			int64_t chat,
+			int64_t id,
+			int64_t replyTo,
+			int64_t topic,
+			bool silent) override {
+		return OnMain<fgpl::SendResult>([=]() -> fgpl::SendResult {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(chat);
+			const auto document = findSticker(session, DocumentId(id));
+			if (!session || !history || !document
+				|| FreshSecret::IsSecretPeerId(history->peer->id)) {
+				return { .error = fgpl::api::error::kNotFound };
+			}
+			const auto target = ResolveTarget(
+				session,
+				history,
+				MsgId(topic),
+				MsgId(replyTo));
+			if (target.missingReply) {
+				return { .error = fgpl::api::error::kNotFound };
+			} else if (!Data::CanSend(target.thread, ChatRestriction::SendStickers)
+				|| history->peer->starsPerMessageChecked() > 0) {
+				return { .error = fgpl::api::error::kDenied };
+			} else if (history->peer->slowmodeSecondsLeft() > 0) {
+				return { .error = fgpl::api::error::kLimit };
+			}
+			auto action = Api::SendAction(target.thread);
+			action.clearDraft = false;
+			action.options.silent = silent;
+			action.options.sendAs = ChosenSendAs(history);
+			ApplyTarget(action, target);
+			const auto localId = session->data().nextLocalMessageId();
+			const auto full = FullMsgId(history->peer->id, localId);
+			MarkPluginMessage(session, full);
+			++PluginSendDepth;
+			Api::SendExistingDocument(
+				Api::MessageToSend(action),
+				not_null<DocumentData*>(document),
+				localId);
+			--PluginSendDepth;
+			auto result = fgpl::SendResult();
+			if (session->data().message(full) || HasPendingOutgoing(history)) {
+				result.localId = localId.bare;
+			}
+			return result;
+		}, fgpl::SendResult{ .error = fgpl::api::error::kUnavailable });
+	}
+
+	std::vector<fgpl::StickerInfo> stickers(
+			const std::string &emoji,
+			size_t limit) override {
+		return OnMain<std::vector<fgpl::StickerInfo>>([=] {
+			auto result = std::vector<fgpl::StickerInfo>();
+			const auto session = FindSession(_account);
+			if (!session) {
+				return result;
+			}
+			auto seen = base::flat_set<DocumentId>();
+			const auto add = [&](DocumentData *document) {
+				if (document
+					&& document->sticker()
+					&& result.size() < limit
+					&& !seen.contains(document->id)) {
+					seen.insert(document->id);
+					result.push_back(StickerInfoOf(document));
+				}
+			};
+			const auto &stickers = session->data().stickers();
+			if (emoji.empty()) {
+				for (const auto &recent : stickers.getRecentPack()) {
+					add(recent.first);
+				}
+				return result;
+			}
+			const auto wanted = Ui::Emoji::Find(
+				QString::fromStdString(emoji));
+			if (!wanted) {
+				return result;
+			}
+			for (const auto setId : stickers.setsOrder()) {
+				const auto &sets = stickers.sets();
+				const auto i = sets.find(setId);
+				if (i == sets.end()) {
+					continue;
+				}
+				const auto j = i->second->emoji.find(wanted->original());
+				if (j != i->second->emoji.end()) {
+					for (const auto document : j->second) {
+						add(document);
+					}
+				}
+			}
+			return result;
+		}, {});
 	}
 
 	std::string forward(
@@ -1938,6 +2205,32 @@ public:
 	}
 
 private:
+	[[nodiscard]] DocumentData *findSticker(
+			Main::Session *session,
+			DocumentId id) const {
+		if (!session) {
+			return nullptr;
+		}
+		const auto &stickers = session->data().stickers();
+		for (const auto &recent : stickers.getRecentPack()) {
+			if (recent.first->id == id) {
+				return recent.first;
+			}
+		}
+		for (const auto setId : stickers.setsOrder()) {
+			const auto i = stickers.sets().find(setId);
+			if (i == stickers.sets().end()) {
+				continue;
+			}
+			for (const auto document : i->second->stickers) {
+				if (document->id == id) {
+					return document;
+				}
+			}
+		}
+		return nullptr;
+	}
+
 	[[nodiscard]] fgpl::SendResult startMessage(
 			const fgpl::OutgoingMessage &outgoing) {
 		const auto session = FindSession(_account);
@@ -1967,7 +2260,18 @@ private:
 		action.options.scheduled = TimeId(outgoing.schedule);
 		action.options.sendAs = ChosenSendAs(history);
 		ApplyTarget(action, target);
-		const auto text = Formatted(outgoing.text, outgoing.markdown);
+		auto text = Formatted(outgoing.text, outgoing.markdown);
+		const auto size = int(text.text.size());
+		for (const auto &emoji : outgoing.customEmoji) {
+			if (emoji.offset + emoji.length > size) {
+				return { .error = fgpl::api::error::kInvalid };
+			}
+			text.entities.push_back(EntityInText(
+				EntityType::CustomEmoji,
+				int(emoji.offset),
+				int(emoji.length),
+				Data::SerializeCustomEmojiId(DocumentId(emoji.id))));
+		}
 		auto message = Api::MessageToSend(action);
 		message.textWithTags = TextWithTags{
 			text.text,
@@ -2480,18 +2784,44 @@ void SendMessageEvent(
 	if (byPlugin) {
 		map.push_back({ "by_plugin", Value::FromBool(true) });
 	}
-	if (!item->reactions().empty()) {
-		auto reactions = fgpl::cbor::Array();
-		for (const auto &reaction : item->reactions()) {
-			const auto emoji = reaction.id.emoji();
-			if (emoji.isEmpty()) {
-				continue;
-			}
-			reactions.push_back(Value::FromMap({
-				{ "emoji", Value::FromText(Utf8(emoji)) },
-				{ "count", Value::FromInt(reaction.count) },
-				{ "my", Value::FromBool(reaction.my) },
+	if (message.sticker) {
+		map.push_back({ "sticker", Value::FromMap({
+			{ "id", Value::FromInt(message.sticker->id) },
+			{ "emoji", Value::FromText(message.sticker->emoji) },
+			{ "set", Value::FromText(message.sticker->set) },
+			{ "animated", Value::FromBool(message.sticker->animated) },
+			{ "video", Value::FromBool(message.sticker->video) },
+		}) });
+	}
+	if (message.emojiOnly) {
+		map.push_back({ "emoji_only", Value::FromBool(true) });
+	}
+	if (!message.customEmoji.empty()) {
+		auto entities = fgpl::cbor::Array();
+		for (const auto &entity : message.customEmoji) {
+			entities.push_back(Value::FromMap({
+				{ "type", Value::FromText("custom_emoji") },
+				{ "offset", Value::FromInt(entity.offset) },
+				{ "length", Value::FromInt(entity.length) },
+				{ "id", Value::FromInt(entity.id) },
 			}));
+		}
+		map.push_back({ "entities", Value::FromArray(std::move(entities)) });
+	}
+	if (!message.reactions.empty()) {
+		auto reactions = fgpl::cbor::Array();
+		for (const auto &reaction : message.reactions) {
+			auto entry = fgpl::cbor::Map();
+			if (reaction.kind.paid) {
+				entry.push_back({ "paid", Value::FromBool(true) });
+			} else if (reaction.kind.customEmoji) {
+				entry.push_back({ "custom_emoji", Value::FromInt(reaction.kind.customEmoji) });
+			} else {
+				entry.push_back({ "emoji", Value::FromText(reaction.kind.emoji) });
+			}
+			entry.push_back({ "count", Value::FromInt(reaction.count) });
+			entry.push_back({ "my", Value::FromBool(reaction.my) });
+			reactions.push_back(Value::FromMap(std::move(entry)));
 		}
 		map.push_back({ "reactions", Value::FromArray(std::move(reactions)) });
 	}
