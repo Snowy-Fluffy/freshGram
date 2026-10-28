@@ -2635,7 +2635,9 @@ void Message::paintFromName(
 		: 0;
 	// WHY: the name is elided to what is left after the badges, otherwise a
 	// long name takes all the width and the badges are never painted.
-	const auto badgesSkipWidth = PluginBadgesSkip(PluginBadgesOf(from));
+	// The status takes one more space after it, see skipWidth below.
+	const auto badgesSkipWidth = PluginBadgesSkip(PluginBadgesOf(from))
+		+ (statusWidth ? st::msgServiceFont->spacew : 0);
 	const auto nameAvailableWidth = std::max(
 		((statusWidth && availableWidth > statusWidth)
 			? (availableWidth - statusWidth)
@@ -2722,7 +2724,7 @@ void Message::paintFromName(
 	if (const auto badges = PluginBadgesOf(from); !badges.empty()) {
 		const auto side = st::msgNameFont->height;
 		const auto badgesWidth = FreshPlugins::BadgesWidth(badges, side);
-		if (availableWidth >= badgesWidth) {
+		if (availableWidth + st::msgServiceFont->spacew >= badgesWidth) {
 			FreshPlugins::PaintBadges(
 				p,
 				availableLeft,
@@ -4401,7 +4403,8 @@ bool Message::getStateFromName(
 				? (availableWidth - statusWidth)
 				: availableWidth)
 				- viaSkipWidth
-				- PluginBadgesSkip(PluginBadgesOf(from)),
+				- PluginBadgesSkip(PluginBadgesOf(from))
+				- (statusWidth ? st::msgServiceFont->spacew : 0),
 			0);
 		const auto nameWidth = std::min(
 			nameText->maxWidth(),
