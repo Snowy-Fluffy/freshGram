@@ -49,11 +49,14 @@ public:
 	uint64_t usedBytes() override;
 	size_t count() override;
 	bool flush();
+	// Writes only if there is something new and the last write is old enough.
+	void flushIfDue(std::chrono::milliseconds interval);
 	void discard();
 
 private:
 	std::mutex _mutex;
 	std::unique_ptr<FileStorage> _storage;
+	std::chrono::steady_clock::time_point _flushed;
 
 };
 
@@ -106,6 +109,7 @@ struct ManagerConfig {
 	size_t maxQueuedEvents = 256;
 	size_t maxQueuedBytes = size_t(256) << 20;
 	int maxConcurrentStarts = 2;
+	int storageFlushMs = 2000;
 };
 
 struct InstallOptions {

@@ -27,12 +27,21 @@ public:
 	[[nodiscard]] bool healthy() const {
 		return _healthy;
 	}
+	[[nodiscard]] bool dirty() const {
+		return _dirty;
+	}
+	// The main file was damaged and the previous copy was loaded instead.
+	[[nodiscard]] bool recovered() const {
+		return _recovered;
+	}
 
 private:
 	std::filesystem::path _file;
 	std::map<std::string, cbor::Bytes> _items;
+	uint64_t _used = 0;
 	bool _dirty = false;
 	bool _healthy = true;
+	bool _recovered = false;
 
 };
 

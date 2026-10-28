@@ -1,18 +1,28 @@
 #include "fgpl/file_storage.h"
 
+#include <fcntl.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <fstream>
 #include <iterator>
 #include <system_error>
 
 namespace fgpl {
+namespace {
 
-FileStorage::FileStorage(std::filesystem::path file)
-: _file(std::move(file)) {
-	auto stream = std::ifstream(_file, std::ios::binary);
+enum class Loaded {
+	Missing,
+	Ok,
+	Corrupt,
+};
+
+[[nodiscard]] Loaded Load(
+		const std::filesystem::path &file,
+		std::map<std::string, cbor::Bytes> &items) {
+	auto stream = std::ifstream(file, std::ios::binary);
 	if (!stream) {
-		return;
+		return Loaded::Missing;
 	}
 	const auto bytes = cbor::Bytes(
 		std::istreambuf_iterator<char>(stream),
@@ -23,17 +33,83 @@ FileStorage::FileStorage(std::filesystem::path file)
 	limits.maxString = size_t(64) << 20;
 	limits.maxBytes = size_t(64) << 20;
 	const auto decoded = cbor::Decode(bytes, limits);
-	const auto items = decoded.ok() ? decoded.value().find("items") : nullptr;
-	if (!items || !items->asMap()) {
-		_healthy = false;
-		auto error = std::error_code();
-		std::filesystem::rename(_file, _file.string() + ".corrupt", error);
+	const auto found = decoded.ok() ? decoded.value().find("items") : nullptr;
+	if (!found || !found->asMap()) {
+		return Loaded::Corrupt;
+	}
+	for (const auto &entry : *found->asMap()) {
+		if (const auto value = entry.value.asBytes()) {
+			items[entry.key] = *value;
+		}
+	}
+	return Loaded::Ok;
+}
+
+[[nodiscard]] bool WriteSynced(
+		const std::filesystem::path &file,
+		const cbor::Bytes &bytes) {
+	const auto fd = ::open(
+		file.c_str(),
+		O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+		0600);
+	if (fd < 0) {
+		return false;
+	}
+	auto written = size_t(0);
+	while (written < bytes.size()) {
+		const auto result = ::write(
+			fd,
+			bytes.data() + written,
+			bytes.size() - written);
+		if (result < 0 && errno == EINTR) {
+			continue;
+		} else if (result <= 0) {
+			::close(fd);
+			return false;
+		}
+		written += size_t(result);
+	}
+	const auto synced = (::fsync(fd) == 0);
+	return (::close(fd) == 0) && synced;
+}
+
+void SyncDirectory(const std::filesystem::path &directory) {
+	const auto fd = ::open(
+		directory.c_str(),
+		O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (fd >= 0) {
+		::fsync(fd);
+		::close(fd);
+	}
+}
+
+} // namespace
+
+FileStorage::FileStorage(std::filesystem::path file)
+: _file(std::move(file)) {
+	const auto backup = _file.string() + ".bak";
+	auto error = std::error_code();
+	const auto main = Load(_file, _items);
+	if (main == Loaded::Ok) {
+		for (const auto &item : _items) {
+			_used += item.first.size() + item.second.size();
+		}
 		return;
 	}
-	for (const auto &entry : *items->asMap()) {
-		if (const auto value = entry.value.asBytes()) {
-			_items[entry.key] = *value;
+	if (main == Loaded::Corrupt) {
+		_healthy = false;
+		std::filesystem::rename(_file, _file.string() + ".corrupt", error);
+		_items.clear();
+	}
+	// The main file is damaged or missing, use the previous good copy.
+	if (Load(backup, _items) == Loaded::Ok) {
+		for (const auto &item : _items) {
+			_used += item.first.size() + item.second.size();
 		}
+		_recovered = true;
+		_dirty = true;
+	} else {
+		_items.clear();
 	}
 }
 
@@ -50,14 +126,27 @@ std::optional<cbor::Bytes> FileStorage::get(const std::string &key) {
 }
 
 void FileStorage::set(const std::string &key, cbor::Bytes value) {
-	_items[key] = std::move(value);
+	const auto i = _items.find(key);
+	if (i != _items.end()) {
+		_used -= i->first.size() + i->second.size();
+		i->second = std::move(value);
+		_used += i->first.size() + i->second.size();
+	} else {
+		_used += key.size() + value.size();
+		_items.emplace(key, std::move(value));
+	}
 	_dirty = true;
 }
 
 bool FileStorage::remove(const std::string &key) {
-	const auto removed = _items.erase(key) != 0;
-	_dirty = _dirty || removed;
-	return removed;
+	const auto i = _items.find(key);
+	if (i == _items.end()) {
+		return false;
+	}
+	_used -= i->first.size() + i->second.size();
+	_items.erase(i);
+	_dirty = true;
+	return true;
 }
 
 std::vector<std::string> FileStorage::keys(
@@ -76,11 +165,7 @@ std::vector<std::string> FileStorage::keys(
 }
 
 uint64_t FileStorage::usedBytes() {
-	auto total = uint64_t(0);
-	for (const auto &item : _items) {
-		total += item.first.size() + item.second.size();
-	}
-	return total;
+	return _used;
 }
 
 size_t FileStorage::count() {
@@ -105,14 +190,24 @@ bool FileStorage::flush() {
 	}
 	auto error = std::error_code();
 	std::filesystem::create_directories(_file.parent_path(), error);
-	const auto temporary = _file.string() + "." + std::to_string(getpid())
-		+ "." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".tmp";
-	{
-		auto stream = std::ofstream(temporary, std::ios::binary | std::ios::trunc);
-		if (!stream.write(
-				reinterpret_cast<const char *>(bytes.data()),
-				std::streamsize(bytes.size()))) {
-			return false;
+	const auto temporary = std::filesystem::path(_file.string() + "."
+		+ std::to_string(getpid()) + "."
+		+ std::to_string(reinterpret_cast<uintptr_t>(this)) + ".tmp");
+	if (!WriteSynced(temporary, bytes)) {
+		std::filesystem::remove(temporary, error);
+		return false;
+	}
+	// Keep the previous version as a hard link, the rename leaves it intact.
+	if (!_recovered && std::filesystem::exists(_file, error)) {
+		const auto backup = std::filesystem::path(_file.string() + ".bak");
+		std::filesystem::remove(backup, error);
+		std::filesystem::create_hard_link(_file, backup, error);
+		if (error) {
+			std::filesystem::copy_file(
+				_file,
+				backup,
+				std::filesystem::copy_options::overwrite_existing,
+				error);
 		}
 	}
 	std::filesystem::rename(temporary, _file, error);
@@ -120,7 +215,9 @@ bool FileStorage::flush() {
 		std::filesystem::remove(temporary, error);
 		return false;
 	}
+	SyncDirectory(_file.parent_path());
 	_dirty = false;
+	_recovered = false;
 	return true;
 }
 
