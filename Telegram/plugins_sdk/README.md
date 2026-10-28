@@ -78,7 +78,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `account.info` | `account.info` | no phone number |
 | `stars.balance` | `stars.balance` | read only |
 | `composer.draft`, `composer.set_draft` `{chat, text, replace}` | `composer.draft` | setting a draft never switches the chat; a non-empty draft is kept unless `replace: true` |
-| `badges.set` `{user, items}`, `badges.clear` | `ui.badges` | icons or mini pictures next to the name of a user, see *Badges next to names*; up to 4 for a user and 256 users |
+| `badges.set` `{user, items}`, `badges.clear` | `ui.badges` | icons or mini pictures next to the name of a user, group or channel (`user` is the peer id as in `chats.list`), see *Badges next to names*; up to 4 for a peer and 256 peers |
 | `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
 | `ui.toast` `{text, action, style, duration}` | `ui.toast` | the plugin id is prefixed; `action` is `{id, label}` and adds a button (the plugin gets `toast.click` `{id}` when it is pressed and `toast.close` `{id, reason}` when the toast goes, `reason` is `action` or `timeout`); `style: "undo"` needs an action and labels the button "Undo" when `label` is empty; `duration` is 1 to 8 seconds (5 for a toast with a button); an action id is up to 32 bytes, a label up to 40 |
 | `time.sleep` `{ms}` | none | awaitable only; up to 60000 ms |
@@ -400,7 +400,7 @@ kept. Text cannot contain control or bidi override characters.
 
 ## Badges next to names
 
-With `ui.badges` a plugin marks a user with up to four small icons or pictures right of the
+With `ui.badges` a plugin marks a user, a group or a channel (give the peer id, as `chats.list` shows it: a channel is `(2 << 48) + id`, a basic group `(1 << 48) + id`) with up to four small icons or pictures right of the
 name: in the sender line of a message, the title of an open chat, the profile header and the
 chat list. `badges.set` replaces the plugin's badges for one user; an empty list removes them:
 
@@ -419,8 +419,7 @@ def vip(event):
 a PNG up to 128x128 or a JPEG, up to 64 KiB (drawn as it is); give one of them. `tooltip` is up
 to 80 bytes. Ids are lowercase tokens, unique among the badges of a user. A plugin that is
 turned off, or loses the permission, shows nothing. Badges live while the app runs: set them
-again on `init` (the plugin then needs `startup` in `activation.on`). Only users get badges,
-never the service chat 777000.
+again on `init` (the plugin then needs `startup` in `activation.on`). Never the service chat 777000.
 
 ## Windows
 

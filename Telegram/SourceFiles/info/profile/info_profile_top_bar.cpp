@@ -1945,9 +1945,6 @@ int TopBar::calculateRightButtonsWidth() const {
 
 void TopBar::setupPluginBadges(
 		not_null<Window::SessionController*> controller) {
-	if (!_peer->isUser()) {
-		return;
-	}
 	struct State {
 		std::vector<FreshPlugins::PluginBadge> list;
 		int side = 0;
