@@ -238,6 +238,9 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "messages.send", Request("chats.mark_read", { { "chat", Int(1) } }) },
 		{ "messages.history", Request("messages.search", { { "chat", Int(1) }, { "query", Text("x") } }) },
 		{ "users.info", Request("users.info", { { "id", Int(7) } }) },
+		{ "users.info", Request("users.resolve", { { "username", Text("bobby") } }) },
+		{ "users.info", Request("users.photo", { { "id", Int(7) } }) },
+		{ "chat.info", Request("channels.info", { { "id", Int(2) } }) },
 		{ "notifications", Request("notify.show", { { "text", Text("x") } }) },
 	};
 	for (const auto &item : calls) {
@@ -1507,7 +1510,7 @@ void TestRateLimits() {
 void TestLevelTwoCalls() {
 	auto fixture = Fixture({
 		"messages.send", "messages.read", "messages.edit", "messages.delete",
-		"messages.react", "messages.history", "users.info", "notifications",
+		"messages.react", "messages.history", "users.info", "chat.info", "notifications",
 		"clipboard", "fs.user_selected",
 	});
 	fixture.time = 100000;
@@ -1592,6 +1595,30 @@ void TestLevelTwoCalls() {
 	CHECK(*Payload(user).find("status")->asText() == "online");
 	CHECK(Code(broker.call(Request("users.info", { { "id", Int(9) } }))) == "not_found");
 	CHECK(Code(broker.call(Request("users.info", { { "id", Int(api::kServiceChat) } }))) == "denied");
+
+	const auto resolved = broker.call(Request("users.resolve", { { "username", Text("@Bobby") } }));
+	CHECK(Code(resolved) == "not_found");
+	fixture.time += 1000;
+	const auto resolvedOk = broker.call(Request("users.resolve", { { "username", Text("@bobby") } }));
+	CHECK(IsOk(resolvedOk) && *Payload(resolvedOk).find("id")->asInt() == 7);
+	CHECK(Code(broker.call(Request("users.resolve", { { "username", Text("bobby") } }))) == "limit");
+	fixture.time += 1000;
+	CHECK(Code(broker.call(Request("users.resolve", { { "username", Text("a b") } }))) == "invalid");
+	const auto photo = broker.call(Request("users.photo", { { "id", Int(7) } }));
+	CHECK(IsOk(photo) && *Payload(photo).find("mime")->asText() == "image/jpeg");
+	CHECK(Code(broker.call(Request("users.photo", { { "id", Int(9) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("users.photo", { { "id", Int(api::kServiceChat) } }))) == "denied");
+
+	fixture.time += 1000;
+	const auto channelInfo = broker.call(Request("channels.info", { { "id", Int(2) } }));
+	CHECK(IsOk(channelInfo) && *Payload(channelInfo).find("type")->asText() == "channel");
+	CHECK(*Payload(channelInfo).find("members")->asInt() == 1200);
+	CHECK(Code(broker.call(Request("channels.info", { { "id", Int(3) } }))) == "not_found");
+	CHECK(IsOk(broker.call(Request("channels.resolve", { { "username", Text("@newsy") } }))));
+	CHECK(Code(broker.call(Request("channels.resolve", { { "username", Text("newsy") } }))) == "limit");
+	CHECK(IsOk(broker.call(Request("channels.photo", { { "id", Int(2) } }))));
+	CHECK(Code(broker.call(Request("channels.photo", { { "id", Int(3) } }))) == "not_found");
+	fixture.time += 1000;
 
 	CHECK(IsOk(broker.call(Request("notify.show", { { "title", Text("T") }, { "text", Text("x") } }))));
 	CHECK(Code(broker.call(Request("notify.show", { { "text", Text("x") } }))) == "limit");

@@ -89,6 +89,7 @@ namespace {
 constexpr auto kWaitSlice = std::chrono::milliseconds(20);
 constexpr auto kWaitTotal = std::chrono::milliseconds(1500);
 constexpr auto kWaitServer = std::chrono::milliseconds(10000);
+constexpr auto kWaitPhoto = std::chrono::milliseconds(30000);
 constexpr auto kWaitUser = std::chrono::minutes(5);
 constexpr auto kWaitDownload = std::chrono::minutes(5);
 constexpr auto kWaitSend = std::chrono::seconds(100);
@@ -276,6 +277,7 @@ template <typename T>
 	result.id = item->id.bare;
 	result.chat = ChatId(item->history()->peer);
 	result.from = ChatId(item->from());
+	result.fromKind = KindOf(item->from());
 	result.date = item->date();
 	result.text = Utf8(item->originalText().text);
 	result.topic = item->topicRootId().bare;
@@ -603,6 +605,48 @@ void CleanOutbox() {
 		? "offline"
 		: "hidden";
 }
+
+[[nodiscard]] std::optional<fgpl::ChannelInfo> ChannelInfoOf(
+		not_null<PeerData*> peer) {
+	const auto channel = peer->asChannel();
+	if (!channel || FreshSecret::IsSecretPeerId(peer->id)) {
+		return std::nullopt;
+	}
+	auto result = fgpl::ChannelInfo();
+	result.id = ChatId(channel);
+	result.title = Utf8(channel->name());
+	result.username = Utf8(channel->username());
+	result.type = KindOf(channel);
+	result.about = Utf8(channel->about());
+	result.members = channel->membersCountKnown()
+		? channel->membersCount()
+		: -1;
+	result.verified = channel->isVerified();
+	result.scam = channel->isScam();
+	result.fake = channel->isFake();
+	result.hasPhoto = channel->hasUserpic();
+	return result;
+}
+
+[[nodiscard]] std::optional<fgpl::UserInfo> UserInfoOf(
+		not_null<PeerData*> peer) {
+	const auto user = peer->asUser();
+	if (!user || FreshSecret::IsSecretPeerId(peer->id)) {
+		return std::nullopt;
+	}
+	auto result = fgpl::UserInfo();
+	result.id = ChatId(user);
+	result.name = Utf8(user->name());
+	result.username = Utf8(user->username());
+	result.bot = user->isBot();
+	result.premium = user->isPremium();
+	result.contact = user->isContact();
+	result.self = user->isSelf();
+	result.status = StatusOf(user, result.lastSeen);
+	result.hasPhoto = user->hasUserpic();
+	return result;
+}
+
 
 [[nodiscard]] std::string MediaKindOf(not_null<const HistoryItem*> item) {
 	const auto media = item->media();
@@ -1294,21 +1338,293 @@ public:
 			const auto peer = session
 				? session->data().peerLoaded(PeerId(uint64(id)))
 				: nullptr;
-			const auto user = peer ? peer->asUser() : nullptr;
-			if (!user || FreshSecret::IsSecretPeerId(peer->id)) {
-				return std::nullopt;
-			}
-			auto result = fgpl::UserInfo();
-			result.id = ChatId(user);
-			result.name = Utf8(user->name());
-			result.username = Utf8(user->username());
-			result.bot = user->isBot();
-			result.premium = user->isPremium();
-			result.contact = user->isContact();
-			result.self = user->isSelf();
-			result.status = StatusOf(user, result.lastSeen);
-			return result;
+			return peer ? UserInfoOf(peer) : std::nullopt;
 		}, std::nullopt);
+	}
+
+	fgpl::Result<fgpl::UserInfo, std::string> resolveUser(
+			const std::string &username) override {
+		struct Resolved {
+			std::string error;
+			fgpl::UserInfo user;
+		};
+		const auto resolved = OnMainAsync<Resolved>([=](Fn<void(Resolved)> done) {
+			const auto session = FindSession(_account);
+			if (!session) {
+				done({ .error = fgpl::api::error::kNotFound });
+				return;
+			}
+			const auto name = QString::fromStdString(username);
+			const auto finish = [=](PeerData *peer) {
+				const auto info = peer ? UserInfoOf(peer) : std::nullopt;
+				if (info) {
+					done({ .user = *info });
+				} else {
+					done({ .error = fgpl::api::error::kNotFound });
+				}
+			};
+			if (const auto known = session->data().peerByUsername(name)) {
+				finish(known);
+				return;
+			}
+			session->api().request(MTPcontacts_ResolveUsername(
+				MTP_flags(0),
+				MTP_string(name),
+				MTP_string()
+			)).done([=](const MTPcontacts_ResolvedPeer &result) {
+				const auto &data = result.data();
+				session->data().processUsers(data.vusers());
+				session->data().processChats(data.vchats());
+				finish(session->data().peerLoaded(peerFromMTP(data.vpeer())));
+			}).fail([=] {
+				done({ .error = fgpl::api::error::kNotFound });
+			}).send();
+		}, Resolved{ .error = fgpl::api::error::kUnavailable });
+		if (!resolved.error.empty()) {
+			return resolved.error;
+		}
+		return resolved.user;
+	}
+
+	fgpl::Result<fgpl::Media, std::string> peerPhoto(
+			int64_t id,
+			bool channel,
+			size_t maxBytes) override {
+		struct Loaded {
+			std::string error;
+			QByteArray bytes;
+			bool video = false;
+		};
+		const auto loaded = OnMainAsync<Loaded>([=](Fn<void(Loaded)> done) {
+			const auto session = FindSession(_account);
+			const auto peer = session
+				? session->data().peerLoaded(PeerId(uint64(id)))
+				: nullptr;
+			const auto user = (peer && !channel) ? peer->asUser() : nullptr;
+			const auto chan = (peer && channel) ? peer->asChannel() : nullptr;
+			if (!(user || chan)
+				|| FreshSecret::IsSecretPeerId(peer->id)
+				|| !peer->hasUserpic()) {
+				done({ .error = fgpl::api::error::kNotFound });
+				return;
+			}
+			const auto view = std::make_shared<Ui::PeerUserpicView>(
+				peer->createUserpicView());
+			const auto lifetime = std::make_shared<rpl::lifetime>();
+			const auto finished = std::make_shared<bool>(false);
+			const auto finish = [=](Loaded value) {
+				if (!*finished) {
+					*finished = true;
+					lifetime->destroy();
+					done(std::move(value));
+				}
+			};
+			const auto watch = [=](Fn<bool()> check) {
+				if (check()) {
+					return;
+				}
+				session->downloaderTaskFinished(
+				) | rpl::on_next([=] {
+					check();
+				}, *lifetime);
+			};
+			const auto small = [=] {
+				if (const auto image = peer->userpicCloudImage(*view)) {
+					finish({ .bytes = Jpeg(*image) });
+					return true;
+				}
+				return false;
+			};
+			const auto large = [=](not_null<PhotoData*> photo) {
+				const auto media = photo->createMediaView();
+				const auto origin = user
+					? Data::FileOrigin(Data::FileOriginUserPhoto(
+						peerToUser(user->id),
+						photo->id))
+					: Data::FileOrigin(Data::FileOriginPeerPhoto(peer->id));
+				const auto size = Data::PhotoSize::Large;
+				const auto video = photo->hasVideo();
+				if (video) {
+					media->videoWanted(size, origin);
+				} else {
+					media->wanted(size, origin);
+				}
+				watch([=] {
+					if (*finished) {
+						return true;
+					} else if (video) {
+						const auto content = media->videoContent(size);
+						if (!content.isEmpty()) {
+							finish({ .bytes = content, .video = true });
+							return true;
+						} else if (photo->videoFailed(size)) {
+							return small();
+						}
+					} else if (const auto image = media->image(size)) {
+						const auto bytes = media->imageBytes(size);
+						finish({ .bytes = bytes.isEmpty()
+							? Jpeg(image->original())
+							: bytes });
+						return true;
+					} else if (photo->failed(size)) {
+						return small();
+					}
+					return false;
+				});
+			};
+			peer->loadUserpic();
+			if (chan) {
+				const auto fetch = [=] {
+					const auto photo = session->data().photo(
+						chan->userpicPhotoId());
+					if (photo->isNull()) {
+						watch(small);
+					} else {
+						large(photo);
+					}
+				};
+				if (chan->wasFullUpdated()) {
+					fetch();
+				} else {
+					session->changes().peerUpdates(
+						chan,
+						Data::PeerUpdate::Flag::FullInfo
+					) | rpl::take(1) | rpl::on_next(fetch, *lifetime);
+					session->api().requestFullPeer(chan);
+				}
+			} else {
+				session->api().request(MTPphotos_GetUserPhotos(
+					user->inputUser(),
+					MTP_int(0),
+					MTP_long(0),
+					MTP_int(1)
+				)).done([=](const MTPphotos_Photos &result) {
+					const auto photo = result.match([&](const auto &data) -> PhotoData* {
+						session->data().processUsers(data.vusers());
+						if (data.vphotos().v.isEmpty()) {
+							return nullptr;
+						}
+						const auto processed = session->data().processPhoto(
+							data.vphotos().v.front());
+						return processed->isNull() ? nullptr : processed.get();
+					});
+					if (photo) {
+						large(photo);
+					} else {
+						watch(small);
+					}
+				}).fail([=] {
+					watch(small);
+				}).send();
+			}
+			base::call_delayed(
+				std::chrono::duration_cast<std::chrono::milliseconds>(
+					kWaitPhoto).count(),
+				[=] {
+					if (!small()) {
+						finish({ .error = fgpl::api::error::kFailed });
+					}
+				});
+		}, Loaded{ .error = fgpl::api::error::kUnavailable }, kWaitPhoto + kWaitServer);
+		if (!loaded.error.empty()) {
+			return loaded.error;
+		} else if (loaded.bytes.isEmpty()) {
+			return std::string(fgpl::api::error::kFailed);
+		} else if (size_t(loaded.bytes.size()) > maxBytes) {
+			return std::string(fgpl::api::error::kLimit);
+		}
+		auto result = fgpl::Media();
+		result.kind = loaded.video ? "video" : "photo";
+		result.mime = loaded.video ? "video/mp4" : "image/jpeg";
+		result.bytes.assign(
+			loaded.bytes.constData(),
+			loaded.bytes.constData() + loaded.bytes.size());
+		return result;
+	}
+
+	fgpl::Result<fgpl::ChannelInfo, std::string> channel(int64_t id) override {
+		return channelOf([=](not_null<Main::Session*> session, Fn<void(PeerData*)> found) {
+			found(session->data().peerLoaded(PeerId(uint64(id))));
+		});
+	}
+
+	fgpl::Result<fgpl::ChannelInfo, std::string> resolveChannel(
+			const std::string &username) override {
+		return channelOf([=](not_null<Main::Session*> session, Fn<void(PeerData*)> found) {
+			const auto name = QString::fromStdString(username);
+			if (const auto known = session->data().peerByUsername(name)) {
+				found(known);
+				return;
+			}
+			session->api().request(MTPcontacts_ResolveUsername(
+				MTP_flags(0),
+				MTP_string(name),
+				MTP_string()
+			)).done([=](const MTPcontacts_ResolvedPeer &result) {
+				const auto &data = result.data();
+				session->data().processUsers(data.vusers());
+				session->data().processChats(data.vchats());
+				found(session->data().peerLoaded(peerFromMTP(data.vpeer())));
+			}).fail([=] {
+				found(nullptr);
+			}).send();
+		});
+	}
+
+	template <typename Find>
+	fgpl::Result<fgpl::ChannelInfo, std::string> channelOf(Find find) {
+		struct Resolved {
+			std::string error;
+			fgpl::ChannelInfo channel;
+		};
+		const auto resolved = OnMainAsync<Resolved>([=](Fn<void(Resolved)> done) {
+			const auto session = FindSession(_account);
+			if (!session) {
+				done({ .error = fgpl::api::error::kNotFound });
+				return;
+			}
+			find(not_null<Main::Session*>(session), [=](PeerData *peer) {
+				const auto channel = (peer && peer->asChannel())
+					? peer->asChannel()
+					: nullptr;
+				const auto once = std::make_shared<bool>(false);
+				const auto finish = [=] {
+					if (*once) {
+						return;
+					}
+					*once = true;
+					const auto info = ChannelInfoOf(channel);
+					if (info) {
+						done({ .channel = *info });
+					} else {
+						done({ .error = fgpl::api::error::kNotFound });
+					}
+				};
+				if (!channel) {
+					done({ .error = fgpl::api::error::kNotFound });
+				} else if (channel->wasFullUpdated()) {
+					finish();
+				} else {
+					const auto lifetime = std::make_shared<rpl::lifetime>();
+					session->changes().peerUpdates(
+						channel,
+						Data::PeerUpdate::Flag::FullInfo
+					) | rpl::take(1) | rpl::on_next([=] {
+						lifetime->destroy();
+						finish();
+					}, *lifetime);
+					session->api().requestFullPeer(channel);
+					base::call_delayed(3000, [=] {
+						lifetime->destroy();
+						finish();
+					});
+				}
+			});
+		}, Resolved{ .error = fgpl::api::error::kUnavailable });
+		if (!resolved.error.empty()) {
+			return resolved.error;
+		}
+		return resolved.channel;
 	}
 
 	std::string notify(const std::string &title, const std::string &text) override {
@@ -2135,6 +2451,7 @@ void SendMessageEvent(
 		{ "chat_title", Value::FromText(Utf8(peer->name())) },
 		{ "chat_type", Value::FromText(KindOf(peer)) },
 		{ "from", Value::FromInt(message.from) },
+		{ "from_kind", Value::FromText(KindOf(item->from())) },
 		{ "sender_name", Value::FromText(Utf8(item->from()->name())) },
 		{ "date", Value::FromInt(message.date) },
 		{ "text", Value::FromText(message.text) },

@@ -167,6 +167,27 @@ public:
 		}
 		return UserInfo{ 7, "Bob", "bob", false, true, true, false, "online", 0 };
 	}
+	Result<UserInfo, std::string> resolveUser(const std::string &username) override {
+		if (username != "bobby") {
+			return std::string(api::error::kNotFound);
+		}
+		return UserInfo{ 7, "Bob", "bob", false, true, true, false, "online", 0, true };
+	}
+	Result<ChannelInfo, std::string> channel(int64_t id) override {
+		if (id != 2) {
+			return std::string(api::error::kNotFound);
+		}
+		return ChannelInfo{ 2, "News", "newsy", "channel", "about", 1200, true, false, false, true };
+	}
+	Result<ChannelInfo, std::string> resolveChannel(const std::string &username) override {
+		return (username == "newsy") ? channel(2) : Result<ChannelInfo, std::string>(std::string(api::error::kNotFound));
+	}
+	Result<Media, std::string> peerPhoto(int64_t id, bool channel, size_t) override {
+		if (id != (channel ? 2 : 7)) {
+			return std::string(api::error::kNotFound);
+		}
+		return Media{ "photo", "image/jpeg", "", cbor::Bytes{ 1, 2, 3 }, false };
+	}
 	std::string notify(const std::string &title, const std::string &text) override {
 		actions.push_back("notify " + title + " " + text);
 		return {};

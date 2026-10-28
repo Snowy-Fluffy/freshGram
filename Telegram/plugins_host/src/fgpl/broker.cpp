@@ -67,6 +67,7 @@ constexpr auto kMaxEmoji = size_t(64);
 constexpr auto kMaxNotifyTitle = size_t(64);
 constexpr auto kMaxNotifyText = size_t(256);
 constexpr auto kNotifyEachMs = int64_t(5000);
+constexpr auto kResolveEachMs = int64_t(1000);
 constexpr auto kChatActionEachMs = int64_t(3000);
 constexpr auto kMaxClipboard = size_t(64) << 10;
 constexpr auto kMaxFile = size_t(100) << 20;
@@ -212,6 +213,60 @@ constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 	});
 }
 
+[[nodiscard]] cbor::Value UserValue(const UserInfo &user) {
+	return cbor::Value::FromMap({
+		{ "id", Int(user.id) },
+		{ "name", Text(user.name) },
+		{ "username", Text(user.username) },
+		{ "bot", cbor::Value::FromBool(user.bot) },
+		{ "premium", cbor::Value::FromBool(user.premium) },
+		{ "contact", cbor::Value::FromBool(user.contact) },
+		{ "self", cbor::Value::FromBool(user.self) },
+		{ "status", Text(user.status) },
+		{ "last_seen", Int(user.lastSeen) },
+		{ "has_photo", cbor::Value::FromBool(user.hasPhoto) },
+	});
+}
+
+[[nodiscard]] cbor::Value ChannelValue(const ChannelInfo &channel) {
+	auto map = cbor::Map{
+		{ "id", Int(channel.id) },
+		{ "title", Text(channel.title) },
+		{ "username", Text(channel.username) },
+		{ "type", Text(channel.type) },
+		{ "about", Text(channel.about) },
+		{ "verified", cbor::Value::FromBool(channel.verified) },
+		{ "scam", cbor::Value::FromBool(channel.scam) },
+		{ "fake", cbor::Value::FromBool(channel.fake) },
+		{ "has_photo", cbor::Value::FromBool(channel.hasPhoto) },
+	};
+	if (channel.members >= 0) {
+		map.push_back({ "members", Int(channel.members) });
+	}
+	return cbor::Value::FromMap(std::move(map));
+}
+
+[[nodiscard]] std::optional<std::string> NormalizedUsername(
+		const std::string &text) {
+	auto name = text;
+	if (!name.empty() && name.front() == '@') {
+		name.erase(0, 1);
+	}
+	if (name.size() < 4 || name.size() > 32) {
+		return std::nullopt;
+	}
+	for (const auto ch : name) {
+		const auto word = (ch >= 'a' && ch <= 'z')
+			|| (ch >= 'A' && ch <= 'Z')
+			|| (ch >= '0' && ch <= '9')
+			|| ch == '_';
+		if (!word) {
+			return std::nullopt;
+		}
+	}
+	return name;
+}
+
 [[nodiscard]] cbor::Value MessageValue(const Message &message) {
 	auto map = cbor::Map{
 		{ "id", Int(message.id) },
@@ -221,6 +276,9 @@ constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 		{ "text", Text(message.text) },
 		{ "out", cbor::Value::FromBool(message.out) },
 	};
+	if (!message.fromKind.empty()) {
+		map.push_back({ "from_kind", Text(message.fromKind) });
+	}
 	if (message.topic) {
 		map.push_back({ "topic", Int(message.topic) });
 	}
@@ -586,6 +644,11 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			return api::Fail(api::error::kLimit, "notifications are shown too often");
 		}
 		_lastNotify = now;
+	} else if (op == "users.resolve" || op == "channels.resolve") {
+		if (_lastResolve && now - _lastResolve < kResolveEachMs) {
+			return api::Fail(api::error::kLimit, "usernames are resolved too often");
+		}
+		_lastResolve = now;
 	} else if (op == "ui.dialog.show") {
 		const auto userAction = _lastUserAction
 			&& (now - _lastUserAction < kUserActionWindowMs);
@@ -1753,6 +1816,86 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			}
 		}
 		return api::Ok(cbor::Value::FromArray(std::move(result)));
+	} else if (op == "users.resolve") {
+		if (const auto refused = need({ "users.info" })) {
+			return *refused;
+		}
+		const auto text = TextArg(args, "username", 64);
+		const auto name = text ? NormalizedUsername(*text) : std::nullopt;
+		if (!name) {
+			return api::Fail(api::error::kInvalid, "username");
+		}
+		const auto user = data->resolveUser(*name);
+		if (!user.ok()) {
+			return api::Fail(user.error(), "user");
+		} else if (user.value().id == api::kServiceChat) {
+			return api::Fail(api::error::kDenied, "this user");
+		}
+		return api::Ok(UserValue(user.value()));
+	} else if (op == "users.photo") {
+		if (const auto refused = need({ "users.info" })) {
+			return *refused;
+		}
+		const auto id = IntArg(args, "id");
+		if (!id || *id <= 0) {
+			return api::Fail(api::error::kInvalid, "id");
+		} else if (*id == api::kServiceChat) {
+			return api::Fail(api::error::kDenied, "this user");
+		}
+		const auto photo = data->peerPhoto(*id, false, kMaxMedia);
+		if (!photo.ok()) {
+			return api::Fail(photo.error(), "the photo");
+		} else if (photo.value().bytes.size() > kMaxMedia) {
+			return api::Fail(api::error::kLimit, "the photo is too large");
+		}
+		return api::Ok(cbor::Value::FromMap({
+			{ "mime", Text(photo.value().mime) },
+			{ "data", cbor::Value::FromBytes(photo.value().bytes) },
+		}));
+	} else if (op == "channels.info" || op == "channels.photo") {
+		if (const auto refused = need({ "chat.info" })) {
+			return *refused;
+		}
+		const auto id = IntArg(args, "id");
+		if (!id || *id <= 0) {
+			return api::Fail(api::error::kInvalid, "id");
+		} else if (*id == api::kServiceChat || !chatInScope(*id)) {
+			return api::Fail(api::error::kDenied, "this channel");
+		}
+		if (op == "channels.info") {
+			const auto channel = data->channel(*id);
+			if (!channel.ok()) {
+				return api::Fail(channel.error(), "channel");
+			}
+			return api::Ok(ChannelValue(channel.value()));
+		}
+		const auto photo = data->peerPhoto(*id, true, kMaxMedia);
+		if (!photo.ok()) {
+			return api::Fail(photo.error(), "the photo");
+		} else if (photo.value().bytes.size() > kMaxMedia) {
+			return api::Fail(api::error::kLimit, "the photo is too large");
+		}
+		return api::Ok(cbor::Value::FromMap({
+			{ "mime", Text(photo.value().mime) },
+			{ "data", cbor::Value::FromBytes(photo.value().bytes) },
+		}));
+	} else if (op == "channels.resolve") {
+		if (const auto refused = need({ "chat.info" })) {
+			return *refused;
+		}
+		const auto text = TextArg(args, "username", 64);
+		const auto name = text ? NormalizedUsername(*text) : std::nullopt;
+		if (!name) {
+			return api::Fail(api::error::kInvalid, "username");
+		}
+		const auto channel = data->resolveChannel(*name);
+		if (!channel.ok()) {
+			return api::Fail(channel.error(), "channel");
+		} else if (channel.value().id == api::kServiceChat
+			|| !chatInScope(channel.value().id)) {
+			return api::Fail(api::error::kDenied, "this channel");
+		}
+		return api::Ok(ChannelValue(channel.value()));
 	} else if (op == "users.info") {
 		if (const auto refused = need({ "users.info" })) {
 			return *refused;
@@ -1767,17 +1910,7 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		if (!user) {
 			return api::Fail(api::error::kNotFound, "user");
 		}
-		return api::Ok(cbor::Value::FromMap({
-			{ "id", Int(user->id) },
-			{ "name", Text(user->name) },
-			{ "username", Text(user->username) },
-			{ "bot", cbor::Value::FromBool(user->bot) },
-			{ "premium", cbor::Value::FromBool(user->premium) },
-			{ "contact", cbor::Value::FromBool(user->contact) },
-			{ "self", cbor::Value::FromBool(user->self) },
-			{ "status", Text(user->status) },
-			{ "last_seen", Int(user->lastSeen) },
-		}));
+		return api::Ok(UserValue(*user));
 	}
 	return deviceAnswer(op, args);
 }
