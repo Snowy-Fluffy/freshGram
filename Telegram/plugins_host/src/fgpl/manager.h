@@ -49,6 +49,8 @@ public:
 	uint64_t usedBytes() override;
 	size_t count() override;
 	bool flush();
+	[[nodiscard]] bool healthy();
+	[[nodiscard]] bool recovered();
 	// Writes only if there is something new and the last write is old enough.
 	void flushIfDue(std::chrono::milliseconds interval);
 	void discard();
