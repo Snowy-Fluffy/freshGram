@@ -330,12 +330,19 @@ namespace {
 // removed only when asked.
 void Rewrite(const QStringList &statements, bool removeUnreadable) {
 	const auto lock = std::lock_guard(BackupMutex);
+	auto paths = QStringList();
 	for (const auto &entry : List()) {
-		const auto plain = FreshVault::ReadFile(entry.path, true);
+		paths.push_back(entry.path);
+	}
+	if (QFile::exists(RestorePath())) {
+		paths.push_back(RestorePath());
+	}
+	for (const auto &path : paths) {
+		const auto plain = FreshVault::ReadFile(path, true);
 		auto handle = Handle();
 		if (!plain || !OpenMemory(handle, *plain)) {
 			if (removeUnreadable) {
-				QFile::remove(entry.path);
+				QFile::remove(path);
 			}
 			continue;
 		}
@@ -353,17 +360,17 @@ void Rewrite(const QStringList &statements, bool removeUnreadable) {
 		const auto data = sqlite3_serialize(handle.db, "main", &size, 0);
 		if (!data) {
 			if (removeUnreadable) {
-				QFile::remove(entry.path);
+				QFile::remove(path);
 			}
 			continue;
 		}
 		const auto saved = FreshVault::WriteCompressedFile(
-			entry.path,
+			path,
 			data,
 			qint64(size));
 		sqlite3_free(data);
 		if (!saved && removeUnreadable) {
-			QFile::remove(entry.path);
+			QFile::remove(path);
 		}
 	}
 }
@@ -407,6 +414,16 @@ void purgeUser(long long userId) {
 			"DELETE FROM %1 WHERE userId = %2").arg(table).arg(userId));
 	}
 	Rewrite(statements, true);
+}
+
+void purgeSecrets() {
+	crl::async([] {
+		Rewrite({
+			"DELETE FROM SecretMessage",
+			"DELETE FROM SecretChat",
+			"DELETE FROM SecretState",
+		}, false);
+	});
 }
 
 void setKeepRichest(bool keep) {
