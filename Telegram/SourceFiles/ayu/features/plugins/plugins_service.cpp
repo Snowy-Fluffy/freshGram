@@ -289,7 +289,10 @@ void ForgetAccount(Service &service, Main::Account *account) {
 }
 
 [[nodiscard]] bool Reportable(not_null<const HistoryItem*> item) {
-	return item->isRegular() && IsServerMsgId(item->id) && !item->isService();
+	return item->isRegular()
+		&& IsServerMsgId(item->id)
+		&& !item->isService()
+		&& !item->history()->peer->isSelf();
 }
 
 [[nodiscard]] Seen SeenOf(not_null<const HistoryItem*> item) {
@@ -337,6 +340,7 @@ void DispatchActivity(
 
 [[nodiscard]] bool Hidden(not_null<PeerData*> peer) {
 	return FreshSecret::IsSecretPeerId(peer->id)
+		|| peer->isSelf()
 		|| peer->id.value == fgpl::api::kServiceChat
 		|| FiltersController::isBlocked(peer);
 }
@@ -1107,6 +1111,7 @@ void WatchActiveChat(not_null<Window::SessionController*> controller) {
 			{ "chat", Value::FromInt(int64_t(peer->id.value)) },
 			{ "chat_title", Value::FromText(peer->name().toStdString()) },
 			{ "secret", Value::FromBool(FreshSecret::IsSecretPeerId(peer->id)) },
+			{ "self", Value::FromBool(peer->isSelf()) },
 		};
 		if (const auto topic = key.topic()) {
 			map.push_back({ "topic", Value::FromInt(topic->rootId().bare) });

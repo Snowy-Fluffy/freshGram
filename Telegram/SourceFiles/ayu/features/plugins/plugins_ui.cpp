@@ -107,6 +107,10 @@ namespace cbor = fgpl::cbor;
 constexpr auto kMaxPluginChats = 100;
 constexpr auto kSettingsWaitMs = crl::time(5000);
 
+[[nodiscard]] bool HiddenPeer(not_null<const PeerData*> peer) {
+	return FreshSecret::IsSecretPeerId(peer->id) || peer->isSelf();
+}
+
 constexpr auto kMaxComposerButtons = 3;
 constexpr auto kNavDrawerIconLeft = 28;
 
@@ -422,7 +426,7 @@ void AddPluginAction(
 		return nullptr;
 	}
 	const auto peer = session->data().peerLoaded(PeerId(id));
-	if (!peer || FreshSecret::IsSecretPeerId(peer->id)) {
+	if (!peer || HiddenPeer(peer)) {
 		return nullptr;
 	}
 	return Ui::MakeUserpicThumbnail(peer);
@@ -490,7 +494,7 @@ void AddButtonIcon(
 	if (!snapshot) {
 		return result;
 	} else if (peer
-		&& (FreshSecret::IsSecretPeerId(peer->id)
+		&& (HiddenPeer(peer)
 			|| int64_t(peer->id.value) == fgpl::api::kServiceChat)) {
 		return result;
 	}
@@ -583,6 +587,7 @@ void Send(
 	if (peer) {
 		map.push_back({ "chat", Number(int64_t(peer->id.value)) });
 		map.push_back({ "secret", Flag(FreshSecret::IsSecretPeerId(peer->id)) });
+		map.push_back({ "self", Flag(peer->isSelf()) });
 	}
 	if (topicRootId) {
 		map.push_back({ "topic", Number(topicRootId.bare) });
@@ -1117,7 +1122,7 @@ void FillSubPageBox(
 						controller,
 						crl::guard(button, [=](not_null<Data::Thread*> thread) {
 							const auto peer = thread->peer();
-							if (FreshSecret::IsSecretPeerId(peer->id)) {
+							if (HiddenPeer(peer)) {
 								return false;
 							}
 							*chosen = int64_t(peer->id.value);
@@ -4202,6 +4207,7 @@ namespace {
 	map.push_back({ "id", cbor::Value::FromText(menuId) });
 	map.push_back({ "chat", Number(int64_t(peer->id.value)) });
 	map.push_back({ "secret", Flag(FreshSecret::IsSecretPeerId(peer->id)) });
+	map.push_back({ "self", Flag(peer->isSelf()) });
 	auto list = cbor::Array();
 	for (const auto &id : ids) {
 		list.push_back(Number(id.bare));
@@ -4282,7 +4288,7 @@ void AddPeerMenuItems(
 		MsgId topicRootId,
 		bool profile,
 		const Ui::Menu::MenuCallback &add) {
-	if (FreshSecret::IsSecretPeerId(peer->id)) {
+	if (HiddenPeer(peer)) {
 		return;
 	}
 	const auto surface = profile ? "profile" : "chat";
@@ -4383,7 +4389,7 @@ std::vector<PluginCommand> CommandsFor(
 	auto result = std::vector<PluginCommand>();
 	const auto snapshot = Snapshot();
 	if (!snapshot
-		|| FreshSecret::IsSecretPeerId(peer->id)
+		|| HiddenPeer(peer)
 		|| int64_t(peer->id.value) == fgpl::api::kServiceChat) {
 		return result;
 	}
@@ -4427,7 +4433,7 @@ CommandResult RunCommand(
 	const auto snapshot = Snapshot();
 	if (!snapshot
 		|| !trimmed.startsWith('/')
-		|| FreshSecret::IsSecretPeerId(peer->id)) {
+		|| HiddenPeer(peer)) {
 		return CommandResult::None;
 	}
 	const auto space = trimmed.indexOf(QRegularExpression(u"\\s"_q));

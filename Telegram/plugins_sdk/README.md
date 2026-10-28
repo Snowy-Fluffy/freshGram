@@ -57,7 +57,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
-| `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `self`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats and the service chat 777000 are never returned |
+| `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats, Saved Messages and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
 | `messages.send` `{chat, text, format, reply_to, topic, silent, schedule, custom_emoji}` | `messages.send` | `custom_emoji` is a list of `{offset, length, id}` that show part of the text (UTF-16 units) as custom emoji; `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode; answers `{local_id}` at once: a negative id that `messages.edit`, `edit_media`, `react` and `delete` accept like a server id (they wait until a message that is still sending gets its server id, and fail with `failed` when the send fails); with `messages.ids` the call waits for the server and answers `{id, local_id}` too (`id` is null when the server did not answer in time, which is not an error, so a retry cannot send twice); `local_id` is null when no message was created (a dice, a text that is only spaces); scheduled sends have no ids |
 | `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send`; answers the ids like `messages.send` |
@@ -128,7 +128,7 @@ major or minor version is newer, the app marks the plugin as outdated.
 
 The host delivers `init` once and then `event` messages. A `message.*` event is
 only delivered with `messages.read`, only for chats in scope, never for secret
-chats or chat 777000; `message.deleted` loses its text without
+chats, Saved Messages or chat 777000; `message.deleted` loses its text without
 `messages.read_deleted`. A plugin only receives the `message.*` events it lists
 in `contributes.events`.
 
@@ -155,7 +155,7 @@ needs `chats.active` instead of `messages.read` and follows the same chat scope.
 
 More events, each listed in `contributes.events` and needing its own permission.
 The ones with a `chat` follow the plugin's chat scope and never come for secret
-chats or 777000. Nothing is reported about blocked users. While Ghost Mode is on
+chats, Saved Messages or 777000. Nothing is reported about blocked users. While Ghost Mode is on
 for the account, reads you make (`chat.read` with `outbox: false`) and
 `app.focus`/`app.blur` are not reported, since Ghost Mode hides them from others.
 
@@ -176,7 +176,7 @@ channels have a type in the high bits. Use them as they are.
 `message.outgoing` `{chat, text, chat_type, silent, topic, reply_to, scheduled}`
 (`topic`, `reply_to` and `scheduled` only when set) comes to plugins with
 `messages.transform_outgoing` and `contributes.outgoing` before a text message is
-sent (never for secret chats, 777000, business shortcuts, welcome templates or
+sent (never for secret chats, Saved Messages, 777000, business shortcuts, welcome templates or
 suggested posts; messages with files are not hooked yet). The plugin may call
 `messages.set_outgoing` to replace the text or the send options, or
 `messages.drop_outgoing` to stop the message; other data calls are refused during
@@ -315,7 +315,7 @@ last button opens a menu with the rest.
 Icons: a menu item, and the `toggle`, `button`, `link`, `select`, `chat` and `page` items of a page,
 take `icon`, either a built-in name or one of the plugin's own icons. On a page (not in a menu) an
 icon may also be `peer:<chat id>`, the avatar of a chat (needs `chat.info` or `chats.list`, the chat
-in scope; never for secret chats, 777000 or in streamer mode), or `emoji:<id>`, a custom emoji; a
+in scope; never for secret chats, Saved Messages, 777000 or in streamer mode), or `emoji:<id>`, a custom emoji; a
 page may have at most 32 of those and the app draws what it has, else the default icon. The plugin lists its own
 icons in `contributes.icons` as `{"name": "icons/name.svg"}` (up to 32 `.svg` or `.png` files
 from `files`, each up to 64 KiB). The app draws every icon as a mask in its own icon color, so
@@ -343,7 +343,7 @@ icon is refused at install; a page item with an unknown icon shows the default o
 Surfaces: `message` (a message's context menu), `selection` (the menu of several selected
 messages in a chat, a list of up to 100 messages of one chat), `shared_media` (the context menu
 of an item, or of the selected items, in a chat's shared media), `chat`, `profile`, `composer`,
-`main_menu` and `tray`. `selection` and `shared_media` are never offered for secret chats.
+`main_menu` and `tray`. `selection` and `shared_media` are never offered for secret chats or Saved Messages.
 
 An item may carry `"when": {...}` to appear only where it fits. `chat_type` (a list of
 `user`, `bot`, `self`, `group`, `supergroup`, `forum`, `channel`) works on every surface that

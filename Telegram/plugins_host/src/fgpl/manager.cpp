@@ -1206,7 +1206,11 @@ bool ManagerSnapshot::transformsOutgoing(int64_t chat, bool secret) const {
 
 bool ManagerSnapshot::transformsOutgoing(const OutgoingInfo &info) const {
 	const auto chat = info.chat;
-	if (hidden || locked || info.secret || chat == api::kServiceChat) {
+	if (hidden
+		|| locked
+		|| info.secret
+		|| info.chatType == "self"
+		|| chat == api::kServiceChat) {
 		return false;
 	}
 	for (const auto &plugin : plugins) {
@@ -2363,7 +2367,9 @@ void PluginManager::transformOutgoingAsync(
 	chain->account = account;
 	chain->timeoutMs = timeoutMs;
 	chain->result.text = info.text;
-	const auto allowed = !info.secret && info.chat != api::kServiceChat;
+	const auto allowed = !info.secret
+		&& info.chatType != "self"
+		&& info.chat != api::kServiceChat;
 	chain->info = std::move(info);
 	chain->done = std::move(done);
 	if (ValidAccount(account) && mayRun() && allowed) {

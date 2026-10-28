@@ -17,14 +17,22 @@ using namespace fgpl;
 
 class FakeData final : public DataProvider {
 public:
+	static constexpr auto kSavedChat = int64_t(6);
+
+	bool withSaved = false;
+
 	std::vector<Chat> chats(size_t) override {
-		return {
+		auto result = std::vector<Chat>{
 			{ 1, "Alice", "private", 2, true, false },
 			{ 2, "Group", "group", 0, false, false },
 			{ 3, "Secret", "private", 0, false, true },
 			{ api::kServiceChat, "Telegram", "private", 1, false, false },
 			{ 5, "Channel", "channel", 9, false, false },
 		};
+		if (withSaved) {
+			result.push_back({ kSavedChat, "Saved Messages", "self", 0, false, false });
+		}
+		return result;
 	}
 	std::optional<Chat> chat(int64_t id) override {
 		for (const auto &item : chats(10)) {

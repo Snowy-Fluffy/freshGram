@@ -1923,6 +1923,59 @@ void TestClosedBrokerDropsAwaitedWork() {
 	CHECK(!fixture.storage.get("k"));
 }
 
+void TestSavedMessagesAreHidden() {
+	auto fixture = Fixture({
+		"chats.list", "chat.info", "messages.history", "composer.draft",
+		"messages.send", "messages.read", "messages.delete", "chats.activity",
+	});
+	fixture.data.withSaved = true;
+	auto broker = fixture.make();
+	const auto saved = FakeData::kSavedChat;
+
+	const auto chats = broker.call(Request("chats.list"));
+	auto ids = std::vector<int64_t>();
+	for (const auto &chat : *Payload(chats).asArray()) {
+		ids.push_back(*chat.find("id")->asInt());
+	}
+	CHECK((ids == std::vector<int64_t>{ 1, 2, 5 }));
+
+	CHECK(Code(broker.call(Request("chat.info", { { "chat", Int(saved) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.history", { { "chat", Int(saved) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("composer.draft", { { "chat", Int(saved) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("composer.set_draft", { { "chat", Int(saved) }, { "text", Text("x") } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.send", { { "chat", Int(saved) }, { "text", Text("x") } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.delete", { { "chat", Int(saved) }, { "ids", cbor::Value::FromArray({ Int(1) }) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.forward", { { "from_chat", Int(saved) }, { "to_chat", Int(1) }, { "ids", cbor::Value::FromArray({ Int(1) }) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.forward", { { "from_chat", Int(1) }, { "to_chat", Int(saved) }, { "ids", cbor::Value::FromArray({ Int(1) }) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("chats.mark_read", { { "chat", Int(saved) } }))) == "not_found");
+	CHECK(fixture.data.sent.empty());
+	CHECK(IsOk(broker.call(Request("chat.info", { { "chat", Int(1) } }))));
+
+	const auto event = [&](const char *type, bool self) {
+		return cbor::Value::FromMap({
+			{ "type", Text(type) },
+			{ "chat", Int(self ? saved : 1) },
+			{ "secret", cbor::Value::FromBool(false) },
+			{ "self", cbor::Value::FromBool(self) },
+			{ "user", Int(7) },
+		});
+	};
+	for (const auto type : { "message.new", "chat.opened", "chat.typing" }) {
+		CHECK(!broker.filterEvent(event(type, true)));
+	}
+	const auto kept = broker.filterEvent(event("chat.typing", false));
+	CHECK(kept && kept->find("self") == nullptr && kept->find("secret") == nullptr);
+
+	const auto click = cbor::Value::FromMap({
+		{ "type", Text("menu.click") },
+		{ "chat", Int(saved) },
+		{ "self", cbor::Value::FromBool(true) },
+		{ "text", Text("hidden") },
+	});
+	const auto reduced = broker.filterTargeted(click);
+	CHECK(!reduced.find("chat") && !reduced.find("text") && !reduced.find("self"));
+}
+
 int main() {
 	TestUrlParsing();
 	TestEndpoints();
@@ -1945,6 +1998,7 @@ int main() {
 	TestWindows();
 	TestTargetedEvents();
 	TestChatScope();
+	TestSavedMessagesAreHidden();
 	TestRateLimit();
 	TestMalformedRequests();
 	TestAuditTrail();
