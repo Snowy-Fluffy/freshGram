@@ -1736,7 +1736,10 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 						newId);
 					if (existing && !local->mainView()) {
 						const auto history = local->history();
-						NoteMessageIdChange(&session(), id, newId);
+						FreshPlugins::NoteMessageIdChange(
+							&session(),
+							id,
+							newId);
 						local->destroy();
 						history->requestChatListMessage();
 					} else {
