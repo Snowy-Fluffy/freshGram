@@ -137,9 +137,47 @@ public:
 			+ (everyone ? " everyone" : ""));
 		return {};
 	}
-	std::string react(int64_t chat, int64_t id, const std::string &emoji) override {
-		actions.push_back("react " + std::to_string(chat) + " " + std::to_string(id) + " " + emoji);
+	std::string react(int64_t chat, int64_t id, const ReactionKind &reaction) override {
+		actions.push_back("react " + std::to_string(chat) + " " + std::to_string(id) + " " + reaction.emoji
+			+ (reaction.customEmoji ? "custom" + std::to_string(reaction.customEmoji) : std::string()));
 		return {};
+	}
+	Result<std::vector<ReactionEntry>, std::string> reactionsList(
+			int64_t chat,
+			int64_t id,
+			const std::optional<ReactionKind> &filter,
+			size_t limit) override {
+		if (chat != 1 || id != 100) {
+			return std::string(api::error::kNotFound);
+		}
+		auto result = std::vector<ReactionEntry>{
+			{ 7, "Bob", { "x", 0, false }, 1000 },
+			{ 8, "Eve", { "", 55, false }, 1001 },
+		};
+		if (filter) {
+			std::erase_if(result, [&](const ReactionEntry &entry) {
+				return entry.kind.emoji != filter->emoji
+					|| entry.kind.customEmoji != filter->customEmoji;
+			});
+		}
+		if (result.size() > limit) {
+			result.resize(limit);
+		}
+		return result;
+	}
+	SendResult sendSticker(int64_t chat, int64_t id, int64_t, int64_t, bool) override {
+		if (id != 321) {
+			return { .error = api::error::kNotFound };
+		}
+		actions.push_back("sticker " + std::to_string(chat) + " " + std::to_string(id));
+		return { .localId = -1 };
+	}
+	std::vector<StickerInfo> stickers(const std::string &emoji, size_t limit) override {
+		auto result = std::vector<StickerInfo>{ { 321, emoji.empty() ? "r" : emoji, "cats", false, true } };
+		if (result.size() > limit) {
+			result.resize(limit);
+		}
+		return result;
 	}
 	std::string forward(int64_t from, const std::vector<int64_t> &ids, int64_t to, bool) override {
 		actions.push_back("forward " + std::to_string(from) + " " + std::to_string(ids.size())

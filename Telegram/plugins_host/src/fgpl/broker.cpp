@@ -64,6 +64,9 @@ constexpr auto kMaxPluginMessage = size_t(64) << 10;
 constexpr auto kMaxIds = size_t(100);
 constexpr auto kMaxQuery = size_t(256);
 constexpr auto kMaxEmoji = size_t(64);
+constexpr auto kMaxReactionsList = size_t(100);
+constexpr auto kMaxStickers = size_t(100);
+constexpr auto kMaxTextEmoji = size_t(100);
 constexpr auto kMaxNotifyTitle = size_t(64);
 constexpr auto kMaxNotifyText = size_t(256);
 constexpr auto kNotifyEachMs = int64_t(5000);
@@ -267,6 +270,76 @@ constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 	return name;
 }
 
+[[nodiscard]] cbor::Value StickerValue(const StickerInfo &sticker) {
+	return cbor::Value::FromMap({
+		{ "id", Int(sticker.id) },
+		{ "emoji", Text(sticker.emoji) },
+		{ "set", Text(sticker.set) },
+		{ "animated", cbor::Value::FromBool(sticker.animated) },
+		{ "video", cbor::Value::FromBool(sticker.video) },
+	});
+}
+
+void AddReactionKind(cbor::Map &map, const ReactionKind &kind) {
+	if (kind.paid) {
+		map.push_back({ "paid", cbor::Value::FromBool(true) });
+	} else if (kind.customEmoji) {
+		map.push_back({ "custom_emoji", Int(kind.customEmoji) });
+	} else {
+		map.push_back({ "emoji", Text(kind.emoji) });
+	}
+}
+
+[[nodiscard]] std::optional<ReactionKind> ReactionArgs(
+		const cbor::Value *args,
+		bool *invalid) {
+	const auto emoji = Arg(args, "emoji");
+	const auto custom = Arg(args, "custom_emoji");
+	*invalid = false;
+	if (emoji && custom) {
+		*invalid = true;
+		return std::nullopt;
+	} else if (custom) {
+		const auto id = custom->asInt();
+		if (!id || *id <= 0) {
+			*invalid = true;
+			return std::nullopt;
+		}
+		return ReactionKind{ .customEmoji = *id };
+	} else if (emoji) {
+		const auto text = TextArg(args, "emoji", kMaxEmoji);
+		if (!text) {
+			*invalid = true;
+			return std::nullopt;
+		}
+		return ReactionKind{ .emoji = *text };
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<std::vector<TextEmoji>> TextEmojiArg(
+		const cbor::Value *args) {
+	auto result = std::vector<TextEmoji>();
+	const auto value = Arg(args, "custom_emoji");
+	if (!value) {
+		return result;
+	}
+	const auto list = value->asArray();
+	if (!list || list->size() > kMaxTextEmoji) {
+		return std::nullopt;
+	}
+	for (const auto &item : *list) {
+		const auto offset = item.find("offset") ? item.find("offset")->asInt() : std::nullopt;
+		const auto length = item.find("length") ? item.find("length")->asInt() : std::nullopt;
+		const auto id = item.find("id") ? item.find("id")->asInt() : std::nullopt;
+		if (!offset || !length || !id || *offset < 0 || *length <= 0 || *id <= 0) {
+			return std::nullopt;
+		}
+		result.push_back({ *offset, *length, *id });
+	}
+	return result;
+}
+
 [[nodiscard]] cbor::Value MessageValue(const Message &message) {
 	auto map = cbor::Map{
 		{ "id", Int(message.id) },
@@ -278,6 +351,35 @@ constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 	};
 	if (!message.fromKind.empty()) {
 		map.push_back({ "from_kind", Text(message.fromKind) });
+	}
+	if (message.sticker) {
+		map.push_back({ "sticker", StickerValue(*message.sticker) });
+	}
+	if (message.emojiOnly) {
+		map.push_back({ "emoji_only", cbor::Value::FromBool(true) });
+	}
+	if (!message.customEmoji.empty()) {
+		auto entities = cbor::Array();
+		for (const auto &entity : message.customEmoji) {
+			entities.push_back(cbor::Value::FromMap({
+				{ "type", Text("custom_emoji") },
+				{ "offset", Int(entity.offset) },
+				{ "length", Int(entity.length) },
+				{ "id", Int(entity.id) },
+			}));
+		}
+		map.push_back({ "entities", cbor::Value::FromArray(std::move(entities)) });
+	}
+	if (!message.reactions.empty()) {
+		auto reactions = cbor::Array();
+		for (const auto &reaction : message.reactions) {
+			auto entry = cbor::Map();
+			AddReactionKind(entry, reaction.kind);
+			entry.push_back({ "count", Int(reaction.count) });
+			entry.push_back({ "my", cbor::Value::FromBool(reaction.my) });
+			reactions.push_back(cbor::Value::FromMap(std::move(entry)));
+		}
+		map.push_back({ "reactions", cbor::Value::FromArray(std::move(reactions)) });
 	}
 	if (message.topic) {
 		map.push_back({ "topic", Int(message.topic) });
@@ -623,6 +725,7 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 	const auto lock = std::scoped_lock(_limitsMutex);
 	const auto now = _services.clockMs();
 	if (op == "messages.send"
+		|| op == "stickers.send"
 		|| op == "messages.forward"
 		|| op == "messages.send_media"
 		|| op == "messages.edit_media") {
@@ -1377,8 +1480,11 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		const auto replyTo = IntArg(args, "reply_to").value_or(0);
 		const auto topic = IntArg(args, "topic").value_or(0);
 		const auto when = IntArg(args, "schedule").value_or(0);
+		const auto customEmoji = TextEmojiArg(args);
 		if (!id || !text || text->empty()) {
 			return api::Fail(api::error::kInvalid, "chat or text");
+		} else if (!customEmoji) {
+			return api::Fail(api::error::kInvalid, "custom_emoji");
 		} else if (!markdown || !silent || replyTo < 0 || topic < 0 || when < 0) {
 			return api::Fail(api::error::kInvalid, "format, silent, reply_to, topic or schedule");
 		} else if (!chatInScope(*id) || *id == api::kServiceChat) {
@@ -1397,7 +1503,54 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			.silent = *silent,
 			.schedule = when,
 			.waitForServerId = has("messages.ids"),
+			.customEmoji = *customEmoji,
 		}), "the message was not sent", has("messages.ids"));
+	} else if (op == "stickers.send") {
+		if (const auto refused = need("messages.send")) {
+			return *refused;
+		}
+		const auto id = IntArg(args, "chat");
+		const auto sticker = IntArg(args, "id");
+		const auto silent = BoolArg(args, "silent", false);
+		const auto replyTo = IntArg(args, "reply_to").value_or(0);
+		const auto topic = IntArg(args, "topic").value_or(0);
+		if (!id || !sticker || *sticker <= 0 || !silent || replyTo < 0 || topic < 0) {
+			return api::Fail(api::error::kInvalid, "chat, id, silent, reply_to or topic");
+		} else if (!chatInScope(*id) || *id == api::kServiceChat) {
+			return api::Fail(api::error::kDenied, "this chat");
+		}
+		const auto chat = data->chat(*id);
+		if (!chat || chat->secret) {
+			return api::Fail(api::error::kNotFound, "chat");
+		}
+		return Sent(
+			data->sendSticker(*id, *sticker, replyTo, topic, *silent),
+			"the sticker was not sent",
+			false);
+	} else if (op == "stickers.search" || op == "stickers.recent") {
+		if (const auto refused = need("messages.send")) {
+			return *refused;
+		}
+		const auto limit = size_t(std::clamp<int64_t>(
+			IntArg(args, "limit").value_or(20),
+			1,
+			int64_t(kMaxStickers)));
+		auto emoji = std::string();
+		if (op == "stickers.search") {
+			const auto text = TextArg(args, "emoji", kMaxEmoji);
+			if (!text || text->empty()) {
+				return api::Fail(api::error::kInvalid, "emoji");
+			}
+			emoji = *text;
+		}
+		auto result = cbor::Array();
+		for (const auto &sticker : data->stickers(emoji, limit)) {
+			if (result.size() >= limit) {
+				break;
+			}
+			result.push_back(StickerValue(sticker));
+		}
+		return api::Ok(cbor::Value::FromArray(std::move(result)));
 	} else if (op == "contacts.list") {
 		if (const auto refused = need("contacts.list")) {
 			return *refused;
@@ -1738,13 +1891,50 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			return chat.error();
 		}
 		const auto id = IntArg(args, "id");
-		const auto emoji = Arg(args, "emoji")
-			? TextArg(args, "emoji", kMaxEmoji)
-			: std::optional<std::string>(std::string());
-		if (!id || *id == 0 || !emoji) {
-			return api::Fail(api::error::kInvalid, "id or emoji");
+		auto invalid = false;
+		const auto reaction = ReactionArgs(args, &invalid);
+		if (!id || *id == 0 || invalid) {
+			return api::Fail(api::error::kInvalid, "id, emoji or custom_emoji");
 		}
-		return Done(data->react(chat.value(), *id, *emoji), "the reaction was not set");
+		return Done(
+			data->react(chat.value(), *id, reaction.value_or(ReactionKind())),
+			"the reaction was not set");
+	} else if (op == "messages.reactions") {
+		if (const auto refused = need({ "messages.read" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		if (!chat.ok()) {
+			return chat.error();
+		}
+		const auto id = IntArg(args, "id");
+		auto invalid = false;
+		const auto filter = ReactionArgs(args, &invalid);
+		const auto limit = size_t(std::clamp<int64_t>(
+			IntArg(args, "limit").value_or(50),
+			1,
+			int64_t(kMaxReactionsList)));
+		if (!id || *id == 0 || invalid) {
+			return api::Fail(api::error::kInvalid, "id, emoji or custom_emoji");
+		}
+		const auto list = data->reactionsList(chat.value(), *id, filter, limit);
+		if (!list.ok()) {
+			return api::Fail(list.error(), "the reactions");
+		}
+		auto result = cbor::Array();
+		for (const auto &entry : list.value()) {
+			if (result.size() >= limit) {
+				break;
+			}
+			auto map = cbor::Map{
+				{ "user", Int(entry.user) },
+				{ "name", Text(entry.name) },
+				{ "date", Int(entry.date) },
+			};
+			AddReactionKind(map, entry.kind);
+			result.push_back(cbor::Value::FromMap(std::move(map)));
+		}
+		return api::Ok(cbor::Value::FromArray(std::move(result)));
 	} else if (op == "messages.forward") {
 		if (const auto refused = need({ "messages.send", "messages.read" })) {
 			return *refused;

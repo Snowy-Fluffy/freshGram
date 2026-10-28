@@ -93,6 +93,41 @@ struct Chat {
 	bool archived = false;
 };
 
+struct StickerInfo {
+	int64_t id = 0;
+	std::string emoji;
+	std::string set;
+	bool animated = false;
+	bool video = false;
+};
+
+// A custom emoji inside a text, offset and length in UTF-16 units.
+struct TextEmoji {
+	int64_t offset = 0;
+	int64_t length = 0;
+	int64_t id = 0;
+};
+
+// A reaction is a unicode emoji, a custom emoji or the paid star.
+struct ReactionKind {
+	std::string emoji;
+	int64_t customEmoji = 0;
+	bool paid = false;
+};
+
+struct ReactionCount {
+	ReactionKind kind;
+	int64_t count = 0;
+	bool my = false;
+};
+
+struct ReactionEntry {
+	int64_t user = 0;
+	std::string name;
+	ReactionKind kind;
+	int64_t date = 0;
+};
+
 struct Message {
 	int64_t id = 0;
 	int64_t chat = 0;
@@ -105,6 +140,10 @@ struct Message {
 	bool deleted = false;
 	std::string media;
 	std::string fromKind;
+	std::optional<StickerInfo> sticker;
+	bool emojiOnly = false;
+	std::vector<TextEmoji> customEmoji;
+	std::vector<ReactionCount> reactions;
 };
 
 struct Account {
@@ -151,6 +190,7 @@ struct OutgoingMessage {
 	bool silent = false;
 	int64_t schedule = 0;
 	bool waitForServerId = false;
+	std::vector<TextEmoji> customEmoji;
 };
 
 // What a plugin asked for while handling message.outgoing.
@@ -347,11 +387,43 @@ public:
 	[[nodiscard]] virtual std::string react(
 			int64_t chat,
 			int64_t id,
-			const std::string &emoji) {
+			const ReactionKind &reaction) {
 		(void)chat;
 		(void)id;
-		(void)emoji;
+		(void)reaction;
 		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual Result<std::vector<ReactionEntry>, std::string> reactionsList(
+			int64_t chat,
+			int64_t id,
+			const std::optional<ReactionKind> &filter,
+			size_t limit) {
+		(void)chat;
+		(void)id;
+		(void)filter;
+		(void)limit;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual SendResult sendSticker(
+			int64_t chat,
+			int64_t id,
+			int64_t replyTo,
+			int64_t topic,
+			bool silent) {
+		(void)chat;
+		(void)id;
+		(void)replyTo;
+		(void)topic;
+		(void)silent;
+		return { .error = api::error::kUnavailable };
+	}
+	// An empty emoji lists the recent stickers.
+	[[nodiscard]] virtual std::vector<StickerInfo> stickers(
+			const std::string &emoji,
+			size_t limit) {
+		(void)emoji;
+		(void)limit;
+		return {};
 	}
 	[[nodiscard]] virtual std::string forward(
 			int64_t from,

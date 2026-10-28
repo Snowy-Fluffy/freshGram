@@ -34,6 +34,7 @@ from . import (
     _Timers,
     _Ui,
     _Channels,
+    _Stickers,
     _Users,
     _async_call,
 )
@@ -57,6 +58,7 @@ settings = _Settings(_async_call)
 media = _Media(_async_call)
 users = _Users(_async_call)
 channels = _Channels(_async_call)
+stickers = _Stickers(_async_call)
 notify = _Notify(_async_call)
 badges = _Badges(_async_call)
 clipboard = _Clipboard(_async_call)

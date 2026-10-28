@@ -59,12 +59,15 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
 | `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `self`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
-| `messages.send` `{chat, text, format, reply_to, topic, silent, schedule}` | `messages.send` | `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode; answers `{local_id}` at once: a negative id that `messages.edit`, `edit_media`, `react` and `delete` accept like a server id (they wait until a message that is still sending gets its server id, and fail with `failed` when the send fails); with `messages.ids` the call waits for the server and answers `{id, local_id}` too (`id` is null when the server did not answer in time, which is not an error, so a retry cannot send twice); `local_id` is null when no message was created (a dice, a text that is only spaces); scheduled sends have no ids |
+| `messages.send` `{chat, text, format, reply_to, topic, silent, schedule, custom_emoji}` | `messages.send` | `custom_emoji` is a list of `{offset, length, id}` that show part of the text (UTF-16 units) as custom emoji; `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode; answers `{local_id}` at once: a negative id that `messages.edit`, `edit_media`, `react` and `delete` accept like a server id (they wait until a message that is still sending gets its server id, and fail with `failed` when the send fails); with `messages.ids` the call waits for the server and answers `{id, local_id}` too (`id` is null when the server did not answer in time, which is not an error, so a retry cannot send twice); `local_id` is null when no message was created (a dice, a text that is only spaces); scheduled sends have no ids |
 | `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send`; answers the ids like `messages.send` |
 | `messages.edit_media` `{chat, id, data, name, kind, caption, format, spoiler}` | `messages.edit` | replaces the media of a message you sent and may still edit, with a file of up to 100 MiB; `kind` is `auto` or `file` (not `voice`); `id` is a server or a local id; `caption` replaces the old one; waits until Telegram accepts the file (await it); `invalid` when the album or Telegram does not take the file, `denied` when the message cannot carry new media |
 | `messages.edit` `{chat, id, text, format}` | `messages.edit` | only messages you sent and may still edit; `id` may be a local id |
 | `messages.delete` `{chat, ids, everyone}` | `messages.delete` | up to 100 of your own messages, server or local ids; for everyone (the default) when Telegram allows it for all of them |
-| `messages.react` `{chat, id, emoji}` | `messages.react` | sets an emoji reaction; no `emoji` removes yours |
+| `messages.react` `{chat, id, emoji}` or `{chat, id, custom_emoji}` | `messages.react` | sets an emoji or custom emoji (a document id) reaction; neither removes yours |
+| `messages.reactions` `{chat, id, limit, emoji or custom_emoji}` | `messages.read` | who reacted: `[{user, name, date, emoji or custom_emoji or paid}]` (up to 100), optionally only one reaction |
+| `stickers.send` `{chat, id, reply_to, topic, silent}` | `messages.send` | sends an installed or recent sticker by its document id; same limits as `messages.send`; `not_found` when the sticker is not among the installed sets and recents; `denied` when the chat forbids stickers |
+| `stickers.search` `{emoji, limit}`, `stickers.recent` `{limit}` | `messages.send` | `[{id, emoji, set, animated, video}]` from the installed sets for an emoji, or the recently used ones |
 | `messages.forward` `{from_chat, ids, to_chat, silent}` | `messages.send` and `messages.read` | up to 100 messages; both chats must be in scope |
 | `messages.search` `{chat, query, limit}` | `messages.history` | searches the chat on the server; the same message fields as the history |
 | `chats.mark_read` `{chat}` | `messages.send` | |
@@ -133,8 +136,12 @@ Every `message.*` event carries `id`, `chat`, `chat_title`, `chat_type`, `from`,
 `sender_name`, `date`, `text`, `out` and `forwarded`, and when they apply
 `reply_to`, `topic`, `grouped` (album id), `media` (`photo`, `video`, `round`,
 `gif`, `voice`, `audio`, `sticker`, `file`, `poll`, `contact`, `location`,
-`webpage`, `other`), `edit_date`, `via_bot` and `reactions` (a list of
-`{emoji, count, my}`).
+`webpage`, `other`), `edit_date`, `via_bot`, and with these fields:
+`sticker` (`{id, emoji, set, animated, video}`) for a sticker message,
+`emoji_only` (true when the text is only emoji, so the message is a big emoji
+and not a sticker or plain text), `entities` (the custom emoji of the text,
+`{type: "custom_emoji", offset, length, id}`, UTF-16 units) and `reactions`
+(a list of `{count, my}` and one of `emoji`, `custom_emoji` or `paid`).
 - `message.new` comes once per message, with its server id. Your own outgoing
   messages come when the server accepts them, with `local_id` set, and with
   `by_plugin: true` when a plugin sent them, so a plugin can ignore its own
@@ -477,7 +484,7 @@ logged and does not stop the others. The namespaces follow the calls:
 `messages.send_media(chat, data, name, caption=...)`, `media.list`,
 `media.get(..., download=True)`, `messages.edit`,
 `messages.delete`, `messages.react`, `messages.forward`, `messages.search`,
-`chats.mark_read`, `chats.action`, `users.info`, `users.resolve`, `users.photo`, `channels.info`, `channels.resolve`, `channels.photo`, `notify.show`,
+`chats.mark_read`, `chats.action`, `users.info`, `messages.reactions`, `stickers.send/search/recent`, `users.resolve`, `users.photo`, `channels.info`, `channels.resolve`, `channels.photo`, `notify.show`,
 `clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`
 and `files.save` exist only in `freshgram.aio`.
 
