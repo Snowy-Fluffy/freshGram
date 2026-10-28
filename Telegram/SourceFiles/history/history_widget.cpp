@@ -1576,7 +1576,7 @@ void HistoryWidget::initVoiceRecordBar() {
 		if (_stash) {
 			_stash->updateButton();
 		}
-	}, lifetime());
+	}, _recordingStateLifetime);
 
 	_voiceRecordBar->hideFast();
 }
