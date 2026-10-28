@@ -33,6 +33,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> toggledChanges() const;
 	[[nodiscard]] rpl::producer<not_null<QEvent*>> clickAreaEvents() const;
 	void setToggleLocked(bool locked);
+	void setToggleHidden(bool hidden);
 	void setIconColor(const style::color *color);
 	void finishAnimating();
 
@@ -68,6 +69,7 @@ private:
 	int _descriptionTop = 0;
 	int _descriptionHeight = 0;
 	bool _toggleLocked = false;
+	bool _toggleHidden = false;
 
 };
 

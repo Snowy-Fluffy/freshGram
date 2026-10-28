@@ -598,57 +598,6 @@ void Base64UrlInput::correctValue(
 	setCorrectedText(now, nowCursor, newText, newPos);
 }
 
-class ProxyRow : public Ui::RippleButton {
-public:
-	using View = ProxiesBoxController::ItemView;
-	using State = ProxiesBoxController::ItemState;
-
-	ProxyRow(QWidget *parent, View &&view);
-
-	void updateFields(View &&view);
-
-	rpl::producer<> deleteClicks() const;
-	rpl::producer<> restoreClicks() const;
-	rpl::producer<> editClicks() const;
-	rpl::producer<> shareClicks() const;
-	rpl::producer<> showQrClicks() const;
-	rpl::producer<> openBrowserClicks() const;
-
-protected:
-	int resizeGetHeight(int newWidth) override;
-
-	void paintEvent(QPaintEvent *e) override;
-
-private:
-	void setupControls(View &&view);
-	int countAvailableWidth() const;
-	void radialAnimationCallback();
-	void paintCheck(Painter &p);
-	void showMenu();
-
-	View _view;
-
-	Ui::Text::String _title;
-	object_ptr<Ui::IconButton> _menuToggle;
-	rpl::event_stream<> _deleteClicks;
-	rpl::event_stream<> _restoreClicks;
-	rpl::event_stream<> _editClicks;
-	rpl::event_stream<> _shareClicks;
-	rpl::event_stream<> _showQrClicks;
-	rpl::event_stream<> _openBrowserClicks;
-	base::unique_qptr<Ui::DropdownMenu> _menu;
-
-	bool _set = false;
-	Ui::Animations::Simple _toggled;
-	Ui::Animations::Simple _setAnimation;
-	std::unique_ptr<Ui::InfiniteRadialAnimation> _progress;
-	std::unique_ptr<Ui::InfiniteRadialAnimation> _checking;
-
-	int _skipLeft = 0;
-	int _skipRight = 0;
-
-};
-
 class ProxiesBox : public Ui::BoxContent {
 public:
 	using View = ProxiesBoxController::ItemView;
@@ -757,11 +706,15 @@ private:
 
 };
 
+} // namespace
+
 ProxyRow::ProxyRow(QWidget *parent, View &&view)
 : RippleButton(parent, st::proxyRowRipple)
 , _menuToggle(this, st::topBarMenuToggle) {
 	setupControls(std::move(view));
 }
+
+ProxyRow::~ProxyRow() = default;
 
 rpl::producer<> ProxyRow::deleteClicks() const {
 	return _deleteClicks.events();
@@ -1087,6 +1040,8 @@ void ProxyRow::showMenu() {
 		_menu->showAnimated(Ui::PanelAnimation::Origin::TopRight);
 	}
 }
+
+namespace {
 
 ProxiesBox::ProxiesBox(
 	QWidget*,

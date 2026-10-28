@@ -43,7 +43,7 @@ DetailedSettingsButton::DetailedSettingsButton(
 		refreshLayout();
 	}, lifetime());
 	addClickHandler([=] {
-		if (!_toggleLocked) {
+		if (!_toggleLocked && !_toggleHidden) {
 			_toggle->setChecked(!_toggle->checked(), anim::type::normal);
 		}
 	});
@@ -67,12 +67,14 @@ QString DetailedSettingsButton::accessibilityName() {
 }
 
 Ui::AccessibilityState DetailedSettingsButton::accessibilityState() const {
-	return { .checkable = true, .checked = _toggle->checked() };
+	return { .checkable = !_toggleHidden, .checked = _toggle->checked() };
 }
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 11, 0)
 QAccessible::Role DetailedSettingsButton::accessibilityRole() {
-	return QAccessible::Role::Switch;
+	return _toggleHidden
+		? QAccessible::Role::StaticText
+		: QAccessible::Role::Switch;
 }
 #endif
 
@@ -92,6 +94,15 @@ DetailedSettingsButton::clickAreaEvents() const {
 void DetailedSettingsButton::setToggleLocked(bool locked) {
 	_toggleLocked = locked;
 	_toggle->setLocked(locked);
+}
+
+void DetailedSettingsButton::setToggleHidden(bool hidden) {
+	if (_toggleHidden == hidden) {
+		return;
+	}
+	_toggleHidden = hidden;
+	setPointerCursor(!hidden);
+	refreshLayout();
 }
 
 void DetailedSettingsButton::setIconColor(const style::color *color) {
@@ -152,8 +163,10 @@ void DetailedSettingsButton::paintEvent(QPaintEvent *e) {
 			width());
 	}
 
-	const auto toggle = toggleRect();
-	_toggle->paint(p, toggle.left(), toggle.top(), width());
+	if (!_toggleHidden) {
+		const auto toggle = toggleRect();
+		_toggle->paint(p, toggle.left(), toggle.top(), width());
+	}
 }
 
 int DetailedSettingsButton::resizeGetHeight(int newWidth) {
@@ -200,13 +213,15 @@ int DetailedSettingsButton::firstDescriptionLineBottom() const {
 
 int DetailedSettingsButton::textAvailableWidth(int outerw) const {
 	const auto toggle = _toggle->getSize();
+	const auto toggleWidth = _toggleHidden
+		? 0
+		: (_style.button.toggleSkip + toggle.width());
 	return std::max(
 		1,
 		outerw
 			- _style.button.padding.left()
 			- _style.button.padding.right()
-			- _style.button.toggleSkip
-			- toggle.width());
+			- toggleWidth);
 }
 
 QRect DetailedSettingsButton::toggleRect() const {

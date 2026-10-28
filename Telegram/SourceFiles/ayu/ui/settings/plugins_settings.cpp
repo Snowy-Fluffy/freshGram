@@ -7,7 +7,8 @@
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/ui/boxes/plugin_install_box.h"
-#include "boxes/connection_box.h"
+#include "ayu/ui/boxes/plugins_proxies_box.h"
+#include "ayu/ui/settings/settings_plugins_network.h"
 #include "core/file_utilities.h"
 #include "mainwindow.h"
 #include "lang/lang_keys.h"
@@ -465,7 +466,7 @@ void FillComponentsBox(
 namespace {
 
 [[nodiscard]] QString ProxyLabel(const PluginsProxy &proxy) {
-	if (!proxy.valid()) {
+	if (!proxy.enabled || !proxy.valid()) {
 		return tr::fresh_PluginsProxyOff(tr::now);
 	}
 	return ((proxy.type == PluginsProxy::Type::Http)
@@ -474,40 +475,6 @@ namespace {
 		+ QString::fromStdString(proxy.host)
 		+ ':'
 		+ QString::number(proxy.port);
-}
-
-[[nodiscard]] MTP::ProxyData ProxyDataOf(const PluginsProxy &proxy) {
-	auto result = MTP::ProxyData();
-	if (!proxy.valid()) {
-		return result;
-	}
-	result.type = (proxy.type == PluginsProxy::Type::Http)
-		? MTP::ProxyData::Type::Http
-		: MTP::ProxyData::Type::Socks5;
-	result.host = QString::fromStdString(proxy.host);
-	result.port = uint32(proxy.port);
-	result.user = QString::fromStdString(proxy.user);
-	result.password = QString::fromStdString(proxy.password);
-	return result;
-}
-
-void ShowProxyBox(not_null<Window::SessionController*> controller) {
-	const auto current = AyuSettings::getInstance().pluginsProxy();
-	controller->show(ProxyEditBox(
-		ProxyDataOf(current),
-		{ MTP::ProxyData::Type::Socks5, MTP::ProxyData::Type::Http },
-		[](const MTP::ProxyData &data) {
-			auto value = PluginsProxy();
-			value.enabled = true;
-			value.type = (data.type == MTP::ProxyData::Type::Http)
-				? PluginsProxy::Type::Http
-				: PluginsProxy::Type::Socks5;
-			value.host = data.host.toStdString();
-			value.port = int(data.port);
-			value.user = data.user.toStdString();
-			value.password = data.password.toStdString();
-			AyuSettings::getInstance().setPluginsProxy(std::move(value));
-		}));
 }
 
 void AddNetworkBlockToggle(
@@ -657,6 +624,21 @@ void AddPluginsSettings(
 		st::settingsButton,
 		{ &st::menuIconNetwork }
 	)->addClickHandler([=] {
+		controller->showSettings(Settings::FreshPluginsNetworkSection::Id());
+	});
+	Ui::AddSkip(container);
+}
+
+void AddPluginsNetworkSettings(
+		not_null<Ui::VerticalLayout*> container,
+		not_null<Window::SessionController*> controller) {
+	Ui::AddSkip(container);
+	Settings::AddButtonWithIcon(
+		container,
+		tr::fresh_PluginsNetwork(),
+		st::settingsButton,
+		{ &st::menuIconNetwork }
+	)->addClickHandler([=] {
 		FreshPlugins::ShowNetworkPanel(controller);
 	});
 	Settings::AddButtonWithIcon(
@@ -695,40 +677,18 @@ void AddPluginsSettings(
 		});
 	Ui::AddSkip(container);
 	Ui::AddDividerText(container, tr::fresh_PluginsBlockAbout());
-	const auto proxyToggle = Settings::AddButtonWithIcon(
-		container,
-		tr::fresh_PluginsProxyUse(),
-		st::settingsButton,
-		{ &st::menuIconNetwork });
-	proxyToggle->toggleOn(
-		settings.pluginsProxyValue() | rpl::map([](const PluginsProxy &proxy) {
-			return proxy.enabled && proxy.valid();
-		}),
-		true);
-	proxyToggle->addClickHandler([=] {
-		auto proxy = AyuSettings::getInstance().pluginsProxy();
-		if (proxy.enabled) {
-			proxy.enabled = false;
-			AyuSettings::getInstance().setPluginsProxy(std::move(proxy));
-		} else if (proxy.valid()) {
-			proxy.enabled = true;
-			AyuSettings::getInstance().setPluginsProxy(std::move(proxy));
-		} else {
-			ShowProxyBox(controller);
-		}
-	});
+	Ui::AddSkip(container);
 	Settings::AddButtonWithLabel(
 		container,
 		tr::fresh_PluginsProxy(),
 		settings.pluginsProxyValue() | rpl::map(ProxyLabel),
 		st::settingsButton,
-		{ &st::menuIconSettings }
+		{ &st::menuIconNetwork }
 	)->addClickHandler([=] {
-		ShowProxyBox(controller);
+		ShowPluginsProxiesBox(controller);
 	});
 	Ui::AddSkip(container);
 	Ui::AddDividerText(container, tr::fresh_PluginsProxyAbout());
-	Ui::AddSkip(container);
 }
 
 } // namespace AyuUi

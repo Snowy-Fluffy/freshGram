@@ -203,7 +203,6 @@
 "fresh_PluginsBlockAbout" = "Действует на всех плагинов поверх их собственных разрешений. Открытые соединения заблокированного вида закрываются.";
 "fresh_PluginsProxy" = "Прокси для плагинов";
 "fresh_PluginsProxyOff" = "Выкл";
-"fresh_PluginsProxyUse" = "Использовать прокси для плагинов";
 "fresh_PluginsProxyAbout" = "Через этот прокси идёт только трафик плагинов. Если прокси не работает, плагины получают ошибку, а не соединяются напрямую. UDP работает только с SOCKS5. Имена хостов разрешает прокси.";
 "fresh_PermMessagesEdit" = "Изменять отправленные вами сообщения";
 "fresh_PermMessagesDelete" = "Удалять отправленные вами сообщения";
@@ -250,7 +249,6 @@
 "fresh_PluginPermissionRequiredShort" = "Обязательно";
 "fresh_PluginPermissionNewShort" = "Новое";
 "fresh_PluginPermissionsRequiredAbout" = "Без этих прав плагин не работает, поэтому они всегда включены.";
-"fresh_PluginPermissionRequiredToast" = "«{permission}» обязательно: без этого плагин не работает.";
 "fresh_PluginLogTabAll" = "Все";
 "fresh_PluginLogTabProblems" = "Проблемы";
 "fresh_PluginLogSearch" = "Поиск";

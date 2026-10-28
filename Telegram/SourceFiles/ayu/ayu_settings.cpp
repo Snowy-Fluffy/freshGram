@@ -581,6 +581,11 @@ void AyuSettings::attachVault() {
 				&& p["pluginsProxy"].is_object()) {
 				settings._pluginsProxy = p["pluginsProxy"].get<PluginsProxy>();
 			}
+			if (p.contains("pluginsProxyList")
+				&& p["pluginsProxyList"].is_array()) {
+				settings._pluginsProxyList = p["pluginsProxyList"].get<
+					std::vector<PluginsProxy>>();
+			}
 		} catch (...) {
 			LOG(("freshGram settings: failed to parse the sealed accounts data"));
 		}
@@ -601,6 +606,7 @@ void AyuSettings::save() {
 			{ "ghostModeSettings", p["ghostModeSettings"] },
 			{ "shadowBanIds", p["shadowBanIds"] },
 			{ "pluginsProxy", p["pluginsProxy"] },
+			{ "pluginsProxyList", p["pluginsProxyList"] },
 		};
 		strip = FreshVault::WriteSealedFile(
 			getAccountsPath(),
@@ -613,6 +619,7 @@ void AyuSettings::save() {
 		p.erase("ghostModeSettings");
 		p.erase("shadowBanIds");
 		p.erase("pluginsProxy");
+		p.erase("pluginsProxyList");
 	}
 	p["accountsVaulted"] = settings._accountsVaulted;
 
@@ -1897,6 +1904,12 @@ void AyuSettings::setPluginsProxy(PluginsProxy val) {
 	save();
 }
 
+void AyuSettings::setPluginsProxyList(std::vector<PluginsProxy> val) {
+	if (_pluginsProxyList.current() == val) return;
+	_pluginsProxyList = std::move(val);
+	save();
+}
+
 void to_json(nlohmann::json &j, const PluginsProxy &s) {
 	j = nlohmann::json{
 		{"enabled", s.enabled},
@@ -2097,6 +2110,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"pluginsBlockTcp", s._pluginsBlockTcp.current()},
 		{"pluginsBlockUdp", s._pluginsBlockUdp.current()},
 		{"pluginsProxy", s._pluginsProxy.current()},
+		{"pluginsProxyList", s._pluginsProxyList.current()},
 		{"avatarCorners", s._avatarCorners.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
 		{"streamerMode", s._streamerMode.current()},
@@ -2293,6 +2307,10 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._pluginsBlockUdp = j.value("pluginsBlockUdp", defaults._pluginsBlockUdp.current());
 	if (j.contains("pluginsProxy") && j["pluginsProxy"].is_object()) {
 		s._pluginsProxy = j["pluginsProxy"].get<PluginsProxy>();
+	}
+	if (j.contains("pluginsProxyList") && j["pluginsProxyList"].is_array()) {
+		s._pluginsProxyList = j["pluginsProxyList"].get<
+			std::vector<PluginsProxy>>();
 	}
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());

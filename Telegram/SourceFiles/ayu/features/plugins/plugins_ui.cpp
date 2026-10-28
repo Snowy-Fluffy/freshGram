@@ -3038,13 +3038,7 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 				: st::pluginPermissionButtonStyleLow);
 		button->setIconColor(&st::windowFgActive);
 		if (request->required) {
-			button->setToggleLocked(true);
-			button->addClickHandler([=] {
-				controller->showToast(tr::fresh_PluginPermissionRequiredToast(
-					tr::now,
-					lt_permission,
-					title));
-			});
+			button->setToggleHidden(true);
 		}
 		button->finishAnimating();
 		button->toggledChanges() | rpl::on_next(refresh, button->lifetime());

@@ -172,6 +172,8 @@ set(ayugram_files
         ayu/features/plugins/plugins_service.h
         ayu/ui/boxes/plugin_install_box.cpp
         ayu/ui/boxes/plugin_install_box.h
+        ayu/ui/boxes/plugins_proxies_box.cpp
+        ayu/ui/boxes/plugins_proxies_box.h
         ayu/ui/settings/plugins_settings.cpp
         ayu/ui/settings/plugins_settings.h
         ayu/features/compose_stash/compose_stash.h
@@ -286,6 +288,8 @@ set(ayugram_files
         ayu/ui/settings/settings_other.h
         ayu/ui/settings/settings_plugins.cpp
         ayu/ui/settings/settings_plugins.h
+        ayu/ui/settings/settings_plugins_network.cpp
+        ayu/ui/settings/settings_plugins_network.h
         ayu/ui/settings/filters/settings_filters_list.cpp
         ayu/ui/settings/filters/settings_filters_list.h
         ayu/ui/settings/filters/per_dialog_filter.cpp
