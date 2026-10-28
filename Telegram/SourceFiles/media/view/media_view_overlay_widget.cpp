@@ -3350,10 +3350,19 @@ void OverlayWidget::subscribeToScreenGeometry() {
 }
 
 void OverlayWidget::toMessage() {
-	if (const auto item = _message) {
-		close();
-		if (const auto window = findWindow()) {
-			window->showMessage(item);
+	if (!_message) {
+		return;
+	}
+	const auto weakSession = base::make_weak(&_message->history()->session());
+	const auto itemId = _message->fullId();
+
+	// close() may drain queued work that destroys the shown message.
+	close();
+	if (const auto window = findWindow()) {
+		if (const auto strong = weakSession.get()) {
+			if (const auto item = strong->data().message(itemId)) {
+				window->showMessage(item);
+			}
 		}
 	}
 }
@@ -3702,8 +3711,9 @@ void OverlayWidget::deleteMedia() {
 	}
 
 	const auto session = _session;
+	const auto weakSession = base::make_weak(session);
 	const auto photo = _photo;
-	const auto message = _message;
+	const auto messageId = _message ? _message->fullId() : FullMsgId();
 	const auto deletingPeerPhoto = [&] {
 		if (!_message) {
 			return true;
@@ -3717,6 +3727,10 @@ void OverlayWidget::deleteMedia() {
 	close();
 
 	if (const auto window = findWindow()) {
+		const auto strong = weakSession.get();
+		const auto message = strong
+			? strong->data().message(messageId)
+			: nullptr;
 		if (deletingPeerPhoto) {
 			if (photo) {
 				window->show(
