@@ -3708,7 +3708,11 @@ using GlyphKey = std::tuple<std::string, std::string, size_t, int, int, QRgb>;
 	if (cache.size() > 512) {
 		cache.clear();
 	}
-	return cache.emplace(key, MakeBadgeGlyph(badge, side, color)).first->second;
+	auto glyph = MakeBadgeGlyph(badge, side, color);
+	if (glyph.isNull()) {
+		return glyph; // WHY: a failed picture must not hide the badge for good.
+	}
+	return cache.emplace(key, std::move(glyph)).first->second;
 }
 
 struct BadgeRefresh {
