@@ -74,6 +74,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/format_values.h" // Ui::FormatPhone
 
 #include "ayu/features/peek/peek_online.h"
+#include "ayu/features/plugins/plugins_data.h"
 #include "ayu/secret/secret_manager.h"
 #include "ayu/secret/secret_policy.h"
 #include "ayu/ayu_settings.h"
@@ -1735,6 +1736,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 						newId);
 					if (existing && !local->mainView()) {
 						const auto history = local->history();
+						NoteMessageIdChange(&session(), id, newId);
 						local->destroy();
 						history->requestChatListMessage();
 					} else {

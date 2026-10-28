@@ -46,6 +46,7 @@
 #include "core/version.h"
 #include "ui/image/image.h"
 #include "window/themes/window_theme.h"
+#include "base/debug_log.h"
 #include "dialogs/dialogs_entry.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "dialogs/dialogs_main_list.h"
@@ -1780,6 +1781,12 @@ private:
 			|| !item->allowsEdit(base::unixtime::now())
 			|| !item->allowsEditMedia()
 			|| item->isEditingMedia()) {
+			LOG(("Plugins: edit_media refused, out=%1, allowsEdit=%2, allowsEditMedia=%3, editingMedia=%4, id=%5"
+				).arg(item->out()
+				).arg(item->allowsEdit(base::unixtime::now())
+				).arg(item->allowsEditMedia()
+				).arg(item->isEditingMedia()
+				).arg(item->id.bare));
 			done(fgpl::api::error::kDenied);
 			return;
 		}
@@ -1808,6 +1815,7 @@ private:
 			? std::make_optional(ChatRestriction::SendFiles)
 			: RestrictionFor(file.type);
 		if (!restriction || !Data::CanSend(history, *restriction)) {
+			LOG(("Plugins: edit_media refused, cannot send this kind of media here."));
 			done(fgpl::api::error::kDenied);
 			return;
 		}
@@ -1834,6 +1842,9 @@ private:
 			done(std::move(error));
 		};
 		Api::SetEditMediaCompletion(itemId, [=](const QString &error) {
+			if (!error.isEmpty()) {
+				LOG(("Plugins: edit_media server error: %1").arg(error));
+			}
 			finish(error.isEmpty() || error == u"MESSAGE_NOT_MODIFIED"_q
 				? std::string()
 				: (error == u"MEDIA_NEW_INVALID"_q)
