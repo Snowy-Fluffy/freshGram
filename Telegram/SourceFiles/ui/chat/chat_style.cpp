@@ -525,12 +525,6 @@ ChatStyle::ChatStyle(rpl::producer<ColorIndicesCompressed> colorIndices) {
 		st::historyFileOutDocument,
 		st::historyFileOutDocumentSelected);
 	make(
-		&MessageStyle::historyFilePlugin,
-		st::ayuHistoryFileInPlugin,
-		st::ayuHistoryFileInPluginSelected,
-		st::ayuHistoryFileOutPlugin,
-		st::ayuHistoryFileOutPluginSelected);
-	make(
 		&MessageStyle::historyAudioDownload,
 		st::historyAudioInDownload,
 		st::historyAudioInDownloadSelected,

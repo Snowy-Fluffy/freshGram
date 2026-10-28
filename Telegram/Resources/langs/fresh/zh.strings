@@ -714,10 +714,6 @@
 "ayu_ContextCopyCallbackData" = "复制回调数据";
 "ayu_RepeatMessage" = "重复发送消息";
 "ayu_RegisterURLScheme" = "注册 URL 协议";
-"ayu_PluginVersion" = "版本";
-"ayu_PluginNoDescription" = "未提供描述。";
-"ayu_PluginNoAuthor" = "未知作者";
-"ayu_PluginsNotAvailable" = "freshGram 暂不支持插件。";
 "ayu_SessionTerminated" = "会话 **{item}** 已被终止。你仍然可以浏览已缓存的消息。";
 "ayu_InvalidConnectionLayerNote" = "由于更新时出错，你需要重新登录。";
 "ayu_LocalPremiumNotice" = "你正在使用**本地** Telegram Premium。\n它**不会**给你带来任何好处。\n**尽情享受昵称旁的星标吧！**";

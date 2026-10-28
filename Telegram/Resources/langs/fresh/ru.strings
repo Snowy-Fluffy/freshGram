@@ -739,10 +739,6 @@
 "ayu_ContextCopyCallbackData" = "Копировать данные callback";
 "ayu_RepeatMessage" = "Повторить сообщение";
 "ayu_RegisterURLScheme" = "Зарегистрировать схему URL";
-"ayu_PluginVersion" = "Версия";
-"ayu_PluginNoDescription" = "Описание отсутствует.";
-"ayu_PluginNoAuthor" = "Неизвестный автор";
-"ayu_PluginsNotAvailable" = "Плагины в freshGram пока не поддерживаются.";
 "ayu_SessionTerminated" = "Сеанс **{item}** завершён. Вы по-прежнему можете просматривать сообщения из кэша.";
 "ayu_InvalidConnectionLayerNote" = "Из-за ошибки при обновлении вам нужно войти заново.";
 "ayu_LocalPremiumNotice" = "Вы используете **локальный** Telegram Premium.\nОн **не** даёт никаких преимуществ.\n**Наслаждайтесь звёздочкой рядом с именем!**";

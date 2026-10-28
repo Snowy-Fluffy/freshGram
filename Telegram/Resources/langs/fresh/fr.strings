@@ -730,10 +730,6 @@
 "ayu_ContextCopyCallbackData" = "Copier les données de callback";
 "ayu_RepeatMessage" = "Répéter le message";
 "ayu_RegisterURLScheme" = "Enregistrer le schéma d'URL";
-"ayu_PluginVersion" = "Version";
-"ayu_PluginNoDescription" = "Aucune description fournie.";
-"ayu_PluginNoAuthor" = "Auteur inconnu";
-"ayu_PluginsNotAvailable" = "Les plugins ne sont pas encore pris en charge par freshGram.";
 "ayu_SessionTerminated" = "La session **{item}** a été terminée. Vous pouvez toujours consulter les messages en cache.";
 "ayu_InvalidConnectionLayerNote" = "Vous devez vous reconnecter à cause d'une erreur lors de la mise à jour.";
 "ayu_LocalPremiumNotice" = "Vous utilisez Telegram Premium **local**.\nIl ne vous apporte **aucun** avantage.\n**Profitez de l'étoile près de votre nom !**";

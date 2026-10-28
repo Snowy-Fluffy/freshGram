@@ -93,25 +93,6 @@ registrationDateImportantTooltipLabel: FlatLabel(defaultImportantTooltipLabel) {
 	}
 }
 
-pluginShowInFolderIcon: icon {{ "menu/show_in_folder", boxTitleCloseFg }};
-pluginShowInFolderIconOver: icon {{ "menu/show_in_folder", boxTitleCloseFgOver }};
-pluginShowInFolder: IconButton(defaultIconButton) {
-	width: boxTitleHeight;
-	height: boxTitleHeight;
-
-	icon: pluginShowInFolderIcon;
-	iconOver: pluginShowInFolderIconOver;
-
-	rippleAreaPosition: point(4px, 4px);
-	rippleAreaSize: 40px;
-	ripple: defaultRippleAnimationBgOver;
-}
-maxPluginDescriptionHeight: 400px;
-pluginVersionAuthorLabel: FlatLabel(boxLabel) {
-    align: align(center);
-}
-pluginChipSkip: 6px;
-
 ghostPickerArrow: icon{{ "info/edit/expand_arrow_small", windowActiveTextFg }};
 
 ghostPickerButton: LinkButton(defaultLinkButton) {

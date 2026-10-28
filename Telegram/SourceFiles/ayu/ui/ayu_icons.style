@@ -85,9 +85,4 @@ burntIcon: IconEmoji{
     useIconColor: false;
 }
 
-ayuHistoryFileInPlugin: icon {{ "ayu/history_file_plugin", historyFileInIconFg }};
-ayuHistoryFileInPluginSelected: icon {{ "ayu/history_file_plugin", historyFileInIconFgSelected }};
-ayuHistoryFileOutPlugin: icon {{ "ayu/history_file_plugin", historyFileOutIconFg }};
-ayuHistoryFileOutPluginSelected: icon {{ "ayu/history_file_plugin", historyFileOutIconFgSelected }};
-
 menuIconClearAttention: icon {{ "menu/clear", menuIconAttentionColor }};
