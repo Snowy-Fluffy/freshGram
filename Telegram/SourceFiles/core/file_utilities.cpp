@@ -142,12 +142,14 @@ void OpenEmailLink(const QString &email) {
 	});
 }
 
-void OpenWith(const QString &filepath) {
+void OpenWith(const QString &filepath, Fn<void()> fallback) {
+	Expects(fallback != nullptr);
+
 	InvokeQueued(QCoreApplication::instance(), [=] {
 		if (!Platform::File::UnsafeShowOpenWithDropdown(filepath)) {
 			Ui::PreventDelayedActivation();
 			if (!Platform::File::UnsafeShowOpenWith(filepath)) {
-				Platform::File::UnsafeLaunch(filepath);
+				fallback();
 			}
 		}
 	});
