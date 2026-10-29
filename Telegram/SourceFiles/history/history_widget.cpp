@@ -1122,6 +1122,7 @@ HistoryWidget::HistoryWidget(
 		| PeerUpdateFlag::ManagedBot
 		| PeerUpdateFlag::StarsPerMessage
 		| PeerUpdateFlag::GiftSettings
+		| PeerUpdateFlag::BarSettings
 	) | rpl::filter([=](const Data::PeerUpdate &update) {
 		if (update.peer.get() == _peer) {
 			return true;
@@ -1226,6 +1227,12 @@ HistoryWidget::HistoryWidget(
 				if (channel->allowedReactions().paidEnabled) {
 					session().credits().load();
 				}
+			}
+		}
+		if (flags & PeerUpdateFlag::BarSettings) {
+			checkActivation();
+			if (_list) {
+				_list->update();
 			}
 		}
 	}, lifetime());
@@ -3603,6 +3610,10 @@ void HistoryWidget::showHistory(
 		) | rpl::on_next([=] {
 			updateControlsGeometry();
 		}, _contactStatus->bar().lifetime());
+		const auto settingsPeer = _peer->migrateToOrMe();
+		if (!settingsPeer->barSettings()) {
+			session().api().requestPeerSettings(settingsPeer);
+		}
 
 		refreshGiftToChannelShown();
 		refreshDirectMessageShown();
@@ -5281,6 +5292,7 @@ bool HistoryWidget::markingMessagesRead() const {
 
 bool HistoryWidget::markingContentsRead() const {
 	return _history
+		&& !_history->peer->keepIncomingUnread()
 		&& _list
 		&& _historyInited
 		&& !_firstLoadRequest

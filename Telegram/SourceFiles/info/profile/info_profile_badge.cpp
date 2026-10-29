@@ -281,7 +281,7 @@ rpl::producer<Badge::Content> BadgeContentForPeer(not_null<PeerData*> peer) {
 	const auto statusOnlyForPremium = peer->isUser();
 	return rpl::combine(
 		BadgeValue(peer),
-		EmojiStatusIdValue(peer),
+		ShownEmojiStatusIdValue(peer),
 		AyuFeatures::StreamerMode::spoilersActiveValue()
 	) | rpl::map([=](
 			BadgeType badge,

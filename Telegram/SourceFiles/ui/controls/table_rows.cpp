@@ -217,7 +217,7 @@ object_ptr<RpWidget> MakePeerWithStatusValue(
 	};
 	const auto peer = show->session().data().peer(id);
 	const auto state = peerLabel->lifetime().make_state<State>();
-	state->content = EmojiStatusIdValue(
+	state->content = ShownEmojiStatusIdValue(
 		peer
 	) | rpl::map([=](EmojiStatusId emojiStatusId) {
 		if (!peer->session().premium()

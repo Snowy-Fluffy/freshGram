@@ -493,6 +493,10 @@ ChatWidget::ChatWidget(
 	setupShortcuts();
 
 	_peer->updateFull();
+	const auto settingsPeer = _peer->migrateToOrMe();
+	if (!settingsPeer->barSettings()) {
+		session().api().requestPeerSettings(settingsPeer);
+	}
 	if (const auto channel = _peer->asMegagroup()) {
 		if (!channel->mgInfo->adminsLoaded) {
 			session().api().chatParticipants().requestAdmins(channel);
@@ -946,6 +950,14 @@ ChatWidget::ChatWidget(
 		}
 		checkSuggestToGigagroup();
 		updateControlsVisibility();
+	}, lifetime());
+
+	session().changes().peerUpdates(
+		_peer,
+		PeerUpdateFlag::BarSettings
+	) | rpl::on_next([=] {
+		checkActivation();
+		_inner->update();
 	}, lifetime());
 
 	session().data().historyAccessLost(
@@ -6041,6 +6053,11 @@ Ui::ChatPaintContext ChatWidget::listPreparePaintContext(
 		std::move(args));
 	context.gestureHorizontal = _gestureHorizontal;
 	return context;
+}
+
+bool ChatWidget::listMarkingContentRead() {
+	return WindowListDelegate::listMarkingContentRead()
+		&& !_peer->keepIncomingUnread();
 }
 
 base::unique_qptr<Ui::PopupMenu> ChatWidget::listFillSenderUserpicMenu(

@@ -1618,7 +1618,9 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 			} else if (item->isUnreadMention()
 				&& !item->isUnreadMedia()) {
 				readContents.insert(item);
-				_widget->enqueueMessageHighlight({ item });
+				if (markingAsViewed) {
+					_widget->enqueueMessageHighlight({ item });
+				}
 			}
 			if (item->hasUnreadPollVote()) {
 				readContents.insert(item);

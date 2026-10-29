@@ -946,6 +946,7 @@ void PeerData::setBarSettings(const MTPPeerSettings &data) {
 }
 
 void PeerData::setBarSettings(PeerBarSettings which) {
+	const auto wasSettings = _barSettings.current();
 	const auto was = hideLinks();
 	_barSettings.set(which);
 	if (was && !hideLinks()) {
@@ -961,6 +962,9 @@ void PeerData::setBarSettings(PeerBarSettings which) {
 				});
 			}
 		}
+	}
+	if (_barSettings.current() != wasSettings) {
+		session().changes().peerUpdated(this, UpdateFlag::BarSettings);
 	}
 }
 
@@ -992,6 +996,24 @@ bool PeerData::hideLinks() const {
 	if (const auto to = migrateTo()) {
 		return to->hideLinks();
 	}
+	const auto settings = barSettings();
+	return !settings || (*settings & PeerBarSetting::ReportSpam);
+}
+
+bool PeerData::hideEmojiStatus() const {
+	if (const auto to = migrateTo()) {
+		return to->hideEmojiStatus();
+	}
+	const auto settings = barSettings();
+	return settings && (*settings & PeerBarSetting::ReportSpam);
+}
+
+bool PeerData::keepIncomingUnread() const {
+	if (const auto to = migrateTo()) {
+		return to->keepIncomingUnread();
+	}
+	// WHY: unknown settings hold too, as every reading host requests them
+	// and requestPeerSettings() always ends with known settings.
 	const auto settings = barSettings();
 	return !settings || (*settings & PeerBarSetting::ReportSpam);
 }

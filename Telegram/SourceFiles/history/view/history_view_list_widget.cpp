@@ -3602,7 +3602,9 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 			} else if (item->isUnreadMention()
 				&& !item->isUnreadMedia()) {
 				readContents.insert(item);
-				_highlighter.enqueue({ item });
+				if (markingContentRead) {
+					_highlighter.enqueue({ item });
+				}
 			}
 			if (item->hasUnreadPollVote()) {
 				readContents.insert(item);

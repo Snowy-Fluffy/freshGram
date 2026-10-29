@@ -963,6 +963,21 @@ namespace {
 
 } // namespace
 
+rpl::producer<EmojiStatusId> ShownEmojiStatusIdValue(
+		not_null<PeerData*> peer) {
+	if (peer->isChat()) {
+		return rpl::single(EmojiStatusId());
+	}
+	return rpl::merge(
+		EmojiStatusIdValue(peer) | rpl::to_empty,
+		peer->barSettingsValue() | rpl::to_empty
+	) | rpl::map([=] {
+		return peer->hideEmojiStatus()
+			? EmojiStatusId()
+			: peer->emojiStatusId();
+	}) | rpl::distinct_until_changed();
+}
+
 rpl::producer<QString> BirthdayLabelText(
 		rpl::producer<Data::Birthday> birthday) {
 	return std::move(birthday) | rpl::map([](Data::Birthday value) {
