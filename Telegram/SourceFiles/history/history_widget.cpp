@@ -9264,6 +9264,7 @@ auto HistoryWidget::startMessageSendingAnimation(
 	if (_list->elementChatMode() == HistoryView::ElementChatMode::Default
 		&& width() > st::columnMaximalWidthLeft
 		&& !item->media()) {
+		controller()->sendingAnimation().dropPendingSnapshot(item);
 		return std::nullopt;
 	}
 	auto &sendingAnimation = controller()->sendingAnimation();
