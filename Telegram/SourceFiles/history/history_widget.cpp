@@ -6331,6 +6331,7 @@ void HistoryWidget::sendTextWithTags(
 	const auto nextLocalMessageId = session().data().nextLocalMessageId();
 	const auto hasText = !message.textWithTags.text.trimmed().isEmpty();
 
+	auto wasScrollBottom = std::optional<int>();
 	if (hasText && message.webPage.url.isEmpty()) {
 		auto from = Ui::PrepareTextSending(
 			_field,
@@ -6338,6 +6339,13 @@ void HistoryWidget::sendTextWithTags(
 			nextLocalMessageId,
 			(options.scheduled != 0));
 		if (from) {
+			if (from->fieldText
+				&& _list
+				&& _historyInited
+				&& _history->loadedAtBottom()
+				&& _scroll->scrollTop() >= _scroll->scrollTopMax()) {
+				wasScrollBottom = _scroll->y() + _scroll->height();
+			}
 			controller()->sendingAnimation().appendSending(std::move(*from));
 		}
 	}
@@ -6366,6 +6374,15 @@ void HistoryWidget::sendTextWithTags(
 		(options.scheduled
 			? Data::HistoryUpdate::Flag::ScheduledSent
 			: Data::HistoryUpdate::Flag::MessageSent));
+	if (wasScrollBottom) {
+		const auto lift = _scroll->y() + _scroll->height() - *wasScrollBottom;
+		const auto item = session().data().message(
+			_history->peer,
+			nextLocalMessageId);
+		if (item && lift > 0) {
+			liftItemReveal(item, lift);
+		}
+	}
 	if (done) {
 		done();
 	}
@@ -9203,10 +9220,7 @@ void HistoryWidget::revealItemsCallback() {
 		if (!i->second.animation.animating()) {
 			i = _itemRevealAnimations.erase(i);
 		} else {
-			height += anim::interpolate(
-				i->second.startHeight,
-				0,
-				i->second.animation.value(1.));
+			height += i->second.current();
 			++i;
 		}
 	}
@@ -9230,6 +9244,14 @@ void HistoryWidget::revealItemsCallback() {
 	}
 }
 
+void HistoryWidget::liftItemReveal(not_null<HistoryItem*> item, int lift) {
+	const auto i = _itemRevealAnimations.find(item);
+	if (i != end(_itemRevealAnimations)
+		&& Ui::LiftItemReveal(&i->second, nullptr, item, lift)) {
+		revealItemsCallback();
+	}
+}
+
 void HistoryWidget::startItemRevealAnimations() {
 	for (const auto &item : base::take(_itemRevealPending)) {
 		if (const auto view = item->mainView()) {
@@ -9238,14 +9260,16 @@ void HistoryWidget::startItemRevealAnimations() {
 					const auto reveal = startMessageSendingAnimation(item);
 					if (!_itemRevealAnimations.contains(item)) {
 						auto &animation = _itemRevealAnimations[item];
-						animation.startHeight = height;
-						_itemsRevealHeight += height;
+						_itemsRevealHeight += Ui::StartItemReveal(
+							animation,
+							height,
+							reveal ? reveal->height : nullptr);
 						animation.animation.start(
 							[=] { revealItemsCallback(); },
 							0.,
 							1.,
 							reveal ? reveal->duration : st::itemRevealDuration,
-							reveal ? reveal->transition : anim::easeOutCirc);
+							reveal ? anim::linear : anim::easeOutCirc);
 						if (item->out() || _history->peer->isSelf()) {
 							_list->theme()->rotateComplexGradientBackground();
 						}
@@ -9259,9 +9283,7 @@ void HistoryWidget::startItemRevealAnimations() {
 auto HistoryWidget::startMessageSendingAnimation(
 		not_null<HistoryItem*> item)
 -> std::optional<Ui::MessageSendingReveal> {
-	if (_list->elementChatMode() == HistoryView::ElementChatMode::Default
-		&& width() > st::columnMaximalWidthLeft
-		&& !item->media()) {
+	if (Ui::TooWideForTextSending(_list->elementChatMode(), width(), item)) {
 		controller()->sendingAnimation().dropPendingSnapshot(item);
 		return std::nullopt;
 	}
