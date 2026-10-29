@@ -98,6 +98,7 @@ class ChooseThemeController;
 class ElasticScroll;
 struct ChatPaintHighlight;
 class ChatStyle;
+struct MessageSendingReveal;
 template <typename Widget>
 class SlideWrap;
 } // namespace Ui
@@ -713,7 +714,8 @@ private:
 	void startItemRevealAnimations();
 	void revealItemsCallback();
 
-	void startMessageSendingAnimation(not_null<HistoryItem*> item);
+	std::optional<Ui::MessageSendingReveal> startMessageSendingAnimation(
+		not_null<HistoryItem*> item);
 
 	// Does any of the shown histories has this flag set.
 	bool hasPendingResizedItems() const;
@@ -1046,6 +1048,7 @@ private:
 		not_null<HistoryItem*>,
 		ItemRevealAnimation> _itemRevealAnimations;
 	int _itemsRevealHeight = 0;
+	rpl::event_stream<> _itemsRevealHeightChanges;
 
 
 	bool _sponsoredMessagesStateKnown = false;
