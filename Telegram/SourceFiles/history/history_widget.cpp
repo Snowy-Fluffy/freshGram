@@ -150,6 +150,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_group_call_bar.h"
 #include "history/view/history_view_group_members_widget.h"
 #include "history/view/history_view_item_preview.h"
+#include "history/view/history_view_list_widget.h"
 #include "history/view/history_view_reply.h"
 #include "history/view/history_view_requests_bar.h"
 #include "history/view/history_view_self_forwards_tagger.h"
@@ -288,6 +289,16 @@ const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
 	}
 
 } // namespace
+
+struct HistoryWidget::ListRevealHold final : base::has_weak_ptr {
+	base::flat_set<not_null<PeerData*>> watched;
+	base::Timer timer;
+	rpl::lifetime lifetime;
+	crl::time deadline = 0;
+	uint64 generation = 0;
+	bool releasePending = false;
+	bool refreshAwaited = false;
+};
 
 HistoryWidget::HistoryWidget(
 	QWidget *parent,
@@ -1234,6 +1245,8 @@ HistoryWidget::HistoryWidget(
 		return !_showAnimation
 			&& (_history == query.item->history())
 			&& (query.item->mainView() != nullptr)
+			&& _list
+			&& !_list->isHidden()
 			&& isVisible();
 	}) | rpl::on_next([=](
 			const Data::Session::ItemVisibilityQuery &query) {
@@ -2806,7 +2819,7 @@ void HistoryWidget::setInnerFocus() {
 			|| isBlocked()
 			|| !_richDraftPreview->isHidden()
 			|| (!_canSendTexts && !_editMsgId)) {
-			if (_scroll->isHidden()) {
+			if (_scroll->isHidden() || _list->isHidden()) {
 				setFocus();
 			} else {
 				_list->setFocus();
@@ -3688,7 +3701,6 @@ void HistoryWidget::showHistory(
 				sticker,
 				Api::MessageToSend(prepareSendAction({})));
 		}, _list->lifetime());
-		_list->show();
 
 		if (const auto channel = _peer->asChannel()) {
 			channel->updateFull();
@@ -5055,7 +5067,21 @@ void HistoryWidget::messagesFailed(const MTP::Error &error, int requestId) {
 			return;
 		}
 		auto was = _peer;
+		auto hiddenList = QPointer<HistoryInner>();
+		if (requestId && _delayedShowAtRequest == requestId) {
+			_delayedShowAtRequest = 0;
+			if (_list && _list->isHidden()) {
+				hiddenList = _list;
+			}
+		}
 		closeCurrent();
+		if (hiddenList) {
+			crl::on_main(hiddenList, [=] {
+				if (_list == hiddenList) {
+					resumeListReveal();
+				}
+			});
+		}
 		const auto wasAccount = not_null(&was->account());
 		if (const auto primary = Core::App().windowFor(wasAccount)) {
 			primary->showToast(was->isMegagroup()
@@ -5082,6 +5108,7 @@ void HistoryWidget::messagesFailed(const MTP::Error &error, int requestId) {
 		}
 	} else if (_delayedShowAtRequest == requestId) {
 		_delayedShowAtRequest = 0;
+		resumeListReveal();
 	}
 }
 
@@ -5104,6 +5131,7 @@ void HistoryWidget::messagesReceived(
 			_firstLoadRequest = 0;
 		} else if (_delayedShowAtRequest == requestId) {
 			_delayedShowAtRequest = 0;
+			resumeListReveal();
 		}
 		return;
 	}
@@ -5624,7 +5652,10 @@ bool HistoryWidget::isItemCompletelyHidden(HistoryItem *item) const {
 }
 
 void HistoryWidget::visibleAreaUpdated() {
-	if (_list && !_firstLoadRequest && !_scroll->isHidden()) {
+	if (_list
+		&& !_list->isHidden()
+		&& !_firstLoadRequest
+		&& !_scroll->isHidden()) {
 		const auto scrollTop = _scroll->scrollTop();
 		const auto scrollBottom = scrollTop + _scroll->height();
 		_list->visibleAreaUpdated(scrollTop, scrollBottom);
@@ -9168,6 +9199,11 @@ void HistoryWidget::updateHistoryGeometry(
 		_updateHistoryGeometryRequired = true;
 		return;
 	}
+	// A pending same-chat target replaces _showAtMsgId once it loads.
+	if (_list->isHidden() && (_delayedShowAtRequest || holdListReveal())) {
+		_updateHistoryGeometryRequired = true;
+		return;
+	}
 
 	updateListSize();
 	_updateHistoryGeometryRequired = false;
@@ -9190,6 +9226,13 @@ void HistoryWidget::updateHistoryGeometry(
 		}
 	}
 	const auto toY = std::clamp(newScrollTop, 0, _scroll->scrollTopMax());
+	if (_list->isHidden()) {
+		if (const auto hold = _listRevealHold.get()) {
+			hold->timer.cancel();
+			hold->lifetime.destroy();
+		}
+		_list->show();
+	}
 	synteticScrollToY(toY);
 	if (initial && _showAtMsgId) {
 		const auto timestamp = base::take(_showAtMsgParams.videoTimestamp);
@@ -9207,6 +9250,99 @@ void HistoryWidget::updateHistoryGeometry(
 					timestamp);
 			}
 		}
+	}
+}
+
+bool HistoryWidget::holdListReveal() {
+	Expects(_list != nullptr);
+
+	auto hold = _listRevealHold.get();
+	if (hold && hold->releasePending) {
+		return true;
+	}
+	auto waitFor = base::flat_set<not_null<PeerData*>>();
+	auto stale = false;
+	for (const auto history : { _migrated, _history }) {
+		if (!history) {
+			continue;
+		}
+		for (const auto &block : history->blocks) {
+			for (const auto &view : block->messages) {
+				const auto item = view->data();
+				if (const auto peer = HistoryView::FirstRevealWaitPeer(item)) {
+					waitFor.emplace(peer);
+				} else if (item->hasHiddenLinks() && !item->hideLinks()) {
+					stale = true;
+				}
+			}
+		}
+	}
+	if (waitFor.empty() && (!stale || (hold && hold->refreshAwaited))) {
+		return false;
+	} else if (!hold) {
+		hold = _list->lifetime().make_state<ListRevealHold>();
+		hold->timer.setCallback([=] { scheduleListReveal(hold); });
+		_listRevealHold = hold;
+	}
+	const auto now = crl::now();
+	if (!waitFor.empty()) {
+		if (!hold->deadline) {
+			hold->deadline = now + HistoryView::kFirstRevealTimeout;
+		}
+		if (now < hold->deadline) {
+			for (const auto &peer : waitFor) {
+				if (hold->watched.emplace(peer).second) {
+					peer->barSettingsValue(
+					) | rpl::to_empty | rpl::on_next([=] {
+						scheduleListReveal(hold);
+					}, hold->lifetime);
+				}
+			}
+			if (!hold->timer.isActive()) {
+				hold->timer.callOnce(hold->deadline - now);
+			}
+			return true;
+		}
+	}
+	if (stale && !hold->refreshAwaited) {
+		scheduleListReveal(hold);
+		return true;
+	}
+	return false;
+}
+
+void HistoryWidget::scheduleListReveal(not_null<ListRevealHold*> hold) {
+	hold->releasePending = true;
+	const auto generation = ++hold->generation;
+
+	// WHY: PeerData::setBarSettings() notifies before it queues the
+	// hidden-links refresh, so only the second hop runs after it.
+	crl::on_main(hold, [=] {
+		if (hold->generation != generation) {
+			return;
+		}
+		crl::on_main(hold, [=] {
+			if (hold->generation == generation) {
+				finishListReveal(hold);
+			}
+		});
+	});
+}
+
+void HistoryWidget::finishListReveal(not_null<ListRevealHold*> hold) {
+	hold->releasePending = false;
+	hold->refreshAwaited = true;
+	if (_listRevealHold.get() == hold.get()
+		&& _list
+		&& _list->isHidden()
+		&& !_showAnimation) {
+		doneShow();
+	}
+}
+
+void HistoryWidget::resumeListReveal() {
+	if (_list && _list->isHidden() && !_showAnimation) {
+		doneShow();
 	}
 }
 
