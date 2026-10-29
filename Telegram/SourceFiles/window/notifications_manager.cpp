@@ -1270,6 +1270,29 @@ TextWithEntities Manager::ComposePollVoteNotification(
 		tr::marked);
 }
 
+Manager::ContextId Manager::ItemContextId(not_null<HistoryItem*> item) {
+	const auto history = item->history();
+	return {
+		.sessionId = history->session().uniqueId(),
+		.peerId = history->peer->id,
+		.topicRootId = item->topicRootId(),
+		.monoforumPeerId = (history->amMonoforumAdmin()
+			? item->sublistPeerId()
+			: PeerId()),
+	};
+}
+
+Manager::ContextId Manager::SublistContextId(
+		not_null<Data::SavedSublist*> sublist) {
+	return {
+		.sessionId = sublist->session().uniqueId(),
+		.peerId = sublist->owningHistory()->peer->id,
+		// Monoforum items are never in a topic, so topicRootId() is General.
+		.topicRootId = Data::ForumTopic::kGeneralId,
+		.monoforumPeerId = sublist->sublistPeer()->id,
+	};
+}
+
 TextWithEntities Manager::addTargetAccountName(
 		TextWithEntities title,
 		not_null<Main::Session*> session) {
@@ -1704,12 +1727,11 @@ void NativeManager::doShowNotification(NotificationFields &&fields) {
 			}
 		}
 	}
+	const auto contextId = ItemContextId(item);
 	doShowNativeNotification({
 		.peer = item->history()->peer,
-		.topicRootId = item->topicRootId(),
-		.monoforumPeerId = (item->history()->amMonoforumAdmin()
-			? item->sublistPeerId()
-			: PeerId()),
+		.topicRootId = contextId.topicRootId,
+		.monoforumPeerId = contextId.monoforumPeerId,
 		.itemId = item->id,
 		.title = scheduled ? WrapFromScheduled(fullTitle) : fullTitle,
 		.subtitle = subtitle,
