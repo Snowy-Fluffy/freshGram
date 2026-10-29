@@ -28,7 +28,7 @@ namespace Window {
 namespace Theme {
 namespace {
 
-constexpr auto kMaxAccentColors = 3;
+constexpr auto kMaxAccentColors = 4;
 constexpr auto kDayBaseFile = ":/gui/Google Day.tdesktop-theme"_cs;
 constexpr auto kNightBaseFile = ":/gui/Google Dark.tdesktop-theme"_cs;
 constexpr auto kTelegramDayBaseFile = ":/gui/day-custom-base.tdesktop-theme"_cs;
