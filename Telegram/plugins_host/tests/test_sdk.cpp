@@ -126,6 +126,8 @@ void TestPythonSdk() {
 	const auto mine = report->find("mine")->asArray();
 	CHECK(mine && mine->size() == 2 && (*mine)[0].asBool() == true);
 	CHECK(report->find("server_time")->asInt() == 1700000000);
+	const auto got = report->find("got")->asArray();
+	CHECK(got && got->size() == 3 && (*got)[0].asInt() == 100 && (*got)[1].asInt() == 1 && (*got)[2].asInt() == 2);
 	const auto fetched = report->find("fetch")->asArray();
 	CHECK(fetched && fetched->size() == 2);
 	CHECK(fetched && (*fetched)[0].asInt() == 200);

@@ -282,6 +282,19 @@ class _Chats(_Namespace):
         """Show "typing…" or another action in the chat, "cancel" to stop."""
         return self._call("chats.action", _nothing, chat=chat, kind=kind, **_given(topic=topic))
 
+    def mute(self, chat, seconds=0, forever=False):
+        """Mute the chat for some seconds (up to a year) or for good; no arguments unmute it (chats.manage)."""
+        return self._call(
+            "chats.mute", _nothing, chat=chat, **_given(seconds=seconds, forever=forever))
+
+    def archive(self, chat, archived=True):
+        """Move the chat to the archive, or out of it (chats.manage)."""
+        return self._call("chats.archive", _nothing, chat=chat, archived=bool(archived))
+
+    def pin(self, chat, pinned=True):
+        """Pin the chat in the chat list, or unpin it (chats.manage); `limit` when the list is full."""
+        return self._call("chats.pin", _nothing, chat=chat, pinned=bool(pinned))
+
 
 class Sent:
     """What messages.send and messages.send_media answer.
@@ -322,11 +335,13 @@ class _Messages(_Namespace):
             **({} if from_user is None else {"from_user": from_user}))
 
     def send(self, chat, text, reply_to=0, topic=0, silent=False, schedule=0, markdown=False,
-             custom_emoji=None):
+             custom_emoji=None, entities=None):
         """Send a message; schedule is a unix time, markdown parses **bold** and the like.
 
         custom_emoji is a list of {"offset", "length", "id"}: the part of the text
         (UTF-16 units) that is shown as the custom emoji with this id (Premium).
+        entities is a list of {"type", "offset", "length", ...} for the formatting,
+        as in the events; it cannot be combined with markdown.
 
         Returns Sent. With messages.ids the call waits for the server, so await it
         (freshgram.aio) instead of blocking the event.
@@ -338,6 +353,7 @@ class _Messages(_Namespace):
             text=text,
             **_given(reply_to=reply_to, topic=topic, silent=silent, schedule=schedule),
             **({"custom_emoji": list(custom_emoji)} if custom_emoji else {}),
+            **({"entities": [dict(entity) for entity in entities]} if entities else {}),
             **_format(markdown))
 
     def send_media(self, chat, data, name, caption="", kind="auto", markdown=False,
@@ -365,14 +381,15 @@ class _Messages(_Namespace):
                 duration=duration),
             **_format(markdown))
 
-    def edit(self, chat, message, text, markdown=False):
-        """Edit a message you sent (messages.edit)."""
+    def edit(self, chat, message, text, markdown=False, entities=None):
+        """Edit a message you sent (messages.edit); entities as in send()."""
         return self._call(
             "messages.edit",
             _nothing,
             chat=chat,
             id=_ref(message),
             text=text,
+            **({"entities": [dict(entity) for entity in entities]} if entities else {}),
             **_format(markdown))
 
     def edit_media(self, chat, message, data, name, caption="", kind="auto",
@@ -428,6 +445,35 @@ class _Messages(_Namespace):
         """Search the chat on the server (messages.history)."""
         return self._call("messages.search", chat=chat, query=query, limit=limit)
 
+    def get(self, chat, message):
+        """One message by its server id (messages.history); loads it from the server if needed."""
+        return self._call("messages.get", chat=chat, id=_ref(message))
+
+    def reply_chain(self, chat, message, limit=5):
+        """The messages this one replies to, nearest first, up to 20 (messages.history)."""
+        return self._call("messages.reply_chain", chat=chat, id=_ref(message), limit=limit)
+
+    def pinned(self, chat, limit=20):
+        """The pinned messages of the chat, newest first (messages.history)."""
+        return self._call("messages.pinned", chat=chat, limit=limit)
+
+    def scheduled(self, chat):
+        """Your scheduled messages in the chat (messages.history); ids are the scheduled ids."""
+        return self._call("messages.scheduled", chat=chat)
+
+    def scheduled_delete(self, chat, ids):
+        """Delete scheduled messages by the ids of scheduled() (messages.delete)."""
+        return self._call("messages.scheduled_delete", _nothing, chat=chat, ids=list(ids))
+
+    def pin(self, chat, message, silent=False):
+        """Pin a message (chats.manage)."""
+        return self._call(
+            "messages.pin", _nothing, chat=chat, id=_ref(message), **_given(silent=silent))
+
+    def unpin(self, chat, message):
+        """Unpin a message (chats.manage)."""
+        return self._call("messages.unpin", _nothing, chat=chat, id=_ref(message))
+
 
 class _SyncMessages(_Messages):
     def set_outgoing(self, text=None, markdown=False, silent=None, schedule=None,
@@ -463,13 +509,37 @@ class _SyncMessages(_Messages):
 
 
 class _Bots(_Namespace):
-    def inline_query(self, bot, query=""):
+    def inline_query(self, bot, query="", chat=None):
         """Ask the inline bot (a username or an id) and get its results.
 
-        Each result is {"id", "title", "description", "text"}. Nothing is sent
-        to any chat. Needs bots.inline; await it (freshgram.aio) to wait for the bot.
+        Each result is {"query_id", "id", "title", "description", "text"}. Nothing is
+        sent to any chat; chat only tells the bot where the query is made. Needs
+        bots.inline; await it (freshgram.aio) to wait for the bot.
         """
-        return self._call("bots.inline_query", bot=bot, query=query)
+        return self._call(
+            "bots.inline_query", bot=bot, query=query, **({} if chat is None else {"chat": chat}))
+
+    def send_inline_result(self, chat, query_id, result, reply_to=0, topic=0, silent=False):
+        """Send a result of inline_query() to the chat (bots.inline and messages.send).
+
+        result is the "id" of that result, query_id its "query_id".
+        """
+        return self._call(
+            "bots.send_inline_result",
+            _nothing,
+            chat=chat,
+            query_id=query_id,
+            id=result,
+            **_given(reply_to=reply_to, topic=topic, silent=silent))
+
+    def press_button(self, chat, message, row, column):
+        """Press a button of a bot's inline keyboard (bots.inline).
+
+        Callback buttons answer {"text", "alert", "url"}; a link button answers its
+        "url" without any request. See "buttons" in the message.
+        """
+        return self._call(
+            "bots.press_button", chat=chat, id=_ref(message), row=row, column=column)
 
 
 class _Users(_Namespace):
@@ -484,6 +554,14 @@ class _Users(_Namespace):
     def photo(self, user):
         """The current profile photo of a user in full size as {"mime", "data"} (users.info): MP4 video bytes (video/mp4) if the user has a video avatar, otherwise JPEG bytes."""
         return self._call("users.photo", id=user)
+
+    def block(self, user):
+        """Block a user (contacts.manage)."""
+        return self._call("users.block", _nothing, id=user)
+
+    def unblock(self, user):
+        """Unblock a user (contacts.manage)."""
+        return self._call("users.unblock", _nothing, id=user)
 
 
 class _Channels(_Namespace):
@@ -601,6 +679,11 @@ class _Contacts(_Namespace):
     def list(self, limit=200):
         return self._call("contacts.list", limit=limit)
 
+    def add(self, user, first_name, last_name=""):
+        """Add a user you already know (users.info, a chat) to your contacts (contacts.manage)."""
+        return self._call(
+            "contacts.add", _nothing, id=user, first_name=first_name, **_given(last_name=last_name))
+
 
 class _Folders(_Namespace):
     def list(self):
@@ -648,6 +731,10 @@ class _Composer(_Namespace):
 
     def set_draft(self, chat, text):
         return self._call("composer.set_draft", _nothing, chat=chat, text=text)
+
+    def insert(self, chat, text):
+        """Insert text into the draft at its saved cursor, or at the end (composer.draft)."""
+        return self._call("composer.insert", _nothing, chat=chat, text=text)
 
 
 storage = _Storage(_sync_call)

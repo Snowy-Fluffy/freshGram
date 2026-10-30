@@ -70,15 +70,97 @@ public:
 	Result<std::vector<InlineResult>, std::string> inlineQuery(
 			int64_t bot,
 			const std::string &username,
-			const std::string &query) override {
-		inlineQueries.push_back(std::to_string(bot) + "/" + username + "/" + query);
+			const std::string &query,
+			int64_t chat) override {
+		inlineQueries.push_back(std::to_string(bot) + "/" + username + "/" + query
+			+ (chat ? "/" + std::to_string(chat) : std::string()));
 		if (bot != 9 && username != "inlinebot") {
 			return std::string(api::error::kNotFound);
 		}
 		return std::vector<InlineResult>{
-			{ "r1", "Title " + query, "About", "Text one" },
-			{ "r2", "Second", "", "Text two" },
+			{ 77, "r1", "Title " + query, "About", "Text one" },
+			{ 77, "r2", "Second", "", "Text two" },
 		};
+	}
+	SendResult sendInlineResult(const OutgoingInline &result) override {
+		actions.push_back("inline " + std::to_string(result.chat) + " "
+			+ std::to_string(result.queryId) + " " + result.resultId
+			+ (result.silent ? " silent" : "")
+			+ (result.replyTo ? " reply" + std::to_string(result.replyTo) : std::string()));
+		return {};
+	}
+	Result<ButtonAnswer, std::string> pressButton(
+			int64_t chat,
+			int64_t id,
+			int64_t row,
+			int64_t column) override {
+		actions.push_back("press " + std::to_string(chat) + " " + std::to_string(id)
+			+ " " + std::to_string(row) + " " + std::to_string(column));
+		if (id != 100 || row != 0 || column > 1) {
+			return std::string(api::error::kNotFound);
+		}
+		return column ? ButtonAnswer{ "", false, "https://example.com/" } : ButtonAnswer{ "Pressed", true, "" };
+	}
+	Result<Message, std::string> message(int64_t chat, int64_t id) override {
+		if (id <= 0 || id >= 1000) {
+			return std::string(api::error::kNotFound);
+		}
+		auto result = Message();
+		result.id = id;
+		result.chat = chat;
+		result.from = 1;
+		result.date = 1000;
+		result.text = "hello";
+		result.replyTo = (id > 101 && id < 990) ? id - 1 : 0;
+		result.deleted = (id == 998);
+		if (id == 100) {
+			result.entities.push_back({ "bold", 0, 2 });
+			result.buttons = { { { "Go", "callback", "" }, { "Site", "url", "https://example.com/" } } };
+		}
+		return result;
+	}
+	Result<std::vector<Message>, std::string> pinnedMessages(int64_t chat, size_t limit) override {
+		auto result = std::vector<Message>();
+		for (auto i = size_t(0); i != std::min<size_t>(limit, 2); ++i) {
+			result.push_back(message(chat, int64_t(100 + i)).value());
+		}
+		return result;
+	}
+	Result<std::vector<Message>, std::string> scheduledMessages(int64_t chat) override {
+		return std::vector<Message>{ message(chat, 7).value() };
+	}
+	std::string deleteScheduled(int64_t chat, const std::vector<int64_t> &ids) override {
+		actions.push_back("unschedule " + std::to_string(chat) + " " + std::to_string(ids.size()));
+		return {};
+	}
+	std::string pinMessage(int64_t chat, int64_t id, bool pinned, bool silent) override {
+		actions.push_back(std::string(pinned ? "pin " : "unpin ") + std::to_string(chat)
+			+ " " + std::to_string(id) + (silent ? " silent" : ""));
+		return (id == 100) ? std::string() : std::string(api::error::kNotFound);
+	}
+	std::string muteChat(int64_t chat, int64_t seconds) override {
+		actions.push_back("mute " + std::to_string(chat) + " " + std::to_string(seconds));
+		return {};
+	}
+	std::string archiveChat(int64_t chat, bool archived) override {
+		actions.push_back(std::string("archive ") + std::to_string(chat) + (archived ? " on" : " off"));
+		return {};
+	}
+	std::string pinChat(int64_t chat, bool pinned) override {
+		actions.push_back(std::string("pinchat ") + std::to_string(chat) + (pinned ? " on" : " off"));
+		return {};
+	}
+	std::string blockUser(int64_t id, bool blocked) override {
+		actions.push_back(std::string(blocked ? "block " : "unblock ") + std::to_string(id));
+		return {};
+	}
+	std::string addContact(int64_t id, const std::string &first, const std::string &last) override {
+		actions.push_back("contact " + std::to_string(id) + " " + first + "|" + last);
+		return {};
+	}
+	std::string composerInsert(int64_t chat, const std::string &text) override {
+		actions.push_back("insert " + std::to_string(chat) + " " + text);
+		return {};
 	}
 	Account account() override {
 		return { 42, "Me", "me", true, "+10000000000" };
@@ -147,9 +229,10 @@ public:
 		sent.emplace_back(message.chat, message.text);
 		return { .error = {}, .localId = nextLocalId--, .serverId = 500 };
 	}
-	std::string edit(int64_t chat, int64_t id, const std::string &text, bool markdown) override {
+	std::string edit(int64_t chat, int64_t id, const std::string &text, bool markdown, const std::vector<TextEntity> &entities) override {
 		actions.push_back("edit " + std::to_string(chat) + " " + std::to_string(id)
-			+ " " + text + (markdown ? " md" : ""));
+			+ " " + text + (markdown ? " md" : "")
+			+ (entities.empty() ? "" : " e" + std::to_string(entities.size())));
 		return (id == 100 || id < 0) ? std::string() : std::string(api::error::kDenied);
 	}
 	std::string editMedia(const OutgoingMediaEdit &edit) override {

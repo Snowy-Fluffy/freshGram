@@ -135,6 +135,12 @@ struct ReactionEntry {
 	int64_t date = 0;
 };
 
+struct MessageButton {
+	std::string text;
+	std::string type;
+	std::string url;
+};
+
 struct Message {
 	int64_t id = 0;
 	int64_t chat = 0;
@@ -149,8 +155,9 @@ struct Message {
 	std::string fromKind;
 	std::optional<StickerInfo> sticker;
 	bool emojiOnly = false;
-	std::vector<TextEmoji> customEmoji;
+	std::vector<TextEntity> entities;
 	std::vector<ReactionCount> reactions;
+	std::vector<std::vector<MessageButton>> buttons;
 };
 
 struct Account {
@@ -198,6 +205,7 @@ struct OutgoingMessage {
 	int64_t schedule = 0;
 	bool waitForServerId = false;
 	std::vector<TextEmoji> customEmoji;
+	std::vector<TextEntity> entities;
 };
 
 // What a plugin asked for while handling message.outgoing.
@@ -249,10 +257,26 @@ struct OutgoingMediaEdit {
 };
 
 struct InlineResult {
+	int64_t queryId = 0;
 	std::string id;
 	std::string title;
 	std::string description;
 	std::string text;
+};
+
+struct ButtonAnswer {
+	std::string text;
+	bool alert = false;
+	std::string url;
+};
+
+struct OutgoingInline {
+	int64_t chat = 0;
+	int64_t queryId = 0;
+	std::string resultId;
+	bool silent = false;
+	int64_t replyTo = 0;
+	int64_t topic = 0;
 };
 
 struct UserInfo {
@@ -388,11 +412,13 @@ public:
 			int64_t chat,
 			int64_t id,
 			const std::string &text,
-			bool markdown) {
+			bool markdown,
+			const std::vector<TextEntity> &entities) {
 		(void)chat;
 		(void)id;
 		(void)text;
 		(void)markdown;
+		(void)entities;
 		return api::error::kUnavailable;
 	}
 	[[nodiscard]] virtual std::string remove(
@@ -491,11 +517,102 @@ public:
 	[[nodiscard]] virtual Result<std::vector<InlineResult>, std::string> inlineQuery(
 			int64_t bot,
 			const std::string &username,
-			const std::string &query) {
+			const std::string &query,
+			int64_t chat) {
 		(void)bot;
 		(void)username;
 		(void)query;
+		(void)chat;
 		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual SendResult sendInlineResult(const OutgoingInline &result) {
+		(void)result;
+		return { .error = api::error::kUnavailable };
+	}
+	[[nodiscard]] virtual Result<ButtonAnswer, std::string> pressButton(
+			int64_t chat,
+			int64_t id,
+			int64_t row,
+			int64_t column) {
+		(void)chat;
+		(void)id;
+		(void)row;
+		(void)column;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual Result<Message, std::string> message(
+			int64_t chat,
+			int64_t id) {
+		(void)chat;
+		(void)id;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual Result<std::vector<Message>, std::string> pinnedMessages(
+			int64_t chat,
+			size_t limit) {
+		(void)chat;
+		(void)limit;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual Result<std::vector<Message>, std::string> scheduledMessages(
+			int64_t chat) {
+		(void)chat;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual std::string deleteScheduled(
+			int64_t chat,
+			const std::vector<int64_t> &ids) {
+		(void)chat;
+		(void)ids;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string pinMessage(
+			int64_t chat,
+			int64_t id,
+			bool pinned,
+			bool silent) {
+		(void)chat;
+		(void)id;
+		(void)pinned;
+		(void)silent;
+		return api::error::kUnavailable;
+	}
+	// Seconds to mute for: 0 unmutes, -1 mutes for good.
+	[[nodiscard]] virtual std::string muteChat(int64_t chat, int64_t seconds) {
+		(void)chat;
+		(void)seconds;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string archiveChat(int64_t chat, bool archived) {
+		(void)chat;
+		(void)archived;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string pinChat(int64_t chat, bool pinned) {
+		(void)chat;
+		(void)pinned;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string blockUser(int64_t id, bool blocked) {
+		(void)id;
+		(void)blocked;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string addContact(
+			int64_t id,
+			const std::string &firstName,
+			const std::string &lastName) {
+		(void)id;
+		(void)firstName;
+		(void)lastName;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string composerInsert(
+			int64_t chat,
+			const std::string &text) {
+		(void)chat;
+		(void)text;
+		return api::error::kUnavailable;
 	}
 	[[nodiscard]] virtual Result<Media, std::string> peerPhoto(
 			int64_t id,

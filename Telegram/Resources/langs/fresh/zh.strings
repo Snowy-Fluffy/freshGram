@@ -214,7 +214,9 @@
 "fresh_PermUsersPresence" = "查看用户是否在线";
 "fresh_PermAppActivity" = "知道应用是否处于前台";
 "fresh_PermTranslateProvide" = "为你翻译文本";
-"fresh_PermBotsInline" = "代你查询内联机器人";
+"fresh_PermBotsInline" = "代你查询机器人并点击其按钮";
+"fresh_PermChatsManage" = "置顶消息，静音、置顶和归档聊天";
+"fresh_PermContactsManage" = "添加联系人并屏蔽用户";
 "fresh_PluginSettingsExport" = "导出设置";
 "fresh_PluginSettingsImport" = "导入设置";
 "fresh_PluginSettingsExported" = "设置已保存。";

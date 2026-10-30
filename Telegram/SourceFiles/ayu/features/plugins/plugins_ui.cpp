@@ -2916,6 +2916,8 @@ namespace {
 		{ "app.activity", &st::menuIconInfo },
 		{ "translate.provide", &st::menuIconTranslate },
 		{ "bots.inline", &st::menuIconBot },
+		{ "chats.manage", &st::menuIconPin },
+		{ "contacts.manage", &st::menuIconProfile },
 	};
 	const auto i = icons.find(id);
 	return (i != icons.end()) ? i->second : &st::menuIconLock;
@@ -2927,7 +2929,7 @@ namespace {
 		"messages.send", "messages.transform_outgoing", "chats.list",
 		"chat.info", "media.read", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
-		"messages.ids", "chats.activity",
+		"messages.ids", "chats.activity", "chats.manage",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -3435,6 +3437,8 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "app.activity", tr::fresh_PermAppActivity },
 		{ "translate.provide", tr::fresh_PermTranslateProvide },
 		{ "bots.inline", tr::fresh_PermBotsInline },
+		{ "chats.manage", tr::fresh_PermChatsManage },
+		{ "contacts.manage", tr::fresh_PermContactsManage },
 	};
 	const auto i = titles.find(id);
 	return (i != titles.end()) ? i->second(tr::now) : Utf8(id);

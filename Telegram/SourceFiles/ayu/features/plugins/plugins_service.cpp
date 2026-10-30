@@ -926,6 +926,7 @@ void Finish(
 			};
 		} else if (result.entities) {
 			outgoing.message.textWithTags = TextWithEntitiesOf(
+				&history->session(),
 				changed,
 				*result.entities);
 		} else if (changed != outgoing.message.textWithTags.text) {
