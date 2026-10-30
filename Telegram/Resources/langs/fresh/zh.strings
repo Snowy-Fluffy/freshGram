@@ -86,10 +86,8 @@
 "ayu_CrashReportingDescription" = "启用此选项后，应用崩溃时会提示你发送报告。是否发送由你决定。";
 "fresh_Plugins" = "插件";
 "fresh_PluginsEnable" = "启用插件";
-"fresh_PluginsDescription" = "插件在独立的沙盒进程中运行，只能使用你授予的权限。";
 "fresh_PluginsNoRuntime" = "插件组件尚未安装。";
 "fresh_PluginsNoSandbox" = "插件需要操作系统的沙盒才能运行，而此系统不提供。Linux 请使用启用了 Landlock 的 5.13 或更高版本，Windows 请使用 10 或更高版本，macOS 请使用 10.15 或更高版本。";
-"fresh_PluginPermissionsAllAccounts" = "插件的权限和数据在你的所有账号间共享。";
 "fresh_PluginAcceptsFrom" = "接受以下插件的消息：{list}";
 "fresh_PluginAcceptsAny" = "任意插件";
 "fresh_PluginDangerLow" = "安全";
@@ -177,7 +175,6 @@
 "fresh_PluginBrokenToast" = "插件文件已损坏。请移除插件或重新安装。";
 "fresh_PluginStatusOff" = "已关闭";
 "fresh_PluginsComponents" = "插件组件";
-"fresh_PluginsComponentsAbout" = "Wasmtime 用于运行插件，Python 用于运行以 Python 编写的插件。它们只需从 Telegram 下载一次，并通过签名和哈希校验。";
 "fresh_PluginsListAbout" = "点击插件可打开其设置、权限和日志。";
 "fresh_PluginsAdvanced" = "高级";
 "fresh_PluginId" = "ID：{id}";
@@ -200,10 +197,8 @@
 "fresh_PluginsBlockHttps" = "对所有插件屏蔽 HTTPS";
 "fresh_PluginsBlockTcp" = "对所有插件屏蔽 TCP";
 "fresh_PluginsBlockUdp" = "对所有插件屏蔽 UDP";
-"fresh_PluginsBlockAbout" = "在每个插件自身权限之外额外生效。已屏蔽类型的现有连接会被关闭。";
 "fresh_PluginsProxy" = "插件代理";
 "fresh_PluginsProxyOff" = "关闭";
-"fresh_PluginsProxyAbout" = "只有插件的流量会经过此代理。代理失效时，插件会收到错误，而不是直接连接。UDP 仅支持 SOCKS5。主机名由代理解析。";
 "fresh_PermMessagesEdit" = "编辑你发送的消息";
 "fresh_PermMessagesDelete" = "删除你发送的消息";
 "fresh_PermMessagesReact" = "对消息做出回应";
@@ -253,7 +248,6 @@
 "fresh_PluginLicense" = "许可证：{license}";
 "fresh_PluginPermissionRequiredShort" = "必需";
 "fresh_PluginPermissionNewShort" = "新增";
-"fresh_PluginPermissionsRequiredAbout" = "没有这些权限插件无法运行，因此它们始终开启。";
 "fresh_PluginLogTabAll" = "全部";
 "fresh_PluginLogTabProblems" = "问题";
 "fresh_PluginLogSearch" = "搜索";
@@ -366,7 +360,6 @@
 "fresh_DesignStyleTelegram" = "Telegram 默认设计";
 "fresh_DesignStyleMaterialgram" = "Materialgram 设计";
 "fresh_DesignStyleFagram" = "FagramDesktop 设计";
-"fresh_DesignStyleDescription" = "设计风格设置间距、尺寸和界面元素的外观。设计风格和图标在重启后生效。Fagram 设计包含胶囊式顶栏、导航抽屉菜单、设置和个人资料中的卡片，以及来自 FAgram Desktop 的 Material 3 风格滑块和开关。Telegram 设计与 Telegram Desktop 一致，包括字体、主题和图标颜色。";
 "fresh_ManageWhisperModels" = "语音识别模型";
 "fresh_ManageOcrLanguages" = "文字识别语言";
 "fresh_ModelEnabled" = "已启用";
@@ -546,7 +539,6 @@
 "fresh_DeletedPostCommentsUnavailable" = "此已删除帖子的评论已不可用。";
 "fresh_GesturesHeader" = "手势";
 "fresh_InvertSwipeGestures" = "反转滑动手势";
-"fresh_InvertSwipeGesturesDescription" = "滑动时跟随触控板的滚动方向，而不是手指方向：打开和关闭聊天、回复消息、快捷操作。";
 "fresh_StreamerSpoilers" = "隐藏照片、头像和个人数据";
 "fresh_StreamerSpoilersDescription" = "开启主播模式时，照片、视频、头像、用户名、ID、手机号码和注册日期会被剧透遮罩隐藏。";
 "ayu_EditsHistoryTitle" = "编辑历史";
@@ -775,7 +767,6 @@
 "fresh_StashHint" = "按 {shortcut} 暂存此草稿。";
 "fresh_KeepDeletedDays" = "已删除消息和编辑记录保留时长";
 "fresh_DeleteSavedFiles" = "随已保存消息一起删除文件";
-"fresh_DeleteSavedFilesAbout" = "手动或按保留期限移除已保存的已删除消息时，其媒体会被覆盖擦除，并同时从备份中移除。最完整的备份不再超出备份数量保留。";
 "fresh_BackupKeepCount" = "保留的数据库备份数";
 "fresh_BackupInterval" = "数据库备份间隔";
 "fresh_StorageUnlimited" = "无限制";
@@ -957,7 +948,6 @@
 "fresh_PasscodeWiped" = "失败次数过多。数据已删除。";
 "fresh_PasscodeKeyUnavailable" = "无法验证密码：此版本不支持 Argon2id 或内存不足。本次尝试未计入。";
 "fresh_PasscodeKdfFailed" = "无法生成新密钥，未做任何更改。";
-"fresh_PasscodeLockMinimizeWayland" = "在 Wayland 下窗口无法得知自己是否已最小化，因此应用在保持非活动状态达到所选时间后锁定。";
 "fresh_PasscodeLockScreen" = "锁屏";
 "fresh_PasscodeShowClock" = "显示时钟";
 "fresh_PasscodeShowDate" = "显示日期";

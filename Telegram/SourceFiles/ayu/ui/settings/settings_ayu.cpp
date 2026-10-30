@@ -908,8 +908,6 @@ void BuildStorage(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 	builder.addSkip();
 	builder.addDividerText(tr::fresh_StorageDescription());
-	builder.addSkip();
-	builder.addDividerText(tr::fresh_DeleteSavedFilesAbout());
 }
 
 void BuildOther(SectionBuilder &builder, AyuSectionBuilder &ayu) {

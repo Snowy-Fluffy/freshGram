@@ -86,10 +86,8 @@
 "ayu_CrashReportingDescription" = "Quand cette option est activée, il vous sera proposé d'envoyer un rapport après un plantage de l'application. Vous décidez de l'envoyer ou non.";
 "fresh_Plugins" = "Plugins";
 "fresh_PluginsEnable" = "Activer les plugins";
-"fresh_PluginsDescription" = "Les plugins s'exécutent dans un processus isolé et ne peuvent utiliser que ce que vous leur autorisez.";
 "fresh_PluginsNoRuntime" = "Les composants des plugins ne sont pas encore installés.";
 "fresh_PluginsNoSandbox" = "Les plugins ont besoin du bac à sable du système d'exploitation, et ce système ne le fournit pas. Sous Linux, utilisez la version 5.13 ou plus récente avec Landlock activé, sous Windows la version 10 ou plus récente, sous macOS la version 10.15 ou plus récente.";
-"fresh_PluginPermissionsAllAccounts" = "Les autorisations et les données d’un plugin sont communes à tous vos comptes.";
 "fresh_PluginAcceptsFrom" = "Accepte les messages de : {list}";
 "fresh_PluginAcceptsAny" = "n’importe quel plugin";
 "fresh_PluginDangerLow" = "Sûr";
@@ -177,7 +175,6 @@
 "fresh_PluginBrokenToast" = "Les fichiers du plugin sont endommagés. Supprimez le plugin ou réinstallez-le.";
 "fresh_PluginStatusOff" = "Désactivé";
 "fresh_PluginsComponents" = "Composants des plugins";
-"fresh_PluginsComponentsAbout" = "Wasmtime exécute les plugins et Python ceux écrits en Python. Ils sont téléchargés une fois depuis Telegram et vérifiés par signature et hachage.";
 "fresh_PluginsListAbout" = "Touchez un plugin pour ouvrir ses réglages, ses autorisations et son journal.";
 "fresh_PluginsAdvanced" = "Avancé";
 "fresh_PluginId" = "ID : {id}";
@@ -200,10 +197,8 @@
 "fresh_PluginsBlockHttps" = "Bloquer HTTPS pour tous les plugins";
 "fresh_PluginsBlockTcp" = "Bloquer TCP pour tous les plugins";
 "fresh_PluginsBlockUdp" = "Bloquer UDP pour tous les plugins";
-"fresh_PluginsBlockAbout" = "S’applique à chaque plugin en plus de ses propres autorisations. Les connexions ouvertes du type bloqué sont fermées.";
 "fresh_PluginsProxy" = "Proxy pour les plugins";
 "fresh_PluginsProxyOff" = "Désactivé";
-"fresh_PluginsProxyAbout" = "Seul le trafic des plugins passe par ce proxy. Si le proxy tombe en panne, les plugins reçoivent une erreur au lieu de se connecter directement. UDP ne fonctionne qu’avec SOCKS5. Les noms d’hôte sont résolus par le proxy.";
 "fresh_PermMessagesEdit" = "Modifier les messages que vous avez envoyés";
 "fresh_PermMessagesDelete" = "Supprimer les messages que vous avez envoyés";
 "fresh_PermMessagesReact" = "Réagir aux messages";
@@ -253,7 +248,6 @@
 "fresh_PluginLicense" = "Licence : {license}";
 "fresh_PluginPermissionRequiredShort" = "Obligatoire";
 "fresh_PluginPermissionNewShort" = "Nouveau";
-"fresh_PluginPermissionsRequiredAbout" = "Le plugin ne peut pas fonctionner sans ces autorisations, elles sont donc toujours activées.";
 "fresh_PluginLogTabAll" = "Tout";
 "fresh_PluginLogTabProblems" = "Problèmes";
 "fresh_PluginLogSearch" = "Rechercher";
@@ -366,7 +360,6 @@
 "fresh_DesignStyleTelegram" = "Design Telegram par défaut";
 "fresh_DesignStyleMaterialgram" = "Design Materialgram";
 "fresh_DesignStyleFagram" = "Design FagramDesktop";
-"fresh_DesignStyleDescription" = "Le style de conception définit les marges, les tailles et l'aspect des éléments de l'interface. Le style et les icônes s'appliquent après un redémarrage. Le design Fagram ajoute la barre supérieure en pilule, le menu de navigation, les cartes des paramètres et du profil, ainsi que les curseurs et interrupteurs de style Material 3 issus de FAgram Desktop. Le design Telegram reprend celui de Telegram Desktop, y compris la police, les thèmes et les couleurs des icônes.";
 "fresh_ManageWhisperModels" = "Modèles de reconnaissance vocale";
 "fresh_ManageOcrLanguages" = "Langues de reconnaissance de texte";
 "fresh_ModelEnabled" = "Activé";
@@ -562,7 +555,6 @@
 "fresh_DeletedPostCommentsUnavailable" = "Les commentaires de cette publication supprimée ne sont plus disponibles.";
 "fresh_GesturesHeader" = "Gestes";
 "fresh_InvertSwipeGestures" = "Inverser les gestes de balayage";
-"fresh_InvertSwipeGesturesDescription" = "Suivre le sens de défilement du pavé tactile plutôt que le sens du doigt pour les balayages : ouvrir et fermer des discussions, répondre aux messages, actions rapides.";
 "fresh_StreamerSpoilers" = "Masquer les photos, avatars et données personnelles";
 "fresh_StreamerSpoilersDescription" = "Les photos, vidéos, avatars, noms d'utilisateur, ID, numéros de téléphone et dates d'inscription sont cachés derrière des spoilers tant que le mode streamer est activé.";
 "ayu_EditsHistoryTitle" = "Historique des modifications";
@@ -791,7 +783,6 @@
 "fresh_StashHint" = "Appuyez sur {shortcut} pour mettre ce brouillon de côté.";
 "fresh_KeepDeletedDays" = "Garder les messages supprimés et les modifications pendant";
 "fresh_DeleteSavedFiles" = "Supprimer les fichiers avec les messages enregistrés";
-"fresh_DeleteSavedFilesAbout" = "Quand des messages supprimés enregistrés sont retirés à la main ou après le délai, leurs médias sont effacés et ils sont aussi retirés des sauvegardes. La sauvegarde la plus complète n'est plus gardée au-delà du nombre de sauvegardes.";
 "fresh_BackupKeepCount" = "Sauvegardes de la base à conserver";
 "fresh_BackupInterval" = "Sauvegarde de la base toutes les";
 "fresh_StorageUnlimited" = "Illimité";
@@ -978,7 +969,6 @@
 "fresh_PasscodeWiped" = "Trop d'échecs. Les données ont été supprimées.";
 "fresh_PasscodeKeyUnavailable" = "Impossible de vérifier le code : cette version n'a pas Argon2id ou la mémoire est insuffisante. La tentative n'a pas été comptée.";
 "fresh_PasscodeKdfFailed" = "Impossible de créer la nouvelle clé, rien n'a été modifié.";
-"fresh_PasscodeLockMinimizeWayland" = "Sous Wayland, la fenêtre ne sait pas si elle est réduite : l'application se verrouille si elle reste inactive pendant la durée choisie.";
 "fresh_PasscodeLockScreen" = "Écran de verrouillage";
 "fresh_PasscodeShowClock" = "Afficher l'horloge";
 "fresh_PasscodeShowDate" = "Afficher la date";

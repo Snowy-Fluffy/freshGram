@@ -52,7 +52,7 @@ constexpr auto kPendingToggleMs = crl::time(3000);
 		return tr::fresh_PluginsNoKey(tr::now);
 	case FreshPlugins::State::Disabled:
 	case FreshPlugins::State::Ready:
-		return tr::fresh_PluginsDescription(tr::now);
+		return QString();
 	}
 	return QString();
 }
@@ -128,6 +128,55 @@ struct PluginRow {
 	std::shared_ptr<PendingToggle> pending;
 };
 
+// Paints the manifest icon over the default one, when the plugin has it.
+void AddPluginIconOverlay(
+		not_null<Ui::SettingsButton*> button,
+		const std::string &id) {
+	const auto snapshot = FreshPlugins::Snapshot();
+	const auto bytes = snapshot ? snapshot->icon(id) : nullptr;
+	if (!bytes || bytes->empty()) {
+		return;
+	}
+	auto image = QImage::fromData(
+		reinterpret_cast<const uchar*>(bytes->data()),
+		qsizetype(bytes->size()));
+	if (image.isNull()) {
+		return;
+	}
+	const auto size = st::menuIconBot.size();
+	const auto ratio = style::DevicePixelRatio();
+	image = image.scaled(
+		size * ratio,
+		Qt::KeepAspectRatio,
+		Qt::SmoothTransformation);
+	image.setDevicePixelRatio(ratio);
+	const auto overlay = Ui::CreateChild<Ui::RpWidget>(button.get());
+	overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+	overlay->resize(size);
+	overlay->show();
+	button->sizeValue(
+	) | rpl::on_next([=](QSize outer) {
+		overlay->moveToLeft(
+			st::settingsNotificationType.iconLeft,
+			(outer.height() - overlay->height()) / 2,
+			outer.width());
+	}, overlay->lifetime());
+	overlay->paintRequest(
+	) | rpl::on_next([=] {
+		auto p = QPainter(overlay);
+		PainterHighQualityEnabler hq(p);
+		auto path = QPainterPath();
+		path.addRoundedRect(overlay->rect(), 6, 6);
+		p.setClipPath(path);
+		p.fillRect(overlay->rect(), st::windowBg);
+		const auto shown = image.size() / image.devicePixelRatio();
+		p.drawImage(
+			(size.width() - shown.width()) / 2,
+			(size.height() - shown.height()) / 2,
+			image);
+	}, overlay->lifetime());
+}
+
 [[nodiscard]] PluginRow AddPluginRow(
 		not_null<Ui::VerticalLayout*> container,
 		not_null<Window::SessionController*> controller,
@@ -146,6 +195,7 @@ struct PluginRow {
 		&st::menuIconBot,
 		info.enabled && !broken,
 		status->value());
+	AddPluginIconOverlay(button, id);
 	button->setClickedCallback([=] {
 		FreshPlugins::ShowPluginDetails(controller, QString::fromStdString(id));
 	});
@@ -457,7 +507,6 @@ void FillComponentsBox(
 		}),
 		anim::type::instant);
 	Ui::AddSkip(container);
-	Ui::AddDividerText(container, tr::fresh_PluginsComponentsAbout());
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -676,7 +725,6 @@ void AddPluginsNetworkSettings(
 			AyuSettings::getInstance().setPluginsBlockUdp(value);
 		});
 	Ui::AddSkip(container);
-	Ui::AddDividerText(container, tr::fresh_PluginsBlockAbout());
 	Ui::AddSkip(container);
 	Settings::AddButtonWithLabel(
 		container,
@@ -688,7 +736,6 @@ void AddPluginsNetworkSettings(
 		ShowPluginsProxiesBox(controller);
 	});
 	Ui::AddSkip(container);
-	Ui::AddDividerText(container, tr::fresh_PluginsProxyAbout());
 }
 
 } // namespace AyuUi
