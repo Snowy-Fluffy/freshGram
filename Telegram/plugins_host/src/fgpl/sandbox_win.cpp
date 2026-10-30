@@ -8,6 +8,14 @@
 #endif
 #include <windows.h>
 
+// Declared in headers that WIN32_LEAN_AND_MEAN leaves out.
+#ifndef SEM_NOGPFAULTERRBOX
+#define SEM_NOGPFAULTERRBOX 0x0002
+#endif
+#ifndef SEM_NOOPENFILEERRORBOX
+#define SEM_NOOPENFILEERRORBOX 0x8000
+#endif
+
 namespace fgpl::sandbox {
 namespace {
 
