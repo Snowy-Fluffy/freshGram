@@ -2308,6 +2308,8 @@ void Element::validateText() {
 		runtime->handlerMediaActivation = {};
 		runtime->handlerPlaceholderId = {};
 		runtime->handlerPlaceholderPoint = QPoint();
+		runtime->pressedPlaceholderId = {};
+		runtime->pressedPlaceholderHandler = nullptr;
 		runtime->handlerButtonRow = {};
 		runtime->handlerButtonRowHandler = nullptr;
 		runtime->pressedButtonRow = {};
