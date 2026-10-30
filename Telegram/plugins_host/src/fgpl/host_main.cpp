@@ -241,19 +241,6 @@ constexpr auto kSelftestFile = "/etc/passwd";
 #endif // _WIN32
 }
 
-[[nodiscard]] bool CanAllocate(uint64_t megabytes) {
-	for (auto done = uint64_t(0); done < megabytes; done += 64) {
-		const auto block = static_cast<char*>(std::malloc(size_t(64) << 20));
-		if (!block) {
-			return false;
-		}
-		std::memset(block, 1, size_t(64) << 20);
-		// A host that is watched from outside needs time to be caught.
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	}
-	return true;
-}
-
 #ifdef __APPLE__
 // The memory this process holds, compressed pages included.
 [[nodiscard]] uint64_t Footprint() {
@@ -276,6 +263,28 @@ constexpr auto kSelftestFile = "/etc/passwd";
 	return 0;
 }
 #endif // __APPLE__
+
+// Holds more than the host may, a block at a time, and says how much it holds.
+[[nodiscard]] bool CanAllocate(os::Handle fd, uint64_t megabytes) {
+	for (auto done = uint64_t(0); done < megabytes; done += 64) {
+		const auto block = static_cast<char*>(std::malloc(size_t(64) << 20));
+		if (!block) {
+			return false;
+		}
+		std::memset(block, 1, size_t(64) << 20);
+		// A host that is watched from outside needs time to be caught.
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#ifdef __APPLE__
+		Reply(fd, proto::Map({
+			{ "t", proto::Text("selftest_footprint") },
+			{ "mb", proto::Int(int64_t(Footprint() >> 20)) },
+		}));
+#else // __APPLE__
+		(void)fd;
+#endif // __APPLE__
+	}
+	return true;
+}
 
 void ReleaseFreedMemory() {
 #ifdef __GLIBC__
@@ -543,7 +552,7 @@ int main(int argc, char **argv) {
 		}
 	} else if (selftest == "alloc") {
 		// Twice what the host may use, whatever limit applies.
-		if (CanAllocate(std::max<uint64_t>(addressSpaceMb, 256) * 2)) {
+		if (CanAllocate(fd, std::max<uint64_t>(addressSpaceMb, 256) * 2)) {
 			Reply(fd, proto::Map({ { "t", proto::Text("selftest_survived") } }));
 		}
 	} else if (selftest == "spin") {
