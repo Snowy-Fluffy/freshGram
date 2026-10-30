@@ -167,6 +167,7 @@ TopBarWidget::TopBarWidget(
 
 	if (!AyuUiSettings::isTelegramDesign()) {
 		_clear->setFullRadius(true);
+		_messageShot->setFullRadius(true);
 		_forward->setFullRadius(true);
 		_sendNow->setFullRadius(true);
 		_delete->setFullRadius(true);
