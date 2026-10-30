@@ -724,6 +724,9 @@ void SessionNavigation::showPeerByLinkResolved(
 		&& (info.resolveType == ResolveType::Default)
 		&& IsServerMsgId(info.messageId)
 		&& !info.attachBotToggleCommand;
+	const auto botLinkAction = bot
+		&& !botForumPost
+		&& (info.attachBotToggleCommand || !info.text.isEmpty());
 
 	// t.me/username/012345 - we thought it was a channel post link, but
 	// after resolving the username we found out it is a bot.
@@ -844,7 +847,7 @@ void SessionNavigation::showPeerByLinkResolved(
 			info.startAdminRights);
 	} else if (resolveType == ResolveType::Boost && peer->isChannel()) {
 		resolveBoostState(peer->asChannel());
-	} else if (peer->isForum()) {
+	} else if (peer->isForum() && !botLinkAction) {
 		if (!msgId || !useRequestedMessageId) {
 			applyBotStartToken();
 			parentController()->showForum(peer->forum(), params, msgId);
