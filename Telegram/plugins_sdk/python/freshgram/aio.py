@@ -17,6 +17,7 @@ from . import _aio
 from . import (
     _Account,
     _Badges,
+    _Bots,
     _Chats,
     _Clipboard,
     _Composer,
@@ -57,6 +58,7 @@ folders = _Folders(_async_call)
 settings = _Settings(_async_call)
 media = _Media(_async_call)
 users = _Users(_async_call)
+bots = _Bots(_async_call)
 channels = _Channels(_async_call)
 stickers = _Stickers(_async_call)
 notify = _Notify(_async_call)
@@ -69,6 +71,11 @@ timers = _Timers(_async_call)
 def sleep(seconds):
     """Wait without blocking the plugin, up to 60 seconds."""
     return _aio.request("time.sleep", {"ms": max(0, int(seconds * 1000))})
+
+
+def time():
+    """The server's unix time in seconds, not the device clock."""
+    return _aio.request("time.now", {})
 
 
 def gather(*awaitables):

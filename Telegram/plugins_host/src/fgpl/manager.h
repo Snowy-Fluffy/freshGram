@@ -77,6 +77,9 @@ struct ManagerServices {
 		const cbor::Value &page)> settingsPage;
 	std::function<void(
 		const std::string &id,
+		const std::string &account)> openSettings;
+	std::function<void(
+		const std::string &id,
 		const std::string &account,
 		const cbor::Value *page)> dialog;
 	// A window of the plugin: `mode` is "layer" or "window"; no page closes it.
@@ -171,6 +174,7 @@ struct OutgoingResult {
 	bool dropped = false;
 	std::string text;
 	bool markdown = false;
+	std::optional<std::vector<TextEntity>> entities;
 	std::optional<bool> silent;
 	std::optional<int64_t> schedule;
 	std::optional<int64_t> replyTo;

@@ -214,6 +214,7 @@
 "fresh_PermUsersPresence" = "Sehen, wann Leute online sind";
 "fresh_PermAppActivity" = "Wissen, ob die App im Fokus ist";
 "fresh_PermTranslateProvide" = "Texte für dich übersetzen";
+"fresh_PermBotsInline" = "Inline-Bots für dich abfragen";
 "fresh_PluginSettingsExport" = "Einstellungen exportieren";
 "fresh_PluginSettingsImport" = "Einstellungen importieren";
 "fresh_PluginSettingsExported" = "Einstellungen gespeichert.";

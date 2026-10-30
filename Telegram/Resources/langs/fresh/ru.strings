@@ -214,6 +214,7 @@
 "fresh_PermUsersPresence" = "Видеть, когда люди в сети";
 "fresh_PermAppActivity" = "Знать, находится ли приложение в фокусе";
 "fresh_PermTranslateProvide" = "Переводить тексты для вас";
+"fresh_PermBotsInline" = "Запрашивать inline-ботов за вас";
 "fresh_PluginSettingsExport" = "Экспорт настроек";
 "fresh_PluginSettingsImport" = "Импорт настроек";
 "fresh_PluginSettingsExported" = "Настройки сохранены.";

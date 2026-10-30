@@ -16,6 +16,10 @@ def menu(event):
         "message": event.get("message"),
         "text": event.get("text"),
     })
+    try:
+        freshgram.ui.open_settings()
+    except freshgram.Denied:
+        pass
 
 
 @freshgram.on_command("tr")

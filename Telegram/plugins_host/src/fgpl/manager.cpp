@@ -1496,13 +1496,19 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	const auto settings = manifest.settingsPage
 		? _config.services.settingsPage
 		: nullptr;
+	const auto openSettings = manifest.settingsPage
+		? _config.services.openSettings
+		: nullptr;
 	const auto dialog = _config.services.dialog;
 	const auto window = _config.services.window;
 	const auto badges = _config.services.badges;
 	const auto pluginId = record.id;
-	services.ui = [settings, dialog, window, badges, pluginId, account](std::string_view kind, const cbor::Value &payload) {
+	services.ui = [settings, openSettings, dialog, window, badges, pluginId, account](std::string_view kind, const cbor::Value &payload) {
 		if (kind == "settings" && settings) {
 			settings(pluginId, account, payload);
+			return true;
+		} else if (kind == "open_settings" && openSettings) {
+			openSettings(pluginId, account);
 			return true;
 		} else if (kind == "badges" && badges) {
 			const auto user = payload.find("user");
@@ -2415,9 +2421,15 @@ bool PluginManager::advance(
 					return true;
 				}
 				if (edit.text) {
+					if (*edit.text != info.text || edit.markdown) {
+						result.entities = info.entities = std::vector<TextEntity>();
+					}
 					result.text = *edit.text;
 					result.markdown = edit.markdown;
 					info.text = *edit.text;
+				}
+				if (edit.entities) {
+					result.entities = info.entities = *edit.entities;
 				}
 				if (edit.silent) {
 					result.silent = info.silent = *edit.silent;
@@ -2479,6 +2491,7 @@ bool PluginManager::advance(
 			{ "text", Text(chain.result.text) },
 			{ "chat_type", Text(info.chatType) },
 			{ "silent", cbor::Value::FromBool(info.silent) },
+			{ "entities", TextEntitiesValue(info.entities) },
 		};
 		const auto optional = [&](const char *key, int64_t value) {
 			if (value) {

@@ -4,9 +4,15 @@
 #include "base/basic_types.h"
 #include "data/data_msg_id.h"
 
+#include <QtCore/QString>
+
+#include <string>
+#include <vector>
+
 class HistoryItem;
 class PeerData;
 class UserData;
+struct TextWithTags;
 
 namespace Main {
 class Session;
@@ -14,6 +20,7 @@ class Session;
 
 namespace fgpl {
 class DataProvider;
+struct TextEntity;
 } // namespace fgpl
 
 namespace FreshPlugins {
@@ -22,6 +29,13 @@ namespace FreshPlugins {
 void OpenData();
 void CloseData();
 void ReleaseData();
+
+#ifdef FRESHGRAM_PLUGINS
+[[nodiscard]] std::vector<fgpl::TextEntity> EntitiesOf(const TextWithTags &text);
+[[nodiscard]] TextWithTags TextWithEntitiesOf(
+	const QString &text,
+	const std::vector<fgpl::TextEntity> &entities);
+#endif // FRESHGRAM_PLUGINS
 
 [[nodiscard]] std::string PeerKind(not_null<PeerData*> peer);
 [[nodiscard]] std::string MessageMediaKind(not_null<const HistoryItem*> item);

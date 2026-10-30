@@ -71,6 +71,8 @@ constexpr auto kMaxNotifyTitle = size_t(64);
 constexpr auto kMaxNotifyText = size_t(256);
 constexpr auto kNotifyEachMs = int64_t(5000);
 constexpr auto kResolveEachMs = int64_t(1000);
+constexpr auto kInlineEachMs = int64_t(1000);
+constexpr auto kMaxInlineResults = size_t(50);
 constexpr auto kChatActionEachMs = int64_t(3000);
 constexpr auto kMaxClipboard = size_t(64) << 10;
 constexpr auto kMaxFile = size_t(100) << 20;
@@ -632,6 +634,7 @@ cbor::Value Broker::call(const cbor::Value &request) {
 	} else if (_outgoing
 		&& *name != "meta.info"
 		&& *name != "log"
+		&& *name != "time.now"
 		&& *name != "messages.set_outgoing"
 		&& *name != "messages.drop_outgoing") {
 		response = api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
@@ -757,6 +760,11 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			return api::Fail(api::error::kLimit, "usernames are resolved too often");
 		}
 		_lastResolve = now;
+	} else if (op == "bots.inline_query") {
+		if (_lastInline && now - _lastInline < kInlineEachMs) {
+			return api::Fail(api::error::kLimit, "bots are asked too often");
+		}
+		_lastInline = now;
 	} else if (op == "ui.dialog.show") {
 		const auto userAction = _lastUserAction
 			&& (now - _lastUserAction < kUserActionWindowMs);
@@ -788,6 +796,9 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			? TextArg(args, "text", kMaxMessage)
 			: std::optional<std::string>();
 		const auto markdown = MarkdownArg(args);
+		const auto entities = Arg(args, "entities")
+			? ParseTextEntities(*Arg(args, "entities"))
+			: std::optional<std::vector<TextEntity>>();
 		const auto silent = Arg(args, "silent")
 			? BoolArg(args, "silent", false)
 			: std::optional<bool>();
@@ -797,6 +808,9 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		const auto given = [&](const char *key) {
 			return Arg(args, key) != nullptr;
 		};
+		if (given("entities") && (!entities || (markdown && *markdown))) {
+			return api::Fail(api::error::kInvalid, "entities");
+		}
 		if (!markdown
 			|| (given("text") && (!text || text->empty()))
 			|| (given("silent") && !silent)
@@ -804,13 +818,16 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			|| (given("reply_to") && (!replyTo || *replyTo < 0))
 			|| (given("topic") && (!topic || *topic < 0))) {
 			return api::Fail(api::error::kInvalid, "text, format, silent, schedule, reply_to or topic");
-		} else if (!given("text") && !given("silent") && !given("schedule")
-			&& !given("reply_to") && !given("topic")) {
+		} else if (!given("text") && !given("entities") && !given("silent")
+			&& !given("schedule") && !given("reply_to") && !given("topic")) {
 			return api::Fail(api::error::kInvalid, "nothing to change");
 		}
 		if (text) {
 			_outgoingEdit.text = *text;
 			_outgoingEdit.markdown = *markdown;
+		}
+		if (entities) {
+			_outgoingEdit.entities = *entities;
 		}
 		if (silent) {
 			_outgoingEdit.silent = *silent;
@@ -923,6 +940,12 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			{ "granted", cbor::Value::FromArray(std::move(granted)) },
 			{ "chats", std::move(chats) },
 		}));
+	} else if (op == "time.now") {
+		const auto data = _services.data;
+		return api::Ok(Int(data
+			? data->serverTime()
+			: std::chrono::duration_cast<std::chrono::seconds>(
+				std::chrono::system_clock::now().time_since_epoch()).count()));
 	} else if (op == "log") {
 		const auto text = TextArg(args, "text", 4096);
 		if (!text) {
@@ -948,6 +971,22 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		if (!checked.ok()) {
 			return api::Fail(api::error::kInvalid, checked.error());
 		} else if (!_services.ui || !_services.ui("settings", checked.value())) {
+			return api::Fail(api::error::kUnavailable, "settings page");
+		}
+		return api::Ok();
+	} else if (op == "ui.open_settings") {
+		if (!has("ui.settings_page")) {
+			return api::Fail(api::error::kDenied, "ui.settings_page");
+		}
+		{
+			const auto lock = std::scoped_lock(_limitsMutex);
+			if (!_lastUserAction
+				|| _services.clockMs() - _lastUserAction >= kUserActionWindowMs) {
+				return api::Fail(api::error::kDenied, "only right after a user action");
+			}
+			_lastUserAction = 0;
+		}
+		if (!_services.ui || !_services.ui("open_settings", cbor::Value::FromMap({}))) {
 			return api::Fail(api::error::kUnavailable, "settings page");
 		}
 		return api::Ok();
@@ -1418,13 +1457,24 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			IntArg(args, "limit").value_or(20),
 			1,
 			int64_t(kMaxHistory)));
+		auto fromUser = int64_t(0);
+		if (const auto filter = Arg(args, "from_user")) {
+			const auto name = filter->asText();
+			fromUser = (name && *name == "me")
+				? data->account().id
+				: filter->asInt().value_or(0);
+			if (fromUser <= 0 || fromUser == api::kServiceChat) {
+				return api::Fail(api::error::kInvalid, "from_user");
+			}
+		}
 		auto result = cbor::Array();
 		const auto deleted = has("messages.read_deleted");
 		for (const auto &message : data->history(
 				*id,
 				limit,
 				IntArg(args, "before").value_or(0),
-				IntArg(args, "topic").value_or(0))) {
+				IntArg(args, "topic").value_or(0),
+				fromUser)) {
 			if (message.chat == *id
 				&& (deleted || !message.deleted)
 				&& result.size() < limit) {
@@ -2009,6 +2059,44 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 				&& result.size() < limit) {
 				result.push_back(MessageValue(message));
 			}
+		}
+		return api::Ok(cbor::Value::FromArray(std::move(result)));
+	} else if (op == "bots.inline_query") {
+		if (const auto refused = need({ "bots.inline" })) {
+			return *refused;
+		}
+		const auto query = TextArg(args, "query", kMaxQuery);
+		const auto handle = Arg(args, "bot");
+		auto bot = int64_t(0);
+		auto username = std::string();
+		if (handle && handle->asText()) {
+			const auto name = NormalizedUsername(*handle->asText());
+			if (name) {
+				username = *name;
+			}
+		} else if (handle && handle->asInt()) {
+			bot = *handle->asInt();
+		}
+		if (!query || (username.empty() && bot <= 0)) {
+			return api::Fail(api::error::kInvalid, "bot or query");
+		} else if (bot == api::kServiceChat) {
+			return api::Fail(api::error::kDenied, "this bot");
+		}
+		const auto found = data->inlineQuery(bot, username, *query);
+		if (!found.ok()) {
+			return api::Fail(found.error(), "bot");
+		}
+		auto result = cbor::Array();
+		for (const auto &item : found.value()) {
+			if (result.size() >= kMaxInlineResults) {
+				break;
+			}
+			result.push_back(cbor::Value::FromMap({
+				{ "id", Text(item.id) },
+				{ "title", Text(item.title) },
+				{ "description", Text(item.description) },
+				{ "text", Text(item.text) },
+			}));
 		}
 		return api::Ok(cbor::Value::FromArray(std::move(result)));
 	} else if (op == "users.resolve") {

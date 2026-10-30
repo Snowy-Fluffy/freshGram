@@ -143,6 +143,13 @@ struct Service {
 			StoreSettingsPage(id, account, page);
 		});
 	};
+	config.services.openSettings = [](
+			const std::string &id,
+			const std::string &account) {
+		crl::on_main([=] {
+			OpenPluginSettings(id, account);
+		});
+	};
 	config.services.badges = [](
 			const std::string &id,
 			const std::string &account,
@@ -201,7 +208,7 @@ struct Service {
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
-	config.environment.apiLevel = 4;
+	config.environment.apiLevel = 5;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}
@@ -749,6 +756,7 @@ namespace {
 	result.silent = action.options.silent;
 	result.scheduled = action.options.scheduled;
 	result.text = message.textWithTags.text.toStdString();
+	result.entities = EntitiesOf(message.textWithTags);
 	return result;
 }
 
@@ -916,6 +924,10 @@ void Finish(
 				parsed.text,
 				TextUtilities::ConvertEntitiesToTextTags(parsed.entities),
 			};
+		} else if (result.entities) {
+			outgoing.message.textWithTags = TextWithEntitiesOf(
+				changed,
+				*result.entities);
 		} else if (changed != outgoing.message.textWithTags.text) {
 			outgoing.message.textWithTags = TextWithTags{ changed };
 		}

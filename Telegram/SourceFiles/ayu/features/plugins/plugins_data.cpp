@@ -454,6 +454,29 @@ template <typename T>
 	return list;
 }
 
+[[nodiscard]] fgpl::InlineResult InlineResultOf(const MTPBotInlineResult &entry) {
+	auto result = fgpl::InlineResult();
+	const auto fill = [&](const auto &data) {
+		result.id = data.vid().v.toStdString();
+		if (const auto title = data.vtitle()) {
+			result.title = title->v.toStdString();
+		}
+		if (const auto description = data.vdescription()) {
+			result.description = description->v.toStdString();
+		}
+		data.vsend_message().match([&](const MTPDbotInlineMessageText &text) {
+			result.text = text.vmessage().v.toStdString();
+		}, [](const auto &) {
+		});
+	};
+	entry.match([&](const MTPDbotInlineResult &data) {
+		fill(data);
+	}, [&](const MTPDbotInlineMediaResult &data) {
+		fill(data);
+	});
+	return result;
+}
+
 [[nodiscard]] PeerData *ChosenSendAs(not_null<History*> history) {
 	const auto peer = history->peer;
 	auto &sendAs = peer->session().sendAsPeers();
@@ -831,7 +854,8 @@ public:
 			int64_t chat,
 			size_t limit,
 			int64_t before,
-			int64_t topic) override {
+			int64_t topic,
+			int64_t fromUser) override {
 		const auto cap = std::min(limit, kMaxHistory);
 		auto result = OnMain<std::vector<fgpl::Message>>([=] {
 			auto result = std::vector<fgpl::Message>();
@@ -845,7 +869,8 @@ public:
 					if (item->isService()
 						|| item->isEmpty()
 						|| !IsServerMsgId(item->id)
-						|| (topic && item->topicRootId().bare != topic)) {
+						|| (topic && item->topicRootId().bare != topic)
+						|| (fromUser && ChatId(item->from()) != fromUser)) {
 						continue;
 					} else if (before > 0 && item->id.bare >= before) {
 						continue;
@@ -877,7 +902,40 @@ public:
 			const auto fail = [=] {
 				done({});
 			};
-			if (topic) {
+			if (fromUser) {
+				const auto sender = session->data().peerLoaded(
+					PeerId(uint64(fromUser)));
+				if (!sender) {
+					done({});
+					return;
+				}
+				using Flag = MTPmessages_Search::Flag;
+				session->api().request(MTPmessages_Search(
+					MTP_flags(Flag::f_from_id
+						| (topic ? Flag::f_top_msg_id : Flag())),
+					history->peer->input(),
+					MTP_string(),
+					sender->input(),
+					MTP_inputPeerEmpty(),
+					MTPVector<MTPReaction>(),
+					MTP_int(topic),
+					MTP_inputMessagesFilterEmpty(),
+					MTP_int(0),
+					MTP_int(0),
+					MTP_int(offset),
+					MTP_int(0),
+					MTP_int(more),
+					MTP_int(0),
+					MTP_int(0),
+					MTP_long(0)
+				)).done([=](const MTPmessages_Messages &answer) {
+					auto list = MessagesOf(answer, chat);
+					for (auto &message : list) {
+						message.from = fromUser;
+					}
+					done(std::move(list));
+				}).fail(fail).send();
+			} else if (topic) {
 				session->api().request(MTPmessages_GetReplies(
 					history->peer->input(),
 					MTP_int(topic),
@@ -915,6 +973,10 @@ public:
 
 	bool takeTimedOut() override {
 		return std::exchange(TimedOut, false);
+	}
+
+	int64_t serverTime() override {
+		return base::unixtime::now();
 	}
 
 	fgpl::Account account() override {
@@ -1524,7 +1586,7 @@ public:
 			size_t limit,
 			int64_t before) override {
 		if (kind == "any") {
-			auto result = history(chat, kMaxHistory, before, 0);
+			auto result = history(chat, kMaxHistory, before, 0, 0);
 			std::erase_if(result, [](const fgpl::Message &message) {
 				return message.media.empty();
 			});
@@ -1620,6 +1682,76 @@ public:
 				: nullptr;
 			return peer ? UserInfoOf(peer) : std::nullopt;
 		}, std::nullopt);
+	}
+
+	fgpl::Result<std::vector<fgpl::InlineResult>, std::string> inlineQuery(
+			int64_t bot,
+			const std::string &username,
+			const std::string &query) override {
+		struct Answered {
+			std::string error;
+			std::vector<fgpl::InlineResult> results;
+		};
+		const auto answered = OnMainAsync<Answered>([=](Fn<void(Answered)> done) {
+			const auto session = FindSession(_account);
+			if (!session) {
+				done({ .error = fgpl::api::error::kNotFound });
+				return;
+			}
+			const auto ask = [=](PeerData *peer) {
+				const auto user = peer ? peer->asUser() : nullptr;
+				if (!user || HiddenPeer(user) || !user->isBot() || user->isBlocked()) {
+					done({ .error = fgpl::api::error::kNotFound });
+					return;
+				} else if (user->botInfo && user->botInfo->inlinePlaceholder.isEmpty()) {
+					done({ .error = fgpl::api::error::kFailed });
+					return;
+				}
+				session->api().request(MTPmessages_GetInlineBotResults(
+					MTP_flags(0),
+					user->inputUser(),
+					MTP_inputPeerEmpty(),
+					MTPInputGeoPoint(),
+					MTP_string(QString::fromStdString(query)),
+					MTP_string()
+				)).done([=](const MTPmessages_BotResults &result) {
+					const auto &data = result.data();
+					session->data().processUsers(data.vusers());
+					auto answer = Answered();
+					for (const auto &entry : data.vresults().v) {
+						answer.results.push_back(InlineResultOf(entry));
+					}
+					done(std::move(answer));
+				}).fail([=] {
+					done({ .error = fgpl::api::error::kFailed });
+				}).send();
+			};
+			if (bot > 0) {
+				ask(session->data().userLoaded(UserId(bot)));
+				return;
+			}
+			const auto name = QString::fromStdString(username);
+			if (const auto known = session->data().peerByUsername(name)) {
+				ask(known);
+				return;
+			}
+			session->api().request(MTPcontacts_ResolveUsername(
+				MTP_flags(0),
+				MTP_string(name),
+				MTP_string()
+			)).done([=](const MTPcontacts_ResolvedPeer &result) {
+				const auto &data = result.data();
+				session->data().processUsers(data.vusers());
+				session->data().processChats(data.vchats());
+				ask(session->data().peerLoaded(peerFromMTP(data.vpeer())));
+			}).fail([=] {
+				done({ .error = fgpl::api::error::kNotFound });
+			}).send();
+		}, Answered{ .error = fgpl::api::error::kUnavailable });
+		if (!answered.error.empty()) {
+			return answered.error;
+		}
+		return answered.results;
 	}
 
 	fgpl::Result<fgpl::UserInfo, std::string> resolveUser(
@@ -2680,6 +2812,85 @@ void CloseData() {
 
 void ReleaseData() {
 	GetData().providers.clear();
+}
+
+std::vector<fgpl::TextEntity> EntitiesOf(const TextWithTags &text) {
+	static const auto names = std::map<EntityType, const char*>{
+		{ EntityType::Bold, "bold" },
+		{ EntityType::Italic, "italic" },
+		{ EntityType::Underline, "underline" },
+		{ EntityType::StrikeOut, "strike" },
+		{ EntityType::Code, "code" },
+		{ EntityType::Pre, "pre" },
+		{ EntityType::Spoiler, "spoiler" },
+		{ EntityType::Blockquote, "blockquote" },
+		{ EntityType::CustomUrl, "text_url" },
+		{ EntityType::CustomEmoji, "custom_emoji" },
+	};
+	auto result = std::vector<fgpl::TextEntity>();
+	for (const auto &entity : TextUtilities::ConvertTextTagsToEntities(text.tags)) {
+		const auto i = names.find(entity.type());
+		if (i == names.end() || result.size() >= fgpl::kMaxTextEntities) {
+			continue;
+		}
+		auto item = fgpl::TextEntity{
+			.type = i->second,
+			.offset = entity.offset(),
+			.length = entity.length(),
+		};
+		if (entity.type() == EntityType::CustomUrl) {
+			item.url = Utf8(entity.data());
+		} else if (entity.type() == EntityType::Pre) {
+			item.language = Utf8(entity.data());
+		} else if (entity.type() == EntityType::CustomEmoji) {
+			item.id = int64_t(Data::ParseCustomEmojiData(entity.data()));
+		}
+		result.push_back(std::move(item));
+	}
+	return result;
+}
+
+TextWithTags TextWithEntitiesOf(
+		const QString &text,
+		const std::vector<fgpl::TextEntity> &entities) {
+	static const auto types = std::map<std::string, EntityType>{
+		{ "bold", EntityType::Bold },
+		{ "italic", EntityType::Italic },
+		{ "underline", EntityType::Underline },
+		{ "strike", EntityType::StrikeOut },
+		{ "code", EntityType::Code },
+		{ "pre", EntityType::Pre },
+		{ "spoiler", EntityType::Spoiler },
+		{ "blockquote", EntityType::Blockquote },
+		{ "text_url", EntityType::CustomUrl },
+		{ "custom_emoji", EntityType::CustomEmoji },
+	};
+	auto converted = EntitiesInText();
+	for (const auto &item : entities) {
+		const auto i = types.find(item.type);
+		if (i == types.end()
+			|| item.offset > text.size()
+			|| item.length > text.size() - item.offset) {
+			continue;
+		}
+		auto data = QString();
+		if (i->second == EntityType::CustomUrl) {
+			data = QString::fromStdString(item.url);
+		} else if (i->second == EntityType::Pre) {
+			data = QString::fromStdString(item.language);
+		} else if (i->second == EntityType::CustomEmoji) {
+			data = Data::SerializeCustomEmojiId(DocumentId(item.id));
+		}
+		converted.push_back(EntityInText(
+			i->second,
+			int(item.offset),
+			int(item.length),
+			data));
+	}
+	return TextWithTags{
+		text,
+		TextUtilities::ConvertEntitiesToTextTags(converted),
+	};
 }
 
 std::string PeerKind(not_null<PeerData*> peer) {
