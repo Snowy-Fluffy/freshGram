@@ -35,6 +35,7 @@
 #include <fstream>
 #include <QApplication>
 #include <QFile>
+#include <QSaveFile>
 
 using json = nlohmann::json;
 
@@ -48,8 +49,12 @@ QString getAccountsPath() {
 	return cWorkingDir() + u"tdata/fresh_accounts.enc"_q;
 }
 
+QString getSettingsFile() {
+	return cWorkingDir() + u"tdata/ayu_settings.json"_q;
+}
+
 std::filesystem::path getSettingsPath() {
-	const auto path = cWorkingDir() + u"tdata/ayu_settings.json"_q;
+	const auto path = getSettingsFile();
 #ifdef Q_OS_WIN
 	return std::filesystem::path(path.toStdWString());
 #else // Q_OS_WIN
@@ -623,10 +628,13 @@ void AyuSettings::save() {
 	}
 	p["accountsVaulted"] = settings._accountsVaulted;
 
-	std::ofstream file;
-	file.open(getSettingsPath());
-	file << p.dump(4);
-	file.close();
+	const auto bytes = QByteArray::fromStdString(p.dump(4));
+	auto file = QSaveFile(getSettingsFile());
+	if (!file.open(QIODevice::WriteOnly)
+		|| file.write(bytes) != bytes.size()
+		|| !file.commit()) {
+		LOG(("AyuGramSettings: failed to write the settings file"));
+	}
 }
 
 void AyuSettings::reset() {
