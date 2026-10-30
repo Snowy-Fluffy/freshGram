@@ -1,6 +1,7 @@
 // Runs on every platform: the host in its sandbox, and the pieces around it.
 #include "check.h"
 #include "fgpl/host_client.h"
+#include "fgpl/ipc.h"
 #include "fgpl/os.h"
 #include "fgpl/package.h"
 #include "fgpl/sandbox.h"
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -227,9 +229,64 @@ void TestUsageOfARunningHost() {
 	CHECK(usage.rssBytes > 0);
 }
 
+
+#ifdef _WIN32
+// Looks at a host from the outside when it will not answer: alive or gone, busy or idle.
+void Diagnose(bool sandboxed) {
+	auto spec = os::SpawnSpec();
+	spec.path = sandboxed ? FGPL_HOST_BINARY : FGPL_UNSANDBOXED_HOST_BINARY;
+	spec.sandboxed = sandboxed;
+	spec.addressSpaceMb = 1024;
+	const auto trace = (fs::temp_directory_path() / "fgpl-diagnose-trace.txt").string();
+	std::error_code ignored;
+	fs::remove(trace, ignored);
+	if (!sandboxed) {
+		spec.arguments = { "--layers=none", "--trace=" + trace };
+	}
+	auto channel = os::kNoHandle;
+	auto child = os::Child::Spawn(spec, channel);
+	if (!child.ok()) {
+		std::fprintf(stderr, "diagnose %d: spawn failed: %s\n", int(sandboxed), child.error().c_str());
+		return;
+	}
+	std::this_thread::sleep_for(std::chrono::seconds(3));
+	auto info = os::ExitInfo();
+	const auto gone = child.value()->tryWait(info);
+	const auto usage = os::ProcessUsage(child.value()->id());
+	std::fprintf(
+		stderr,
+		"diagnose %d: pid %d gone=%d signaled=%d signal=0x%x code=%d cpu=%llu ms rss=%llu\n",
+		int(sandboxed),
+		child.value()->id(),
+		int(gone),
+		int(info.signaled),
+		unsigned(info.signal),
+		info.code,
+		(unsigned long long)usage.cpuMs,
+		(unsigned long long)usage.rssBytes);
+	auto stream = std::ifstream(trace);
+	const auto text = std::string(std::istreambuf_iterator<char>(stream), {});
+	std::fprintf(stderr, "diagnose %d: trail [%s]\n", int(sandboxed), text.c_str());
+	const auto frame = ipc::ReadFrame(channel, ipc::StrictLimits(), ipc::kMaxFrameBytes, 3000);
+	std::fprintf(
+		stderr,
+		"diagnose %d: read %s (%d), system error %d\n",
+		int(sandboxed),
+		frame.ok() ? "a frame" : "nothing",
+		frame.ok() ? 0 : int(frame.error()),
+		os::ChannelError());
+	child.value()->terminate();
+	os::CloseChannel(channel);
+}
+#endif // _WIN32
+
 } // namespace
 
 int main() {
+#ifdef _WIN32
+	Diagnose(false);
+	Diagnose(true);
+#endif // _WIN32
 	TestSandboxIsOn();
 	TestHostCannotReachFiles();
 	TestHostCannotStartProcesses();
