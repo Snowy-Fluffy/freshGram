@@ -229,6 +229,28 @@ or about a second passes. The plugins answer one after another. A plugin that fa
 behind (more than 64 events waiting) is skipped for new messages. The event handler also
 has to finish within the plugin's `eventTimeoutMs`.
 
+## Programs on this computer
+
+The permission `net.local` lets a plugin talk to programs on this computer, such as a
+local server: `localhost`, addresses of `127.0.0.0/8` and `::1`. It works for
+`net.fetch` (`http://` and `https://`), `net.tcp.connect`, `net.udp.connect` (any port,
+TLS only when asked) and `net.ws.connect` (`ws://` and `wss://`), and it replaces
+`net.https`, `net.tcp`, `net.udp` and `net.ws` for these addresses only: a plugin with
+`net.local` alone cannot reach the internet, and a plugin without it cannot reach this
+computer. Other private addresses (`192.168.x.x`, `10.x.x.x`) stay forbidden.
+
+The manifest must list the ports, and the user sees them when granting the permission:
+
+```
+"permissions": {"optional": [{"id": "net.local", "reason": {...}, "ports": [8080, "9000-9100"]}]}
+```
+
+At most 16 ports or inclusive ranges. A call to another port fails with `denied`. Names
+other than `localhost` are never accepted, so a public name cannot point to this
+computer. Local connections do not use the app's proxy, `net.fetch` does not follow
+redirects of local URLs (the 3xx answer comes back as it is), and the call counts
+against the limits of its protocol.
+
 ## Translator
 
 A plugin with the `translate.provide` permission and `contributes.translator`

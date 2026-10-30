@@ -50,6 +50,7 @@ struct Grants {
 	std::string account;
 	std::set<std::string> permissions;
 	std::optional<std::set<int64_t>> chats;
+	std::vector<std::pair<int, int>> localPorts;
 	uint64_t storageQuotaBytes = uint64_t(10) << 20;
 	int callsPerSecond = 200;
 	int maxPending = 32;
@@ -753,6 +754,8 @@ struct FetchRequest {
 	cbor::Bytes body;
 	int timeoutMs = 10000;
 	size_t maxResponseBytes = 0;
+	// An http or https URL of this computer: no redirects, no proxy.
+	bool local = false;
 	std::function<bool(const std::string &url)> allowRedirect;
 };
 
@@ -788,6 +791,7 @@ struct SocketRequest {
 	int port = 0;
 	bool ip = false;
 	bool tls = false;
+	bool local = false;
 	int timeoutMs = 10000;
 };
 
@@ -930,6 +934,7 @@ private:
 	[[nodiscard]] cbor::Value socketCall(
 		const std::string &op,
 		const cbor::Value *args);
+	[[nodiscard]] bool localPortAllowed(int port) const;
 	[[nodiscard]] cbor::Value wsConnect(const cbor::Value *args);
 	[[nodiscard]] cbor::Value wsCall(
 		const std::string &op,
@@ -963,6 +968,7 @@ private:
 	BrokerServices _services;
 	std::vector<int64_t> _recent;
 	std::map<int64_t, SocketKind> _sockets;
+	std::set<int64_t> _localSockets;
 	std::map<int64_t, WsState> _ws;
 	std::unique_ptr<SocketWorker> _socketWorker;
 	std::mutex _socketWorkerMutex;

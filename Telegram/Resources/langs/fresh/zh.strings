@@ -289,6 +289,8 @@
 "fresh_PermNetTcp" = "打开 TCP 连接";
 "fresh_PermNetUdp" = "打开 UDP 连接";
 "fresh_PermNetWs" = "打开安全的 WebSocket 连接";
+"fresh_PermNetLocal" = "与本机上的程序通信";
+"fresh_PermLocalPorts" = "端口：{ports}";
 "fresh_PermStorage" = "保存自己的数据";
 "fresh_PermPluginsMessage" = "与其他插件交换消息";
 "fresh_PermFiles" = "打开和保存你选择的文件";
@@ -302,6 +304,7 @@
 "fresh_RiskOutgoing" = "可以修改你发送的内容";
 "fresh_RiskIncoming" = "可以更改或隐藏你收到的消息";
 "fresh_RiskModerate" = "可以封禁和解封聊天成员";
+"fresh_RiskLocal" = "可以与本机上的程序通信";
 "fresh_RiskBackground" = "会在后台持续运行";
 "fresh_RiskClipboard" = "可以使用剪贴板";
 "fresh_RiskFiles" = "可以读取和保存你选择的文件";

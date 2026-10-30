@@ -365,7 +365,20 @@ struct Parsed {
 		const std::string &host,
 		bool ip,
 		const Connection &entry,
-		const QDeadlineTimer &deadline) {
+		const QDeadlineTimer &deadline,
+		bool local = false) {
+	if (local) {
+		if (ip) {
+			const auto address = QHostAddress(QString::fromStdString(host));
+			if (address.isNull() || !address.isLoopback()) {
+				return Error("blocked", u"the address is not on this computer"_q);
+			}
+			return address;
+		} else if (host == "localhost") {
+			return QHostAddress(QHostAddress::LocalHost);
+		}
+		return Error("blocked", u"only localhost is allowed"_q);
+	}
 	if (ip) {
 		const auto address = QHostAddress(QString::fromStdString(host));
 		if (address.isNull()) {
@@ -813,12 +826,13 @@ struct ProxySocket {
 		bool ip,
 		int port,
 		Connection &entry,
-		const QDeadlineTimer &deadline) {
-	if (proxy.type != NetworkProxy::Type::None) {
+		const QDeadlineTimer &deadline,
+		bool local = false) {
+	if (!local && proxy.type != NetworkProxy::Type::None) {
 		entry.via = ProxyLabel(proxy);
 		return ConnectThrough(proxy, host, ip, port, entry, deadline);
 	}
-	const auto resolved = Resolve(host, ip, entry, deadline);
+	const auto resolved = Resolve(host, ip, entry, deadline, local);
 	if (!resolved.ok()) {
 		return resolved.error();
 	}
@@ -987,6 +1001,29 @@ private:
 		if (CurrentPolicy().blockHttps) {
 			return Error("blocked", u"HTTPS is blocked for plugins"_q);
 		}
+		if (request.local) {
+			const auto parsed = fgpl::net::ParseLocalUrl(request.url);
+			if (!parsed.ok()
+				|| (parsed.value().scheme != "http"
+					&& parsed.value().scheme != "https")) {
+				return Error("invalid", u"url"_q);
+			}
+			entry->host = QString::fromStdString(parsed.value().host);
+			entry->port = parsed.value().port;
+			auto response = once(
+				*entry,
+				parsed.value(),
+				request.method,
+				request.headers,
+				request.body,
+				request.maxResponseBytes,
+				QDeadlineTimer(request.timeoutMs),
+				true);
+			if (!response.ok()) {
+				return response.error();
+			}
+			return std::move(response.value().first);
+		}
 		auto url = request.url;
 		auto method = request.method;
 		auto body = request.body;
@@ -1071,7 +1108,8 @@ private:
 		if (BlockedKind(policy, entry->kind)) {
 			return fail("blocked", entry->kind + u" is blocked for plugins"_q);
 		}
-		const auto proxied = (policy.proxy.type != NetworkProxy::Type::None);
+		const auto proxied = !request.local
+			&& (policy.proxy.type != NetworkProxy::Type::None);
 		entry->tls = request.tls;
 		if (udp) {
 			auto socket = std::make_unique<QUdpSocket>();
@@ -1096,7 +1134,12 @@ private:
 				entry->datagramHeader = QByteArray("\x00\x00\x00", 3) + header.value();
 				local = entry->relay.protocol();
 			} else {
-				const auto resolved = Resolve(request.host, request.ip, *entry, deadline);
+				const auto resolved = Resolve(
+					request.host,
+					request.ip,
+					*entry,
+					deadline,
+					request.local);
 				if (!resolved.ok()) {
 					return failWith(resolved.error());
 				}
@@ -1130,7 +1173,8 @@ private:
 			request.ip,
 			request.port,
 			*entry,
-			deadline);
+			deadline,
+			request.local);
 		if (!opened.ok()) {
 			return failWith(opened.error());
 		} else if (const auto error = AttachDescriptor(*socket, opened.value())) {
@@ -1316,7 +1360,8 @@ private:
 			const std::vector<std::pair<std::string, std::string>> &headers,
 			const fgpl::cbor::Bytes &body,
 			size_t maxBytes,
-			const QDeadlineTimer &deadline) {
+			const QDeadlineTimer &deadline,
+			bool local = false) {
 		const auto host = QString::fromStdString(url.host);
 		const auto opened = OpenStream(
 			CurrentPolicy().proxy,
@@ -1324,7 +1369,8 @@ private:
 			url.ip,
 			url.port,
 			entry,
-			deadline);
+			deadline,
+			local);
 		if (!opened.ok()) {
 			return opened.error();
 		}
@@ -1336,12 +1382,17 @@ private:
 		socket.setPeerVerifyName(host);
 		if (const auto error = AttachDescriptor(socket, opened.value())) {
 			return *error;
-		} else if (const auto error = Encrypt(socket, entry, deadline)) {
-			return *error;
+		} else if (url.tls) {
+			if (const auto encrypted = Encrypt(socket, entry, deadline)) {
+				return *encrypted;
+			}
 		}
 
-		auto head = method + " " + url.target + " HTTP/1.1\r\nHost: " + url.host;
-		if (url.port != 443) {
+		auto head = method + " " + url.target + " HTTP/1.1\r\nHost: "
+			+ ((url.host.find(':') != std::string::npos)
+				? "[" + url.host + "]"
+				: url.host);
+		if (url.port != (url.tls ? 443 : 80)) {
 			head += ":" + std::to_string(url.port);
 		}
 		head += "\r\nConnection: close\r\nAccept-Encoding: identity\r\n";

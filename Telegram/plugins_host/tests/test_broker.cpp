@@ -371,7 +371,7 @@ void TestNetwork() {
 	CHECK(IsOk(fetch({ { "url", Text("https://8.8.8.8/") } })));
 	CHECK(IsOk(fetch({ { "url", Text("https://api.example.com:444/") } })));
 	CHECK(Code(fetch({ { "url", Text("http://api.example.com/") } })) == "invalid");
-	CHECK(Code(fetch({ { "url", Text("https://127.0.0.1/") } })) == "invalid");
+	CHECK(Code(fetch({ { "url", Text("https://127.0.0.1/") } })) == "denied");
 	CHECK(Code(fetch({ { "url", Text("https://192.168.1.1/") } })) == "invalid");
 	CHECK(Code(fetch({ { "url", Text("https://user@api.example.com/") } })) == "invalid");
 	CHECK(Code(fetch({})) == "invalid");
@@ -450,9 +450,9 @@ void TestSockets() {
 	CHECK(fixture.transport.opened.back().timeoutMs == 100);
 	CHECK(fixture.transport.owners.back().plugin == "com.example.test");
 	CHECK(Code(call("net.udp.connect", { { "host", Text("8.8.8.8") }, { "port", Int(53) } })) == "denied");
-	CHECK(Code(call("net.tcp.connect", { { "host", Text("127.0.0.1") }, { "port", Int(22) } })) == "invalid");
+	CHECK(Code(call("net.tcp.connect", { { "host", Text("127.0.0.1") }, { "port", Int(22) } })) == "denied");
 	CHECK(Code(call("net.tcp.connect", { { "host", Text("10.0.0.5") }, { "port", Int(22) } })) == "invalid");
-	CHECK(Code(call("net.tcp.connect", { { "host", Text("localhost") }, { "port", Int(22) } })) == "invalid");
+	CHECK(Code(call("net.tcp.connect", { { "host", Text("localhost") }, { "port", Int(22) } })) == "denied");
 	CHECK(Code(call("net.tcp.connect", { { "host", Text("example.com") }, { "port", Int(0) } })) == "invalid");
 
 	const auto sent = call("net.socket.send", { { "id", Int(id) }, { "data", Text("hello") } });
@@ -1000,6 +1000,97 @@ void TestMembersPollsAndGhost() {
 	CHECK(Code(broker.call(Request("ghost.set", { { "enabled", cbor::Value::FromBool(false) } }))) == "denied");
 }
 
+void TestLocalNetwork() {
+	CHECK(net::IsLoopbackHost("localhost") && net::IsLoopbackHost("LOCALHOST.") && net::IsLoopbackHost("127.0.0.1"));
+	CHECK(net::IsLoopbackHost("127.9.9.9") && net::IsLoopbackHost("::1") && net::IsLoopbackHost("[::1]"));
+	for (const auto host : { "example.com", "localhost.example.com", "10.0.0.1", "192.168.1.1", "0.0.0.0", "::", "fe80::1", "8.8.8.8", "128.0.0.1" }) {
+		CHECK(!net::IsLoopbackHost(host));
+	}
+	const auto parsed = net::ParseLocalUrl("HTTP://LocalHost:8080/a?b=1#frag");
+	CHECK(parsed.ok() && parsed.value().scheme == "http" && !parsed.value().tls);
+	CHECK(parsed.ok() && parsed.value().host == "localhost" && parsed.value().port == 8080);
+	CHECK(parsed.ok() && parsed.value().target == "/a?b=1" && parsed.value().text == "http://localhost:8080/a?b=1");
+	CHECK(net::ParseLocalUrl("http://127.0.0.1/").value().port == 80);
+	CHECK(net::ParseLocalUrl("https://[::1]/x").value().port == 443);
+	CHECK(net::ParseLocalUrl("wss://localhost:1/").value().tls);
+	CHECK(net::ParseLocalUrl("ws://localhost/").value().scheme == "ws");
+	CHECK(net::ParseLocalUrl("https://example.com/").error() == "not local");
+	CHECK(net::ParseLocalUrl("http://10.0.0.1/").error() == "not local");
+	CHECK(net::ParseLocalUrl("ftp://localhost/").error() == "not local");
+	CHECK(!net::ParseLocalUrl("http://user@localhost/").ok());
+	CHECK(!net::ParseLocalUrl("http://localhost:0/").ok() && !net::ParseLocalUrl("http://localhost:99999/").ok());
+	CHECK(net::ParseLocalEndpoint("localhost", 80).ok() && net::ParseLocalEndpoint("127.0.0.1", 80).value().ip);
+	CHECK(!net::ParseLocalEndpoint("example.com", 80).ok() && !net::ParseLocalEndpoint("localhost", 0).ok());
+	CHECK(!net::ParseUrl("https://localhost/").ok() && !net::ParseUrl("http://localhost/").ok());
+
+	auto fixture = Fixture({ "net.local" });
+	fixture.grants.localPorts = { { 8080, 8080 }, { 9000, 9100 } };
+	fixture.transport.webSocket = true;
+	auto broker = fixture.make();
+	const auto fetch = [&](Broker &target, const char *url) {
+		return Code(target.call(Request("net.fetch", { { "url", Text(url) } })));
+	};
+	CHECK(fetch(broker, "http://localhost:8080/api").empty());
+	CHECK(fixture.transport.requests.back().local && fixture.transport.requests.back().url == "http://localhost:8080/api");
+	CHECK(fixture.transport.requests.back().host == "localhost" && !fixture.transport.requests.back().allowRedirect);
+	CHECK(fetch(broker, "http://127.0.0.1:9050/").empty());
+	CHECK(fetch(broker, "https://[::1]:9100/x").empty());
+	CHECK(fetch(broker, "http://localhost:8081/") == "denied");
+	CHECK(fetch(broker, "http://localhost/") == "denied");
+	CHECK(fetch(broker, "ws://localhost:8080/") == "invalid");
+	CHECK(fetch(broker, "https://example.com/") == "denied");
+	CHECK(fetch(broker, "http://10.0.0.1:8080/") == "denied");
+	CHECK(fetch(broker, "http://localhost:8080/\x01") == "invalid");
+
+	auto publicOnly = Fixture({ "net.https", "net.tcp", "net.udp", "net.ws" });
+	auto publicBroker = publicOnly.make();
+	CHECK(fetch(publicBroker, "http://localhost:8080/") == "denied");
+	CHECK(fetch(publicBroker, "https://127.0.0.1/") == "denied");
+	CHECK(fetch(publicBroker, "http://example.com/") == "invalid");
+	CHECK(fetch(publicBroker, "https://192.168.1.1/") == "invalid");
+	CHECK(fetch(publicBroker, "https://api.example.com/").empty());
+	CHECK(Code(publicBroker.call(Request("net.tcp.connect", { { "host", Text("127.0.0.1") }, { "port", Int(8080) } }))) == "denied");
+	CHECK(Code(publicBroker.call(Request("net.udp.connect", { { "host", Text("localhost") }, { "port", Int(9000) } }))) == "denied");
+	CHECK(Code(publicBroker.call(Request("net.ws.connect", { { "url", Text("ws://localhost:8080/") } }))) == "denied");
+	CHECK(publicOnly.transport.opened.empty());
+
+	const auto tcp = broker.call(Request("net.tcp.connect", { { "host", Text("localhost") }, { "port", Int(8080) } }));
+	CHECK(IsOk(tcp));
+	CHECK(fixture.transport.opened.size() == 1 && fixture.transport.opened[0].local && !fixture.transport.opened[0].tls);
+	CHECK(fixture.transport.opened[0].host == "localhost" && fixture.transport.opened[0].port == 8080);
+	const auto tcpId = IsOk(tcp) ? Payload(tcp).find("id")->asInt().value_or(0) : 0;
+	CHECK(IsOk(broker.call(Request("net.socket.send", { { "id", Int(tcpId) }, { "data", Text("ping") } }))));
+	CHECK(IsOk(broker.call(Request("net.socket.close", { { "id", Int(tcpId) } }))));
+	CHECK(Code(broker.call(Request("net.tcp.connect", { { "host", Text("127.0.0.1") }, { "port", Int(8081) } }))) == "denied");
+	CHECK(Code(broker.call(Request("net.tcp.connect", { { "host", Text("example.com") }, { "port", Int(8080) } }))) == "denied");
+	CHECK(IsOk(broker.call(Request("net.udp.connect", { { "host", Text("127.0.0.1") }, { "port", Int(9001) } }))));
+	CHECK(fixture.transport.opened.back().local);
+	CHECK(Code(broker.call(Request("net.udp.connect", { { "host", Text("127.0.0.1") }, { "port", Int(9000) }, { "tls", cbor::Value::FromBool(true) } }))) == "invalid");
+
+	const auto plain = broker.call(Request("net.ws.connect", { { "url", Text("ws://localhost:9001/chat") } }));
+	CHECK(IsOk(plain));
+	CHECK(fixture.transport.opened.back().local && !fixture.transport.opened.back().tls);
+	const auto request = std::string(fixture.transport.written.begin(), fixture.transport.written.end());
+	CHECK(request.find("GET /chat HTTP/1.1\r\nHost: localhost:9001\r\n") != std::string::npos);
+	fixture.transport.handshakeAnswered = false;
+	const auto secure = broker.call(Request("net.ws.connect", { { "url", Text("wss://[::1]:9002/") } }));
+	CHECK(IsOk(secure) && fixture.transport.opened.back().tls);
+	CHECK(Code(broker.call(Request("net.ws.connect", { { "url", Text("ws://localhost:7000/") } }))) == "denied");
+	CHECK(Code(broker.call(Request("net.ws.connect", { { "url", Text("ws://example.com/") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("net.ws.connect", { { "url", Text("https://localhost:9001/") } }))) == "invalid");
+	const auto wsId = IsOk(plain) ? Payload(plain).find("id")->asInt().value_or(0) : 0;
+	CHECK(IsOk(broker.call(Request("net.ws.send", { { "id", Int(wsId) }, { "data", Text("hi") } }))));
+
+	auto noPorts = Fixture({ "net.local" });
+	auto noPortsBroker = noPorts.make();
+	CHECK(fetch(noPortsBroker, "http://localhost:8080/") == "denied");
+	CHECK(Code(noPortsBroker.call(Request("net.tcp.connect", { { "host", Text("localhost") }, { "port", Int(8080) } }))) == "denied");
+	auto empty = Fixture({});
+	auto emptyBroker = empty.make();
+	CHECK(fetch(emptyBroker, "http://localhost:8080/") == "denied");
+	CHECK(Code(emptyBroker.call(Request("net.tcp.connect", { { "host", Text("localhost") }, { "port", Int(8080) } }))) == "denied");
+}
+
 void TestWebSocketPrimitives() {
 	CHECK(ws::AcceptFor("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 	const auto hash = ws::Sha1("abc");
@@ -1070,9 +1161,11 @@ void TestWebSocket() {
 	auto fixture = Fixture({ "net.ws" });
 	fixture.transport.webSocket = true;
 	auto broker = fixture.make();
-	for (const auto bad : { "https://example.com/", "ws://example.com/", "wss://", "wss://127.0.0.1/", "wss://user@example.com/", "example.com" }) {
+	for (const auto bad : { "https://example.com/", "ws://example.com/", "wss://", "wss://192.168.1.1/", "wss://user@example.com/", "example.com" }) {
 		CHECK(Code(connect(broker, bad)) == "invalid");
 	}
+	CHECK(Code(connect(broker, "wss://127.0.0.1/")) == "denied");
+	CHECK(Code(connect(broker, "ws://localhost:8080/")) == "denied");
 	CHECK(Code(connect(broker, "wss://example.com/", { { "headers", cbor::Value::FromMap({ { "Cookie", Text("a=b") } }) } })) == "invalid");
 	CHECK(Code(connect(broker, "wss://example.com/", { { "protocols", cbor::Value::FromArray({ Text("bad name") }) } })) == "invalid");
 	CHECK(fixture.transport.opened.empty());
@@ -2753,6 +2846,7 @@ int main() {
 	TestChatManagement();
 	TestBotButtons();
 	TestModeration();
+	TestLocalNetwork();
 	TestWebSocketPrimitives();
 	TestWebSocket();
 	TestMembersPollsAndGhost();

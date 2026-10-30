@@ -503,7 +503,7 @@ const std::set<std::string> &KnownPermissions() {
 		"messages.history", "account.info", "stars.balance", "composer.draft",
 		"contacts.list", "settings.read", "folders.list", "ui.menu",
 		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",
-		"ui.toast", "ui.badges", "notifications", "net.https", "net.tcp", "net.udp", "net.ws", "storage.private",
+		"ui.toast", "ui.badges", "notifications", "net.https", "net.tcp", "net.udp", "net.ws", "net.local", "storage.private",
 		"plugins.message",
 		"fs.user_selected", "clipboard", "background",
 		"messages.edit", "messages.delete", "messages.react", "users.info",
@@ -695,7 +695,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					reader.error(where, "entries must be objects");
 					continue;
 				}
-				reader.checkKeys(item, where, { "id", "reason", "scope" });
+				reader.checkKeys(item, where, { "id", "reason", "scope", "ports" });
 				auto request = PermissionRequest();
 				request.required = required;
 				request.id = reader.text(item, "id", where, true, 64).value_or("");
@@ -714,6 +714,42 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					&& (request.id != "messages.read"
 						|| (request.scope != "selected" && request.scope != "all"))) {
 					reader.error(where, "'scope' is only for messages.read ('selected' or 'all')");
+				}
+				const auto ports = item.find("ports");
+				if (request.id == "net.local") {
+					const auto list = ports ? ports->asArray() : nullptr;
+					if (!list || list->empty() || list->size() > 16) {
+						reader.error(where, "net.local needs 'ports': 1 to 16 ports or ranges");
+					}
+					for (const auto &entry : list ? *list : cbor::Array()) {
+						auto low = int64_t(0);
+						auto high = int64_t(0);
+						if (const auto number = entry.asInt()) {
+							low = high = *number;
+						} else if (const auto range = entry.asText()) {
+							const auto dash = range->find('-');
+							const auto digits = [](const std::string &text) {
+								return !text.empty()
+									&& text.size() <= 5
+									&& text.find_first_not_of("0123456789") == std::string::npos;
+							};
+							if (dash == std::string::npos
+								|| !digits(range->substr(0, dash))
+								|| !digits(range->substr(dash + 1))) {
+								low = high = 0;
+							} else {
+								low = std::stoi(range->substr(0, dash));
+								high = std::stoi(range->substr(dash + 1));
+							}
+						}
+						if (low < 1 || high > 65535 || low > high) {
+							reader.error(where, "'ports' has a bad entry");
+							break;
+						}
+						request.ports.emplace_back(int(low), int(high));
+					}
+				} else if (ports) {
+					reader.error(where, "'ports' is only for net.local");
 				}
 				manifest.permissions.push_back(std::move(request));
 			}

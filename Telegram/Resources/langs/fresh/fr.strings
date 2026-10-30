@@ -289,6 +289,8 @@
 "fresh_PermNetTcp" = "Ouvrir des connexions TCP";
 "fresh_PermNetUdp" = "Ouvrir des connexions UDP";
 "fresh_PermNetWs" = "Ouvrir des connexions WebSocket sécurisées";
+"fresh_PermNetLocal" = "Communiquer avec des programmes de cet ordinateur";
+"fresh_PermLocalPorts" = "Ports : {ports}";
 "fresh_PermStorage" = "Conserver ses propres données";
 "fresh_PermPluginsMessage" = "Échanger des messages avec d’autres plugins";
 "fresh_PermFiles" = "Ouvrir et enregistrer les fichiers que vous choisissez";
@@ -302,6 +304,7 @@
 "fresh_RiskOutgoing" = "Peut modifier ce que vous envoyez";
 "fresh_RiskIncoming" = "Peut modifier ou masquer les messages que vous recevez";
 "fresh_RiskModerate" = "Peut bannir et débannir des membres";
+"fresh_RiskLocal" = "Peut communiquer avec des programmes de cet ordinateur";
 "fresh_RiskBackground" = "Continue de fonctionner en arrière-plan";
 "fresh_RiskClipboard" = "Peut utiliser le presse-papiers";
 "fresh_RiskFiles" = "Peut lire et enregistrer les fichiers que vous choisissez";

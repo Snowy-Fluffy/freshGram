@@ -289,6 +289,8 @@
 "fresh_PermNetTcp" = "Открывать TCP-соединения";
 "fresh_PermNetUdp" = "Открывать UDP-соединения";
 "fresh_PermNetWs" = "Открывать защищённые WebSocket-соединения";
+"fresh_PermNetLocal" = "Обращаться к программам на этом компьютере";
+"fresh_PermLocalPorts" = "Порты: {ports}";
 "fresh_PermStorage" = "Хранить свои данные";
 "fresh_PermPluginsMessage" = "Обмениваться сообщениями с другими плагинами";
 "fresh_PermFiles" = "Открывать и сохранять выбранные вами файлы";
@@ -302,6 +304,7 @@
 "fresh_RiskOutgoing" = "Может изменять то, что вы отправляете";
 "fresh_RiskIncoming" = "Может изменять или скрывать получаемые вами сообщения";
 "fresh_RiskModerate" = "Может банить и разбанивать участников чата";
+"fresh_RiskLocal" = "Может обращаться к программам на этом компьютере";
 "fresh_RiskBackground" = "Продолжает работать в фоне";
 "fresh_RiskClipboard" = "Может пользоваться буфером обмена";
 "fresh_RiskFiles" = "Может читать и сохранять выбранные вами файлы";
