@@ -96,9 +96,12 @@ void TestSignedPackage() {
 		CHECK(first.value() == root / "com.example.demo" / "1.2.0");
 		CHECK(fs::exists(first.value() / "manifest.json"));
 		CHECK(fs::exists(first.value() / "plugin.wasm"));
-		auto stream = std::ifstream(first.value() / "manifest.json", std::ios::binary);
-		auto text = std::string(std::istreambuf_iterator<char>(stream), {});
-		CHECK(text == package.manifestText);
+		{
+			// Windows does not delete a file somebody holds open.
+			auto stream = std::ifstream(first.value() / "manifest.json", std::ios::binary);
+			const auto text = std::string(std::istreambuf_iterator<char>(stream), {});
+			CHECK(text == package.manifestText);
+		}
 		CHECK(InstallPackage(package, root).ok());
 		auto stale = 0;
 		for (const auto &entry : fs::directory_iterator(root / "com.example.demo")) {

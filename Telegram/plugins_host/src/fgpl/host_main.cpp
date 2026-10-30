@@ -34,7 +34,9 @@ extern char **environ;
 #endif // _WIN32
 
 #ifdef __APPLE__
+#include <libproc.h>
 #include <mach/mach.h>
+#include <sys/resource.h>
 #endif // __APPLE__
 
 namespace {
@@ -251,6 +253,29 @@ constexpr auto kSelftestFile = "/etc/passwd";
 	}
 	return true;
 }
+
+#ifdef __APPLE__
+// The memory this process holds, compressed pages included.
+[[nodiscard]] uint64_t Footprint() {
+	auto info = task_vm_info_data_t();
+	auto count = mach_msg_type_number_t(TASK_VM_INFO_COUNT);
+	if (task_info(
+			mach_task_self(),
+			TASK_VM_INFO,
+			reinterpret_cast<task_info_t>(&info),
+			&count) == KERN_SUCCESS) {
+		return info.phys_footprint;
+	}
+	auto usage = rusage_info_v2();
+	if (proc_pid_rusage(
+			getpid(),
+			RUSAGE_INFO_V2,
+			reinterpret_cast<rusage_info_t*>(&usage)) == 0) {
+		return usage.ri_phys_footprint;
+	}
+	return 0;
+}
+#endif // __APPLE__
 
 void ReleaseFreedMemory() {
 #ifdef __GLIBC__
@@ -478,15 +503,7 @@ int main(int argc, char **argv) {
 			if (getppid() != parent) {
 				std::_Exit(1);
 			}
-			auto info = task_vm_info_data_t();
-			auto count = mach_msg_type_number_t(TASK_VM_INFO_COUNT);
-			if (limit != 0
-				&& task_info(
-					mach_task_self(),
-					TASK_VM_INFO,
-					reinterpret_cast<task_info_t>(&info),
-					&count) == KERN_SUCCESS
-				&& info.phys_footprint > limit) {
+			if (limit != 0 && Footprint() > limit) {
 				std::_Exit(137);
 			}
 		}
