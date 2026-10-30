@@ -86,6 +86,19 @@ ClientFailure HostClient::died(const std::string &context) {
 }
 
 ClientFailure HostClient::fail(ipc::IoError error, const std::string &context) {
+#ifdef _WIN32
+	if (const auto code = os::ChannelError()) {
+		return fail(error, context, " (system error " + std::to_string(code) + ")");
+	}
+#endif // _WIN32
+	return fail(error, context, std::string());
+}
+
+ClientFailure HostClient::fail(
+		ipc::IoError error,
+		const std::string &contextBase,
+		const std::string &note) {
+	const auto context = contextBase + note;
 	switch (error) {
 	case ipc::IoError::Closed:
 	case ipc::IoError::Failed:

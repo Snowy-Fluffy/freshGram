@@ -27,6 +27,9 @@ inline constexpr auto kHostFileName = "fgpl_plugin_host";
 // Writes to a channel give up after this long, the Windows counterpart of SO_SNDTIMEO.
 void SetSendTimeout(Handle channel, int milliseconds);
 [[nodiscard]] int SendTimeout(Handle channel);
+// The system error of the last failed channel operation of this thread.
+void NoteChannelError(int code);
+[[nodiscard]] int ChannelError();
 #endif // _WIN32
 
 [[nodiscard]] int ProcessId();

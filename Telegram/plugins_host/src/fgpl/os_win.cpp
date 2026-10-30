@@ -40,6 +40,16 @@ void SetSendTimeout(Handle channel, int milliseconds) {
 	SendTimeouts[channel] = milliseconds;
 }
 
+thread_local int LastChannelError = 0;
+
+void NoteChannelError(int code) {
+	LastChannelError = code;
+}
+
+int ChannelError() {
+	return LastChannelError;
+}
+
 int SendTimeout(Handle channel) {
 	const auto lock = std::scoped_lock(SendTimeoutsMutex);
 	const auto i = SendTimeouts.find(channel);

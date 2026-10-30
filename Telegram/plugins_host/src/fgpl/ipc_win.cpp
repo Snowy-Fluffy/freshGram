@@ -37,8 +37,10 @@ struct Event {
 		DWORD timeoutMs,
 		bool &failed) {
 	failed = false;
+	os::NoteChannelError(0);
 	if (!started) {
 		const auto error = GetLastError();
+		os::NoteChannelError(int(error));
 		if (error == ERROR_BROKEN_PIPE || error == ERROR_PIPE_NOT_CONNECTED
 			|| error == ERROR_NO_DATA) {
 			return 0;
@@ -61,6 +63,7 @@ struct Event {
 		return done;
 	}
 	const auto error = GetLastError();
+	os::NoteChannelError(int(error));
 	if (error == ERROR_OPERATION_ABORTED) {
 		return -1;
 	} else if (error == ERROR_BROKEN_PIPE || error == ERROR_PIPE_NOT_CONNECTED) {

@@ -129,6 +129,10 @@ private:
 	[[nodiscard]] ClientFailure fail(
 		ipc::IoError error,
 		const std::string &context);
+	[[nodiscard]] ClientFailure fail(
+		ipc::IoError error,
+		const std::string &context,
+		const std::string &note);
 
 	os::Handle _fd = os::kNoHandle;
 	std::unique_ptr<os::Child> _child;

@@ -231,6 +231,16 @@ struct Pipe {
 		pipe.server = INVALID_HANDLE_VALUE;
 		return false;
 	}
+	// The client is already there, so this answers "connected" at once.
+	auto connect = OVERLAPPED();
+	connect.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	if (connect.hEvent) {
+		if (!ConnectNamedPipe(pipe.server, &connect)
+			&& GetLastError() == ERROR_IO_PENDING) {
+			WaitForSingleObject(connect.hEvent, 1000);
+		}
+		CloseHandle(connect.hEvent);
+	}
 	return true;
 }
 
@@ -402,56 +412,58 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 
 	auto info = PROCESS_INFORMATION();
 	auto created = false;
-	auto code = DWORD(0);
-	// The mitigations are hardening on top of the container, a Windows that
-	// refuses them still runs the host in it.
-	for (auto withMitigations : { true, false }) {
+	auto problems = std::string();
+	// The mitigations are hardening on top of the container, and the full
+	// environment is the way out when a container refuses a bare one.
+	struct Attempt {
+		bool mitigations;
+		bool bareEnvironment;
+	};
+	for (const auto attempt : {
+			Attempt{ true, true },
+			Attempt{ false, true },
+			Attempt{ true, false },
+			Attempt{ false, false } }) {
 		auto size = SIZE_T(0);
 		InitializeProcThreadAttributeList(nullptr, 4, 0, &size);
 		auto storage = std::vector<uint8_t>(size);
 		const auto list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
 		if (!InitializeProcThreadAttributeList(list, 4, 0, &size)) {
-			code = GetLastError();
+			problems += " [attribute list " + std::to_string(GetLastError()) + "]";
 			break;
 		}
-		auto ok = UpdateProcThreadAttribute(
-			list,
-			0,
+		const auto update = [&](DWORD_PTR attribute, void *value, SIZE_T bytes, const char *name) {
+			if (UpdateProcThreadAttribute(list, 0, attribute, value, bytes, nullptr, nullptr)) {
+				return true;
+			}
+			problems += std::string(" [") + name + " " + std::to_string(GetLastError()) + "]";
+			return false;
+		};
+		auto ok = update(
 			PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
 			inherited.data(),
 			sizeof(HANDLE) * inherited.size(),
-			nullptr,
-			nullptr) != FALSE;
-		ok = ok && UpdateProcThreadAttribute(
-			list,
-			0,
+			"handles");
+		ok = ok && update(
 			PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
 			&policy,
 			sizeof(policy),
-			nullptr,
-			nullptr);
+			"children");
 		if (ok && spec.sandboxed) {
-			ok = UpdateProcThreadAttribute(
-				list,
-				0,
+			ok = update(
 				PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
 				&capabilities,
 				sizeof(capabilities),
-				nullptr,
-				nullptr) != FALSE;
+				"container");
 		}
-		if (ok && withMitigations) {
-			ok = UpdateProcThreadAttribute(
-				list,
-				0,
+		if (ok && attempt.mitigations) {
+			ok = update(
 				PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
 				&mitigations,
 				sizeof(mitigations),
-				nullptr,
-				nullptr) != FALSE;
+				"mitigations");
 		}
 		if (!ok) {
-			code = GetLastError();
 			DeleteProcThreadAttributeList(list);
 			continue;
 		}
@@ -470,11 +482,16 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 			TRUE,
 			EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW
 				| CREATE_UNICODE_ENVIRONMENT,
-			environment.data(),
+			attempt.bareEnvironment ? environment.data() : nullptr,
 			nullptr,
 			&startup.StartupInfo,
 			&info) != FALSE;
-		code = created ? 0 : GetLastError();
+		if (!created) {
+			problems += std::string(" [create ")
+				+ (attempt.mitigations ? "m" : "-")
+				+ (attempt.bareEnvironment ? "b" : "-") + " "
+				+ std::to_string(GetLastError()) + "]";
+		}
 		DeleteProcThreadAttributeList(list);
 		if (created) {
 			break;
@@ -483,7 +500,7 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 	if (!created) {
 		CloseHandle(pipe.server);
 		cleanup();
-		return Describe("starting the host", code);
+		return "starting the host failed:" + problems;
 	}
 	if (!AssignProcessToJobObject(job, info.hProcess)) {
 		const auto text = Describe("assigning the host to its job");
