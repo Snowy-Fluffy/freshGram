@@ -1463,6 +1463,26 @@ void TestPluginMessages() {
 		{ "to", Text("com.example.friend") },
 		{ "data", cbor::Value::FromBytes(cbor::Bytes(70000, 1)) },
 	}))) == "limit");
+	const auto nested = [](int levels) {
+		auto value = Int(1);
+		for (auto i = 0; i != levels; ++i) {
+			value = cbor::Value::FromArray({ std::move(value) });
+		}
+		return value;
+	};
+	CHECK(Code(broker.call(Request("plugins.send", {
+		{ "to", Text("com.example.friend") },
+		{ "data", nested(13) },
+	}))) == "invalid");
+	CHECK(IsOk(broker.call(Request("plugins.send", {
+		{ "to", Text("com.example.friend") },
+		{ "data", nested(12) },
+	}))));
+	auto frame = cbor::Bytes();
+	CHECK(cbor::Encode(cbor::Value::FromMap({
+		{ "t", Text("run") },
+		{ "v", cbor::Value::FromMap({ { "data", sent.back().second } }) },
+	}), frame, 16));
 	const auto peers = broker.call(Request("plugins.peers"));
 	CHECK(IsOk(peers) && Payload(peers).asArray()->size() == 1);
 
@@ -1472,7 +1492,7 @@ void TestPluginMessages() {
 	auto deniedBroker = denied.make();
 	CHECK(Code(deniedBroker.call(Request("plugins.send", { { "to", Text("com.example.friend") } }))) == "denied");
 	CHECK(Code(deniedBroker.call(Request("plugins.peers"))) == "denied");
-	CHECK(sent.size() == 2);
+	CHECK(sent.size() == 3);
 }
 
 void TestDataIsFilteredByTheBroker() {

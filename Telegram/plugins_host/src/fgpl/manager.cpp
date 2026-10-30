@@ -29,6 +29,7 @@ constexpr auto kAsyncThreads = 8;
 constexpr auto kResultOverhead = size_t(1024);
 constexpr auto kMaxTimers = size_t(32);
 constexpr auto kMaxIconBytes = size_t(64) << 10;
+constexpr auto kUnknownEventBytes = size_t(64) << 10;
 
 [[nodiscard]] size_t EncodedSize(const cbor::Value &event);
 
@@ -528,7 +529,7 @@ void AppendLog(LogRing &ring, size_t maxLines, std::string_view line, bool fromA
 
 [[nodiscard]] size_t EncodedSize(const cbor::Value &event) {
 	auto bytes = cbor::Bytes();
-	return cbor::Encode(event, bytes, 16) ? bytes.size() : 0;
+	return cbor::Encode(event, bytes, 16) ? bytes.size() : kUnknownEventBytes;
 }
 
 struct Usage {

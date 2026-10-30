@@ -64,6 +64,8 @@ constexpr auto kMaxMedia = size_t(100) << 20;
 constexpr auto kMaxContacts = size_t(1000);
 constexpr auto kMaxFolders = size_t(100);
 constexpr auto kMaxPluginMessage = size_t(64) << 10;
+// The event is nested three levels inside the host frame, which the host decodes at depth 16.
+constexpr auto kMaxPluginDepth = size_t(12);
 constexpr auto kMaxIds = size_t(100);
 constexpr auto kMaxQuery = size_t(256);
 constexpr auto kMaxEmoji = size_t(64);
@@ -212,9 +214,9 @@ constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 	return true;
 }
 
-[[nodiscard]] cbor::Bytes Encoded(const cbor::Value &value) {
+[[nodiscard]] cbor::Bytes Encoded(const cbor::Value &value, size_t depth = 16) {
 	auto bytes = cbor::Bytes();
-	if (!cbor::Encode(value, bytes, 16)) {
+	if (!cbor::Encode(value, bytes, depth)) {
 		bytes.clear();
 	}
 	return bytes;
@@ -1001,7 +1003,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		if (!to || to->empty() || *to == _grants.pluginId) {
 			return api::Fail(api::error::kInvalid, "to");
 		}
-		const auto encoded = Encoded(data ? *data : cbor::Value());
+		const auto encoded = Encoded(data ? *data : cbor::Value(), kMaxPluginDepth);
 		if (encoded.empty()) {
 			return api::Fail(api::error::kInvalid, "data");
 		} else if (encoded.size() > kMaxPluginMessage) {
