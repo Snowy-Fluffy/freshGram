@@ -25,6 +25,8 @@ struct PermissionRequest {
 	Localized reason;
 	std::string scope;
 	bool required = false;
+	// Ports of this computer that net.local may reach, as inclusive ranges.
+	std::vector<std::pair<int, int>> ports;
 };
 
 // Declarative visibility of a menu item.

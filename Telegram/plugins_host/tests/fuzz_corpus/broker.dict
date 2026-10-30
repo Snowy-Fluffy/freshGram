@@ -202,3 +202,7 @@
 "protocols"
 "reason"
 "code"
+"net.local"
+"ports"
+"http://localhost:8080/"
+"ws://localhost:9001/"

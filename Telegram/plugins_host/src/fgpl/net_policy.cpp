@@ -231,7 +231,55 @@ struct Host {
 
 } // namespace
 
-Result<Url, std::string> ParseUrl(std::string_view text) {
+namespace {
+
+[[nodiscard]] bool LoopbackV4(const std::array<uint8_t, 4> &a) {
+	return a[0] == 127;
+}
+
+[[nodiscard]] bool LoopbackV6(const std::array<uint8_t, 16> &b) {
+	for (auto i = 0; i != 15; ++i) {
+		if (b[size_t(i)] != 0) {
+			return false;
+		}
+	}
+	return b[15] == 1;
+}
+
+[[nodiscard]] bool IsLoopbackName(std::string_view lowered) {
+	if (lowered == "localhost") {
+		return true;
+	} else if (const auto v4 = ParseV4(lowered)) {
+		return LoopbackV4(*v4);
+	} else if (const auto v6 = ParseV6(lowered)) {
+		return LoopbackV6(*v6);
+	}
+	return false;
+}
+
+[[nodiscard]] Result<Host, std::string> CheckLocalHost(std::string_view raw) {
+	auto host = Lower(raw);
+	if (host.size() > 2 && host.front() == '[' && host.back() == ']') {
+		host = host.substr(1, host.size() - 2);
+	}
+	while (!host.empty() && host.back() == '.') {
+		host.pop_back();
+	}
+	if (!IsLoopbackName(host)) {
+		return std::string("not local");
+	}
+	return Host{ host, host != "localhost" };
+}
+
+[[nodiscard]] bool port_given(
+		std::string_view authority,
+		size_t colon,
+		size_t bracket) {
+	return colon != std::string_view::npos
+		&& (bracket == std::string_view::npos || colon > bracket);
+}
+
+Result<Url, std::string> ParseAny(std::string_view text, bool local) {
 	if (text.size() > 2048) {
 		return std::string("the URL is too long");
 	}
@@ -241,11 +289,26 @@ Result<Url, std::string> ParseUrl(std::string_view text) {
 			return std::string("the URL has forbidden characters");
 		}
 	}
-	constexpr auto kScheme = std::string_view("https://");
-	if (Lower(text.substr(0, kScheme.size())) != kScheme) {
+	auto scheme = std::string("https");
+	auto prefix = std::string_view("https://");
+	if (local) {
+		for (const auto candidate : { "https", "http", "wss", "ws" }) {
+			const auto length = std::string_view(candidate).size() + 3;
+			if (Lower(text.substr(0, length)) == std::string(candidate) + "://") {
+				scheme = candidate;
+				prefix = text.substr(0, length);
+			}
+		}
+		if (prefix == "https://" && scheme != "https") {
+			return std::string("not local");
+		}
+	} else if (Lower(text.substr(0, prefix.size())) != prefix) {
 		return std::string("only https URLs are allowed");
 	}
-	auto rest = text.substr(kScheme.size());
+	if (local && Lower(text.substr(0, prefix.size())) != scheme + "://") {
+		return std::string("not local");
+	}
+	auto rest = text.substr(prefix.size());
 	const auto slash = rest.find_first_of("/?#");
 	const auto authority = rest.substr(0, slash);
 	auto target = (slash == std::string_view::npos)
@@ -262,6 +325,7 @@ Result<Url, std::string> ParseUrl(std::string_view text) {
 		return std::string("the URL has no usable host");
 	}
 	auto url = Url();
+	url.port = 443;
 	const auto bracket = authority.rfind(']');
 	const auto colon = authority.rfind(':');
 	auto host = authority;
@@ -291,23 +355,50 @@ Result<Url, std::string> ParseUrl(std::string_view text) {
 		}
 		url.port = number;
 	}
+	const auto secure = (scheme == "https" || scheme == "wss");
+	if (local && !port_given(authority, colon, bracket)) {
+		url.port = secure ? 443 : 80;
+	}
 	if (host.front() == '[' && host.back() != ']') {
 		return std::string("the URL has no usable host");
 	}
-	const auto checked = CheckHost(host);
+	const auto checked = local ? CheckLocalHost(host) : CheckHost(host);
 	if (!checked.ok()) {
 		return checked.error();
 	}
 	url.host = checked.value().name;
+	url.scheme = scheme;
+	url.tls = secure;
 	url.ip = checked.value().ip;
 	url.target = std::move(target);
 	const auto shown = (url.ip && url.host.find(':') != std::string::npos)
 		? "[" + url.host + "]"
 		: url.host;
-	url.text = "https://" + shown
-		+ (url.port == 443 ? std::string() : ":" + std::to_string(url.port))
+	url.text = scheme + "://" + shown
+		+ (url.port == (secure ? 443 : 80) ? std::string() : ":" + std::to_string(url.port))
 		+ url.target;
 	return url;
+}
+
+} // namespace
+
+Result<Url, std::string> ParseUrl(std::string_view text) {
+	return ParseAny(text, false);
+}
+
+Result<Url, std::string> ParseLocalUrl(std::string_view text) {
+	return ParseAny(text, true);
+}
+
+bool IsLoopbackHost(std::string_view host) {
+	auto lowered = Lower(host);
+	if (lowered.size() > 2 && lowered.front() == '[' && lowered.back() == ']') {
+		lowered = lowered.substr(1, lowered.size() - 2);
+	}
+	while (!lowered.empty() && lowered.back() == '.') {
+		lowered.pop_back();
+	}
+	return IsLoopbackName(lowered);
 }
 
 Result<Endpoint, std::string> ParseEndpoint(std::string_view host, int64_t port) {
@@ -323,6 +414,19 @@ Result<Endpoint, std::string> ParseEndpoint(std::string_view host, int64_t port)
 		}
 	}
 	const auto checked = CheckHost(host);
+	if (!checked.ok()) {
+		return checked.error();
+	}
+	return Endpoint{ checked.value().name, int(port), checked.value().ip };
+}
+
+Result<Endpoint, std::string> ParseLocalEndpoint(std::string_view host, int64_t port) {
+	if (port < 1 || port > 65535) {
+		return std::string("a bad port");
+	} else if (host.empty() || host.size() > 255) {
+		return std::string("a bad host");
+	}
+	const auto checked = CheckLocalHost(host);
 	if (!checked.ok()) {
 		return checked.error();
 	}

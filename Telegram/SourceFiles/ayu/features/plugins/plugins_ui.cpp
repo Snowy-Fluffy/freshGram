@@ -1855,7 +1855,7 @@ void FillLogBox(
 	if (!grant) {
 		return false;
 	}
-	for (const auto permission : { "net.https", "net.tcp", "net.udp", "net.ws" }) {
+	for (const auto permission : { "net.https", "net.tcp", "net.udp", "net.ws", "net.local" }) {
 		if (grant->granted.contains(permission)) {
 			return true;
 		}
@@ -2868,6 +2868,7 @@ namespace {
 	case fgpl::Risk::ChangesOutgoing: return tr::fresh_RiskOutgoing(tr::now);
 	case fgpl::Risk::ChangesIncoming: return tr::fresh_RiskIncoming(tr::now);
 	case fgpl::Risk::Moderates: return tr::fresh_RiskModerate(tr::now);
+	case fgpl::Risk::LocalNetwork: return tr::fresh_RiskLocal(tr::now);
 	case fgpl::Risk::ChangesMessages: return tr::fresh_RiskChangesMessages(tr::now);
 	case fgpl::Risk::Background: return tr::fresh_RiskBackground(tr::now);
 	case fgpl::Risk::Clipboard: return tr::fresh_RiskClipboard(tr::now);
@@ -2906,6 +2907,7 @@ namespace {
 		{ "net.tcp", &st::menuIconNetwork },
 		{ "net.udp", &st::menuIconNetwork },
 		{ "net.ws", &st::menuIconNetwork },
+		{ "net.local", &st::menuIconNetwork },
 		{ "storage.private", &st::menuIconDownload },
 		{ "plugins.message", &st::menuIconBot },
 		{ "fs.user_selected", &st::menuIconFile },
@@ -3036,6 +3038,18 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		}
 		const auto reason = Utf8(request->reason.get(Language()));
 		about.push_back(reason.isEmpty() ? Utf8(request->id) : reason);
+		if (!request->ports.empty()) {
+			auto ports = QStringList();
+			for (const auto &[low, high] : request->ports) {
+				ports.push_back((low == high)
+					? QString::number(low)
+					: QString::number(low) + QChar(0x2013) + QString::number(high));
+			}
+			about.push_back(tr::fresh_PermLocalPorts(
+				tr::now,
+				lt_ports,
+				ports.join(u", "_q)));
+		}
 		const auto title = PermissionTitle(request->id, request->scope);
 		const auto danger = fgpl::PermissionDanger(request->id, request->scope);
 		const auto button = AddDetailedSettingsButton(
@@ -3431,6 +3445,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "net.tcp", tr::fresh_PermNetTcp },
 		{ "net.udp", tr::fresh_PermNetUdp },
 		{ "net.ws", tr::fresh_PermNetWs },
+		{ "net.local", tr::fresh_PermNetLocal },
 		{ "storage.private", tr::fresh_PermStorage },
 		{ "plugins.message", tr::fresh_PermPluginsMessage },
 		{ "fs.user_selected", tr::fresh_PermFiles },

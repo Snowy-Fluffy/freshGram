@@ -23,6 +23,7 @@ enum class Risk : uint8_t {
 	ChangesOutgoing,
 	ChangesIncoming,
 	Moderates,
+	LocalNetwork,
 	ChangesMessages,
 	Background,
 	Clipboard,

@@ -598,6 +598,7 @@ void Broker::releaseSockets() {
 			}
 		}
 		_sockets.clear();
+		_localSockets.clear();
 		_ws.clear();
 		return cbor::Value();
 	});
@@ -1130,9 +1131,6 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		}
 		return api::Ok();
 	} else if (op == "net.fetch") {
-		if (!has("net.https")) {
-			return api::Fail(api::error::kDenied, "net.https");
-		}
 		return netFetch(args);
 	} else if (IsSocketCall(op)) {
 		return socketCall(op, args);
@@ -1217,11 +1215,30 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 	if (!address || !net::IsAllowedMethod(method)) {
 		return api::Fail(api::error::kInvalid, "method or url");
 	}
-	const auto parsed = net::ParseUrl(*address);
-	if (!parsed.ok()) {
+	auto local = false;
+	auto parsed = net::ParseLocalUrl(*address);
+	if (parsed.ok()) {
+		if (parsed.value().scheme != "http" && parsed.value().scheme != "https") {
+			return api::Fail(api::error::kInvalid, "only http and https URLs are fetched");
+		} else if (!has("net.local")) {
+			return api::Fail(api::error::kDenied, "net.local");
+		} else if (!localPortAllowed(parsed.value().port)) {
+			return api::Fail(api::error::kDenied, "this port");
+		}
+		local = true;
+	} else if (parsed.error() != "not local") {
 		return api::Fail(api::error::kInvalid, parsed.error());
+	} else {
+		if (!has("net.https")) {
+			return api::Fail(api::error::kDenied, "net.https");
+		}
+		parsed = net::ParseUrl(*address);
+		if (!parsed.ok()) {
+			return api::Fail(api::error::kInvalid, parsed.error());
+		}
 	}
 	auto request = FetchRequest();
+	request.local = local;
 	request.owner = { _grants.pluginId, _grants.account };
 	request.method = method;
 	request.url = parsed.value().text;
@@ -1261,9 +1278,11 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 			return api::Fail(api::error::kLimit, "the body is too large");
 		}
 	}
-	request.allowRedirect = [](const std::string &target) {
-		return net::ParseUrl(target).ok();
-	};
+	if (!local) {
+		request.allowRedirect = [](const std::string &target) {
+			return net::ParseUrl(target).ok();
+		};
+	}
 	const auto response = _services.transport->fetch(request);
 	if (!response.ok()) {
 		return api::Fail(response.error().code, response.error().message);
@@ -1314,7 +1333,11 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 	}
 	if (op == "net.tcp.connect" || op == "net.udp.connect") {
 		const auto kind = (op == "net.tcp.connect") ? SocketKind::Tcp : SocketKind::Udp;
-		const auto permission = (kind == SocketKind::Tcp) ? "net.tcp" : "net.udp";
+		const auto addressed = TextArg(args, "host", 255);
+		const auto local = addressed && net::IsLoopbackHost(*addressed);
+		const auto permission = local
+			? "net.local"
+			: (kind == SocketKind::Tcp) ? "net.tcp" : "net.udp";
 		if (!has(permission)) {
 			return api::Fail(api::error::kDenied, permission);
 		}
@@ -1329,9 +1352,13 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 		if (!host || !port) {
 			return api::Fail(api::error::kInvalid, "host or port");
 		}
-		const auto endpoint = net::ParseEndpoint(*host, *port);
+		const auto endpoint = local
+			? net::ParseLocalEndpoint(*host, *port)
+			: net::ParseEndpoint(*host, *port);
 		if (!endpoint.ok()) {
 			return api::Fail(api::error::kInvalid, endpoint.error());
+		} else if (local && !localPortAllowed(endpoint.value().port)) {
+			return api::Fail(api::error::kDenied, "this port");
 		}
 		const auto tls = Arg(args, "tls");
 		if (tls && (!tls->asBool() || (*tls->asBool() && kind == SocketKind::Udp))) {
@@ -1343,6 +1370,7 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 		request.port = endpoint.value().port;
 		request.ip = endpoint.value().ip;
 		request.tls = tls && tls->asBool().value_or(false);
+		request.local = local;
 		request.timeoutMs = std::max(wait(10000), 100);
 		const auto opened = transport->open(
 			{ _grants.pluginId, _grants.account },
@@ -1351,13 +1379,18 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 			return api::Fail(opened.error().code, opened.error().message);
 		}
 		_sockets.emplace(opened.value(), kind);
+		if (local) {
+			_localSockets.insert(opened.value());
+		}
 		return api::Ok(cbor::Value::FromMap({ { "id", Int(opened.value()) } }));
 	}
 	const auto id = IntArg(args, "id");
 	const auto found = id ? _sockets.find(*id) : _sockets.end();
 	if (found == _sockets.end()) {
 		return api::Fail(api::error::kNotFound, "socket");
-	} else if (!has(found->second == SocketKind::Tcp
+	} else if (!has(_localSockets.contains(found->first)
+			? "net.local"
+			: found->second == SocketKind::Tcp
 			? "net.tcp"
 			: (found->second == SocketKind::Udp ? "net.udp" : "net.ws"))) {
 		return api::Fail(api::error::kDenied, "socket");
@@ -1369,6 +1402,7 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 	}
 	if (op == "net.socket.close") {
 		transport->close(found->first);
+		_localSockets.erase(found->first);
 		_sockets.erase(found);
 		return api::Ok();
 	} else if (op == "net.socket.send") {
@@ -1407,6 +1441,18 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 	return api::Fail(api::error::kInvalid, "unknown socket operation");
 }
 
+bool Broker::localPortAllowed(int port) const {
+	if (!has("net.local")) {
+		return false;
+	}
+	return std::any_of(
+		_grants.localPorts.begin(),
+		_grants.localPorts.end(),
+		[&](const std::pair<int, int> &range) {
+			return port >= range.first && port <= range.second;
+		});
+}
+
 std::string Broker::wsWrite(int64_t id, std::span<const uint8_t> data, int timeoutMs) {
 	const auto transport = _services.transport;
 	while (!data.empty()) {
@@ -1423,7 +1469,7 @@ std::string Broker::wsWrite(int64_t id, std::span<const uint8_t> data, int timeo
 
 cbor::Value Broker::wsConnect(const cbor::Value *args) {
 	const auto transport = _services.transport;
-	if (!has("net.ws")) {
+	if (!has("net.ws") && !has("net.local")) {
 		return api::Fail(api::error::kDenied, "net.ws");
 	}
 	const auto open = std::count_if(_sockets.begin(), _sockets.end(), [&](const auto &entry) {
@@ -1433,13 +1479,34 @@ cbor::Value Broker::wsConnect(const cbor::Value *args) {
 		return api::Fail(api::error::kLimit, "too many open sockets");
 	}
 	const auto text = TextArg(args, "url", 2048);
-	if (!text || text->rfind("wss://", 0) != 0) {
-		return api::Fail(api::error::kInvalid, "url must start with wss://");
+	if (!text) {
+		return api::Fail(api::error::kInvalid, "url");
 	}
-	const auto url = net::ParseUrl("https://" + text->substr(6));
-	if (!url.ok()) {
+	auto local = false;
+	auto url = net::ParseLocalUrl(*text);
+	if (url.ok()) {
+		if (url.value().scheme != "ws" && url.value().scheme != "wss") {
+			return api::Fail(api::error::kInvalid, "url must start with wss://");
+		} else if (!has("net.local")) {
+			return api::Fail(api::error::kDenied, "net.local");
+		} else if (!localPortAllowed(url.value().port)) {
+			return api::Fail(api::error::kDenied, "this port");
+		}
+		local = true;
+	} else if (url.error() != "not local") {
 		return api::Fail(api::error::kInvalid, url.error());
+	} else {
+		if (text->rfind("wss://", 0) != 0) {
+			return api::Fail(api::error::kInvalid, "url must start with wss://");
+		} else if (!has("net.ws")) {
+			return api::Fail(api::error::kDenied, "net.ws");
+		}
+		url = net::ParseUrl("https://" + text->substr(6));
+		if (!url.ok()) {
+			return api::Fail(api::error::kInvalid, url.error());
+		}
 	}
+	const auto secure = url.value().tls;
 	auto extra = std::string();
 	if (const auto headers = Arg(args, "headers")) {
 		const auto map = headers->asMap();
@@ -1490,7 +1557,8 @@ cbor::Value Broker::wsConnect(const cbor::Value *args) {
 	request.host = url.value().host;
 	request.port = url.value().port;
 	request.ip = url.value().ip;
-	request.tls = true;
+	request.tls = secure;
+	request.local = local;
 	request.timeoutMs = timeout;
 	const auto opened = transport->open({ _grants.pluginId, _grants.account }, request);
 	if (!opened.ok()) {
@@ -1501,9 +1569,12 @@ cbor::Value Broker::wsConnect(const cbor::Value *args) {
 		transport->close(id);
 		return api::Fail(code, message);
 	};
+	const auto hostText = (url.value().host.find(':') != std::string::npos)
+		? "[" + url.value().host + "]"
+		: url.value().host;
 	const auto key = ws::NewKey();
-	auto head = "GET " + url.value().target + " HTTP/1.1\r\nHost: " + url.value().host
-		+ ((url.value().port != 443) ? ":" + std::to_string(url.value().port) : std::string())
+	auto head = "GET " + url.value().target + " HTTP/1.1\r\nHost: " + hostText
+		+ ((url.value().port != (secure ? 443 : 80)) ? ":" + std::to_string(url.value().port) : std::string())
 		+ "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
 		+ "Sec-WebSocket-Key: " + key + "\r\n";
 	if (!protocols.empty()) {
@@ -1586,6 +1657,9 @@ cbor::Value Broker::wsConnect(const cbor::Value *args) {
 	const auto rest = response.substr(end + 4);
 	state.parser.feed({ reinterpret_cast<const uint8_t*>(rest.data()), rest.size() });
 	_sockets.emplace(id, SocketKind::Ws);
+	if (local) {
+		_localSockets.insert(id);
+	}
 	_ws.emplace(id, std::move(state));
 	return api::Ok(cbor::Value::FromMap({
 		{ "id", Int(id) },
@@ -1734,6 +1808,7 @@ cbor::Value Broker::wsCall(const std::string &op, int64_t id, const cbor::Value 
 		}
 		transport->close(id);
 		_sockets.erase(id);
+		_localSockets.erase(id);
 		_ws.erase(found);
 		return api::Ok();
 	} else if (op == "net.ws.send") {

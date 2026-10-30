@@ -289,6 +289,8 @@
 "fresh_PermNetTcp" = "TCP-Verbindungen öffnen";
 "fresh_PermNetUdp" = "UDP-Verbindungen öffnen";
 "fresh_PermNetWs" = "Sichere WebSocket-Verbindungen öffnen";
+"fresh_PermNetLocal" = "Mit Programmen auf diesem Computer sprechen";
+"fresh_PermLocalPorts" = "Ports: {ports}";
 "fresh_PermStorage" = "Eigene Daten speichern";
 "fresh_PermPluginsMessage" = "Nachrichten mit anderen Plugins austauschen";
 "fresh_PermFiles" = "Von dir gewählte Dateien öffnen und speichern";
@@ -302,6 +304,7 @@
 "fresh_RiskOutgoing" = "Kann ändern, was du sendest";
 "fresh_RiskIncoming" = "Kann empfangene Nachrichten ändern oder ausblenden";
 "fresh_RiskModerate" = "Kann Chat-Mitglieder sperren und entsperren";
+"fresh_RiskLocal" = "Kann mit Programmen auf diesem Computer sprechen";
 "fresh_RiskBackground" = "Läuft im Hintergrund weiter";
 "fresh_RiskClipboard" = "Kann die Zwischenablage nutzen";
 "fresh_RiskFiles" = "Kann von dir gewählte Dateien lesen und speichern";

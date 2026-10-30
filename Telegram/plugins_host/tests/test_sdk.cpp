@@ -136,7 +136,7 @@ void TestPythonSdk() {
 	CHECK(StringAt(*report, "public_ip") == "ok");
 	CHECK(StringAt(*report, "tcp") == "denied");
 	CHECK(StringAt(*report, "http_url") == "invalid");
-	CHECK(StringAt(*report, "ip_url") == "invalid");
+	CHECK(StringAt(*report, "ip_url") == "denied");
 	CHECK(StringAt(*report, "cookie_header") == "invalid");
 	CHECK(StringAt(*report, "quota") == "quota");
 	CHECK(report->find("stars")->asInt() == 1234);

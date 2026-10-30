@@ -1,5 +1,6 @@
 #include "check.h"
 #include "fgpl/manifest.h"
+#include "fgpl/permissions.h"
 #include "package_builder.h"
 
 #include <functional>
@@ -523,6 +524,45 @@ void TestMenuConditions() {
 	CHECK(Matches(MenuWhen(), MenuContext()));
 }
 
+void TestLocalPorts() {
+	const auto withPorts = [](std::optional<cbor::Value> ports, const char *id = "net.local") {
+		return [=](cbor::Value &d) {
+			auto entry = cbor::Map{ { "id", Text(id) }, { "reason", Text("x") } };
+			if (ports) {
+				entry.push_back({ "ports", *ports });
+			}
+			Set(d, "permissions.optional", cbor::Value::FromArray({ cbor::Value::FromMap(std::move(entry)) }));
+		};
+	};
+	ExpectError("local without ports", withPorts(std::nullopt), "ports");
+	ExpectError("local with no ports", withPorts(cbor::Value::FromArray({})), "ports");
+	ExpectError("local port zero", withPorts(cbor::Value::FromArray({ Int(0) })), "ports");
+	ExpectError("local port high", withPorts(cbor::Value::FromArray({ Int(70000) })), "ports");
+	ExpectError("local bad range", withPorts(cbor::Value::FromArray({ Text("9000-8000") })), "ports");
+	ExpectError("local text range", withPorts(cbor::Value::FromArray({ Text("a-b") })), "ports");
+	ExpectError("local entry", withPorts(cbor::Value::FromArray({ cbor::Value::FromBool(true) })), "ports");
+	auto many = cbor::Array();
+	for (auto i = 1; i != 18; ++i) {
+		many.push_back(Int(i));
+	}
+	ExpectError("local too many", withPorts(cbor::Value::FromArray(std::move(many))), "ports");
+	ExpectError("ports elsewhere", withPorts(cbor::Value::FromArray({ Int(80) }), "net.https"), "net.local");
+
+	auto document = ValidDocument();
+	withPorts(cbor::Value::FromArray({ Int(8080), Text("9000-9100") }))(document);
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (!parsed.ok()) {
+		return;
+	}
+	const auto &ports = parsed.value().permissions.back().ports;
+	CHECK(ports.size() == 2 && ports[0] == std::pair(8080, 8080) && ports[1] == std::pair(9000, 9100));
+	const auto grants = MakeGrants(parsed.value(), { { "net.local" }, std::nullopt });
+	CHECK(grants.permissions.contains("net.local") && grants.localPorts == ports);
+	CHECK(MakeGrants(parsed.value(), { {}, std::nullopt }).localPorts.empty());
+	CHECK(HostFeatures().contains("net.local"));
+}
+
 void TestIncomingHook() {
 	auto document = ValidDocument();
 	Set(document, "permissions.optional", cbor::Value::FromArray({
@@ -666,6 +706,7 @@ int main() {
 	TestIcons();
 	TestOutgoingFilter();
 	TestIncomingHook();
+	TestLocalPorts();
 	TestMenuConditions();
 	TestTranslatorManifest();
 	TestStorageExport();

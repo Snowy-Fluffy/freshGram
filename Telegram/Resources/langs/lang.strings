@@ -9073,6 +9073,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermNetTcp" = "Open TCP connections";
 "fresh_PermNetUdp" = "Open UDP connections";
 "fresh_PermNetWs" = "Open secure WebSocket connections";
+"fresh_PermNetLocal" = "Talk to programs on this computer";
+"fresh_PermLocalPorts" = "Ports: {ports}";
 "fresh_PermStorage" = "Keep its own data";
 "fresh_PermPluginsMessage" = "Exchange messages with other plugins";
 "fresh_PermFiles" = "Open and save files you choose";
@@ -9086,6 +9088,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_RiskOutgoing" = "Can change what you send";
 "fresh_RiskIncoming" = "Can change or hide the messages you receive";
 "fresh_RiskModerate" = "Can ban and unban chat members";
+"fresh_RiskLocal" = "Can talk to programs on this computer";
 "fresh_RiskBackground" = "Keeps running in the background";
 "fresh_RiskClipboard" = "Can use the clipboard";
 "fresh_RiskFiles" = "Can read and save files you choose";

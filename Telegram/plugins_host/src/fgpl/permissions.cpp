@@ -20,7 +20,7 @@ const auto kReadingPermissions = std::set<std::string>{
 
 const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
-	"net.tcp", "net.udp", "background", "fs.user_selected", "clipboard",
+	"net.tcp", "net.udp", "net.local", "background", "fs.user_selected", "clipboard",
 	"messages.edit", "messages.delete", "ghost.control", "messages.transform_incoming",
 	"chats.moderate",
 };
@@ -55,6 +55,9 @@ Grants MakeGrants(const Manifest &manifest, const GrantDecision &decision) {
 			continue;
 		}
 		grants.permissions.insert(request.id);
+		if (request.id == "net.local") {
+			grants.localPorts = request.ports;
+		}
 	}
 	return grants;
 }
@@ -95,6 +98,12 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 		notes.push_back({
 			Risk::ChangesIncoming,
 			"can change or hide the messages you receive",
+		});
+	}
+	if (Has(granted, "net.local")) {
+		notes.push_back({
+			Risk::LocalNetwork,
+			"can talk to programs on this computer",
 		});
 	}
 	if (Has(granted, "chats.moderate")) {

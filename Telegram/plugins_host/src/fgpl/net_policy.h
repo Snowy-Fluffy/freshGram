@@ -17,6 +17,8 @@ struct Url {
 	std::string target;
 	std::string text;
 	bool ip = false;
+	std::string scheme = "https";
+	bool tls = true;
 };
 
 struct Endpoint {
@@ -28,6 +30,15 @@ struct Endpoint {
 [[nodiscard]] Result<Url, std::string> ParseUrl(std::string_view text);
 
 [[nodiscard]] Result<Endpoint, std::string> ParseEndpoint(
+	std::string_view host,
+	int64_t port);
+
+// The host is "localhost", an address of 127.0.0.0/8 or ::1.
+[[nodiscard]] bool IsLoopbackHost(std::string_view host);
+// http, https, ws or wss URLs of a loopback host; the error is "not local"
+// for any other host, so that the caller may try ParseUrl.
+[[nodiscard]] Result<Url, std::string> ParseLocalUrl(std::string_view text);
+[[nodiscard]] Result<Endpoint, std::string> ParseLocalEndpoint(
 	std::string_view host,
 	int64_t port);
 
