@@ -40,6 +40,7 @@
 #include "data/data_chat_participant_status.h"
 #include "history/history_item_components.h"
 #include "history/history_item_reply_markup.h"
+#include "data/data_chat.h"
 #include "data/data_channel.h"
 #include "data/data_peer.h"
 #include "data/data_photo.h"
