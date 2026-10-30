@@ -9,6 +9,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 #include <thread>
 #include <vector>
 
@@ -143,6 +144,29 @@ void TestEndpoints() {
 	}
 	CHECK(!net::ParseEndpoint("example.com", 0).ok());
 	CHECK(!net::ParseEndpoint("example.com", 65536).ok());
+}
+
+void TestChunkedDecoder() {
+	const auto decode = [](const std::string &raw, size_t max = 1000) {
+		auto at = size_t(0);
+		auto out = std::string();
+		auto complete = false;
+		const auto ok = net::DecodeChunked(raw, at, max, out, complete);
+		return std::make_tuple(ok, complete, out);
+	};
+	CHECK(decode("3\r\nabc\r\n0\r\n\r\n") == std::make_tuple(true, true, std::string("abc")));
+	CHECK(decode("3;x=1\r\nabc\r\n") == std::make_tuple(true, false, std::string("abc")));
+	CHECK(decode("3\r\nab") == std::make_tuple(true, false, std::string()));
+	CHECK(!std::get<0>(decode("1E\r\n123456789012345678901234567890\r\n-7\r\n")));
+	CHECK(!std::get<0>(decode("+3\r\nabc\r\n")));
+	CHECK(!std::get<0>(decode(" 3\r\nabc\r\n")));
+	CHECK(!std::get<0>(decode("\r\n")));
+	CHECK(!std::get<0>(decode("ffffffffffffffff\r\n")));
+	CHECK(!std::get<0>(decode("fffffffffffffffff\r\n")));
+	CHECK(!std::get<0>(decode("3\r\nabcXX")));
+	CHECK(!std::get<0>(decode("4\r\nabcd\r\n", 3)));
+	CHECK(!std::get<0>(decode(std::string("1;") + std::string(2000, 'x'))));
+	CHECK(!std::get<0>(decode(std::string(2000, '1'))));
 }
 
 void TestPublicAddresses() {
@@ -2827,6 +2851,7 @@ void TestSavedMessagesAreHidden() {
 int main() {
 	TestUrlParsing();
 	TestEndpoints();
+	TestChunkedDecoder();
 	TestPublicAddresses();
 	TestHeaderRules();
 	TestMetaAndLog();

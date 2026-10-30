@@ -521,4 +521,58 @@ bool IsAllowedMethod(std::string_view method) {
 		|| method == "HEAD";
 }
 
+bool DecodeChunked(
+		const std::string &raw,
+		size_t &at,
+		size_t maxBytes,
+		std::string &out,
+		bool &complete) {
+	constexpr auto kMaxLine = size_t(1024);
+	complete = false;
+	while (true) {
+		const auto eol = raw.find("\r\n", at);
+		if (eol == std::string::npos) {
+			return raw.size() - at <= kMaxLine;
+		} else if (eol - at > kMaxLine) {
+			return false;
+		}
+		auto size = uint64_t(0);
+		auto digits = size_t(0);
+		auto position = at;
+		for (; position < eol; ++position, ++digits) {
+			const auto ch = raw[position];
+			const auto value = (ch >= '0' && ch <= '9')
+				? ch - '0'
+				: (ch >= 'a' && ch <= 'f')
+				? ch - 'a' + 10
+				: (ch >= 'A' && ch <= 'F')
+				? ch - 'A' + 10
+				: -1;
+			if (value < 0) {
+				break;
+			} else if (digits >= 16) {
+				return false;
+			}
+			size = (size << 4) | uint64_t(value);
+		}
+		if (!digits || (position < eol && raw[position] != ';')) {
+			return false;
+		}
+		const auto start = eol + 2;
+		if (size == 0) {
+			at = start;
+			complete = true;
+			return true;
+		} else if (size > maxBytes || out.size() > maxBytes - size) {
+			return false;
+		} else if (raw.size() - start < size + 2) {
+			return true;
+		} else if (raw[start + size] != '\r' || raw[start + size + 1] != '\n') {
+			return false;
+		}
+		out.append(raw, start, size);
+		at = start + size + 2;
+	}
+}
+
 } // namespace fgpl::net

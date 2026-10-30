@@ -50,4 +50,12 @@ struct Endpoint {
 
 [[nodiscard]] bool IsAllowedMethod(std::string_view method);
 
+// Continues decoding a chunked body that starts at raw[at]; false if malformed or over maxBytes.
+[[nodiscard]] bool DecodeChunked(
+	const std::string &raw,
+	size_t &at,
+	size_t maxBytes,
+	std::string &out,
+	bool &complete);
+
 } // namespace fgpl::net
