@@ -80,6 +80,7 @@ jobs:
           & build/fgpl_plugin_host.exe
           Write-Host "exit code $LASTEXITCODE"
           if ($LASTEXITCODE -ne 64) { exit 1 }
+          exit 0
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
