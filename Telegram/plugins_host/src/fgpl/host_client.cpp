@@ -206,6 +206,9 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 	auto actions = posix_spawn_file_actions_t();
 	posix_spawn_file_actions_init(&actions);
 	posix_spawn_file_actions_adddup2(&actions, pair[1], kHostFd);
+	for (const auto fd : { 0, 1, 2 }) {
+		posix_spawn_file_actions_addopen(&actions, fd, "/dev/null", O_RDWR, 0);
+	}
 	const auto executable = (config.executableFd >= 0)
 		? fcntl(config.executableFd, F_DUPFD_CLOEXEC, 10)
 		: -1;
