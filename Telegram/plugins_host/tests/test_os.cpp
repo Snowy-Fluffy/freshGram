@@ -31,8 +31,17 @@ namespace fs = std::filesystem;
 	config.unsandboxedTestHost = !sandboxed;
 	config.selftest = selftest;
 	config.addressSpaceMb = addressSpaceMb;
+	const auto trace = (fs::temp_directory_path() / "fgpl-host-trace.txt").string();
+	if (!sandboxed) {
+		config.extraArguments.push_back("--trace=" + trace);
+	}
 	auto started = HostClient::Start(config);
 	if (!started.ok()) {
+		if (!sandboxed) {
+			auto stream = std::ifstream(trace);
+			const auto text = std::string(std::istreambuf_iterator<char>(stream), {});
+			std::fprintf(stderr, "host trail: [%s]\n", text.c_str());
+		}
 		std::fprintf(
 			stderr,
 			"start failed: %s (signal %d, exit %d)\n",
