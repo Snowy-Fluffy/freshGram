@@ -110,7 +110,12 @@ void TestHostGetsNoEnvironment() {
 	const auto reply = client->waitFor(5000);
 	CHECK(reply.ok() && TypeOf(reply.value()) == "selftest_env");
 	const auto count = reply.ok() ? reply.value().find("count") : nullptr;
+#ifdef _WIN32
+	// Only the variables Windows needs to start a process: SystemRoot and windir.
+	CHECK(count && count->asInt() && *count->asInt() <= 2);
+#else // _WIN32
 	CHECK(count && count->asInt() && *count->asInt() == 0);
+#endif // _WIN32
 }
 
 void TestSealedHostCannotBeSwapped() {

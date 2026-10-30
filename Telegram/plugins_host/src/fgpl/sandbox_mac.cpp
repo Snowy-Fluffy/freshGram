@@ -18,7 +18,7 @@ namespace {
 constexpr auto kProfile = R"((version 1)
 (deny default)
 (allow signal (target self))
-(allow process-info-pidinfo (target self))
+(allow process-info* (target self))
 (allow sysctl-read
 	(sysctl-name
 		"hw.pagesize"

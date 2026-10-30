@@ -234,6 +234,24 @@ struct Pipe {
 	return true;
 }
 
+// Side-by-side activation looks for SystemRoot, a process without it does not start.
+[[nodiscard]] std::wstring MinimalEnvironment() {
+	auto result = std::wstring();
+	for (const auto name : { L"SystemRoot", L"windir" }) {
+		wchar_t value[MAX_PATH] = {};
+		const auto size = GetEnvironmentVariableW(name, value, MAX_PATH);
+		if (size > 0 && size < MAX_PATH) {
+			result += std::wstring(name) + L"=" + std::wstring(value, size);
+			result.push_back(L'\0');
+		}
+	}
+	result.push_back(L'\0');
+	if (result.size() == 1) {
+		result.push_back(L'\0');
+	}
+	return result;
+}
+
 [[nodiscard]] HANDLE OpenNull() {
 	auto inheritable = SECURITY_ATTRIBUTES();
 	inheritable.nLength = sizeof(inheritable);
@@ -368,6 +386,7 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 		AppendArgument(line, Widen(argument));
 	}
 	line.push_back(L'\0');
+	auto environment = MinimalEnvironment();
 
 	// Stdio goes to NUL, the pipe is the only other handle the host gets.
 	auto inherited = std::array<HANDLE, 2>{ pipe.client, nul };
@@ -443,8 +462,6 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 		startup.StartupInfo.hStdOutput = nul;
 		startup.StartupInfo.hStdError = nul;
 		startup.lpAttributeList = list;
-		// An empty environment: two terminating zeros.
-		wchar_t environment[2] = {};
 		created = CreateProcessW(
 			path.c_str(),
 			line.data(),
@@ -453,7 +470,7 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 			TRUE,
 			EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW
 				| CREATE_UNICODE_ENVIRONMENT,
-			environment,
+			environment.data(),
 			nullptr,
 			&startup.StartupInfo,
 			&info) != FALSE;
