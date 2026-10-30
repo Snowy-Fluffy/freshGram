@@ -823,8 +823,6 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			&& now - _lastDialog < kDialogEachMs) {
 			return api::Fail(api::error::kLimit, "dialogs open after a user action");
 		}
-		_lastDialog = now;
-		_dialogOpen = true;
 	} else if (op == "ui.dialog.close") {
 		_dialogOpen = false;
 	}
@@ -1858,6 +1856,9 @@ cbor::Value Broker::uiCall(const std::string &op, const cbor::Value *args) {
 		} else if (!_services.ui("dialog", checked.value())) {
 			return api::Fail(api::error::kUnavailable, "dialogs");
 		}
+		const auto lock = std::scoped_lock(_limitsMutex);
+		_lastDialog = _services.clockMs();
+		_dialogOpen = true;
 		return api::Ok();
 	} else if (op == "ui.dialog.close") {
 		_services.ui("dialog.close", cbor::Value());

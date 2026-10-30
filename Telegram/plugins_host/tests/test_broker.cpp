@@ -609,6 +609,11 @@ void TestOutgoingAndUnload() {
 	CHECK(Code(broker.call(Request("ui.dialog.show", { { "page", Text("x") } }))) == "invalid");
 	CHECK(IsOk(broker.call(Request("ui.dialog.close"))));
 	CHECK(dialogs == (std::vector<std::string>{ "dialog", "dialog.close" }));
+
+	auto fresh = fixture.make();
+	CHECK(Code(fresh.call(Request("ui.dialog.show", { { "page", Text("x") } }))) == "invalid");
+	CHECK(IsOk(fresh.call(Request("ui.dialog.close"))));
+	CHECK(IsOk(fresh.call(Request("ui.dialog.show", { { "page", page } }))));
 }
 
 void TestServerTime() {
@@ -2330,6 +2335,7 @@ void TestAwaitableCalls() {
 
 void TestRateLimits() {
 	auto fixture = Fixture({ "messages.send", "ui.toast", "ui.dialog" });
+	fixture.services.ui = [](std::string_view, const cbor::Value &) { return true; };
 	fixture.time = 100000;
 	auto broker = fixture.make();
 	const auto send = [&] {
