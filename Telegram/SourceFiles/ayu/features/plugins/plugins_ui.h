@@ -69,6 +69,8 @@ void StoreBadges(
 void ForgetBadges(const std::string &plugin);
 
 [[nodiscard]] std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer);
+// WHY: message shots in privacy mode must not show the plugins' badges.
+void SetBadgesHidden(bool hidden);
 [[nodiscard]] rpl::producer<> BadgesChanged();
 [[nodiscard]] int BadgesWidth(
 	const std::vector<PluginBadge> &badges,

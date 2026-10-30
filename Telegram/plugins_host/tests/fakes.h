@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <set>
@@ -483,6 +484,35 @@ public:
 			return FetchError{ "closed", "closed" };
 		}
 		auto result = SocketRead();
+		if (webSocket) {
+			if (!handshakeAnswered) {
+				const auto text = std::string(written.begin(), written.end());
+				const auto from = text.rfind("Sec-WebSocket-Key: ");
+				const auto to = text.find("\r\n", from);
+				if (from == std::string::npos || to == std::string::npos) {
+					return FetchError{ "closed", "no handshake" };
+				}
+				const auto key = text.substr(from + 19, to - from - 19);
+				auto answer = handshakeStatus + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+					"Sec-WebSocket-Accept: " + (badAccept ? std::string("nope") : ws::AcceptFor(key)) + "\r\n"
+					+ handshakeExtra + "\r\n";
+				handshakeAnswered = true;
+				result.data.assign(answer.begin(), answer.end());
+				return result;
+			}
+			if (!inbound.empty()) {
+				auto &front = inbound.front();
+				const auto count = std::min(front.size(), maxBytes);
+				result.data.assign(front.begin(), front.begin() + count);
+				front.erase(front.begin(), front.begin() + count);
+				if (front.empty()) {
+					inbound.pop_front();
+				}
+				return result;
+			}
+			result.closed = peerClosed;
+			return result;
+		}
 		result.data = cbor::Bytes(std::min<size_t>(maxBytes, 3), 'r');
 		return result;
 	}
@@ -518,6 +548,13 @@ public:
 	std::vector<int64_t> closed;
 	cbor::Bytes written;
 	int64_t nextId = 1;
+	bool webSocket = false;
+	bool handshakeAnswered = false;
+	bool badAccept = false;
+	bool peerClosed = false;
+	std::string handshakeStatus = "HTTP/1.1 101 Switching Protocols";
+	std::string handshakeExtra;
+	std::deque<cbor::Bytes> inbound;
 
 };
 

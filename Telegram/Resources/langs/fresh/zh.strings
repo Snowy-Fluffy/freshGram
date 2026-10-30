@@ -288,6 +288,7 @@
 "fresh_PermNetHttps" = "发送 HTTPS 请求";
 "fresh_PermNetTcp" = "打开 TCP 连接";
 "fresh_PermNetUdp" = "打开 UDP 连接";
+"fresh_PermNetWs" = "打开安全的 WebSocket 连接";
 "fresh_PermStorage" = "保存自己的数据";
 "fresh_PermPluginsMessage" = "与其他插件交换消息";
 "fresh_PermFiles" = "打开和保存你选择的文件";

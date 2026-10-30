@@ -288,6 +288,7 @@
 "fresh_PermNetHttps" = "Inviare richieste HTTPS";
 "fresh_PermNetTcp" = "Aprire connessioni TCP";
 "fresh_PermNetUdp" = "Aprire connessioni UDP";
+"fresh_PermNetWs" = "Aprire connessioni WebSocket sicure";
 "fresh_PermStorage" = "Conservare i propri dati";
 "fresh_PermPluginsMessage" = "Scambiare messaggi con altri plugin";
 "fresh_PermFiles" = "Aprire e salvare i file che scegli";

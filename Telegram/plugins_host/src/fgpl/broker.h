@@ -3,6 +3,7 @@
 #include "fgpl/cbor.h"
 #include "fgpl/runtime.h"
 #include "fgpl/text_entity.h"
+#include "fgpl/websocket.h"
 
 #include <atomic>
 #include <chrono>
@@ -769,6 +770,16 @@ struct FetchError {
 enum class SocketKind : uint8_t {
 	Tcp,
 	Udp,
+	Ws,
+};
+
+struct WsState {
+	ws::Parser parser;
+	cbor::Bytes message;
+	uint8_t messageOpcode = 0;
+	bool partial = false;
+	bool closeSent = false;
+	bool closed = false;
 };
 
 struct SocketRequest {
@@ -919,6 +930,13 @@ private:
 	[[nodiscard]] cbor::Value socketCall(
 		const std::string &op,
 		const cbor::Value *args);
+	[[nodiscard]] cbor::Value wsConnect(const cbor::Value *args);
+	[[nodiscard]] cbor::Value wsCall(
+		const std::string &op,
+		int64_t id,
+		const cbor::Value *args);
+	[[nodiscard]] cbor::Value wsReceive(int64_t id, WsState &state, int timeoutMs);
+	[[nodiscard]] std::string wsWrite(int64_t id, std::span<const uint8_t> data, int timeoutMs);
 	[[nodiscard]] cbor::Value uiCall(
 		const std::string &op,
 		const cbor::Value *args);
@@ -945,6 +963,7 @@ private:
 	BrokerServices _services;
 	std::vector<int64_t> _recent;
 	std::map<int64_t, SocketKind> _sockets;
+	std::map<int64_t, WsState> _ws;
 	std::unique_ptr<SocketWorker> _socketWorker;
 	std::mutex _socketWorkerMutex;
 	std::mutex _storageMutex;

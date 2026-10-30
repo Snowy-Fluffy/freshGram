@@ -8,6 +8,7 @@ void ShowToastWithAction(
 	::Ui::Toast::Config &&config,
 	const QString &buttonText,
 	Fn<void()> callback,
-	Fn<void()> closed = nullptr);
+	Fn<void()> closed = nullptr,
+	QWidget *parent = nullptr);
 
 }

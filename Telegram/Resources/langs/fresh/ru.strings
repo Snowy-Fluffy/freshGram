@@ -288,6 +288,7 @@
 "fresh_PermNetHttps" = "Отправлять HTTPS-запросы";
 "fresh_PermNetTcp" = "Открывать TCP-соединения";
 "fresh_PermNetUdp" = "Открывать UDP-соединения";
+"fresh_PermNetWs" = "Открывать защищённые WebSocket-соединения";
 "fresh_PermStorage" = "Хранить свои данные";
 "fresh_PermPluginsMessage" = "Обмениваться сообщениями с другими плагинами";
 "fresh_PermFiles" = "Открывать и сохранять выбранные вами файлы";

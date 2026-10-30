@@ -57,6 +57,9 @@ constexpr auto kMaxSocketsPerKind = 16;
 constexpr auto kMaxSocketChunk = size_t(1) << 20;
 constexpr auto kMaxDatagram = size_t(65507);
 constexpr auto kMaxSocketWaitMs = int64_t(30000);
+constexpr auto kMaxWsHandshake = size_t(16) << 10;
+constexpr auto kMaxWsProtocols = size_t(8);
+constexpr auto kMaxWsReason = size_t(123);
 constexpr auto kMaxMedia = size_t(100) << 20;
 constexpr auto kMaxContacts = size_t(1000);
 constexpr auto kMaxFolders = size_t(100);
@@ -420,6 +423,7 @@ void AddReactionKind(cbor::Map &map, const ReactionKind &kind) {
 [[nodiscard]] bool IsSocketCall(const std::string &op) {
 	return op.rfind("net.tcp.", 0) == 0
 		|| op.rfind("net.udp.", 0) == 0
+		|| op.rfind("net.ws.", 0) == 0
 		|| op.rfind("net.socket.", 0) == 0;
 }
 
@@ -594,6 +598,7 @@ void Broker::releaseSockets() {
 			}
 		}
 		_sockets.clear();
+		_ws.clear();
 		return cbor::Value();
 	});
 }
@@ -1304,6 +1309,9 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 			0,
 			kMaxSocketWaitMs));
 	};
+	if (op == "net.ws.connect") {
+		return wsConnect(args);
+	}
 	if (op == "net.tcp.connect" || op == "net.udp.connect") {
 		const auto kind = (op == "net.tcp.connect") ? SocketKind::Tcp : SocketKind::Udp;
 		const auto permission = (kind == SocketKind::Tcp) ? "net.tcp" : "net.udp";
@@ -1349,8 +1357,15 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 	const auto found = id ? _sockets.find(*id) : _sockets.end();
 	if (found == _sockets.end()) {
 		return api::Fail(api::error::kNotFound, "socket");
-	} else if (!has(found->second == SocketKind::Tcp ? "net.tcp" : "net.udp")) {
+	} else if (!has(found->second == SocketKind::Tcp
+			? "net.tcp"
+			: (found->second == SocketKind::Udp ? "net.udp" : "net.ws"))) {
 		return api::Fail(api::error::kDenied, "socket");
+	}
+	if ((found->second == SocketKind::Ws) != (op.rfind("net.ws.", 0) == 0)) {
+		return api::Fail(api::error::kInvalid, "this socket does not take that call");
+	} else if (found->second == SocketKind::Ws) {
+		return wsCall(op, found->first, args);
 	}
 	if (op == "net.socket.close") {
 		transport->close(found->first);
@@ -1388,6 +1403,365 @@ cbor::Value Broker::socketCall(const std::string &op, const cbor::Value *args) {
 			{ "data", cbor::Value::FromBytes(read.value().data) },
 			{ "closed", cbor::Value::FromBool(read.value().closed) },
 		}));
+	}
+	return api::Fail(api::error::kInvalid, "unknown socket operation");
+}
+
+std::string Broker::wsWrite(int64_t id, std::span<const uint8_t> data, int timeoutMs) {
+	const auto transport = _services.transport;
+	while (!data.empty()) {
+		const auto written = transport->write(id, data, timeoutMs);
+		if (!written.ok()) {
+			return written.error().code;
+		} else if (!written.value()) {
+			return api::error::kFailed;
+		}
+		data = data.subspan(std::min(written.value(), data.size()));
+	}
+	return {};
+}
+
+cbor::Value Broker::wsConnect(const cbor::Value *args) {
+	const auto transport = _services.transport;
+	if (!has("net.ws")) {
+		return api::Fail(api::error::kDenied, "net.ws");
+	}
+	const auto open = std::count_if(_sockets.begin(), _sockets.end(), [&](const auto &entry) {
+		return entry.second == SocketKind::Ws;
+	});
+	if (open >= kMaxSocketsPerKind) {
+		return api::Fail(api::error::kLimit, "too many open sockets");
+	}
+	const auto text = TextArg(args, "url", 2048);
+	if (!text || text->rfind("wss://", 0) != 0) {
+		return api::Fail(api::error::kInvalid, "url must start with wss://");
+	}
+	const auto url = net::ParseUrl("https://" + text->substr(6));
+	if (!url.ok()) {
+		return api::Fail(api::error::kInvalid, url.error());
+	}
+	auto extra = std::string();
+	if (const auto headers = Arg(args, "headers")) {
+		const auto map = headers->asMap();
+		if (!map || map->size() > kMaxHeaders) {
+			return api::Fail(api::error::kInvalid, "headers");
+		}
+		for (const auto &entry : *map) {
+			const auto value = entry.value.asText();
+			if (!value
+				|| value->size() > kMaxHeaderValue
+				|| !net::IsValidHeaderName(entry.key)
+				|| net::IsForbiddenRequestHeader(entry.key)
+				|| value->find_first_of("\r\n") != std::string::npos) {
+				return api::Fail(api::error::kInvalid, "header " + entry.key);
+			}
+			extra += entry.key + ": " + *value + "\r\n";
+		}
+	}
+	auto protocols = std::vector<std::string>();
+	if (const auto list = Arg(args, "protocols")) {
+		const auto array = list->asArray();
+		if (!array || array->size() > kMaxWsProtocols) {
+			return api::Fail(api::error::kInvalid, "protocols");
+		}
+		for (const auto &item : *array) {
+			const auto name = item.asText();
+			const auto valid = name
+				&& !name->empty()
+				&& name->size() <= 64
+				&& std::all_of(name->begin(), name->end(), [](char ch) {
+					return (ch >= 'a' && ch <= 'z')
+						|| (ch >= 'A' && ch <= 'Z')
+						|| (ch >= '0' && ch <= '9')
+						|| ch == '.' || ch == '_' || ch == '-' || ch == '+';
+				});
+			if (!valid) {
+				return api::Fail(api::error::kInvalid, "protocols");
+			}
+			protocols.push_back(*name);
+		}
+	}
+	const auto timeout = int(std::clamp<int64_t>(
+		IntArg(args, "timeout").value_or(10000),
+		100,
+		kMaxSocketWaitMs));
+	auto request = SocketRequest();
+	request.kind = SocketKind::Tcp;
+	request.host = url.value().host;
+	request.port = url.value().port;
+	request.ip = url.value().ip;
+	request.tls = true;
+	request.timeoutMs = timeout;
+	const auto opened = transport->open({ _grants.pluginId, _grants.account }, request);
+	if (!opened.ok()) {
+		return api::Fail(opened.error().code, opened.error().message);
+	}
+	const auto id = opened.value();
+	const auto fail = [&](const char *code, std::string message) {
+		transport->close(id);
+		return api::Fail(code, message);
+	};
+	const auto key = ws::NewKey();
+	auto head = "GET " + url.value().target + " HTTP/1.1\r\nHost: " + url.value().host
+		+ ((url.value().port != 443) ? ":" + std::to_string(url.value().port) : std::string())
+		+ "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
+		+ "Sec-WebSocket-Key: " + key + "\r\n";
+	if (!protocols.empty()) {
+		head += "Sec-WebSocket-Protocol: ";
+		for (auto i = size_t(0); i != protocols.size(); ++i) {
+			head += (i ? ", " : "") + protocols[i];
+		}
+		head += "\r\n";
+	}
+	head += extra + "\r\n";
+	if (const auto error = wsWrite(id, { reinterpret_cast<const uint8_t*>(head.data()), head.size() }, timeout);
+			!error.empty()) {
+		return fail(api::error::kFailed, "the handshake was not sent");
+	}
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+	auto response = std::string();
+	auto end = std::string::npos;
+	while ((end = response.find("\r\n\r\n")) == std::string::npos) {
+		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		if (left <= 0 || response.size() > kMaxWsHandshake) {
+			return fail(api::error::kFailed, "the handshake did not finish");
+		}
+		const auto read = transport->read(id, 4096, int(left));
+		if (!read.ok()) {
+			return fail(api::error::kFailed, "the handshake failed");
+		}
+		response.append(read.value().data.begin(), read.value().data.end());
+		if (read.value().closed && response.find("\r\n\r\n") == std::string::npos) {
+			return fail(api::error::kFailed, "the server closed the connection");
+		}
+	}
+	const auto lower = [](std::string value) {
+		for (auto &ch : value) {
+			ch = char(std::tolower(static_cast<unsigned char>(ch)));
+		}
+		return value;
+	};
+	const auto lines = response.substr(0, end);
+	if (lines.rfind("HTTP/1.1 101", 0) != 0) {
+		return fail(api::error::kFailed, "the server refused: " + lines.substr(0, lines.find("\r\n")).substr(0, 80));
+	}
+	auto accepted = false;
+	auto upgraded = false;
+	auto connection = false;
+	auto protocol = std::string();
+	auto position = lines.find("\r\n");
+	while (position != std::string::npos) {
+		const auto from = position + 2;
+		const auto to = lines.find("\r\n", from);
+		const auto line = lines.substr(from, to == std::string::npos ? std::string::npos : to - from);
+		position = to;
+		const auto colon = line.find(':');
+		if (colon == std::string::npos) {
+			continue;
+		}
+		const auto name = lower(line.substr(0, colon));
+		auto value = line.substr(colon + 1);
+		value.erase(0, value.find_first_not_of(" \t"));
+		value.erase(value.find_last_not_of(" \t") + 1);
+		if (name == "sec-websocket-accept") {
+			accepted = (value == ws::AcceptFor(key));
+		} else if (name == "upgrade") {
+			upgraded = (lower(value) == "websocket");
+		} else if (name == "connection") {
+			connection = lower(value).find("upgrade") != std::string::npos;
+		} else if (name == "sec-websocket-protocol") {
+			protocol = value;
+		} else if (name == "sec-websocket-extensions") {
+			return fail(api::error::kFailed, "the server chose an extension");
+		}
+	}
+	if (!accepted || !upgraded || !connection) {
+		return fail(api::error::kFailed, "the server did not accept the handshake");
+	} else if (!protocol.empty()
+		&& std::find(protocols.begin(), protocols.end(), protocol) == protocols.end()) {
+		return fail(api::error::kFailed, "the server chose a protocol that was not offered");
+	}
+	auto state = WsState();
+	const auto rest = response.substr(end + 4);
+	state.parser.feed({ reinterpret_cast<const uint8_t*>(rest.data()), rest.size() });
+	_sockets.emplace(id, SocketKind::Ws);
+	_ws.emplace(id, std::move(state));
+	return api::Ok(cbor::Value::FromMap({
+		{ "id", Int(id) },
+		{ "protocol", Text(protocol) },
+	}));
+}
+
+cbor::Value Broker::wsReceive(int64_t id, WsState &state, int timeoutMs) {
+	const auto transport = _services.transport;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+	const auto closing = [&](int code, const char *error, const char *message) {
+		if (!state.closeSent) {
+			const auto frame = ws::CloseFrame(code, {});
+			(void)wsWrite(id, frame, 1000);
+			state.closeSent = true;
+		}
+		state.closed = true;
+		return api::Fail(error, message);
+	};
+	const auto deliver = [&](uint8_t opcode, cbor::Bytes data) {
+		if (opcode == ws::kOpText) {
+			if (!ws::IsValidUtf8(data)) {
+				return closing(1007, api::error::kFailed, "the text is not valid UTF-8");
+			}
+			return api::Ok(cbor::Value::FromMap({
+				{ "kind", Text("text") },
+				{ "data", Text(std::string(data.begin(), data.end())) },
+				{ "closed", cbor::Value::FromBool(false) },
+			}));
+		}
+		return api::Ok(cbor::Value::FromMap({
+			{ "kind", Text("binary") },
+			{ "data", cbor::Value::FromBytes(std::move(data)) },
+			{ "closed", cbor::Value::FromBool(false) },
+		}));
+	};
+	while (true) {
+		auto frame = ws::Frame();
+		const auto status = state.parser.next(frame);
+		if (status == ws::Parser::Status::Error) {
+			return closing(1002, api::error::kFailed, "the server broke the protocol");
+		} else if (status == ws::Parser::Status::Frame) {
+			if (frame.opcode == ws::kOpPing) {
+				const auto pong = ws::EncodeFrame(ws::kOpPong, frame.payload);
+				(void)wsWrite(id, pong, 1000);
+			} else if (frame.opcode == ws::kOpClose) {
+				auto code = 1005;
+				auto reason = std::string();
+				if (frame.payload.size() >= 2) {
+					code = (int(frame.payload[0]) << 8) | frame.payload[1];
+					const auto text = std::span<const uint8_t>(frame.payload).subspan(2);
+					if (ws::IsValidUtf8(text)) {
+						reason.assign(text.begin(), text.end());
+					}
+				}
+				if (!state.closeSent) {
+					const auto echo = ws::CloseFrame((code >= 1000 && code < 5000 && code != 1005 && code != 1006)
+						? code
+						: 1000, {});
+					(void)wsWrite(id, echo, 1000);
+					state.closeSent = true;
+				}
+				state.closed = true;
+				return api::Ok(cbor::Value::FromMap({
+					{ "kind", Text("close") },
+					{ "code", Int(code) },
+					{ "reason", Text(reason) },
+					{ "closed", cbor::Value::FromBool(true) },
+				}));
+			} else if (frame.opcode == ws::kOpText || frame.opcode == ws::kOpBinary) {
+				if (state.partial) {
+					return closing(1002, api::error::kFailed, "the server broke the protocol");
+				} else if (frame.fin) {
+					return deliver(frame.opcode, std::move(frame.payload));
+				}
+				state.partial = true;
+				state.messageOpcode = frame.opcode;
+				state.message = std::move(frame.payload);
+			} else if (frame.opcode == ws::kOpContinue) {
+				if (!state.partial) {
+					return closing(1002, api::error::kFailed, "the server broke the protocol");
+				} else if (state.message.size() + frame.payload.size() > ws::kMaxMessage) {
+					return closing(1009, api::error::kLimit, "the message is too large");
+				}
+				state.message.insert(state.message.end(), frame.payload.begin(), frame.payload.end());
+				if (frame.fin) {
+					state.partial = false;
+					return deliver(state.messageOpcode, std::exchange(state.message, {}));
+				}
+			}
+			continue;
+		}
+		if (state.closed) {
+			return api::Ok(cbor::Value::FromMap({
+				{ "kind", Text("close") },
+				{ "code", Int(1006) },
+				{ "reason", Text("") },
+				{ "closed", cbor::Value::FromBool(true) },
+			}));
+		}
+		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		const auto read = transport->read(id, 16384, int(std::max<int64_t>(left, 0)));
+		if (!read.ok()) {
+			state.closed = true;
+			return api::Fail(read.error().code, read.error().message);
+		} else if (!read.value().data.empty()) {
+			state.parser.feed(read.value().data);
+			continue;
+		} else if (read.value().closed) {
+			state.closed = true;
+			continue;
+		} else if (left <= 0) {
+			return api::Ok(cbor::Value::FromMap({
+				{ "kind", Text("none") },
+				{ "closed", cbor::Value::FromBool(false) },
+			}));
+		}
+	}
+}
+
+cbor::Value Broker::wsCall(const std::string &op, int64_t id, const cbor::Value *args) {
+	const auto transport = _services.transport;
+	const auto found = _ws.find(id);
+	if (found == _ws.end()) {
+		return api::Fail(api::error::kNotFound, "socket");
+	}
+	auto &state = found->second;
+	const auto wait = [&](int64_t fallback) {
+		return int(std::clamp<int64_t>(
+			IntArg(args, "timeout").value_or(fallback),
+			0,
+			kMaxSocketWaitMs));
+	};
+	if (op == "net.ws.close") {
+		const auto code = IntArg(args, "code").value_or(1000);
+		const auto reason = Arg(args, "reason")
+			? TextArg(args, "reason", kMaxWsReason)
+			: std::optional<std::string>(std::string());
+		if (!reason || !(code == 1000 || (code >= 3000 && code < 5000))) {
+			return api::Fail(api::error::kInvalid, "code or reason");
+		}
+		if (!state.closeSent && !state.closed) {
+			const auto frame = ws::CloseFrame(int(code), *reason);
+			(void)wsWrite(id, frame, 1000);
+		}
+		transport->close(id);
+		_sockets.erase(id);
+		_ws.erase(found);
+		return api::Ok();
+	} else if (op == "net.ws.send") {
+		const auto data = Arg(args, "data");
+		auto bytes = cbor::Bytes();
+		auto opcode = ws::kOpBinary;
+		if (data && data->asBytes()) {
+			bytes = *data->asBytes();
+		} else if (data && data->asText()) {
+			bytes.assign(data->asText()->begin(), data->asText()->end());
+			opcode = ws::kOpText;
+		} else {
+			return api::Fail(api::error::kInvalid, "data");
+		}
+		if (bytes.size() > ws::kMaxMessage) {
+			return api::Fail(api::error::kLimit, "the message is too large");
+		} else if (state.closeSent || state.closed) {
+			return api::Fail(api::error::kFailed, "the connection is closed");
+		}
+		const auto frame = ws::EncodeFrame(opcode, bytes);
+		const auto error = wsWrite(id, frame, std::max(wait(10000), 100));
+		if (!error.empty()) {
+			state.closed = true;
+			return api::Fail(error, "the message was not sent");
+		}
+		return api::Ok(cbor::Value::FromMap({ { "sent", Int(int64_t(bytes.size())) } }));
+	} else if (op == "net.ws.recv") {
+		return wsReceive(id, state, wait(1000));
 	}
 	return api::Fail(api::error::kInvalid, "unknown socket operation");
 }

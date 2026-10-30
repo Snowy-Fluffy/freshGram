@@ -245,6 +245,7 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "chat.info", Request("channels.info", { { "id", Int(2) } }) },
 		{ "notifications", Request("notify.show", { { "text", Text("x") } }) },
 		{ "bots.inline", Request("bots.inline_query", { { "bot", Text("inlinebot") }, { "query", Text("q") } }) },
+		{ "net.ws", Request("net.ws.connect", { { "url", Text("wss://api.example.com/socket") } }) },
 		{ "bots.inline", Request("bots.press_button", { { "chat", Int(1) }, { "id", Int(100) }, { "row", Int(0) }, { "column", Int(0) } }) },
 		{ "messages.history", Request("messages.get", { { "chat", Int(1) }, { "id", Int(100) } }) },
 		{ "messages.history", Request("messages.reply_chain", { { "chat", Int(1) }, { "id", Int(103) } }) },
@@ -997,6 +998,196 @@ void TestMembersPollsAndGhost() {
 	fixture.time += 11000;
 	CHECK(IsOk(broker.call(Request("ghost.set", { { "enabled", yes } }))));
 	CHECK(Code(broker.call(Request("ghost.set", { { "enabled", cbor::Value::FromBool(false) } }))) == "denied");
+}
+
+void TestWebSocketPrimitives() {
+	CHECK(ws::AcceptFor("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+	const auto hash = ws::Sha1("abc");
+	CHECK(hash[0] == 0xA9 && hash[1] == 0x99 && hash[2] == 0x3E);
+	CHECK(hash[19] == 0x9D);
+	CHECK(ws::NewKey().size() == 24 && ws::NewKey() != ws::NewKey());
+
+	auto frame = ws::Frame();
+	auto parser = ws::Parser();
+	const auto feed = [&](std::initializer_list<uint8_t> bytes) {
+		const auto list = std::vector<uint8_t>(bytes);
+		parser.feed(list);
+	};
+	feed({ 0x81, 0x02, 'h' });
+	CHECK(parser.next(frame) == ws::Parser::Status::More);
+	feed({ 'i', 0x89, 0x00 });
+	CHECK(parser.next(frame) == ws::Parser::Status::Frame);
+	CHECK(frame.fin && frame.opcode == ws::kOpText && frame.payload == (cbor::Bytes{ 'h', 'i' }));
+	CHECK(parser.next(frame) == ws::Parser::Status::Frame && frame.opcode == ws::kOpPing);
+	CHECK(parser.next(frame) == ws::Parser::Status::More);
+
+	const auto broken = [&](std::initializer_list<uint8_t> bytes) {
+		auto single = ws::Parser();
+		const auto list = std::vector<uint8_t>(bytes);
+		single.feed(list);
+		auto out = ws::Frame();
+		return single.next(out) == ws::Parser::Status::Error;
+	};
+	CHECK(broken({ 0x81, 0x82, 1, 2, 3, 4, 5, 6 }));
+	CHECK(broken({ 0xC1, 0x00 }));
+	CHECK(broken({ 0x09, 0x00 }));
+	CHECK(broken({ 0x89, 126, 0, 200 }));
+	CHECK(broken({ 0x83, 0x00 }));
+	CHECK(broken({ 0x82, 127, 0, 0, 0, 0, 0, 0x20, 0, 0 }));
+	CHECK(broken({ 0x82, 127, 0x80, 0, 0, 0, 0, 0, 0, 0 }));
+
+	const auto valid = [](std::string_view text) {
+		return ws::IsValidUtf8({ reinterpret_cast<const uint8_t*>(text.data()), text.size() });
+	};
+	CHECK(valid("plain") && valid("\xD0\x9F\xD1\x80") && valid("\xF0\x9F\x98\x80"));
+	CHECK(!valid("\xC0\xAF") && !valid("\xED\xA0\x80") && !valid("\xE2\x82") && !valid("\xFF"));
+
+	const auto encoded = ws::EncodeFrame(ws::kOpText, cbor::Bytes{ 'a', 'b' });
+	CHECK(encoded.size() == 8 && encoded[0] == 0x81 && encoded[1] == (0x80 | 2));
+	CHECK((encoded[6] ^ encoded[2]) == 'a' && (encoded[7] ^ encoded[3]) == 'b');
+	const auto large = ws::EncodeFrame(ws::kOpBinary, cbor::Bytes(300, 1));
+	CHECK(large[1] == (0x80 | 126) && large[2] == 1 && large[3] == 44);
+}
+
+void TestWebSocket() {
+	const auto server = [](uint8_t opcode, cbor::Bytes payload, bool fin = true) {
+		auto frame = cbor::Bytes{ uint8_t((fin ? 0x80 : 0) | opcode), uint8_t(payload.size()) };
+		frame.insert(frame.end(), payload.begin(), payload.end());
+		return frame;
+	};
+	const auto text = [](std::string_view value) {
+		return cbor::Bytes(value.begin(), value.end());
+	};
+	const auto connect = [](Broker &broker, const char *url = "wss://example.com/chat", cbor::Map more = {}) {
+		more.push_back({ "url", Text(url) });
+		return broker.call(Request("net.ws.connect", std::move(more)));
+	};
+
+	auto denied = Fixture({});
+	auto deniedBroker = denied.make();
+	CHECK(Code(connect(deniedBroker)) == "denied");
+
+	auto fixture = Fixture({ "net.ws" });
+	fixture.transport.webSocket = true;
+	auto broker = fixture.make();
+	for (const auto bad : { "https://example.com/", "ws://example.com/", "wss://", "wss://127.0.0.1/", "wss://user@example.com/", "example.com" }) {
+		CHECK(Code(connect(broker, bad)) == "invalid");
+	}
+	CHECK(Code(connect(broker, "wss://example.com/", { { "headers", cbor::Value::FromMap({ { "Cookie", Text("a=b") } }) } })) == "invalid");
+	CHECK(Code(connect(broker, "wss://example.com/", { { "protocols", cbor::Value::FromArray({ Text("bad name") }) } })) == "invalid");
+	CHECK(fixture.transport.opened.empty());
+
+	const auto opened = connect(broker, "wss://example.com/chat", {
+		{ "headers", cbor::Value::FromMap({ { "X-Token", Text("abc") } }) },
+	});
+	CHECK(IsOk(opened));
+	const auto id = IsOk(opened) ? Payload(opened).find("id")->asInt().value_or(0) : 0;
+	CHECK(fixture.transport.opened.size() == 1 && fixture.transport.opened[0].tls);
+	CHECK(fixture.transport.opened[0].host == "example.com" && fixture.transport.opened[0].port == 443);
+	const auto request = std::string(fixture.transport.written.begin(), fixture.transport.written.end());
+	CHECK(request.rfind("GET /chat HTTP/1.1\r\nHost: example.com\r\n", 0) == 0);
+	CHECK(request.find("Upgrade: websocket\r\n") != std::string::npos);
+	CHECK(request.find("Sec-WebSocket-Version: 13\r\n") != std::string::npos);
+	CHECK(request.find("X-Token: abc\r\n") != std::string::npos);
+	CHECK(request.find("Sec-WebSocket-Protocol") == std::string::npos);
+
+	CHECK(Code(broker.call(Request("net.socket.send", { { "id", Int(id) }, { "data", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("net.socket.recv", { { "id", Int(id) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("net.ws.send", { { "id", Int(999) }, { "data", Text("x") } }))) == "not_found");
+
+	const auto before = fixture.transport.written.size();
+	CHECK(IsOk(broker.call(Request("net.ws.send", { { "id", Int(id) }, { "data", Text("hello") } }))));
+	CHECK(fixture.transport.written.size() == before + 11);
+	CHECK(fixture.transport.written[before] == 0x81 && fixture.transport.written[before + 1] == (0x80 | 5));
+	auto plain = std::string();
+	for (auto i = 0; i != 5; ++i) {
+		plain += char(fixture.transport.written[before + 6 + i] ^ fixture.transport.written[before + 2 + (i % 4)]);
+	}
+	CHECK(plain == "hello");
+	CHECK(IsOk(broker.call(Request("net.ws.send", { { "id", Int(id) }, { "data", cbor::Value::FromBytes(cbor::Bytes{ 1, 2 }) } }))));
+	CHECK(fixture.transport.written[before + 11] == 0x82);
+	CHECK(Code(broker.call(Request("net.ws.send", { { "id", Int(id) }, { "data", Int(1) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("net.ws.send", { { "id", Int(id) }, { "data", cbor::Value::FromBytes(cbor::Bytes((1 << 20) + 1, 0)) } }))) == "limit");
+
+	const auto recv = [&] {
+		return broker.call(Request("net.ws.recv", { { "id", Int(id) }, { "timeout", Int(0) } }));
+	};
+	CHECK(*Payload(recv()).find("kind")->asText() == "none");
+	fixture.transport.inbound.push_back(server(ws::kOpText, text("hey")));
+	const auto first = recv();
+	CHECK(IsOk(first) && *Payload(first).find("kind")->asText() == "text" && *Payload(first).find("data")->asText() == "hey");
+	fixture.transport.inbound.push_back(server(ws::kOpBinary, { 1, 2 }));
+	const auto second = recv();
+	CHECK(*Payload(second).find("kind")->asText() == "binary" && *Payload(second).find("data")->asBytes() == (cbor::Bytes{ 1, 2 }));
+
+	const auto written = fixture.transport.written.size();
+	fixture.transport.inbound.push_back(server(ws::kOpPing, text("p")));
+	fixture.transport.inbound.push_back(server(ws::kOpPong, {}));
+	fixture.transport.inbound.push_back(server(ws::kOpText, text("a"), false));
+	fixture.transport.inbound.push_back(server(ws::kOpContinue, text("b"), true));
+	const auto joined = recv();
+	CHECK(IsOk(joined) && *Payload(joined).find("data")->asText() == "ab");
+	CHECK(fixture.transport.written.size() == written + 7 && fixture.transport.written[written] == 0x8A);
+
+	fixture.transport.inbound.push_back(server(ws::kOpClose, { 0x03, 0xE9, 'b', 'y', 'e' }));
+	const auto closing = recv();
+	CHECK(IsOk(closing) && *Payload(closing).find("kind")->asText() == "close");
+	CHECK(Payload(closing).find("code")->asInt() == 1001 && *Payload(closing).find("reason")->asText() == "bye");
+	CHECK(Payload(closing).find("closed")->asBool() == true);
+	CHECK(fixture.transport.written[fixture.transport.written.size() - 8] == 0x88);
+	const auto again = recv();
+	CHECK(*Payload(again).find("kind")->asText() == "close" && Payload(again).find("code")->asInt() == 1006);
+	CHECK(Code(broker.call(Request("net.ws.send", { { "id", Int(id) }, { "data", Text("late") } }))) == "failed");
+	CHECK(IsOk(broker.call(Request("net.ws.close", { { "id", Int(id) } }))));
+	CHECK(fixture.transport.closed == (std::vector<int64_t>{ id }));
+	CHECK(Code(broker.call(Request("net.ws.recv", { { "id", Int(id) } }))) == "not_found");
+
+	const auto failing = [&](auto setup, cbor::Map more = {}) {
+		auto bad = Fixture({ "net.ws" });
+		bad.transport.webSocket = true;
+		setup(bad.transport);
+		auto badBroker = bad.make();
+		const auto code = Code(connect(badBroker, "wss://example.com/", std::move(more)));
+		return code == "failed" && bad.transport.closed.size() == 1;
+	};
+	CHECK(failing([](FakeTransport &t) { t.handshakeStatus = "HTTP/1.1 403 Forbidden"; }));
+	CHECK(failing([](FakeTransport &t) { t.badAccept = true; }));
+	CHECK(failing([](FakeTransport &t) { t.handshakeExtra = "Sec-WebSocket-Extensions: permessage-deflate\r\n"; }));
+	CHECK(failing([](FakeTransport &t) { t.handshakeExtra = "Sec-WebSocket-Protocol: other\r\n"; },
+		{ { "protocols", cbor::Value::FromArray({ Text("chat") }) } }));
+	CHECK(failing([](FakeTransport &t) { t.fail = false; t.peerClosed = true; t.handshakeAnswered = true; }));
+
+	auto chosen = Fixture({ "net.ws" });
+	chosen.transport.webSocket = true;
+	chosen.transport.handshakeExtra = "Sec-WebSocket-Protocol: chat\r\n";
+	auto chosenBroker = chosen.make();
+	const auto negotiated = connect(chosenBroker, "wss://example.com:8443/x?y=1", {
+		{ "protocols", cbor::Value::FromArray({ Text("chat"), Text("super") }) },
+	});
+	CHECK(IsOk(negotiated) && *Payload(negotiated).find("protocol")->asText() == "chat");
+	const auto head = std::string(chosen.transport.written.begin(), chosen.transport.written.end());
+	CHECK(head.find("Host: example.com:8443\r\n") != std::string::npos);
+	CHECK(head.find("GET /x?y=1 HTTP/1.1") == 0);
+	CHECK(head.find("Sec-WebSocket-Protocol: chat, super\r\n") != std::string::npos);
+
+	auto bad = Fixture({ "net.ws" });
+	bad.transport.webSocket = true;
+	auto badBroker = bad.make();
+	const auto badId = Payload(connect(badBroker)).find("id")->asInt().value_or(0);
+	bad.transport.inbound.push_back(server(ws::kOpText, { 0xC0, 0xAF }));
+	const auto broken = badBroker.call(Request("net.ws.recv", { { "id", Int(badId) }, { "timeout", Int(0) } }));
+	CHECK(Code(broken) == "failed");
+	bad.transport.inbound.push_back(server(ws::kOpText, text("x")));
+	CHECK(Code(badBroker.call(Request("net.ws.send", { { "id", Int(badId) }, { "data", Text("x") } }))) == "failed");
+
+	auto many = Fixture({ "net.ws" });
+	many.transport.webSocket = true;
+	auto manyBroker = many.make();
+	for (auto i = 0; i != 16; ++i) {
+		many.transport.handshakeAnswered = false;
+		CHECK(IsOk(connect(manyBroker)));
+	}
+	CHECK(Code(connect(manyBroker)) == "limit");
 }
 
 void TestModeration() {
@@ -2562,6 +2753,8 @@ int main() {
 	TestChatManagement();
 	TestBotButtons();
 	TestModeration();
+	TestWebSocketPrimitives();
+	TestWebSocket();
 	TestMembersPollsAndGhost();
 	TestEntitiesInMessages();
 	TestOutgoingEntities();

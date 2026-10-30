@@ -8,6 +8,7 @@
 
 #include "qguiapplication.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_ui.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/ui/boxes/message_shot_box.h"
 #include "ayu/utils/telegram_helpers.h"
@@ -247,7 +248,9 @@ void paintWallpaper(
 	const auto wasUniform = Ui::Text::NamesUniform();
 	Ui::Text::SetNamesSpoilered(was || privacy);
 	Ui::Text::SetNamesUniform(wasUniform || privacy);
+	FreshPlugins::SetBadgesHidden(privacy);
 	return gsl::finally([=] {
+		FreshPlugins::SetBadgesHidden(false);
 		Ui::Text::SetNamesSpoilered(was);
 		Ui::Text::SetNamesUniform(wasUniform);
 	});
