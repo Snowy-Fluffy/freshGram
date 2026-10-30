@@ -216,6 +216,7 @@
 "fresh_PermTranslateProvide" = "Tradurre i testi per te";
 "fresh_PermBotsInline" = "Interrogare i bot e premere i loro pulsanti per te";
 "fresh_PermChatsManage" = "Fissare messaggi, silenziare, fissare e archiviare chat";
+"fresh_PermChatsModerate" = "Bannare e sbannare i membri";
 "fresh_PermContactsManage" = "Aggiungere contatti e bloccare utenti";
 "fresh_PermGhostControl" = "Vedere e cambiare la modalità fantasma";
 "fresh_PluginSettingsExport" = "Esporta impostazioni";
@@ -299,6 +300,7 @@
 "fresh_RiskSends" = "Può inviare messaggi a tuo nome";
 "fresh_RiskOutgoing" = "Può modificare ciò che invii";
 "fresh_RiskIncoming" = "Può modificare o nascondere i messaggi che ricevi";
+"fresh_RiskModerate" = "Può bannare e sbannare i membri";
 "fresh_RiskBackground" = "Continua a funzionare in background";
 "fresh_RiskClipboard" = "Può usare gli appunti";
 "fresh_RiskFiles" = "Può leggere e salvare i file che scegli";

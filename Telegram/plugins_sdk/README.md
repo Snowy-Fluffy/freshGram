@@ -79,6 +79,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `chats.members` `{chat, limit, offset, query}`, `chats.admins` `{chat, limit, offset}` | `chat.info` and `users.info` | `[{id, name, username, role, bot}]` of a group or channel, up to 200 at a time; `role` is `member`, `admin` or `creator`; `query` searches by name; `denied` when you cannot see the members; once per second; await it |
 | `messages.send_poll` `{chat, question, options, anonymous, multiple, quiz, correct, explanation, close_period, reply_to, topic, silent}` | `messages.send` | 2 to 10 `options`; a `quiz` needs `correct` (the index of the right option), may have an `explanation` and cannot be `multiple`; `close_period` is 5 to 600 seconds; counts against the same limit as `messages.send`; `denied` when polls are forbidden in the chat |
 | `ghost.get`, `ghost.set` `{enabled}` | `ghost.control` | the account's ghost mode: `{active, send_read_messages, send_read_stories, send_online, send_typing}`; turning it on works any time, turning it off only within 10 seconds after a user action; while it is on, plugins get no `chat.read` events for your own reading and no `app.focus` or `app.blur` events |
+| `chats.ban` `{chat, user}`, `chats.unban` `{chat, user}` | `chats.moderate` | bans a member (a basic group removes them) or lifts the ban in a channel or supergroup; only within 10 seconds after a user action; `denied` when you cannot ban there, for yourself and for the service chat; once per second |
 | `chats.mute` `{chat, seconds, forever}` | `chats.manage` | mutes for `seconds` (up to a year) or `forever`; neither unmutes |
 | `chats.archive` `{chat, archived}`, `chats.pin` `{chat, pinned}` | `chats.manage` | both default to `true`; `chats.pin` pins in the main chat list and answers `limit` when it is full |
 | `users.block` `{id}`, `users.unblock` `{id}` | `contacts.manage` | the user must be known to the app |
@@ -523,7 +524,7 @@ logged and does not stop the others. The namespaces follow the calls:
 `messages.delete`, `messages.react`, `messages.forward`, `messages.search`,
 `chats.mark_read`, `chats.action`, `users.info`, `messages.reactions`, `stickers.send/search/recent`, `users.resolve`, `users.photo`, `channels.info`, `channels.resolve`, `channels.photo`, `notify.show`,
 `bots.inline_query(bot, query, chat=None)`, `bots.send_inline_result(chat, query_id, result)`, `bots.press_button(chat, message, row, column)`, `ui.open_settings()`, `messages.history(..., from_user="me")`,
-`messages.set_outgoing(text, entities=[...])`, `messages.get/reply_chain/pinned/scheduled/scheduled_delete/pin/unpin`, `chats.members/admins/mute/archive/pin`, `messages.send_poll`, `ghost.get/set`, `users.block/unblock`, `contacts.add`, `composer.insert`, `freshgram.time()`,
+`messages.set_outgoing(text, entities=[...])`, `messages.get/reply_chain/pinned/scheduled/scheduled_delete/pin/unpin`, `chats.members/admins/ban/unban/mute/archive/pin`, `messages.send_poll`, `ghost.get/set`, `users.block/unblock`, `contacts.add`, `composer.insert`, `freshgram.time()`,
 `clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`
 and `files.save` exist only in `freshgram.aio`.
 

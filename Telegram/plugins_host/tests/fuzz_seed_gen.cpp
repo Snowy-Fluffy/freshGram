@@ -101,6 +101,7 @@ int main(int argc, char **argv) {
 		call("users.resolve", { { "username", Text("bobby") } }),
 		call("bots.inline_query", { { "bot", Text("inlinebot") }, { "query", Text("cats") } }),
 		call("time.now"),
+		call("chats.ban", { { "chat", chat }, { "user", Int(7) } }),
 		call("messages.set_incoming", { { "text", Text("seen") } }),
 		call("messages.hide_incoming", { { "reason", Text("spam") } }),
 		call("chats.members", { { "chat", chat } }),

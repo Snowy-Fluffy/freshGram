@@ -190,3 +190,6 @@
 "messages.set_incoming"
 "messages.hide_incoming"
 "messages.transform_incoming"
+"chats.ban"
+"chats.unban"
+"chats.moderate"

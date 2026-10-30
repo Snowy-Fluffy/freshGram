@@ -216,6 +216,7 @@
 "fresh_PermTranslateProvide" = "Переводить тексты для вас";
 "fresh_PermBotsInline" = "Обращаться к ботам и нажимать их кнопки за вас";
 "fresh_PermChatsManage" = "Закреплять сообщения, отключать звук, закреплять и архивировать чаты";
+"fresh_PermChatsModerate" = "Банить и разбанивать участников чата";
 "fresh_PermContactsManage" = "Добавлять контакты и блокировать пользователей";
 "fresh_PermGhostControl" = "Видеть и менять режим призрака";
 "fresh_PluginSettingsExport" = "Экспорт настроек";
@@ -299,6 +300,7 @@
 "fresh_RiskSends" = "Может отправлять сообщения от вашего имени";
 "fresh_RiskOutgoing" = "Может изменять то, что вы отправляете";
 "fresh_RiskIncoming" = "Может изменять или скрывать получаемые вами сообщения";
+"fresh_RiskModerate" = "Может банить и разбанивать участников чата";
 "fresh_RiskBackground" = "Продолжает работать в фоне";
 "fresh_RiskClipboard" = "Может пользоваться буфером обмена";
 "fresh_RiskFiles" = "Может читать и сохранять выбранные вами файлы";

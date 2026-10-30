@@ -22,6 +22,7 @@ const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
 	"net.tcp", "net.udp", "background", "fs.user_selected", "clipboard",
 	"messages.edit", "messages.delete", "ghost.control", "messages.transform_incoming",
+	"chats.moderate",
 };
 
 const auto kLowPermissions = std::set<std::string>{
@@ -95,6 +96,9 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 			Risk::ChangesIncoming,
 			"can change or hide the messages you receive",
 		});
+	}
+	if (Has(granted, "chats.moderate")) {
+		notes.push_back({ Risk::Moderates, "can ban and unban chat members" });
 	}
 	if (Has(granted, "messages.edit") || Has(granted, "messages.delete")) {
 		notes.push_back({ Risk::ChangesMessages, "can edit or delete messages you sent" });

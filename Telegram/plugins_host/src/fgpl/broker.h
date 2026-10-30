@@ -657,6 +657,15 @@ public:
 		(void)pinned;
 		return api::error::kUnavailable;
 	}
+	[[nodiscard]] virtual std::string moderate(
+			int64_t chat,
+			int64_t user,
+			bool ban) {
+		(void)chat;
+		(void)user;
+		(void)ban;
+		return api::error::kUnavailable;
+	}
 	[[nodiscard]] virtual std::string blockUser(int64_t id, bool blocked) {
 		(void)id;
 		(void)blocked;
@@ -949,6 +958,7 @@ private:
 	int64_t _lastResolve = 0;
 	int64_t _lastInline = 0;
 	int64_t _lastMembers = 0;
+	int64_t _lastModerate = 0;
 	std::map<int64_t, int64_t> _lastChatAction;
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;

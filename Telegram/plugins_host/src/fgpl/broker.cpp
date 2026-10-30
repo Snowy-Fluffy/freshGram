@@ -76,6 +76,7 @@ constexpr auto kMaxInlineResults = size_t(50);
 constexpr auto kMaxReplyChain = int64_t(20);
 constexpr auto kMaxMembers = int64_t(200);
 constexpr auto kMembersEachMs = int64_t(1000);
+constexpr auto kModerateEachMs = int64_t(1000);
 constexpr auto kMaxPollQuestion = size_t(1024);
 constexpr auto kMaxPollOption = size_t(400);
 constexpr auto kMaxPollOptions = size_t(10);
@@ -792,6 +793,11 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			return api::Fail(api::error::kLimit, "usernames are resolved too often");
 		}
 		_lastResolve = now;
+	} else if (op == "chats.ban" || op == "chats.unban") {
+		if (_lastModerate && now - _lastModerate < kModerateEachMs) {
+			return api::Fail(api::error::kLimit, "members are moderated too often");
+		}
+		_lastModerate = now;
 	} else if (op == "chats.members" || op == "chats.admins") {
 		if (_lastMembers && now - _lastMembers < kMembersEachMs) {
 			return api::Fail(api::error::kLimit, "members are listed too often");
@@ -2458,6 +2464,24 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		poll.closePeriod = closePeriod;
 		poll.silent = *silent;
 		return Sent(data->sendPoll(poll), "the poll was not sent", false);
+	} else if (op == "chats.ban" || op == "chats.unban") {
+		if (const auto refused = need({ "chats.moderate" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		const auto user = IntArg(args, "user");
+		if (!chat.ok()) {
+			return chat.error();
+		} else if (!user || *user <= 0) {
+			return api::Fail(api::error::kInvalid, "user");
+		} else if (*user == api::kServiceChat || *user == data->account().id) {
+			return api::Fail(api::error::kDenied, "this user");
+		} else if (!recentUserAction()) {
+			return api::Fail(api::error::kDenied, "only right after a user action");
+		}
+		return Done(
+			data->moderate(chat.value(), *user, op == "chats.ban"),
+			"the member was not changed");
 	} else if (op == "ghost.get" || op == "ghost.set") {
 		if (const auto refused = need({ "ghost.control" })) {
 			return *refused;

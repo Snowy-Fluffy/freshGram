@@ -299,6 +299,17 @@ class _Chats(_Namespace):
         """Administrators of a group or channel, like members() (chat.info and users.info)."""
         return self._call("chats.admins", chat=chat, limit=limit, **_given(offset=offset))
 
+    def ban(self, chat, user):
+        """Ban a member from a group or channel (chats.moderate).
+
+        Works only within 10 seconds after a user action, such as a menu click.
+        """
+        return self._call("chats.ban", _nothing, chat=chat, user=user)
+
+    def unban(self, chat, user):
+        """Lift the ban of a member of a channel or supergroup (chats.moderate); same rule as ban()."""
+        return self._call("chats.unban", _nothing, chat=chat, user=user)
+
     def mute(self, chat, seconds=0, forever=False):
         """Mute the chat for some seconds (up to a year) or for good; no arguments unmute it (chats.manage)."""
         return self._call(

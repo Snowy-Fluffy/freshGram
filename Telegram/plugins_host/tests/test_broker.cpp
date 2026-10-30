@@ -999,6 +999,37 @@ void TestMembersPollsAndGhost() {
 	CHECK(Code(broker.call(Request("ghost.set", { { "enabled", cbor::Value::FromBool(false) } }))) == "denied");
 }
 
+void TestModeration() {
+	auto fixture = Fixture({ "chats.moderate" });
+	fixture.time = 5000;
+	auto broker = fixture.make();
+	const auto ban = [&](int64_t chat, int64_t user, const char *op = "chats.ban") {
+		fixture.time += 1500;
+		return Code(broker.call(Request(op, { { "chat", Int(chat) }, { "user", Int(user) } })));
+	};
+	CHECK(ban(1, 7) == "denied");
+	broker.noteUserAction("menu.click");
+	CHECK(ban(1, 7).empty());
+	CHECK(ban(1, 7, "chats.unban").empty());
+	CHECK(ban(1, 0) == "invalid");
+	CHECK(ban(1, -3) == "invalid");
+	CHECK(ban(1, 42) == "denied");
+	CHECK(ban(1, 777000) == "denied");
+	CHECK(ban(777000, 7) == "denied");
+	CHECK(ban(3, 7) == "not_found");
+	CHECK(Code(broker.call(Request("chats.ban", { { "chat", Int(1) }, { "user", Int(7) } }))) == "limit");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("chats.ban", { { "chat", Int(1) } }))) == "invalid");
+	CHECK(fixture.data.actions == (std::vector<std::string>{ "ban 1 7", "unban 1 7" }));
+	fixture.time += 11000;
+	CHECK(ban(1, 7) == "denied");
+	auto other = Fixture({ "chats.manage" });
+	other.time = 5000;
+	auto otherBroker = other.make();
+	otherBroker.noteUserAction("menu.click");
+	CHECK(Code(otherBroker.call(Request("chats.ban", { { "chat", Int(1) }, { "user", Int(7) } }))) == "denied");
+}
+
 void TestBotButtons() {
 	auto fixture = Fixture({ "bots.inline", "messages.send" });
 	auto broker = fixture.make();
@@ -2530,6 +2561,7 @@ int main() {
 	TestMessageLookups();
 	TestChatManagement();
 	TestBotButtons();
+	TestModeration();
 	TestMembersPollsAndGhost();
 	TestEntitiesInMessages();
 	TestOutgoingEntities();

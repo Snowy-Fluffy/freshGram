@@ -22,6 +22,7 @@ enum class Risk : uint8_t {
 	SendsInYourName,
 	ChangesOutgoing,
 	ChangesIncoming,
+	Moderates,
 	ChangesMessages,
 	Background,
 	Clipboard,

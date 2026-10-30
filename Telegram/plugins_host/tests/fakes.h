@@ -150,6 +150,11 @@ public:
 		actions.push_back(std::string("pinchat ") + std::to_string(chat) + (pinned ? " on" : " off"));
 		return {};
 	}
+	std::string moderate(int64_t chat, int64_t user, bool ban) override {
+		actions.push_back(std::string(ban ? "ban " : "unban ") + std::to_string(chat)
+			+ " " + std::to_string(user));
+		return {};
+	}
 	std::string blockUser(int64_t id, bool blocked) override {
 		actions.push_back(std::string(blocked ? "block " : "unblock ") + std::to_string(id));
 		return {};
