@@ -23,6 +23,7 @@ struct HistoryMessageViews;
 struct HistoryMessageMarkupData;
 struct HistoryMessageReplyMarkup;
 struct HistoryMessageTranslation;
+struct HistoryMessagePluginDisplay;
 struct HistoryMessageForwarded;
 struct HistoryMessageSuggestion;
 struct HistoryServiceDependentData;
@@ -523,6 +524,8 @@ public:
 		not_null<Data::Thread*> to) const;
 	[[nodiscard]] Data::SendError errorTextForForwardIgnoreRights(
 		not_null<Data::Thread*> to) const;
+	void setPluginDisplay(std::optional<TextWithEntities> text);
+	[[nodiscard]] const TextWithEntities *pluginDisplay() const;
 	[[nodiscard]] const HistoryMessageTranslation *translation() const;
 	[[nodiscard]] bool translationShowRequiresCheck(LanguageId to) const;
 	bool translationShowRequiresRequest(LanguageId to);

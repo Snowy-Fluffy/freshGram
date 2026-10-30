@@ -538,6 +538,25 @@ class _SyncMessages(_Messages):
                 arguments[key] = value
         _request("messages.set_outgoing", **arguments)
 
+    def set_incoming(self, text=None, entities=None, markdown=False):
+        """Change how the message being received is shown (message.incoming only).
+
+        Give a new text, entities (as in set_outgoing) or both. Only the display
+        changes: forwarding, editing and the plugins' own events keep the real text.
+        A new text without entities is shown without formatting.
+        """
+        arguments = {}
+        if text is not None:
+            arguments["text"] = text
+            arguments.update(_format(markdown))
+        if entities is not None:
+            arguments["entities"] = [dict(entity) for entity in entities]
+        _request("messages.set_incoming", **arguments)
+
+    def hide_incoming(self, reason=""):
+        """Hide the message being received (message.incoming only)."""
+        _request("messages.hide_incoming", **_given(reason=reason))
+
     def drop_outgoing(self, reason=""):
         """Do not send the message being sent (message.outgoing only).
 

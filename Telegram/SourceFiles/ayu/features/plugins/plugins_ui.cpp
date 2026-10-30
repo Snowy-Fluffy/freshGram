@@ -2865,6 +2865,7 @@ namespace {
 	case fgpl::Risk::DeletedMessages: return tr::fresh_RiskDeleted(tr::now);
 	case fgpl::Risk::SendsInYourName: return tr::fresh_RiskSends(tr::now);
 	case fgpl::Risk::ChangesOutgoing: return tr::fresh_RiskOutgoing(tr::now);
+	case fgpl::Risk::ChangesIncoming: return tr::fresh_RiskIncoming(tr::now);
 	case fgpl::Risk::ChangesMessages: return tr::fresh_RiskChangesMessages(tr::now);
 	case fgpl::Risk::Background: return tr::fresh_RiskBackground(tr::now);
 	case fgpl::Risk::Clipboard: return tr::fresh_RiskClipboard(tr::now);
@@ -2880,6 +2881,7 @@ namespace {
 		{ "messages.read_deleted", &st::menuIconChatBubble },
 		{ "messages.send", &st::menuIconChatBubble },
 		{ "messages.transform_outgoing", &st::menuIconEdit },
+		{ "messages.transform_incoming", &st::menuIconEdit },
 		{ "messages.history", &st::menuIconChatBubble },
 		{ "media.read", &st::menuIconFile },
 		{ "chats.list", &st::menuIconChats },
@@ -2928,7 +2930,7 @@ namespace {
 [[nodiscard]] bool SeesChats(const fgpl::Manifest &manifest) {
 	static const auto scoped = std::set<std::string>{
 		"messages.read", "messages.read_deleted", "messages.history",
-		"messages.send", "messages.transform_outgoing", "chats.list",
+		"messages.send", "messages.transform_outgoing", "messages.transform_incoming", "chats.list",
 		"chat.info", "media.read", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
 		"messages.ids", "chats.activity", "chats.manage",
@@ -3402,6 +3404,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "messages.read_deleted", tr::fresh_PermMessagesReadDeleted },
 		{ "messages.send", tr::fresh_PermMessagesSend },
 		{ "messages.transform_outgoing", tr::fresh_PermMessagesTransform },
+		{ "messages.transform_incoming", tr::fresh_PermMessagesTransformIncoming },
 		{ "media.read", tr::fresh_PermMediaRead },
 		{ "chats.list", tr::fresh_PermChatsList },
 		{ "chat.info", tr::fresh_PermChatInfo },

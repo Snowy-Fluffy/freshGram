@@ -4,8 +4,10 @@
 // but be respectful and credit the original author.
 //
 // Copyright @Radolyn, 2026
-#include "ayu/secret/secret_peer.h"
 #include "ayu/utils/telegram_helpers.h"
+
+#include "ayu/features/plugins/plugins_data.h"
+#include "ayu/secret/secret_peer.h"
 
 #include "apiwrap.h"
 #include "lang_auto.h"
@@ -116,7 +118,7 @@ ID getBareID(not_null<PeerData*> peer) {
 }
 
 bool isMessageHidden(const not_null<HistoryItem*> item) {
-	if (AyuState::isHidden(item)) {
+	if (AyuState::isHidden(item) || FreshPlugins::IsHiddenByPlugin(item)) {
 		return true;
 	}
 

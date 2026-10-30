@@ -351,7 +351,7 @@ void AddReactionKind(cbor::Map &map, const ReactionKind &kind) {
 	return result;
 }
 
-[[nodiscard]] cbor::Value MessageValue(const Message &message) {
+[[nodiscard]] cbor::Value MessageValueImpl(const Message &message) {
 	auto map = cbor::Map{
 		{ "id", Int(message.id) },
 		{ "chat", Int(message.chat) },
@@ -423,6 +423,10 @@ void AddReactionKind(cbor::Map &map, const ReactionKind &kind) {
 }
 
 } // namespace
+
+cbor::Value MessageValue(const Message &message) {
+	return MessageValueImpl(message);
+}
 
 std::optional<cbor::Bytes> MemoryStorage::get(const std::string &key) {
 	const auto i = _items.find(key);
@@ -593,13 +597,18 @@ void Broker::releaseSockets() {
 	});
 }
 
+void Broker::beginIncoming() {
+	_hook = HookKind::Incoming;
+	_outgoingEdit = OutgoingEdit();
+}
+
 void Broker::beginOutgoing() {
-	_outgoing = true;
+	_hook = HookKind::Outgoing;
 	_outgoingEdit = OutgoingEdit();
 }
 
 OutgoingEdit Broker::finishOutgoing() {
-	_outgoing = false;
+	_hook = HookKind::None;
 	return std::exchange(_outgoingEdit, OutgoingEdit());
 }
 
@@ -649,12 +658,14 @@ cbor::Value Broker::call(const cbor::Value &request) {
 		response = api::Fail(api::error::kLimit, "too many calls");
 	} else if (awaited && awaited->asBool().value_or(false)) {
 		response = schedule(*name, args);
-	} else if (_outgoing
+	} else if (_hook != HookKind::None
 		&& *name != "meta.info"
 		&& *name != "log"
 		&& *name != "time.now"
 		&& *name != "messages.set_outgoing"
-		&& *name != "messages.drop_outgoing") {
+		&& *name != "messages.drop_outgoing"
+		&& *name != "messages.set_incoming"
+		&& *name != "messages.hide_incoming") {
 		response = api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
 	} else if (*name == "time.sleep" || *name == "files.pick" || *name == "files.save") {
 		response = api::Fail(api::error::kInvalid, *name + " must be awaited");
@@ -678,10 +689,12 @@ cbor::Value Broker::call(const cbor::Value &request) {
 }
 
 cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
-	if (_outgoing) {
+	if (_hook != HookKind::None) {
 		return api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
 	} else if (op == "messages.set_outgoing"
 		|| op == "messages.drop_outgoing"
+		|| op == "messages.set_incoming"
+		|| op == "messages.hide_incoming"
 		|| op == "plugin.unload") {
 		return api::Fail(api::error::kInvalid, "this call cannot be awaited");
 	} else if (!_services.post || !_services.after || !_services.complete) {
@@ -813,7 +826,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 	if (op == "messages.set_outgoing") {
 		if (!has("messages.transform_outgoing")) {
 			return api::Fail(api::error::kDenied, "messages.transform_outgoing");
-		} else if (!_outgoing) {
+		} else if (_hook != HookKind::Outgoing) {
 			return api::Fail(api::error::kInvalid, "only while handling message.outgoing");
 		}
 		const auto text = Arg(args, "text")
@@ -869,8 +882,54 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 	} else if (op == "messages.drop_outgoing") {
 		if (!has("messages.transform_outgoing")) {
 			return api::Fail(api::error::kDenied, "messages.transform_outgoing");
-		} else if (!_outgoing) {
+		} else if (_hook != HookKind::Outgoing) {
 			return api::Fail(api::error::kInvalid, "only while handling message.outgoing");
+		}
+		const auto reason = Arg(args, "reason")
+			? TextArg(args, "reason", 200)
+			: std::optional<std::string>(std::string());
+		if (!reason) {
+			return api::Fail(api::error::kInvalid, "reason");
+		}
+		_outgoingEdit.drop = true;
+		_outgoingEdit.dropReason = *reason;
+		return api::Ok();
+	} else if (op == "messages.set_incoming") {
+		if (!has("messages.transform_incoming")) {
+			return api::Fail(api::error::kDenied, "messages.transform_incoming");
+		} else if (_hook != HookKind::Incoming) {
+			return api::Fail(api::error::kInvalid, "only while handling message.incoming");
+		}
+		const auto text = Arg(args, "text")
+			? TextArg(args, "text", kMaxMessage)
+			: std::optional<std::string>();
+		const auto markdown = MarkdownArg(args);
+		const auto entities = Arg(args, "entities")
+			? ParseTextEntities(*Arg(args, "entities"))
+			: std::optional<std::vector<TextEntity>>();
+		const auto given = [&](const char *key) {
+			return Arg(args, key) != nullptr;
+		};
+		if (!markdown
+			|| (given("text") && (!text || text->empty()))
+			|| (given("entities") && (!entities || *markdown))) {
+			return api::Fail(api::error::kInvalid, "text, format or entities");
+		} else if (!given("text") && !given("entities")) {
+			return api::Fail(api::error::kInvalid, "nothing to change");
+		}
+		if (text) {
+			_outgoingEdit.text = *text;
+			_outgoingEdit.markdown = *markdown;
+		}
+		if (entities) {
+			_outgoingEdit.entities = *entities;
+		}
+		return api::Ok();
+	} else if (op == "messages.hide_incoming") {
+		if (!has("messages.transform_incoming")) {
+			return api::Fail(api::error::kDenied, "messages.transform_incoming");
+		} else if (_hook != HookKind::Incoming) {
+			return api::Fail(api::error::kInvalid, "only while handling message.incoming");
 		}
 		const auto reason = Arg(args, "reason")
 			? TextArg(args, "reason", 200)

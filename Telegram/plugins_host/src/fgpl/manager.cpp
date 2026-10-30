@@ -1204,6 +1204,35 @@ bool ManagerSnapshot::transformsOutgoing(int64_t chat, bool secret) const {
 	return transformsOutgoing(info);
 }
 
+IncomingMode ManagerSnapshot::transformsIncoming(const IncomingInfo &info) const {
+	const auto chat = info.chat;
+	if (hidden
+		|| locked
+		|| info.secret
+		|| info.chatType == "self"
+		|| chat == api::kServiceChat) {
+		return IncomingMode::None;
+	}
+	auto result = IncomingMode::None;
+	for (const auto &plugin : plugins) {
+		const auto grant = grants.find(plugin.id);
+		const auto parsed = manifest(plugin.id);
+		if (plugin.enabled
+			&& grant != grants.end()
+			&& grant->second.granted.contains("messages.transform_incoming")
+			&& parsed
+			&& parsed->incoming.declared
+			&& Matches(parsed->incoming.filter, info)
+			&& (!grant->second.chats || grant->second.chats->contains(chat))) {
+			if (parsed->incoming.hold) {
+				return IncomingMode::Hold;
+			}
+			result = IncomingMode::Swap;
+		}
+	}
+	return result;
+}
+
 bool ManagerSnapshot::transformsOutgoing(const OutgoingInfo &info) const {
 	const auto chat = info.chat;
 	if (hidden
@@ -1805,7 +1834,11 @@ void PluginManager::run(Instance &instance) {
 		}
 		auto serial = std::unique_lock(*instance.serial);
 		if (outgoing) {
-			instance.broker->beginOutgoing();
+			if (outgoing->kind == HookKind::Incoming) {
+				instance.broker->beginIncoming();
+			} else {
+				instance.broker->beginOutgoing();
+			}
 		}
 		const auto result = instance.client->deliver(event, *instance.broker);
 		serial.unlock();
@@ -2003,7 +2036,14 @@ bool PluginManager::activatedBy(const Record &record, const char *trigger) const
 			&& std::any_of(record.grants.begin(), record.grants.end(), [](const auto &entry) {
 				return entry.second.granted.contains("background");
 			});
-		return parsed->activation.contains("startup") || background || transforms;
+		const auto transformsIncoming = parsed->incoming.declared
+			&& std::any_of(record.grants.begin(), record.grants.end(), [](const auto &entry) {
+				return entry.second.granted.contains("messages.transform_incoming");
+			});
+		return parsed->activation.contains("startup")
+			|| background
+			|| transforms
+			|| transformsIncoming;
 	}
 	return parsed->activation.contains(trigger);
 }
@@ -2387,6 +2427,140 @@ void PluginManager::transformOutgoingAsync(
 	advanceOutgoing();
 }
 
+void PluginManager::transformIncomingAsync(
+		const std::string &account,
+		IncomingInfo info,
+		int timeoutMs,
+		std::function<void(IncomingResult)> done) {
+	auto chain = std::make_shared<OutgoingChain>();
+	chain->kind = HookKind::Incoming;
+	chain->account = account;
+	chain->timeoutMs = timeoutMs;
+	const auto allowed = !info.secret
+		&& info.chatType != "self"
+		&& info.chat != api::kServiceChat;
+	chain->incoming = std::move(info);
+	chain->incomingDone = std::move(done);
+	if (ValidAccount(account) && mayRun() && allowed) {
+		for (const auto &item : _records) {
+			chain->plugins.push_back(item.first);
+		}
+	}
+	_chains.push_back(std::move(chain));
+	advanceOutgoing();
+}
+
+bool PluginManager::advanceIncoming(
+		OutgoingChain &chain,
+		std::chrono::steady_clock::time_point now) {
+	auto &result = chain.incomingResult;
+	const auto refuse = [&](const std::string &plugin, std::string reason) {
+		result.hidden = true;
+		result.plugin = plugin;
+		result.reason = std::move(reason);
+		return true;
+	};
+	while (true) {
+		if (const auto pending = chain.current) {
+			auto finished = false;
+			auto ok = false;
+			auto edit = OutgoingEdit();
+			{
+				const auto lock = std::scoped_lock(pending->mutex);
+				finished = pending->finished;
+				ok = pending->ok;
+				edit = pending->edit;
+			}
+			if (!finished && now < chain.deadline) {
+				return false;
+			}
+			chain.current = nullptr;
+			if (finished && ok) {
+				auto &info = chain.incoming;
+				if (edit.drop) {
+					result.hidden = true;
+					result.plugin = chain.plugins[chain.next - 1];
+					result.reason = std::move(edit.dropReason);
+					return true;
+				}
+				if (edit.text) {
+					if (*edit.text != info.text || edit.markdown) {
+						result.entities = info.entities = std::vector<TextEntity>();
+					}
+					result.text = *edit.text;
+					result.markdown = edit.markdown;
+					info.text = *edit.text;
+				}
+				if (edit.entities) {
+					result.entities = info.entities = *edit.entities;
+				}
+			} else if (chain.blocking) {
+				return refuse(
+					chain.plugins[chain.next - 1],
+					finished ? "the plugin failed" : "the plugin did not answer in time");
+			}
+			continue;
+		}
+		if (chain.next >= chain.plugins.size() || !mayRun()) {
+			return true;
+		}
+		const auto &id = chain.plugins[chain.next++];
+		const auto found = _records.find(id);
+		if (found == _records.end()) {
+			continue;
+		}
+		auto &record = found->second;
+		const auto grant = record.grants.find(kAllAccounts);
+		const auto parsed = manifest(record.id);
+		if (!record.enabled
+			|| grant == record.grants.end()
+			|| !grant->second.granted.contains("messages.transform_incoming")
+			|| !parsed
+			|| !parsed->incoming.declared
+			|| !Matches(parsed->incoming.filter, chain.incoming)
+			|| (grant->second.chats && !grant->second.chats->contains(chain.incoming.chat))) {
+			continue;
+		}
+		const auto blocking = parsed->incoming.block;
+		auto *instance = ensure(record, chain.account, nullptr);
+		auto ready = false;
+		auto busy = false;
+		if (instance) {
+			const auto lock = std::scoped_lock(instance->mutex);
+			ready = instance->ready && !instance->closing && !instance->finished;
+			busy = (instance->outgoing.size() >= _config.maxPendingHooks);
+		}
+		if (!ready || busy) {
+			if (blocking && !ready) {
+				return refuse(record.id, "the plugin is not ready yet");
+			}
+			continue;
+		}
+		auto pending = std::make_shared<Outgoing>();
+		pending->kind = HookKind::Incoming;
+		const auto &info = chain.incoming;
+		auto event = info.message;
+		event.push_back({ "type", Text("message.incoming") });
+		event.push_back({ "chat_type", Text(info.chatType) });
+		event.push_back({ "edited", cbor::Value::FromBool(info.edited) });
+		std::erase_if(event, [](const auto &entry) {
+			return entry.key == "text" || entry.key == "entities";
+		});
+		event.push_back({ "text", Text(info.text) });
+		event.push_back({ "entities", TextEntitiesValue(info.entities) });
+		pending->event = cbor::Value::FromMap(std::move(event));
+		{
+			const auto lock = std::scoped_lock(instance->mutex);
+			instance->outgoing.push_back(pending);
+		}
+		instance->wake.notify_one();
+		chain.current = std::move(pending);
+		chain.blocking = blocking;
+		chain.deadline = now + std::chrono::milliseconds(chain.timeoutMs);
+		return false;
+	}
+}
+
 bool PluginManager::advance(
 		OutgoingChain &chain,
 		std::chrono::steady_clock::time_point now) {
@@ -2518,7 +2692,10 @@ void PluginManager::advanceOutgoing() {
 	const auto now = std::chrono::steady_clock::now();
 	auto finished = std::vector<std::shared_ptr<OutgoingChain>>();
 	for (const auto &chain : _chains) {
-		if (advance(*chain, now)) {
+		const auto done = (chain->kind == HookKind::Incoming)
+			? advanceIncoming(*chain, now)
+			: advance(*chain, now);
+		if (done) {
 			finished.push_back(chain);
 		}
 	}
@@ -2529,7 +2706,11 @@ void PluginManager::advanceOutgoing() {
 		return std::find(finished.begin(), finished.end(), chain) != finished.end();
 	});
 	for (const auto &chain : finished) {
-		chain->done(std::move(chain->result));
+		if (chain->kind == HookKind::Incoming) {
+			chain->incomingDone(std::move(chain->incomingResult));
+		} else {
+			chain->done(std::move(chain->result));
+		}
 	}
 }
 

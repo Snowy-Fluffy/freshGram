@@ -448,6 +448,11 @@ struct HistoryMessageTranslation
 	bool used = false;
 };
 
+struct HistoryMessagePluginDisplay
+: RuntimeComponent<HistoryMessagePluginDisplay, HistoryItem> {
+	TextWithEntities text;
+};
+
 struct HistoryMessageReplyMarkup
 : RuntimeComponent<HistoryMessageReplyMarkup, HistoryItem> {
 	using Button = HistoryMessageMarkupButton;

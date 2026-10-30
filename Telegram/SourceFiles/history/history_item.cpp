@@ -3594,6 +3594,28 @@ const HistoryMessageTranslation *HistoryItem::translation() const {
 	return Get<HistoryMessageTranslation>();
 }
 
+const TextWithEntities *HistoryItem::pluginDisplay() const {
+	const auto display = Get<HistoryMessagePluginDisplay>();
+	return (display && !isService()) ? &display->text : nullptr;
+}
+
+void HistoryItem::setPluginDisplay(std::optional<TextWithEntities> text) {
+	if (!text) {
+		if (!Has<HistoryMessagePluginDisplay>()) {
+			return;
+		}
+		RemoveComponents(HistoryMessagePluginDisplay::Bit());
+	} else {
+		if (!Has<HistoryMessagePluginDisplay>()) {
+			AddComponents(HistoryMessagePluginDisplay::Bit());
+		}
+		Get<HistoryMessagePluginDisplay>()->text = std::move(*text);
+	}
+	_history->owner().requestItemTextRefresh(this);
+	_history->owner().updateDependentMessages(this);
+	invalidateChatListEntry();
+}
+
 bool HistoryItem::translationShowRequiresCheck(LanguageId to) const {
 	// Check if a call to translationShowRequiresRequest(to) is not a no-op.
 	if (!to) {
@@ -4094,6 +4116,8 @@ const TextWithEntities &HistoryItem::translatedText() const {
 	if (isService()) {
 		static const auto kEmpty = TextWithEntities();
 		return kEmpty;
+	} else if (const auto display = pluginDisplay()) {
+		return *display;
 	} else if (const auto translation = this->translation()
 		; translation
 		&& translation->used
@@ -4887,6 +4911,7 @@ void HistoryItem::setTextValue(TextWithEntities text, bool force) {
 	const auto had = !_text.empty();
 	_text = std::move(text);
 	RemoveComponents(HistoryMessageTranslation::Bit());
+	RemoveComponents(HistoryMessagePluginDisplay::Bit());
 	if (had || force) {
 		history()->owner().requestItemTextRefresh(this);
 	}
@@ -5026,7 +5051,8 @@ TextWithEntities HistoryItem::notificationText(
 		if (_media && !isService()) {
 			return _media->notificationText();
 		} else if (!emptyText()) {
-			return _text;
+			const auto display = pluginDisplay();
+			return display ? *display : _text;
 		}
 		return TextWithEntities();
 	}();
@@ -5075,7 +5101,9 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 				// wrap_rtl "adds" a newline in case text starts with quote.
 				// So we remove those by DialogsPreviewText call.
 				.text = st::wrap_rtl(Dialogs::Ui::DialogsPreviewText(
-					options.translated ? translatedText() : _text))
+					(options.translated || pluginDisplay())
+						? translatedText()
+						: _text))
 			};
 		}
 		return {};

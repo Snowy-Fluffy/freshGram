@@ -112,6 +112,7 @@ struct ManagerConfig {
 	int64_t failureWindowMs = 600000;
 	size_t logLines = 200;
 	size_t maxQueuedEvents = 256;
+	size_t maxPendingHooks = 64;
 	size_t maxQueuedBytes = size_t(256) << 20;
 	int maxConcurrentStarts = 2;
 	int storageFlushMs = 2000;
@@ -181,6 +182,21 @@ struct OutgoingResult {
 	std::optional<int64_t> topic;
 	std::string plugin;
 	std::string reason;
+};
+
+struct IncomingResult {
+	bool hidden = false;
+	std::optional<std::string> text;
+	bool markdown = false;
+	std::optional<std::vector<TextEntity>> entities;
+	std::string plugin;
+	std::string reason;
+};
+
+enum class IncomingMode {
+	None,
+	Swap,
+	Hold,
 };
 
 struct TranslateRequest {
@@ -288,6 +304,7 @@ struct ManagerSnapshot {
 	}
 	[[nodiscard]] bool transformsOutgoing(const OutgoingInfo &info) const;
 	[[nodiscard]] bool transformsOutgoing(int64_t chat, bool secret) const;
+	[[nodiscard]] IncomingMode transformsIncoming(const IncomingInfo &info) const;
 };
 
 class PluginManager {
@@ -352,6 +369,11 @@ public:
 		OutgoingInfo info,
 		int timeoutMs,
 		std::function<void(OutgoingResult)> done);
+	void transformIncomingAsync(
+		const std::string &account,
+		IncomingInfo info,
+		int timeoutMs,
+		std::function<void(IncomingResult)> done);
 
 	// The plugin's settings listed in storage.export, as a .fgpls file.
 	[[nodiscard]] Result<cbor::Bytes, std::string> exportSettings(
@@ -424,6 +446,7 @@ private:
 	};
 
 	struct Outgoing {
+		HookKind kind = HookKind::Outgoing;
 		cbor::Value event;
 		std::mutex mutex;
 		std::condition_variable done;
@@ -487,8 +510,12 @@ private:
 	using Key = std::pair<std::string, std::string>;
 
 	struct OutgoingChain {
+		HookKind kind = HookKind::Outgoing;
 		std::string account;
 		OutgoingInfo info;
+		IncomingInfo incoming;
+		IncomingResult incomingResult;
+		std::function<void(IncomingResult)> incomingDone;
 		int timeoutMs = 0;
 		std::vector<std::string> plugins;
 		size_t next = 0;
@@ -584,6 +611,9 @@ private:
 		const std::string &account,
 		const std::string &reason);
 	[[nodiscard]] bool advance(
+		OutgoingChain &chain,
+		std::chrono::steady_clock::time_point now);
+	[[nodiscard]] bool advanceIncoming(
 		OutgoingChain &chain,
 		std::chrono::steady_clock::time_point now);
 	bool enqueue(Instance &instance, Record &record, const cbor::Value &event);

@@ -21,6 +21,7 @@ class Session;
 namespace fgpl {
 class DataProvider;
 struct TextEntity;
+struct IncomingInfo;
 } // namespace fgpl
 
 namespace FreshPlugins {
@@ -30,7 +31,19 @@ void OpenData();
 void CloseData();
 void ReleaseData();
 
+[[nodiscard]] bool IsHiddenByPlugin(not_null<const HistoryItem*> item);
+void SetHiddenByPlugin(not_null<HistoryItem*> item, bool hidden, bool pending);
+void ForgetHiddenByPlugin(FullMsgId id);
+void ReleasePendingHidden();
+
 #ifdef FRESHGRAM_PLUGINS
+[[nodiscard]] fgpl::IncomingInfo IncomingInfoOf(
+	not_null<HistoryItem*> item,
+	bool edited);
+[[nodiscard]] TextWithEntities DisplayTextOf(
+	Main::Session *session,
+	const QString &text,
+	const std::vector<fgpl::TextEntity> &entities);
 [[nodiscard]] std::vector<fgpl::TextEntity> EntitiesOf(const TextWithTags &text);
 [[nodiscard]] TextWithTags TextWithEntitiesOf(
 	Main::Session *session,

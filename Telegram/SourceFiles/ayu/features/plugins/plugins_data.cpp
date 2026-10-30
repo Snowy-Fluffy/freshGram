@@ -42,6 +42,8 @@
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
+#include "data/data_groups.h"
+#include "ayu/features/filters/filters_cache_controller.h"
 #include "data/notify/data_notify_settings.h"
 #include "api/api_blocked_peers.h"
 #include "api/api_polls.h"
@@ -3624,6 +3626,90 @@ TextWithTags TextWithEntitiesOf(
 	};
 }
 
+namespace {
+
+struct PluginHidden {
+	base::flat_set<FullMsgId> hidden;
+	base::flat_set<FullMsgId> pending;
+};
+
+[[nodiscard]] PluginHidden &PluginHiddenState() {
+	static auto result = PluginHidden();
+	return result;
+}
+
+} // namespace
+
+bool IsHiddenByPlugin(not_null<const HistoryItem*> item) {
+	const auto &state = PluginHiddenState();
+	const auto id = item->fullId();
+	return state.hidden.contains(id) || state.pending.contains(id);
+}
+
+void SetHiddenByPlugin(not_null<HistoryItem*> item, bool hidden, bool pending) {
+	auto &state = PluginHiddenState();
+	auto items = std::vector<not_null<HistoryItem*>>{ item };
+	if (const auto group = item->history()->owner().groups().find(item)) {
+		for (const auto other : group->items) {
+			if (other != item) {
+				items.push_back(other);
+			}
+		}
+	}
+	for (const auto &one : items) {
+		auto &set = pending ? state.pending : state.hidden;
+		if (hidden) {
+			set.emplace(one->fullId());
+		} else {
+			set.remove(one->fullId());
+			if (!pending) {
+				state.pending.remove(one->fullId());
+			}
+		}
+		one->invalidateChatListEntry();
+	}
+	FiltersCacheController::fireUpdate();
+}
+
+void ForgetHiddenByPlugin(FullMsgId id) {
+	auto &state = PluginHiddenState();
+	state.hidden.remove(id);
+	state.pending.remove(id);
+}
+
+void ReleasePendingHidden() {
+	auto &state = PluginHiddenState();
+	if (state.pending.empty()) {
+		return;
+	}
+	state.pending.clear();
+	FiltersCacheController::fireUpdate();
+}
+
+fgpl::IncomingInfo IncomingInfoOf(not_null<HistoryItem*> item, bool edited) {
+	auto result = fgpl::IncomingInfo();
+	const auto peer = item->history()->peer;
+	auto message = MessageOf(item);
+	result.chat = ChatId(peer);
+	result.secret = FreshSecret::IsSecretPeerId(peer->id);
+	result.chatType = PeerKind(peer);
+	result.edited = edited;
+	result.text = message.text;
+	result.entities = message.entities;
+	const auto value = fgpl::MessageValue(message);
+	if (const auto map = value.asMap()) {
+		result.message = *map;
+	}
+	return result;
+}
+
+TextWithEntities DisplayTextOf(
+		Main::Session *session,
+		const QString &text,
+		const std::vector<fgpl::TextEntity> &entities) {
+	return TextWithEntities{ text, EntitiesToApp(session, text, entities) };
+}
+
 std::string PeerKind(not_null<PeerData*> peer) {
 	return KindOf(peer);
 }
@@ -3791,6 +3877,19 @@ void CloseData() {
 }
 
 void ReleaseData() {
+}
+
+bool IsHiddenByPlugin(not_null<const HistoryItem*>) {
+	return false;
+}
+
+void SetHiddenByPlugin(not_null<HistoryItem*>, bool, bool) {
+}
+
+void ForgetHiddenByPlugin(FullMsgId) {
+}
+
+void ReleasePendingHidden() {
 }
 
 std::string PeerKind(not_null<PeerData*>) {

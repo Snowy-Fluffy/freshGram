@@ -9049,6 +9049,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermMessagesReadDeleted" = "Read deleted messages";
 "fresh_PermMessagesSend" = "Send messages in your name";
 "fresh_PermMessagesTransform" = "Change the messages you send";
+"fresh_PermMessagesTransformIncoming" = "Change or hide the messages you receive";
 "fresh_PermMediaRead" = "Read downloaded media";
 "fresh_PermChatsList" = "See your chat list";
 "fresh_PermChatInfo" = "See chat details";
@@ -9081,6 +9082,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_RiskDeleted" = "Can read deleted messages kept on this device";
 "fresh_RiskSends" = "Can send messages in your name";
 "fresh_RiskOutgoing" = "Can change what you send";
+"fresh_RiskIncoming" = "Can change or hide the messages you receive";
 "fresh_RiskBackground" = "Keeps running in the background";
 "fresh_RiskClipboard" = "Can use the clipboard";
 "fresh_RiskFiles" = "Can read and save files you choose";
