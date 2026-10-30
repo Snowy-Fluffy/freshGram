@@ -24,6 +24,17 @@ constexpr auto kMaxTextEntities = size_t(256);
 constexpr auto kMaxEntityUrl = size_t(2048);
 constexpr auto kMaxEntityLanguage = size_t(64);
 
+// Telegram finds these in the text itself; they are read, never sent.
+[[nodiscard]] inline bool IsDetectedEntity(std::string_view type) {
+	return type == "url"
+		|| type == "mention"
+		|| type == "hashtag"
+		|| type == "cashtag"
+		|| type == "bot_command"
+		|| type == "email"
+		|| type == "phone";
+}
+
 [[nodiscard]] inline bool KnownEntityType(std::string_view type) {
 	return type == "bold"
 		|| type == "italic"
@@ -34,7 +45,9 @@ constexpr auto kMaxEntityLanguage = size_t(64);
 		|| type == "spoiler"
 		|| type == "blockquote"
 		|| type == "text_url"
-		|| type == "custom_emoji";
+		|| type == "mention_name"
+		|| type == "custom_emoji"
+		|| IsDetectedEntity(type);
 }
 
 [[nodiscard]] inline bool SafeEntityUrl(std::string_view url) {
@@ -80,7 +93,7 @@ constexpr auto kMaxEntityLanguage = size_t(64);
 			entity.id = *id->asInt();
 		}
 		if ((entity.type == "text_url" && entity.url.empty())
-			|| (entity.type == "custom_emoji" && !entity.id)) {
+			|| ((entity.type == "custom_emoji" || entity.type == "mention_name") && !entity.id)) {
 			return std::nullopt;
 		}
 		result.push_back(std::move(entity));

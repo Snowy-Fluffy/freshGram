@@ -30,6 +30,8 @@ def message(event):
     report["history"] = len(freshgram.messages.history(1, limit=3))
     report["mine"] = [m["out"] for m in freshgram.messages.history(1, limit=2, from_user="me")]
     report["server_time"] = freshgram.time()
+    got = freshgram.messages.get(1, 100)
+    report["got"] = [got["id"], len(got["entities"]), len(freshgram.messages.reply_chain(1, 103, limit=2))]
     response = freshgram.net.fetch("https://api.example.com/data", headers={"Accept": "text/plain"})
     report["fetch"] = [response.status, response.text()]
     report["other_host"] = attempt(lambda: freshgram.net.fetch("https://evil.example.org/"))

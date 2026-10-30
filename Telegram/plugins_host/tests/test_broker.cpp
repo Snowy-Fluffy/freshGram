@@ -245,6 +245,21 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "chat.info", Request("channels.info", { { "id", Int(2) } }) },
 		{ "notifications", Request("notify.show", { { "text", Text("x") } }) },
 		{ "bots.inline", Request("bots.inline_query", { { "bot", Text("inlinebot") }, { "query", Text("q") } }) },
+		{ "bots.inline", Request("bots.press_button", { { "chat", Int(1) }, { "id", Int(100) }, { "row", Int(0) }, { "column", Int(0) } }) },
+		{ "messages.history", Request("messages.get", { { "chat", Int(1) }, { "id", Int(100) } }) },
+		{ "messages.history", Request("messages.reply_chain", { { "chat", Int(1) }, { "id", Int(103) } }) },
+		{ "messages.history", Request("messages.pinned", { { "chat", Int(1) } }) },
+		{ "messages.history", Request("messages.scheduled", { { "chat", Int(1) } }) },
+		{ "messages.delete", Request("messages.scheduled_delete", { { "chat", Int(1) }, { "ids", cbor::Value::FromArray({ Int(7) }) } }) },
+		{ "chats.manage", Request("messages.pin", { { "chat", Int(1) }, { "id", Int(100) } }) },
+		{ "chats.manage", Request("messages.unpin", { { "chat", Int(1) }, { "id", Int(100) } }) },
+		{ "chats.manage", Request("chats.mute", { { "chat", Int(1) }, { "seconds", Int(60) } }) },
+		{ "chats.manage", Request("chats.archive", { { "chat", Int(1) } }) },
+		{ "chats.manage", Request("chats.pin", { { "chat", Int(1) } }) },
+		{ "contacts.manage", Request("users.block", { { "id", Int(7) } }) },
+		{ "contacts.manage", Request("users.unblock", { { "id", Int(7) } }) },
+		{ "contacts.manage", Request("contacts.add", { { "id", Int(7) }, { "first_name", Text("Bob") } }) },
+		{ "composer.draft", Request("composer.insert", { { "chat", Int(1) }, { "text", Text("x") } }) },
 	};
 	for (const auto &item : calls) {
 		auto fixture = Fixture({});
@@ -730,6 +745,210 @@ void TestOutgoingEntities() {
 		many.push_back(entity("bold", i, 1));
 	}
 	CHECK(refused(cbor::Value::FromArray(std::move(many))));
+}
+
+void TestMessageLookups() {
+	auto fixture = Fixture({ "messages.history" });
+	auto broker = fixture.make();
+	const auto got = broker.call(Request("messages.get", { { "chat", Int(1) }, { "id", Int(100) } }));
+	CHECK(IsOk(got));
+	const auto entities = Payload(got).find("entities");
+	CHECK(entities && entities->asArray() && entities->asArray()->size() == 1);
+	CHECK(entities && *(*entities->asArray())[0].find("type")->asText() == "bold");
+	const auto rows = Payload(got).find("buttons");
+	CHECK(rows && rows->asArray() && rows->asArray()->size() == 1);
+	if (rows && rows->asArray() && rows->asArray()->size() == 1) {
+		const auto line = (*rows->asArray())[0].asArray();
+		CHECK(line && line->size() == 2);
+		CHECK(line && *(*line)[0].find("type")->asText() == "callback" && (*line)[0].find("url") == nullptr);
+		CHECK(line && *(*line)[1].find("url")->asText() == "https://example.com/");
+	}
+	CHECK(Payload(broker.call(Request("messages.get", { { "chat", Int(1) }, { "id", Int(101) } }))).find("entities") == nullptr);
+	CHECK(Code(broker.call(Request("messages.get", { { "chat", Int(1) }, { "id", Int(5000) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.get", { { "chat", Int(1) }, { "id", Int(998) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.get", { { "chat", Int(1) }, { "id", Int(0) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.get", { { "chat", Int(1) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.get", { { "chat", Int(777000) }, { "id", Int(100) } }))) == "denied");
+	CHECK(Code(broker.call(Request("messages.get", { { "chat", Int(3) }, { "id", Int(100) } }))) == "not_found");
+
+	auto reader = Fixture({ "messages.history", "messages.read_deleted" });
+	auto readerBroker = reader.make();
+	CHECK(IsOk(readerBroker.call(Request("messages.get", { { "chat", Int(1) }, { "id", Int(998) } }))));
+
+	const auto chain = broker.call(Request("messages.reply_chain", { { "chat", Int(1) }, { "id", Int(105) }, { "limit", Int(3) } }));
+	CHECK(IsOk(chain) && Payload(chain).asArray() && Payload(chain).asArray()->size() == 3);
+	if (Payload(chain).asArray() && Payload(chain).asArray()->size() == 3) {
+		CHECK((*Payload(chain).asArray())[0].find("id")->asInt() == 104);
+		CHECK((*Payload(chain).asArray())[2].find("id")->asInt() == 102);
+	}
+	const auto whole = broker.call(Request("messages.reply_chain", { { "chat", Int(1) }, { "id", Int(105) }, { "limit", Int(500) } }));
+	CHECK(IsOk(whole) && Payload(whole).asArray()->size() == 4);
+	const auto none = broker.call(Request("messages.reply_chain", { { "chat", Int(1) }, { "id", Int(100) } }));
+	CHECK(IsOk(none) && Payload(none).asArray()->empty());
+	CHECK(Code(broker.call(Request("messages.reply_chain", { { "chat", Int(1) }, { "id", Int(5000) } }))) == "not_found");
+
+	const auto pinned = broker.call(Request("messages.pinned", { { "chat", Int(1) } }));
+	CHECK(IsOk(pinned) && Payload(pinned).asArray()->size() == 2);
+	const auto one = broker.call(Request("messages.pinned", { { "chat", Int(1) }, { "limit", Int(1) } }));
+	CHECK(IsOk(one) && Payload(one).asArray()->size() == 1);
+	const auto scheduled = broker.call(Request("messages.scheduled", { { "chat", Int(1) } }));
+	CHECK(IsOk(scheduled) && Payload(scheduled).asArray()->size() == 1);
+	CHECK(Code(broker.call(Request("messages.scheduled", { { "chat", Int(777000) } }))) == "denied");
+
+	auto deleter = Fixture({ "messages.delete" });
+	auto deleterBroker = deleter.make();
+	CHECK(IsOk(deleterBroker.call(Request("messages.scheduled_delete", {
+		{ "chat", Int(1) }, { "ids", cbor::Value::FromArray({ Int(7), Int(8) }) },
+	}))));
+	CHECK(deleter.data.actions == (std::vector<std::string>{ "unschedule 1 2" }));
+	CHECK(Code(deleterBroker.call(Request("messages.scheduled_delete", { { "chat", Int(1) }, { "ids", cbor::Value::FromArray({}) } }))) == "invalid");
+	CHECK(Code(deleterBroker.call(Request("messages.scheduled_delete", { { "chat", Int(1) }, { "ids", cbor::Value::FromArray({ Int(-1) }) } }))) == "invalid");
+}
+
+void TestChatManagement() {
+	auto fixture = Fixture({ "chats.manage", "contacts.manage" });
+	auto broker = fixture.make();
+	CHECK(IsOk(broker.call(Request("messages.pin", { { "chat", Int(1) }, { "id", Int(100) }, { "silent", cbor::Value::FromBool(true) } }))));
+	CHECK(IsOk(broker.call(Request("messages.unpin", { { "chat", Int(1) }, { "id", Int(100) } }))));
+	CHECK(Code(broker.call(Request("messages.pin", { { "chat", Int(1) }, { "id", Int(55) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("messages.pin", { { "chat", Int(1) }, { "id", Int(0) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.pin", { { "chat", Int(1) }, { "id", Int(5) }, { "silent", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.pin", { { "chat", Int(777000) }, { "id", Int(5) } }))) == "denied");
+	CHECK(IsOk(broker.call(Request("chats.mute", { { "chat", Int(1) }, { "seconds", Int(3600) } }))));
+	CHECK(IsOk(broker.call(Request("chats.mute", { { "chat", Int(1) }, { "forever", cbor::Value::FromBool(true) } }))));
+	CHECK(IsOk(broker.call(Request("chats.mute", { { "chat", Int(1) } }))));
+	CHECK(Code(broker.call(Request("chats.mute", { { "chat", Int(1) }, { "seconds", Int(-5) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("chats.mute", { { "chat", Int(1) }, { "seconds", Int(99999999999) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("chats.mute", { { "chat", Int(1) }, { "seconds", Int(5) }, { "forever", cbor::Value::FromBool(true) } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("chats.archive", { { "chat", Int(1) } }))));
+	CHECK(IsOk(broker.call(Request("chats.archive", { { "chat", Int(1) }, { "archived", cbor::Value::FromBool(false) } }))));
+	CHECK(IsOk(broker.call(Request("chats.pin", { { "chat", Int(1) } }))));
+	CHECK(IsOk(broker.call(Request("chats.pin", { { "chat", Int(1) }, { "pinned", cbor::Value::FromBool(false) } }))));
+	CHECK(Code(broker.call(Request("chats.pin", { { "chat", Int(1) }, { "pinned", Int(2) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("chats.archive", { { "chat", Int(3) } }))) == "not_found");
+	CHECK(IsOk(broker.call(Request("users.block", { { "id", Int(7) } }))));
+	CHECK(IsOk(broker.call(Request("users.unblock", { { "id", Int(7) } }))));
+	CHECK(Code(broker.call(Request("users.block", { { "id", Int(0) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("users.block", { { "id", Int(777000) } }))) == "denied");
+	CHECK(IsOk(broker.call(Request("contacts.add", { { "id", Int(7) }, { "first_name", Text("Bob") }, { "last_name", Text("Ross") } }))));
+	CHECK(Code(broker.call(Request("contacts.add", { { "id", Int(7) }, { "first_name", Text("") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("contacts.add", { { "id", Int(7) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("contacts.add", { { "id", Int(777000) }, { "first_name", Text("x") } }))) == "denied");
+	CHECK(fixture.data.actions == (std::vector<std::string>{
+		"pin 1 100 silent", "unpin 1 100", "pin 1 55",
+		"mute 1 3600", "mute 1 -1", "mute 1 0",
+		"archive 1 on", "archive 1 off", "pinchat 1 on", "pinchat 1 off",
+		"block 7", "unblock 7", "contact 7 Bob|Ross",
+	}));
+
+	auto limited = Fixture({ "chats.manage" });
+	auto limitedBroker = limited.make();
+	CHECK(Code(limitedBroker.call(Request("users.block", { { "id", Int(7) } }))) == "denied");
+	auto contacts = Fixture({ "contacts.manage" });
+	auto contactsBroker = contacts.make();
+	CHECK(Code(contactsBroker.call(Request("chats.pin", { { "chat", Int(1) } }))) == "denied");
+
+	auto composer = Fixture({ "composer.draft" });
+	auto composerBroker = composer.make();
+	CHECK(IsOk(composerBroker.call(Request("composer.insert", { { "chat", Int(1) }, { "text", Text("hi") } }))));
+	CHECK(Code(composerBroker.call(Request("composer.insert", { { "chat", Int(1) }, { "text", Text("") } }))) == "invalid");
+	CHECK(Code(composerBroker.call(Request("composer.insert", { { "chat", Int(777000) }, { "text", Text("x") } }))) == "denied");
+	CHECK(composer.data.actions == (std::vector<std::string>{ "insert 1 hi" }));
+}
+
+void TestBotButtons() {
+	auto fixture = Fixture({ "bots.inline", "messages.send" });
+	auto broker = fixture.make();
+	fixture.time = 5000;
+	const auto query = broker.call(Request("bots.inline_query", {
+		{ "bot", Text("inlinebot") }, { "query", Text("cats") }, { "chat", Int(1) },
+	}));
+	CHECK(IsOk(query));
+	CHECK(fixture.data.inlineQueries == (std::vector<std::string>{ "0/inlinebot/cats/1" }));
+	CHECK((*Payload(query).asArray())[0].find("query_id")->asInt() == 77);
+	CHECK(IsOk(broker.call(Request("bots.send_inline_result", {
+		{ "chat", Int(1) }, { "query_id", Int(77) }, { "id", Text("r1") },
+		{ "silent", cbor::Value::FromBool(true) }, { "reply_to", Int(100) },
+	}))));
+	CHECK(fixture.data.actions == (std::vector<std::string>{ "inline 1 77 r1 silent reply100" }));
+	for (const auto &bad : {
+		Request("bots.send_inline_result", { { "chat", Int(1) }, { "id", Text("r1") } }),
+		Request("bots.send_inline_result", { { "chat", Int(1) }, { "query_id", Int(77) } }),
+		Request("bots.send_inline_result", { { "chat", Int(1) }, { "query_id", Int(77) }, { "id", Text("") } }),
+		Request("bots.send_inline_result", { { "chat", Int(1) }, { "query_id", Int(77) }, { "id", Text("r") }, { "reply_to", Int(-1) } }),
+	}) {
+		CHECK(Code(broker.call(bad)) == "invalid");
+	}
+	CHECK(Code(broker.call(Request("bots.send_inline_result", { { "chat", Int(777000) }, { "query_id", Int(77) }, { "id", Text("r") } }))) == "denied");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("bots.inline_query", { { "bot", Text("inlinebot") }, { "query", Text("x") }, { "chat", Int(777000) } }))) == "denied");
+
+	fixture.time += 1500;
+	const auto pressed = broker.call(Request("bots.press_button", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "row", Int(0) }, { "column", Int(0) },
+	}));
+	CHECK(IsOk(pressed));
+	CHECK(*Payload(pressed).find("text")->asText() == "Pressed" && Payload(pressed).find("alert")->asBool() == true);
+	fixture.time += 1500;
+	const auto link = broker.call(Request("bots.press_button", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "row", Int(0) }, { "column", Int(1) },
+	}));
+	CHECK(IsOk(link) && *Payload(link).find("url")->asText() == "https://example.com/");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("bots.press_button", { { "chat", Int(1) }, { "id", Int(100) }, { "row", Int(3) }, { "column", Int(0) } }))) == "not_found");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("bots.press_button", { { "chat", Int(1) }, { "id", Int(100) }, { "row", Int(-1) }, { "column", Int(0) } }))) == "invalid");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("bots.press_button", { { "chat", Int(1) }, { "id", Int(0) }, { "row", Int(0) }, { "column", Int(0) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("bots.press_button", { { "chat", Int(1) }, { "id", Int(100) }, { "row", Int(0) }, { "column", Int(0) } }))) == "limit");
+
+	auto onlyInline = Fixture({ "bots.inline" });
+	auto onlyInlineBroker = onlyInline.make();
+	CHECK(Code(onlyInlineBroker.call(Request("bots.send_inline_result", { { "chat", Int(1) }, { "query_id", Int(77) }, { "id", Text("r1") } }))) == "denied");
+	auto onlySend = Fixture({ "messages.send" });
+	auto onlySendBroker = onlySend.make();
+	CHECK(Code(onlySendBroker.call(Request("bots.send_inline_result", { { "chat", Int(1) }, { "query_id", Int(77) }, { "id", Text("r1") } }))) == "denied");
+}
+
+void TestEntitiesInMessages() {
+	auto fixture = Fixture({ "messages.send", "messages.edit" });
+	auto broker = fixture.make();
+	const auto bold = cbor::Value::FromMap({ { "type", Text("bold") }, { "offset", Int(0) }, { "length", Int(2) } });
+	const auto mention = cbor::Value::FromMap({
+		{ "type", Text("mention_name") }, { "offset", Int(3) }, { "length", Int(3) }, { "id", Int(7) },
+	});
+	CHECK(IsOk(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("hi bob") },
+		{ "entities", cbor::Value::FromArray({ bold, mention }) },
+	}))));
+	CHECK(fixture.data.outgoing.size() == 1 && fixture.data.outgoing[0].entities.size() == 2);
+	if (fixture.data.outgoing.size() == 1 && fixture.data.outgoing[0].entities.size() == 2) {
+		CHECK(fixture.data.outgoing[0].entities[1].type == "mention_name" && fixture.data.outgoing[0].entities[1].id == 7);
+	}
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("x") }, { "format", Text("markdown") },
+		{ "entities", cbor::Value::FromArray({ bold }) },
+	}))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("x") },
+		{ "entities", cbor::Value::FromArray({ cbor::Value::FromMap({ { "type", Text("mention_name") }, { "offset", Int(0) }, { "length", Int(1) } }) }) },
+	}))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("see #tag") },
+		{ "entities", cbor::Value::FromArray({ cbor::Value::FromMap({ { "type", Text("hashtag") }, { "offset", Int(4) }, { "length", Int(4) } }) }) },
+	}))));
+	CHECK(IsOk(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("new") },
+		{ "entities", cbor::Value::FromArray({ bold }) },
+	}))));
+	CHECK(fixture.data.actions.size() == 1 && fixture.data.actions[0] == "edit 1 100 new e1");
+	CHECK(Code(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("new") }, { "format", Text("markdown") },
+		{ "entities", cbor::Value::FromArray({ bold }) },
+	}))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("new") }, { "entities", Text("bold") },
+	}))) == "invalid");
 }
 
 void TestPluginMessages() {
@@ -2164,6 +2383,10 @@ int main() {
 	TestHistoryFromUser();
 	TestInlineQuery();
 	TestOpenSettings();
+	TestMessageLookups();
+	TestChatManagement();
+	TestBotButtons();
+	TestEntitiesInMessages();
 	TestOutgoingEntities();
 	TestPluginMessages();
 	TestDataIsFilteredByTheBroker();
