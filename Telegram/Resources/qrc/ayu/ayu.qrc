@@ -9,7 +9,7 @@
         <file alias="art/ayu/chibi/app_icon.ico">../../art/ayu/chibi/app_icon.ico</file>
         <file alias="art/ayu/chibi2/app.png">../../art/ayu/chibi2/app.png</file>
         <file alias="art/ayu/chibi2/app_icon.ico">../../art/ayu/chibi2/app_icon.ico</file>
-        <file alias="art/ayu/default/app.svg">../../art/ayu/default/app.svg</file>
+        <file alias="art/ayu/default/app.png">../../art/ayu/default/app.png</file>
         <file alias="art/ayu/default/app_icon.ico">../../art/ayu/default/app_icon.ico</file>
         <file alias="art/ayu/discord/app.svg">../../art/ayu/discord/app.svg</file>
         <file alias="art/ayu/discord/app_icon.ico">../../art/ayu/discord/app_icon.ico</file>
@@ -19,8 +19,14 @@
         <file alias="art/ayu/extera2/app_icon.ico">../../art/ayu/extera2/app_icon.ico</file>
         <file alias="art/ayu/nothing/app.svg">../../art/ayu/nothing/app.svg</file>
         <file alias="art/ayu/nothing/app_icon.ico">../../art/ayu/nothing/app_icon.ico</file>
+        <file alias="art/ayu/plane/app.svg">../../art/ayu/plane/app.svg</file>
+        <file alias="art/ayu/plane/app_icon.ico">../../art/ayu/plane/app_icon.ico</file>
+        <file alias="art/ayu/segment/app.png">../../art/ayu/segment/app.png</file>
+        <file alias="art/ayu/segment/app_icon.ico">../../art/ayu/segment/app_icon.ico</file>
         <file alias="art/ayu/spotify/app.svg">../../art/ayu/spotify/app.svg</file>
         <file alias="art/ayu/spotify/app_icon.ico">../../art/ayu/spotify/app_icon.ico</file>
+        <file alias="art/ayu/wheelold/app.png">../../art/ayu/wheelold/app.png</file>
+        <file alias="art/ayu/wheelold/app_icon.ico">../../art/ayu/wheelold/app_icon.ico</file>
         <file alias="art/ayu/win95/app.png">../../art/ayu/win95/app.png</file>
         <file alias="art/ayu/win95/app_icon.ico">../../art/ayu/win95/app_icon.ico</file>
         <file alias="art/ayu/yaplus/app.svg">../../art/ayu/yaplus/app.svg</file>

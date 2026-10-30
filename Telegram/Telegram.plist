@@ -122,6 +122,33 @@
                 <key>CFBundleIconName</key>
                 <string>AppIcon-Extera2</string>
             </dict>
+            <key>AppIcon-Plane</key>
+            <dict>
+                <key>CFBundleIconFiles</key>
+                <array>
+                    <string>AppIcon-Plane</string>
+                </array>
+                <key>CFBundleIconName</key>
+                <string>AppIcon-Plane</string>
+            </dict>
+            <key>AppIcon-Wheelold</key>
+            <dict>
+                <key>CFBundleIconFiles</key>
+                <array>
+                    <string>AppIcon-Wheelold</string>
+                </array>
+                <key>CFBundleIconName</key>
+                <string>AppIcon-Wheelold</string>
+            </dict>
+            <key>AppIcon-Segment</key>
+            <dict>
+                <key>CFBundleIconFiles</key>
+                <array>
+                    <string>AppIcon-Segment</string>
+                </array>
+                <key>CFBundleIconName</key>
+                <string>AppIcon-Segment</string>
+            </dict>
         </dict>
     </dict>
 	<key>CFBundleIdentifier</key>
