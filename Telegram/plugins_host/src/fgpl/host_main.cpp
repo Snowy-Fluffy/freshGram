@@ -33,6 +33,10 @@
 extern char **environ;
 #endif // _WIN32
 
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif // __APPLE__
+
 namespace {
 
 using namespace fgpl;
@@ -466,12 +470,24 @@ int main(int argc, char **argv) {
 		Fatal(fd, restricted.error());
 	}
 #ifdef __APPLE__
-	// There is no parent-death signal here: leave when the app is gone.
-	std::thread([parent = getppid()] {
+	// RLIMIT_AS does nothing here and there is no parent-death signal, so the
+	// host keeps to its memory limit and leaves when the app is gone itself.
+	std::thread([parent = getppid(), limit = addressSpaceMb << 20] {
 		while (true) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(250));
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			if (getppid() != parent) {
 				std::_Exit(1);
+			}
+			auto info = task_vm_info_data_t();
+			auto count = mach_msg_type_number_t(TASK_VM_INFO_COUNT);
+			if (limit != 0
+				&& task_info(
+					mach_task_self(),
+					TASK_VM_INFO,
+					reinterpret_cast<task_info_t>(&info),
+					&count) == KERN_SUCCESS
+				&& info.phys_footprint > limit) {
+				std::_Exit(137);
 			}
 		}
 	}).detach();

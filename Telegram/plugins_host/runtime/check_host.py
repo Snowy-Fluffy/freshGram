@@ -10,7 +10,7 @@ import sys
 
 WINDOWS_ALLOWED = re.compile(
     r"^(kernel32|ntdll|advapi32|userenv|ws2_32|shell32|ole32|bcrypt|user32|"
-    r"crypt32|secur32|oleaut32|ucrtbase|api-ms-win-.*)\.dll$",
+    r"crypt32|secur32|oleaut32|ucrtbase|bcryptprimitives|api-ms-win-.*)\.dll$",
     re.IGNORECASE)
 MAC_ALLOWED = re.compile(r"^(/usr/lib/|/System/Library/)")
 
