@@ -370,6 +370,8 @@ struct Parsed {
 		const auto address = QHostAddress(QString::fromStdString(host));
 		if (address.isNull()) {
 			return Error("invalid", u"a bad address"_q);
+		} else if (!fgpl::net::IsPublicAddress(address.toString().toStdString())) {
+			return Error("blocked", u"the address is not public"_q);
 		}
 		return address;
 	}

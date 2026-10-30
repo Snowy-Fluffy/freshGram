@@ -113,6 +113,7 @@ void TestUrlParsing() {
 		"https://exa mple.com/", "https://exa\tmple.com/",
 		"https://-.com/..", "https://a..b/", "https://.a/",
 		"https://\xC3\xA9xample.com/",
+		"https://012.0.0.1/", "https://172.032.0.1:22/", "https://8.08.8.8/",
 	}) {
 		if (net::ParseUrl(bad).ok()) {
 			std::fprintf(stderr, "accepted: %s\n", bad);
@@ -166,6 +167,7 @@ void TestPublicAddresses() {
 		"2001:0000:4136:e378:8000:63bf:f5ff:fffe",
 		"not an address", "", "1.2.3", "1.2.3.4.5", "256.1.1.1", "1::2::3",
 		"12345::1", "1:2:3:4:5:6:7:8:9", "::ffff:1.2.3",
+		"012.0.0.1", "172.032.0.1", "8.08.8.8", "00.0.0.0", "::ffff:010.0.0.1",
 	}) {
 		if (net::IsPublicAddress(bad)) {
 			std::fprintf(stderr, "should not be public: %s\n", bad);
@@ -1493,6 +1495,10 @@ void TestRateLimits() {
 	};
 	CHECK(Code(dialog()) != "limit");
 	CHECK(Code(broker.call(Request("ui.dialog.close"))) != "limit");
+	CHECK(Code(dialog()) == "limit");
+	broker.noteUserAction("toast.close");
+	broker.noteUserAction("dialog.close");
+	broker.noteUserAction("window.close", "w");
 	CHECK(Code(dialog()) == "limit");
 	broker.noteUserAction("menu.click");
 	CHECK(Code(dialog()) != "limit");
