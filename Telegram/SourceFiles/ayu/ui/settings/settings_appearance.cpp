@@ -418,6 +418,13 @@ void BuildDrawerElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.icon = { &st::menuIconSavedMessages },
 	});
 	ayu.addSettingToggle({
+		.id = u"ayu/showPluginsInDrawer"_q,
+		.title = tr::fresh_Plugins(),
+		.getter = &AyuSettings::showPluginsInDrawer,
+		.setter = &AyuSettings::setShowPluginsInDrawer,
+		.icon = { &st::menuIconCustomize },
+	});
+	ayu.addSettingToggle({
 		.id = u"ayu/showLReadToggleInDrawer"_q,
 		.title = tr::ayu_LReadMessages(),
 		.getter = &AyuSettings::showLReadToggleInDrawer,

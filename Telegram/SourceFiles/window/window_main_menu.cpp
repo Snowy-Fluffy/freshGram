@@ -90,6 +90,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_ayu_icons.h"
 #include "lang_auto.h"
 #include "ayu/ui/settings/settings_main.h"
+#include "ayu/ui/settings/settings_plugins.h"
 #include "styles/style_info.h"
 
 
@@ -779,6 +780,14 @@ void MainMenu::setupMenu() {
 			{ &st::menuIconSavedMessages }
 		)->setClickedCallback([=] {
 			controller->showPeerHistory(controller->session().user());
+		});
+
+		if (settings.showPluginsInDrawer())
+		addAction(
+			tr::fresh_Plugins(),
+			{ &st::menuIconCustomize }
+		)->setClickedCallback([=] {
+			controller->showSettings(Settings::FreshPluginsSection::Id());
 		});
 
 		FreshPlugins::AddMainMenuItems(_menu, controller);
