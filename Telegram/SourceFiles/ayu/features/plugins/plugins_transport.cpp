@@ -285,40 +285,6 @@ struct Parsed {
 	return result;
 }
 
-[[nodiscard]] bool DecodeChunked(
-		const std::string &raw,
-		size_t maxBytes,
-		std::string &out,
-		bool &complete) {
-	auto at = size_t(0);
-	complete = false;
-	out.clear();
-	while (true) {
-		const auto eol = raw.find("\r\n", at);
-		if (eol == std::string::npos) {
-			return true;
-		}
-		char *tail = nullptr;
-		const auto size = std::strtoull(raw.c_str() + at, &tail, 16);
-		if (tail == raw.c_str() + at) {
-			return false;
-		}
-		at = eol + 2;
-		if (size == 0) {
-			complete = true;
-			return true;
-		}
-		if (out.size() + size > maxBytes) {
-			return false;
-		}
-		if (raw.size() < at + size + 2) {
-			return true;
-		}
-		out.append(raw, at, size);
-		at += size + 2;
-	}
-}
-
 [[nodiscard]] int Remaining(const QDeadlineTimer &deadline) {
 	return int(std::max<qint64>(1, deadline.remainingTime()));
 }
@@ -1420,10 +1386,13 @@ private:
 		auto raw = std::string();
 		auto parsed = std::optional<Parsed>();
 		auto payload = std::string();
+		auto chunkedAt = size_t(0);
 		auto done = false;
 		while (!done) {
 			if (entry.killed.load()) {
 				return Error("closed", u"the connection was closed by the user"_q);
+			} else if (deadline.hasExpired()) {
+				return Error("timeout", u"the request timed out"_q);
 			}
 			if (!socket.bytesAvailable()
 				&& socket.state() == QAbstractSocket::ConnectedState
@@ -1452,7 +1421,13 @@ private:
 				const auto available = raw.size() - parsed->consumed;
 				if (parsed->chunked) {
 					auto complete = false;
-					if (!DecodeChunked(raw.substr(parsed->consumed), maxBytes, payload, complete)) {
+					if (available > maxBytes + maxBytes / 4 + kMaxHeaderBytes) {
+						return Error("limit", u"the response is too large"_q);
+					}
+					if (!chunkedAt) {
+						chunkedAt = parsed->consumed;
+					}
+					if (!fgpl::net::DecodeChunked(raw, chunkedAt, maxBytes, payload, complete)) {
 						return Error("response", u"a malformed or too large body"_q);
 					}
 					done = complete;
