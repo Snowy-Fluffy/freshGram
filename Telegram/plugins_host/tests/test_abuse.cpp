@@ -1,9 +1,11 @@
 #include "check.h"
 #include "fgpl/host_client.h"
+#include "fgpl/ipc.h"
 #include "python_support.h"
 #include "wat_module.h"
 
 #include <signal.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -313,7 +315,34 @@ void TestPythonAttacks() {
 
 } // namespace
 
+void TestFrameReadFollowsTheData() {
+	int fds[2];
+	CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+	const auto limits = ipc::StrictLimits();
+	const auto header = std::string("\x10\x00\x00\x00", 4);
+	CHECK(write(fds[1], header.data(), header.size()) == 4);
+	const auto lie = ipc::ReadFrame(fds[0], limits, ipc::kMaxFrameBytes, 100);
+	CHECK(!lie.ok() && lie.error() == ipc::IoError::Timeout);
+	close(fds[0]);
+	close(fds[1]);
+
+	CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+	auto big = std::string(size_t(3) << 19, 'x');
+	auto writer = std::thread([&] {
+		const auto sent = ipc::WriteFrame(fds[1], cbor::Value::FromMap({
+			{ "t", cbor::Value::FromText(big) },
+		}));
+		CHECK(sent.ok());
+	});
+	const auto frame = ipc::ReadFrame(fds[0], limits, ipc::kMaxFrameBytes, 5000);
+	writer.join();
+	CHECK(frame.ok() && frame.value().find("t")->asText()->size() == big.size());
+	close(fds[0]);
+	close(fds[1]);
+}
+
 int main() {
+	TestFrameReadFollowsTheData();
 	TestGuestCallSpamIsCapped();
 	TestGuestLogSpamIsContained();
 	TestMemoryBombInsideTheGuest();
