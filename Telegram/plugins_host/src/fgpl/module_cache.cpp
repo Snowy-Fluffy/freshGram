@@ -142,7 +142,7 @@ bool ModuleCache::store(
 			return false;
 		}
 	}
-	if (!os::ReplaceFile(temporary, target, error)) {
+	if (!os::ReplaceFileAtomic(temporary, target, error)) {
 		std::filesystem::remove(temporary, error);
 		return false;
 	}

@@ -173,7 +173,7 @@ bool FileStorage::flush() {
 				error);
 		}
 	}
-	if (!os::ReplaceFile(temporary, _file, error)) {
+	if (!os::ReplaceFileAtomic(temporary, _file, error)) {
 		std::filesystem::remove(temporary, error);
 		return false;
 	}

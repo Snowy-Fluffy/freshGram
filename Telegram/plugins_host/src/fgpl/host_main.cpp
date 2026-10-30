@@ -242,6 +242,8 @@ constexpr auto kSelftestFile = "/etc/passwd";
 			return false;
 		}
 		std::memset(block, 1, size_t(64) << 20);
+		// A host that is watched from outside needs time to be caught.
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 	return true;
 }
