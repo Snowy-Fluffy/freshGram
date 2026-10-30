@@ -255,6 +255,10 @@ int PackRuntime(const fs::path &directory, const std::string &output) {
 		std::fprintf(stderr, "cannot write %s\n", output.c_str());
 		return 1;
 	}
+	// The Windows bundle is packed here too, so the host is told by its name.
+	const auto hostName = std::any_of(files.begin(), files.end(), [](const auto &file) {
+		return file.first == "fgpl_plugin_host.exe";
+	}) ? "fgpl_plugin_host.exe" : "fgpl_plugin_host";
 	const auto hashOf = [&](const char *name) {
 		for (const auto &[path, content] : files) {
 			if (path == name) {
@@ -268,7 +272,7 @@ int PackRuntime(const fs::path &directory, const std::string &output) {
 		output.c_str(),
 		HashText(archive).c_str(),
 		archive.size(),
-		hashOf("fgpl_plugin_host").c_str(),
+		hashOf(hostName).c_str(),
 		hashOf("python/python.wasm").c_str());
 	return 0;
 }

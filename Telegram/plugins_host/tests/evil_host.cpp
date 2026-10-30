@@ -65,6 +65,10 @@ void Forever() {
 cbor::Value Hello(bool landlock = true, bool seccomp = true, bool rlimits = true) {
 	return proto::Map({
 		{ "t", proto::Text("hello") },
+		{ "fs", proto::Bool(landlock) },
+		{ "proc", proto::Bool(seccomp) },
+		{ "limits", proto::Bool(rlimits) },
+		{ "platform", proto::Text("linux") },
 		{ "landlock_abi", proto::Int(landlock ? 6 : 0) },
 		{ "landlock", proto::Bool(landlock) },
 		{ "seccomp", proto::Bool(seccomp) },

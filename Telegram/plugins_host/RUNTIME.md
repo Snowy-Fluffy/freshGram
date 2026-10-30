@@ -29,11 +29,53 @@ exist yet: one `runtime-linux-<arch>.zip` per architecture and one `runtime.unsi
 with `POST_ID_X86_64` and `POST_ID_AARCH64` in place of the post ids. The script prints the
 remaining steps.
 
+## Windows and macOS
+
+The platforms are `windows-x86_64`, `windows-arm64`, `macos-x86_64` and `macos-arm64`, next to
+`linux-x86_64` and `linux-aarch64`. `python/` and `sdk/` are the same bytes everywhere; only the
+host differs, and it is built on the platform itself by the `Build plugin host` workflow, which
+also runs the tests there. Its artifacts `fgpl_plugin_host-<platform>` are the input of
+`runtime/add_platform.py`:
+
+```
+runtime/build_bundle.sh <revision>
+runtime/add_platform.py ~/freshgram-runtime/rev-<revision> windows-x86_64 fgpl_plugin_host.exe build-bundle/fgpl_tool
+```
+
+It takes `python/` and `sdk/` from the Linux bundle of that directory, packs the new zip and appends
+its entry to `runtime.unsigned.json`; post the zip and replace `POST_ID_<PLATFORM>` like for Linux.
+All platforms share one index and one `revision`, so a new platform means a new revision.
+
+The Wasmtime archives for every host are pinned with their SHA-256 in `runtime/wasmtime_pins.txt`;
+`runtime/fetch_wasmtime.py <arch>-<os>` downloads one and checks it.
+
+How the host is confined, the requirement being the same everywhere: it refuses to run unless the
+filesystem, processes and resource limits are all restricted.
+
+- Linux: Landlock, seccomp and rlimits, applied by the host to itself.
+- Windows: the app starts it in an AppContainer without capabilities (no files, registry or network
+  except the pipe it inherits), inside a Job Object that kills it with the app and limits memory,
+  CPU time and the process count, with a handful of process mitigations on top (JIT stays allowed,
+  Wasmtime needs it). The AppContainer is given read access to the host file only.
+- macOS: the host applies a deny-default Seatbelt profile to itself and rlimits; `RLIMIT_AS` does
+  nothing there, so the app watches the resident size and stops a host that grows past the limit.
+
+Integrity of the started file: Linux copies the verified bytes into a sealed memfd, Windows keeps
+the file open without write sharing, macOS runs a verified copy from a private directory. The macOS
+one leaves a race against a process of the same user, which can edit the profile anyway.
+
+The macOS host must be signed before it is hashed into the index (Apple Silicon starts nothing
+unsigned), the workflow signs it ad-hoc with `runtime/host.entitlements` (JIT). A Windows host that
+was signed with a certificate is hashed as signed too. Dependencies are checked by
+`runtime/check_host.py`: the sandbox cannot load a library from anywhere but the system.
+
+Not available: Mac App Store and Microsoft Store builds, which cannot start a downloaded program.
+
 ## Bundle
 
 A zip with exactly these top-level entries:
 
-- `fgpl_plugin_host`, the host binary linked with Wasmtime;
+- `fgpl_plugin_host` (`fgpl_plugin_host.exe` on Windows), the host binary linked with Wasmtime;
 - `python/python.wasm` and `python/lib/...`, CPython for WASI and its standard library;
 - `sdk/freshgram/...`, the Python SDK from `plugins_sdk/python`.
 

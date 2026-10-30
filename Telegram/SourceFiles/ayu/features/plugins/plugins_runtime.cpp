@@ -47,10 +47,17 @@ namespace FreshPlugins {
 
 namespace {
 
-#if defined Q_PROCESSOR_ARM_64
-constexpr auto kPlatform = "linux-aarch64";
+#if defined Q_OS_WIN
+#define FRESH_RUNTIME_OS "windows"
+#elif defined Q_OS_MAC
+#define FRESH_RUNTIME_OS "macos"
 #else
-constexpr auto kPlatform = "linux-x86_64";
+#define FRESH_RUNTIME_OS "linux"
+#endif
+#if defined Q_PROCESSOR_ARM_64
+constexpr auto kPlatform = FRESH_RUNTIME_OS "-aarch64";
+#else
+constexpr auto kPlatform = FRESH_RUNTIME_OS "-x86_64";
 #endif
 constexpr auto kMaxIndexBytes = qint64(256) << 10;
 constexpr auto kFirstUpdateCheck = crl::time(60) * 1000;
@@ -75,7 +82,7 @@ struct State {
 }
 
 [[nodiscard]] std::filesystem::path Root() {
-	return RuntimeRootPath().toStdString();
+	return PathOf(RuntimeRootPath());
 }
 
 [[nodiscard]] QString ChannelName() {

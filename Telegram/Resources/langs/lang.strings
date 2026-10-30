@@ -8874,7 +8874,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsEnable" = "Enable plugins";
 "fresh_PluginsDescription" = "Plugins run in a separate sandboxed process and can use only what you allow them.";
 "fresh_PluginsNoRuntime" = "The plugin components are not installed yet.";
-"fresh_PluginsNoSandbox" = "Plugins need Landlock to run in their sandbox, and this system does not provide it. Use Linux 5.13 or newer with Landlock enabled.";
+"fresh_PluginsNoSandbox" = "Plugins need the sandbox of the operating system to run, and this system does not provide it. On Linux use version 5.13 or newer with Landlock enabled, on Windows use version 10 or newer, on macOS use version 10.15 or newer.";
 "fresh_PluginPermissionsAllAccounts" = "The permissions and data of a plugin are shared by all your accounts.";
 "fresh_PluginAcceptsFrom" = "Accepts messages from: {list}";
 "fresh_PluginAcceptsAny" = "any plugin";

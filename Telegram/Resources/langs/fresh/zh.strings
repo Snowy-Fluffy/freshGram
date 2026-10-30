@@ -88,7 +88,7 @@
 "fresh_PluginsEnable" = "启用插件";
 "fresh_PluginsDescription" = "插件在独立的沙盒进程中运行，只能使用你授予的权限。";
 "fresh_PluginsNoRuntime" = "插件组件尚未安装。";
-"fresh_PluginsNoSandbox" = "插件需要 Landlock 才能在沙盒中运行，而此系统不提供。请使用启用了 Landlock 的 Linux 5.13 或更高版本。";
+"fresh_PluginsNoSandbox" = "插件需要操作系统的沙盒才能运行，而此系统不提供。Linux 请使用启用了 Landlock 的 5.13 或更高版本，Windows 请使用 10 或更高版本，macOS 请使用 10.15 或更高版本。";
 "fresh_PluginPermissionsAllAccounts" = "插件的权限和数据在你的所有账号间共享。";
 "fresh_PluginAcceptsFrom" = "接受以下插件的消息：{list}";
 "fresh_PluginAcceptsAny" = "任意插件";

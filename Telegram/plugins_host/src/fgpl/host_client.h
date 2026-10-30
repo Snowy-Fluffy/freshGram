@@ -2,6 +2,7 @@
 
 #include "fgpl/cbor.h"
 #include "fgpl/ipc.h"
+#include "fgpl/os.h"
 #include "fgpl/result.h"
 #include "fgpl/runtime.h"
 
@@ -34,7 +35,7 @@ struct ClientFailure {
 
 struct HostConfig {
 	std::string path;
-	int executableFd = -1;
+	os::Handle executableFd = os::kNoHandle;
 	bool unsandboxedTestHost = false;
 	std::string selftest;
 	std::vector<std::string> extraArguments;
@@ -48,6 +49,11 @@ struct HostConfig {
 };
 
 struct SandboxInfo {
+	bool filesystem = false;
+	bool processes = false;
+	bool limits = false;
+	std::string platform;
+
 	int landlockAbi = 0;
 	bool landlock = false;
 	bool seccomp = false;
@@ -64,9 +70,11 @@ struct LoadRequest {
 	std::vector<std::string> env;
 };
 
-[[nodiscard]] Result<int, std::string> SealExecutable(
-	const std::string &path,
-	const std::string &hash);
+[[nodiscard]] inline Result<os::Handle, std::string> SealExecutable(
+		const std::string &path,
+		const std::string &hash) {
+	return os::SealExecutable(path, hash);
+}
 
 class HostClient {
 public:
@@ -116,15 +124,18 @@ private:
 		const cbor::Value &value,
 		Bridge &bridge);
 	[[nodiscard]] ClientFailure died(const std::string &context);
-	int reap(int pid, int &status, int flags);
+	// 1 when the host was reaped now, 0 while it still runs, -1 when it is gone.
+	int reap(bool block, os::ExitInfo &info);
 	[[nodiscard]] ClientFailure fail(
 		ipc::IoError error,
 		const std::string &context);
 
-	int _fd = -1;
+	os::Handle _fd = os::kNoHandle;
+	std::unique_ptr<os::Child> _child;
 	std::atomic<int> _pid{ -1 };
 	std::mutex _reap;
 	int _timeoutMs = 500;
+	uint64_t _rssLimit = 0;
 	int _startMs = 10000;
 	int _hostCallMs = 60000;
 	bool _fresh = false;

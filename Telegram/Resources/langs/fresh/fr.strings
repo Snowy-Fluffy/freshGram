@@ -88,7 +88,7 @@
 "fresh_PluginsEnable" = "Activer les plugins";
 "fresh_PluginsDescription" = "Les plugins s'exécutent dans un processus isolé et ne peuvent utiliser que ce que vous leur autorisez.";
 "fresh_PluginsNoRuntime" = "Les composants des plugins ne sont pas encore installés.";
-"fresh_PluginsNoSandbox" = "Les plugins ont besoin de Landlock pour fonctionner dans leur bac à sable, et ce système ne le fournit pas. Utilisez Linux 5.13 ou plus récent avec Landlock activé.";
+"fresh_PluginsNoSandbox" = "Les plugins ont besoin du bac à sable du système d'exploitation, et ce système ne le fournit pas. Sous Linux, utilisez la version 5.13 ou plus récente avec Landlock activé, sous Windows la version 10 ou plus récente, sous macOS la version 10.15 ou plus récente.";
 "fresh_PluginPermissionsAllAccounts" = "Les autorisations et les données d’un plugin sont communes à tous vos comptes.";
 "fresh_PluginAcceptsFrom" = "Accepte les messages de : {list}";
 "fresh_PluginAcceptsAny" = "n’importe quel plugin";

@@ -88,7 +88,7 @@
 "fresh_PluginsEnable" = "Plugins aktivieren";
 "fresh_PluginsDescription" = "Plugins laufen in einem separaten, isolierten Prozess und können nur nutzen, was du ihnen erlaubst.";
 "fresh_PluginsNoRuntime" = "Die Plugin-Komponenten sind noch nicht installiert.";
-"fresh_PluginsNoSandbox" = "Plugins brauchen Landlock, um in ihrer Sandbox zu laufen, und dieses System bietet es nicht. Nutze Linux 5.13 oder neuer mit aktiviertem Landlock.";
+"fresh_PluginsNoSandbox" = "Plugins brauchen die Sandbox des Betriebssystems, und dieses System bietet sie nicht. Nutze unter Linux Version 5.13 oder neuer mit aktiviertem Landlock, unter Windows Version 10 oder neuer, unter macOS Version 10.15 oder neuer.";
 "fresh_PluginPermissionsAllAccounts" = "Berechtigungen und Daten eines Plugins gelten für alle deine Konten.";
 "fresh_PluginAcceptsFrom" = "Nimmt Nachrichten an von: {list}";
 "fresh_PluginAcceptsAny" = "jedem Plugin";

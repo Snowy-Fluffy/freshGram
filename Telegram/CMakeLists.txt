@@ -162,6 +162,8 @@ set(ayugram_files
         ayu/features/plugins/plugins_log_view.h
         ayu/features/plugins/plugins_runtime.cpp
         ayu/features/plugins/plugins_runtime.h
+        ayu/features/plugins/plugins_socket.cpp
+        ayu/features/plugins/plugins_socket.h
         ayu/features/plugins/plugins_transport.cpp
         ayu/features/plugins/plugins_ui.cpp
         ayu/features/plugins/plugins_ui.h

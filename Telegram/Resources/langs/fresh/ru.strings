@@ -88,7 +88,7 @@
 "fresh_PluginsEnable" = "Включить плагины";
 "fresh_PluginsDescription" = "Плагины работают в отдельном изолированном процессе и могут использовать только то, что вы им разрешили.";
 "fresh_PluginsNoRuntime" = "Компоненты для плагинов ещё не установлены.";
-"fresh_PluginsNoSandbox" = "Плагинам для работы в песочнице нужен Landlock, а в этой системе его нет. Нужен Linux 5.13 или новее с включённым Landlock.";
+"fresh_PluginsNoSandbox" = "Плагинам для работы нужна песочница операционной системы, а в этой системе её нет. В Linux нужна версия 5.13 или новее с включённым Landlock, в Windows — версия 10 или новее, в macOS — версия 10.15 или новее.";
 "fresh_PluginPermissionsAllAccounts" = "Права и данные плагина общие для всех ваших аккаунтов.";
 "fresh_PluginAcceptsFrom" = "Принимает сообщения от: {list}";
 "fresh_PluginAcceptsAny" = "любого плагина";

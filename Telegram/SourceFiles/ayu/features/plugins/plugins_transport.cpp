@@ -1,6 +1,8 @@
 // This is the source code of freshGram.
 #include "ayu/features/plugins/plugins_transport.h"
 
+#include "ayu/features/plugins/plugins_socket.h"
+
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/broker.h"
 #include "fgpl/net_policy.h"
@@ -26,14 +28,6 @@
 #include <memory>
 #include <mutex>
 
-#ifdef FRESHGRAM_PLUGINS
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
 
 namespace FreshPlugins {
 
@@ -375,57 +369,31 @@ struct Parsed {
 		int port,
 		const Connection &entry,
 		const QDeadlineTimer &deadline) {
-	auto storage = sockaddr_storage();
-	auto length = socklen_t(0);
-	auto valid = false;
-	if (const auto v4 = address.toIPv4Address(&valid); valid) {
-		auto &in = reinterpret_cast<sockaddr_in&>(storage);
-		in.sin_family = AF_INET;
-		in.sin_port = htons(quint16(port));
-		in.sin_addr.s_addr = htonl(v4);
-		length = sizeof(sockaddr_in);
-	} else if (address.protocol() == QAbstractSocket::IPv6Protocol) {
-		auto &in6 = reinterpret_cast<sockaddr_in6&>(storage);
-		in6.sin6_family = AF_INET6;
-		in6.sin6_port = htons(quint16(port));
-		const auto raw = address.toIPv6Address();
-		std::memcpy(&in6.sin6_addr, &raw, sizeof(raw));
-		length = sizeof(sockaddr_in6);
-	} else {
+	const auto started = Sock::BeginConnect(address, port);
+	if (started.badAddress) {
 		return Error("invalid", u"a bad address"_q);
+	} else if (started.fd == Sock::kInvalid) {
+		return Error("connect", Sock::ErrorText(started.error));
 	}
-	const auto fd = ::socket(storage.ss_family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-	if (fd < 0) {
-		return Error("connect", QString::fromLocal8Bit(std::strerror(errno)));
-	}
+	const auto fd = started.fd;
 	const auto fail = [&](fgpl::FetchError error) {
-		::close(fd);
+		Sock::Close(fd);
 		return error;
 	};
-	if (::connect(fd, reinterpret_cast<const sockaddr*>(&storage), length) != 0
-		&& errno != EINPROGRESS) {
-		return fail(Error("connect", QString::fromLocal8Bit(std::strerror(errno))));
-	}
 	while (true) {
 		if (entry.killed.load()) {
 			return fail(Aborted());
 		} else if (deadline.hasExpired()) {
 			return fail(Error("connect", u"the connection timed out"_q));
 		}
-		auto item = pollfd{ fd, POLLOUT, 0 };
-		const auto ready = ::poll(&item, 1, Slice(deadline));
-		if (ready < 0 && errno != EINTR) {
-			return fail(Error("connect", QString::fromLocal8Bit(std::strerror(errno))));
-		} else if (ready <= 0) {
+		const auto ready = Sock::Wait(fd, true, Slice(deadline));
+		if (ready < 0) {
+			return fail(Error("connect", Sock::ErrorText(Sock::LastError())));
+		} else if (ready == 0) {
 			continue;
 		}
-		auto error = 0;
-		auto size = socklen_t(sizeof(error));
-		if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &size) != 0) {
-			error = errno;
-		}
-		if (error) {
-			return fail(Error("connect", QString::fromLocal8Bit(std::strerror(error))));
+		if (const auto error = Sock::PendingError(fd)) {
+			return fail(Error("connect", Sock::ErrorText(error)));
 		}
 		return qintptr(fd);
 	}
@@ -436,7 +404,7 @@ struct Parsed {
 		qintptr descriptor) {
 	socket.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
 	if (!socket.setSocketDescriptor(descriptor, QAbstractSocket::ConnectedState)) {
-		::close(int(descriptor));
+		Sock::Close(descriptor);
 		return Error("connect", socket.errorString());
 	}
 	return std::nullopt;
@@ -447,7 +415,7 @@ struct Parsed {
 }
 
 [[nodiscard]] std::optional<fgpl::FetchError> SendAll(
-		int fd,
+		Sock::Fd fd,
 		const QByteArray &data,
 		const Connection &entry,
 		const QDeadlineTimer &deadline) {
@@ -458,23 +426,20 @@ struct Parsed {
 		} else if (deadline.hasExpired()) {
 			return ProxyError(u"the handshake timed out"_q);
 		}
-		auto item = pollfd{ fd, POLLOUT, 0 };
-		const auto ready = ::poll(&item, 1, Slice(deadline));
-		if (ready < 0 && errno != EINTR) {
-			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
-		} else if (ready <= 0) {
+		const auto ready = Sock::Wait(fd, true, Slice(deadline));
+		if (ready < 0) {
+			return ProxyError(Sock::ErrorText(Sock::LastError()));
+		} else if (ready == 0) {
 			continue;
 		}
-		const auto written = ::send(
+		const auto written = Sock::Send(
 			fd,
 			data.constData() + sent,
-			size_t(data.size() - sent),
-			MSG_NOSIGNAL);
-		if (written < 0) {
-			if (errno == EAGAIN || errno == EINTR) {
-				continue;
-			}
-			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
+			size_t(data.size() - sent));
+		if (written == Sock::kWouldBlock) {
+			continue;
+		} else if (written < 0) {
+			return ProxyError(Sock::ErrorText(Sock::LastError()));
 		}
 		sent += qsizetype(written);
 	}
@@ -482,7 +447,7 @@ struct Parsed {
 }
 
 [[nodiscard]] std::optional<fgpl::FetchError> RecvExact(
-		int fd,
+		Sock::Fd fd,
 		char *out,
 		size_t size,
 		const Connection &entry,
@@ -494,21 +459,19 @@ struct Parsed {
 		} else if (deadline.hasExpired()) {
 			return ProxyError(u"the handshake timed out"_q);
 		}
-		auto item = pollfd{ fd, POLLIN, 0 };
-		const auto ready = ::poll(&item, 1, Slice(deadline));
-		if (ready < 0 && errno != EINTR) {
-			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
-		} else if (ready <= 0) {
+		const auto ready = Sock::Wait(fd, false, Slice(deadline));
+		if (ready < 0) {
+			return ProxyError(Sock::ErrorText(Sock::LastError()));
+		} else if (ready == 0) {
 			continue;
 		}
-		const auto read = ::recv(fd, out + got, size - got, 0);
+		const auto read = Sock::Recv(fd, out + got, size - got);
 		if (read == 0) {
 			return ProxyError(u"the connection was closed"_q);
+		} else if (read == Sock::kWouldBlock) {
+			continue;
 		} else if (read < 0) {
-			if (errno == EAGAIN || errno == EINTR) {
-				continue;
-			}
-			return ProxyError(QString::fromLocal8Bit(std::strerror(errno)));
+			return ProxyError(Sock::ErrorText(Sock::LastError()));
 		}
 		got += size_t(read);
 	}
@@ -516,7 +479,7 @@ struct Parsed {
 }
 
 [[nodiscard]] std::optional<fgpl::FetchError> Socks5Negotiate(
-		int fd,
+		Sock::Fd fd,
 		const NetworkProxy &proxy,
 		const Connection &entry,
 		const QDeadlineTimer &deadline) {
@@ -610,7 +573,7 @@ struct Parsed {
 }
 
 [[nodiscard]] std::optional<fgpl::FetchError> Socks5Reply(
-		int fd,
+		Sock::Fd fd,
 		QHostAddress &bound,
 		int &boundPort,
 		const Connection &entry,
@@ -669,7 +632,7 @@ struct Parsed {
 }
 
 [[nodiscard]] std::optional<fgpl::FetchError> HttpConnect(
-		int fd,
+		Sock::Fd fd,
 		const NetworkProxy &proxy,
 		const std::string &host,
 		bool ip,
@@ -755,10 +718,10 @@ struct ProxySocket {
 	if (!opened.ok()) {
 		return opened.error();
 	}
-	const auto fd = int(opened.value().descriptor);
+	const auto fd = Sock::Fd(opened.value().descriptor);
 	entry.address = opened.value().address;
 	const auto fail = [&](fgpl::FetchError error) {
-		::close(fd);
+		Sock::Close(fd);
 		return error;
 	};
 	if (proxy.type == NetworkProxy::Type::Http) {
@@ -820,9 +783,9 @@ struct UdpRelay {
 	if (!opened.ok()) {
 		return opened.error();
 	}
-	const auto fd = int(opened.value().descriptor);
+	const auto fd = Sock::Fd(opened.value().descriptor);
 	const auto fail = [&](fgpl::FetchError error) {
-		::close(fd);
+		Sock::Close(fd);
 		return error;
 	};
 	if (const auto error = Socks5Negotiate(fd, proxy, entry, deadline)) {
