@@ -148,6 +148,8 @@ Result<Package, std::string> PluginManager::openInstalled(
 		return opened.error().details.empty()
 			? std::string("the package is damaged")
 			: opened.error().details.front();
+	} else if (opened.value().manifest.id != id) {
+		return std::string("the package belongs to another plugin");
 	}
 	return std::move(opened.value());
 }
