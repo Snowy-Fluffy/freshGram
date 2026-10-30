@@ -2,8 +2,10 @@
 
 #include "fgpl/cbor.h"
 #include "fgpl/runtime.h"
+#include "fgpl/text_entity.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -19,7 +21,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(4);
+constexpr auto kVersion = int64_t(5);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -202,6 +204,7 @@ struct OutgoingMessage {
 struct OutgoingEdit {
 	std::optional<std::string> text;
 	bool markdown = false;
+	std::optional<std::vector<TextEntity>> entities;
 	std::optional<bool> silent;
 	std::optional<int64_t> schedule;
 	std::optional<int64_t> replyTo;
@@ -245,6 +248,13 @@ struct OutgoingMediaEdit {
 	bool spoiler = false;
 };
 
+struct InlineResult {
+	std::string id;
+	std::string title;
+	std::string description;
+	std::string text;
+};
+
 struct UserInfo {
 	int64_t id = 0;
 	std::string name;
@@ -286,12 +296,17 @@ public:
 		int64_t chat,
 		size_t limit,
 		int64_t before,
-		int64_t topic) = 0;
+		int64_t topic,
+		int64_t fromUser) = 0;
 	// True once after a call that could not get an answer from the app in time.
 	[[nodiscard]] virtual bool takeTimedOut() {
 		return false;
 	}
 	[[nodiscard]] virtual Account account() = 0;
+	[[nodiscard]] virtual int64_t serverTime() {
+		return int64_t(std::chrono::duration_cast<std::chrono::seconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count());
+	}
 	[[nodiscard]] virtual int64_t stars() = 0;
 	[[nodiscard]] virtual std::string draft(int64_t chat) = 0;
 	virtual bool setDraft(int64_t chat, const std::string &text) = 0;
@@ -470,6 +485,16 @@ public:
 	[[nodiscard]] virtual Result<UserInfo, std::string> resolveUser(
 			const std::string &username) {
 		(void)username;
+		return std::string(api::error::kUnavailable);
+	}
+	// The bot is a positive id, or a normalized username when the id is 0.
+	[[nodiscard]] virtual Result<std::vector<InlineResult>, std::string> inlineQuery(
+			int64_t bot,
+			const std::string &username,
+			const std::string &query) {
+		(void)bot;
+		(void)username;
+		(void)query;
 		return std::string(api::error::kUnavailable);
 	}
 	[[nodiscard]] virtual Result<Media, std::string> peerPhoto(
@@ -740,6 +765,7 @@ private:
 	int64_t _lastToast = 0;
 	int64_t _lastNotify = 0;
 	int64_t _lastResolve = 0;
+	int64_t _lastInline = 0;
 	std::map<int64_t, int64_t> _lastChatAction;
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;

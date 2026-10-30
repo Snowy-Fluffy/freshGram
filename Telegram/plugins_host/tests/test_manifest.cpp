@@ -366,8 +366,8 @@ void TestCompatibility() {
 	CHECK(issues.size() == 1 && issues[0].problem == Problem::PremiumRequired);
 
 	manifest.appRange = *VersionRange::Parse(">=9.0.0");
-	manifest.apiMin = 5;
-	manifest.apiMax = 5;
+	manifest.apiMin = 6;
+	manifest.apiMax = 6;
 	CHECK(CheckCompatibility(manifest, environment()).size() == 3);
 }
 

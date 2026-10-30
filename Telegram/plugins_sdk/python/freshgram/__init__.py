@@ -14,7 +14,7 @@ from . import _channel
 from . import _cbor
 from . import _errors
 
-API_VERSION = 4
+API_VERSION = 5
 
 _output = _channel._output
 call = _channel.raw_call
@@ -47,6 +47,11 @@ def _async_call(operation, then=None, **arguments):
 def info():
     """The API version, the plugin id and the granted permissions."""
     return _request("meta.info")
+
+
+def time():
+    """The server's unix time in seconds, not the device clock."""
+    return _request("time.now")
 
 
 def _fit(text, limit=4000):
@@ -202,6 +207,13 @@ class _Ui(_Namespace):
             arguments["duration"] = duration
         return self._call("ui.toast", _nothing, text=text, **arguments)
 
+    def open_settings(self):
+        """Open the plugin's own settings page (ui.settings_page).
+
+        Call it while handling a click, such as a menu item.
+        """
+        return self._call("ui.open_settings", _nothing)
+
     def settings_page(self, title, items, buttons=None):
         """Describe the plugin's settings page; the app draws it.
 
@@ -296,13 +308,18 @@ def _ref(message):
 
 
 class _Messages(_Namespace):
-    def history(self, chat, limit=20, before=0, topic=0):
+    def history(self, chat, limit=20, before=0, topic=0, from_user=None):
+        """The latest messages of the chat, newest first.
+
+        from_user is a user id, or "me" for your own messages: only those come back.
+        """
         return self._call(
             "messages.history",
             chat=chat,
             limit=limit,
             before=before,
-            **_given(topic=topic))
+            **_given(topic=topic),
+            **({} if from_user is None else {"from_user": from_user}))
 
     def send(self, chat, text, reply_to=0, topic=0, silent=False, schedule=0, markdown=False,
              custom_emoji=None):
@@ -414,17 +431,23 @@ class _Messages(_Namespace):
 
 class _SyncMessages(_Messages):
     def set_outgoing(self, text=None, markdown=False, silent=None, schedule=None,
-                     reply_to=None, topic=None):
+                     reply_to=None, topic=None, entities=None):
         """Change the message being sent (message.outgoing only).
 
         Give the new text, and any of silent, schedule (a unix time, 0 to send
         now), reply_to (a message id, 0 for none) and topic. A value the app
         cannot use, such as a message that is not there, is ignored.
+
+        entities is a list of {"type", "offset", "length"} (UTF-16 units) for the
+        formatting of the text, like the entities of the message.outgoing event.
+        Without it the text is sent as plain text; markdown cannot be combined with it.
         """
         arguments = {}
         if text is not None:
             arguments["text"] = text
             arguments.update(_format(markdown))
+        if entities is not None:
+            arguments["entities"] = [dict(entity) for entity in entities]
         for key, value in (("silent", silent), ("schedule", schedule),
                            ("reply_to", reply_to), ("topic", topic)):
             if value is not None:
@@ -437,6 +460,16 @@ class _SyncMessages(_Messages):
         The input field stays empty. A non-empty reason is shown as a toast.
         """
         _request("messages.drop_outgoing", **_given(reason=reason))
+
+
+class _Bots(_Namespace):
+    def inline_query(self, bot, query=""):
+        """Ask the inline bot (a username or an id) and get its results.
+
+        Each result is {"id", "title", "description", "text"}. Nothing is sent
+        to any chat. Needs bots.inline; await it (freshgram.aio) to wait for the bot.
+        """
+        return self._call("bots.inline_query", bot=bot, query=query)
 
 
 class _Users(_Namespace):
@@ -631,6 +664,7 @@ folders = _Folders(_sync_call)
 settings = _Settings(_sync_call)
 media = _Media(_sync_call)
 users = _Users(_sync_call)
+bots = _Bots(_sync_call)
 channels = _Channels(_sync_call)
 stickers = _Stickers(_sync_call)
 notify = _Notify(_sync_call)

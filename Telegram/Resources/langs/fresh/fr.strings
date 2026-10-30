@@ -214,6 +214,7 @@
 "fresh_PermUsersPresence" = "Voir quand les gens sont en ligne";
 "fresh_PermAppActivity" = "Savoir si l’application est au premier plan";
 "fresh_PermTranslateProvide" = "Traduire des textes pour vous";
+"fresh_PermBotsInline" = "Interroger des bots inline pour vous";
 "fresh_PluginSettingsExport" = "Exporter les réglages";
 "fresh_PluginSettingsImport" = "Importer les réglages";
 "fresh_PluginSettingsExported" = "Réglages enregistrés.";

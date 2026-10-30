@@ -552,6 +552,7 @@ void TestUiContributions() {
 		return;
 	}
 	auto lab = Lab("fgpl-manager-ui");
+	lab.time = 100000;
 	auto pages = std::vector<std::pair<std::string, cbor::Value>>();
 	auto windows = std::vector<std::string>();
 	auto pagesMutex = std::mutex();
@@ -568,6 +569,11 @@ void TestUiContributions() {
 	config.services.settingsPage = [&](const std::string &id, const std::string &account, const cbor::Value &page) {
 		const auto lock = std::scoped_lock(pagesMutex);
 		pages.emplace_back(id + "/" + account, page);
+	};
+	auto opened = std::vector<std::string>();
+	config.services.openSettings = [&](const std::string &id, const std::string &account) {
+		const auto lock = std::scoped_lock(pagesMutex);
+		opened.push_back(id + "/" + account);
 	};
 	auto manager = PluginManager(config);
 	auto document = Document("com.example.uidemo", "1.0.0", {
@@ -658,6 +664,10 @@ void TestUiContributions() {
 	const auto menu = lab.stored(id, "A", "menu");
 	CHECK(menu && menu->find("chat")->asInt() == 1 && menu->find("message")->isNull());
 	CHECK(menu && menu->find("text")->isNull());
+	{
+		const auto lock = std::scoped_lock(pagesMutex);
+		CHECK(std::find(opened.begin(), opened.end(), id + "/A") != opened.end());
+	}
 	const auto command = lab.stored(id, "A", "command");
 	CHECK(command && *command->asText() == "window");
 	const auto setting = lab.stored(id, "A", "setting");
@@ -1091,6 +1101,68 @@ void TestOutgoingFilterDropAndOptions() {
 	const auto dropped = run(9, "group");
 	CHECK(dropped.dropped && dropped.plugin == dropper && dropped.reason == "no spam");
 	CHECK(!dropped.silent);
+}
+
+void TestOutgoingEntities() {
+	auto lab = Lab("fgpl-manager-outgoing-entities");
+	auto manager = PluginManager(lab.config());
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	};
+	const auto filtered = [](int64_t chat) {
+		return [=](cbor::Value &document) {
+			Set(document, "contributes.outgoing.onFailure", Text("pass"));
+			Set(document, "contributes.outgoing.filter.chats", cbor::Value::FromArray({ Int(chat) }));
+		};
+	};
+	const auto formatter = std::string("com.example.formatter");
+	const auto rewriter = std::string("com.example.rewriter");
+	CHECK(manager.install(CustomArchive(formatter, CallingModule(EncodedRequest(
+		"messages.set_outgoing",
+		{ { "entities", cbor::Value::FromArray({
+			cbor::Value::FromMap({
+				{ "type", Text("italic") },
+				{ "offset", Int(1) },
+				{ "length", Int(1) },
+			}),
+		}) } })), permissions, filtered(11))).ok());
+	CHECK(manager.install(CustomArchive(rewriter, CallingModule(EncodedRequest(
+		"messages.set_outgoing",
+		{ { "text", Text("bye") } })), permissions, filtered(12))).ok());
+	for (const auto &id : { formatter, rewriter }) {
+		CHECK(manager.setEnabled(id, true));
+		CHECK(manager.grant(id, "A", { { "messages.read", "messages.transform_outgoing" }, std::nullopt }));
+	}
+	CHECK(manager.startEnabled("A").started == 2);
+	CHECK(manager.drain(20000));
+
+	const auto run = [&](int64_t chat) {
+		auto info = OutgoingInfo();
+		info.chat = chat;
+		info.chatType = "group";
+		info.text = "hi";
+		info.entities.push_back({ "bold", 0, 2 });
+		auto result = std::optional<OutgoingResult>();
+		manager.transformOutgoingAsync("A", info, 5000, [&](OutgoingResult value) {
+			result = std::move(value);
+		});
+		while (!result) {
+			manager.pump();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+		return std::move(*result);
+	};
+	const auto untouched = run(1);
+	CHECK(untouched.text == "hi" && !untouched.entities);
+	const auto formatted = run(11);
+	CHECK(formatted.text == "hi");
+	CHECK(formatted.entities && formatted.entities->size() == 1);
+	if (formatted.entities && formatted.entities->size() == 1) {
+		CHECK((*formatted.entities)[0].type == "italic" && (*formatted.entities)[0].offset == 1);
+	}
+	const auto rewritten = run(12);
+	CHECK(rewritten.text == "bye" && rewritten.entities && rewritten.entities->empty());
 }
 
 void TestSettingsExport() {
@@ -1712,6 +1784,7 @@ int main(int argc, char **argv) {
 	run("unload", TestSelfUnloadAndLazyStart);
 	run("outgoing", TestOutgoingTransform);
 	run("outgoing-options", TestOutgoingFilterDropAndOptions);
+	run("outgoing-entities", TestOutgoingEntities);
 	run("translator", TestTranslator);
 	run("toast-events", TestToastEvents);
 	run("settings-export", TestSettingsExport);

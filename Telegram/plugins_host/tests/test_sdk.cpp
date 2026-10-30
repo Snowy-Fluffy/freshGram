@@ -123,6 +123,9 @@ void TestPythonSdk() {
 	CHECK(StringAt(*report, "service_chat") == "denied");
 	CHECK(StringAt(*report, "secret_chat") == "not_found");
 	CHECK(report->find("history")->asInt() == 3);
+	const auto mine = report->find("mine")->asArray();
+	CHECK(mine && mine->size() == 2 && (*mine)[0].asBool() == true);
+	CHECK(report->find("server_time")->asInt() == 1700000000);
 	const auto fetched = report->find("fetch")->asArray();
 	CHECK(fetched && fetched->size() == 2);
 	CHECK(fetched && (*fetched)[0].asInt() == 200);

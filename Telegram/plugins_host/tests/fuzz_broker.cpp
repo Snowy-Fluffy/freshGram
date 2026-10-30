@@ -26,6 +26,7 @@ enum class Config : uint8_t {
 // WHY: strings only the fakes produce, unless the plugin sent them in itself.
 const auto kPrivate = std::vector<std::string>{
 	"Alice", "Group", "Channel", "Bob", "Carol", "hello", "removed", "Work", "News",
+	"About", "Text one", "Text two",
 };
 const auto kHidden = std::vector<std::string>{ "Secret", "Saved Messages" };
 
@@ -154,6 +155,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 			|| !fake.outgoing.empty()
 			|| !fake.sentMedia.empty()
 			|| !fake.editedMedia.empty()
+			|| !fake.inlineQueries.empty()
 			|| !fake.clipboard.empty()
 			|| !transport.requests.empty()
 			|| !transport.opened.empty()

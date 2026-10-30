@@ -2915,6 +2915,7 @@ namespace {
 		{ "users.presence", &st::menuIconProfile },
 		{ "app.activity", &st::menuIconInfo },
 		{ "translate.provide", &st::menuIconTranslate },
+		{ "bots.inline", &st::menuIconBot },
 	};
 	const auto i = icons.find(id);
 	return (i != icons.end()) ? i->second : &st::menuIconLock;
@@ -3433,6 +3434,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "users.presence", tr::fresh_PermUsersPresence },
 		{ "app.activity", tr::fresh_PermAppActivity },
 		{ "translate.provide", tr::fresh_PermTranslateProvide },
+		{ "bots.inline", tr::fresh_PermBotsInline },
 	};
 	const auto i = titles.find(id);
 	return (i != titles.end()) ? i->second(tr::now) : Utf8(id);
@@ -4059,6 +4061,19 @@ void AddTrayItems(Fn<void(const QString &text, Fn<void()> handler)> add) {
 	}
 }
 
+[[nodiscard]] Window::SessionController *ControllerFor(
+		not_null<Main::Session*> session) {
+	const auto ours = [&](Window::Controller *other) {
+		const auto controller = other ? other->sessionController() : nullptr;
+		return (controller && &controller->session() == session) ? controller : nullptr;
+	};
+	const auto separate = Window::SeparateId(&session->account());
+	if (const auto found = ours(Core::App().windowFor(separate))) {
+		return found;
+	}
+	return ours(Core::App().ensureSeparateWindowFor(separate));
+}
+
 void ShowPluginWindow(
 		const std::string &id,
 		const std::string &account,
@@ -4089,15 +4104,7 @@ void ShowPluginWindow(
 		return;
 	}
 	dialogs.pages[key] = *page;
-	const auto ours = [&](Window::Controller *other) {
-		const auto controller = other ? other->sessionController() : nullptr;
-		return (controller && &controller->session() == session) ? controller : nullptr;
-	};
-	const auto separate = Window::SeparateId(&session->account());
-	auto controller = ours(Core::App().windowFor(separate));
-	if (!controller) {
-		controller = ours(Core::App().ensureSeparateWindowFor(separate));
-	}
+	const auto controller = ControllerFor(session);
 	if (!controller) {
 		refuse();
 		return;
@@ -4116,6 +4123,16 @@ void ShowPluginDialog(
 		const std::string &account,
 		const cbor::Value *page) {
 	ShowPluginWindow(id, account, std::string(), "layer", page);
+}
+
+void OpenPluginSettings(const std::string &id, const std::string &account) {
+	const auto session = SessionFor(account);
+	if (!session || Core::App().passcodeLocked()) {
+		return;
+	}
+	if (const auto controller = ControllerFor(session)) {
+		ShowPluginSettings(controller, QString::fromStdString(id));
+	}
 }
 
 void ShowNetworkLog(not_null<Window::SessionController*> controller) {
@@ -4561,6 +4578,9 @@ std::vector<PluginCommand> CommandsFor(
 }
 
 void ShowPluginSettings(not_null<Window::SessionController*>, const QString &) {
+}
+
+void OpenPluginSettings(const std::string &, const std::string &) {
 }
 
 void ShowPluginDetails(not_null<Window::SessionController*>, const QString &) {

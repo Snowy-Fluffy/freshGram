@@ -202,7 +202,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 4);
+	CHECK(Payload(info).find("api")->asInt() == 5);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -244,6 +244,7 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "users.info", Request("users.photo", { { "id", Int(7) } }) },
 		{ "chat.info", Request("channels.info", { { "id", Int(2) } }) },
 		{ "notifications", Request("notify.show", { { "text", Text("x") } }) },
+		{ "bots.inline", Request("bots.inline_query", { { "bot", Text("inlinebot") }, { "query", Text("q") } }) },
 	};
 	for (const auto &item : calls) {
 		auto fixture = Fixture({});
@@ -565,6 +566,170 @@ void TestOutgoingAndUnload() {
 	CHECK(Code(broker.call(Request("ui.dialog.show", { { "page", Text("x") } }))) == "invalid");
 	CHECK(IsOk(broker.call(Request("ui.dialog.close"))));
 	CHECK(dialogs == (std::vector<std::string>{ "dialog", "dialog.close" }));
+}
+
+void TestServerTime() {
+	auto fixture = Fixture({});
+	auto broker = fixture.make();
+	const auto now = broker.call(Request("time.now"));
+	CHECK(IsOk(now) && Payload(now).asInt() == std::optional<int64_t>(1700000000));
+	broker.beginOutgoing();
+	CHECK(IsOk(broker.call(Request("time.now"))));
+	(void)broker.finishOutgoing();
+}
+
+void TestHistoryFromUser() {
+	auto fixture = Fixture({ "messages.history" });
+	auto broker = fixture.make();
+	CHECK(IsOk(broker.call(Request("messages.history", { { "chat", Int(1) } }))));
+	CHECK(fixture.data.historyFromUser == 0);
+	const auto mine = broker.call(Request("messages.history", {
+		{ "chat", Int(1) }, { "limit", Int(3) }, { "from_user", Text("me") },
+	}));
+	CHECK(IsOk(mine) && fixture.data.historyFromUser == 42);
+	CHECK(Payload(mine).asArray() && Payload(mine).asArray()->size() == 3);
+	for (const auto &message : *Payload(mine).asArray()) {
+		CHECK(message.find("out")->asBool() == std::optional<bool>(true));
+	}
+	CHECK(IsOk(broker.call(Request("messages.history", {
+		{ "chat", Int(1) }, { "from_user", Int(7) },
+	}))));
+	CHECK(fixture.data.historyFromUser == 7);
+	for (const auto &bad : { Text("you"), Int(0), Int(-5), Int(777000), cbor::Value::FromBool(true) }) {
+		CHECK(Code(broker.call(Request("messages.history", {
+			{ "chat", Int(1) }, { "from_user", bad },
+		}))) == "invalid");
+	}
+}
+
+void TestInlineQuery() {
+	auto fixture = Fixture({ "bots.inline" });
+	auto broker = fixture.make();
+	const auto found = broker.call(Request("bots.inline_query", {
+		{ "bot", Text("@inlinebot") }, { "query", Text("cats") },
+	}));
+	CHECK(IsOk(found));
+	CHECK(fixture.data.inlineQueries == (std::vector<std::string>{ "0/inlinebot/cats" }));
+	const auto list = Payload(found).asArray();
+	CHECK(list && list->size() == 2);
+	if (list && list->size() == 2) {
+		CHECK(*(*list)[0].find("title")->asText() == "Title cats");
+		CHECK(*(*list)[0].find("text")->asText() == "Text one");
+		CHECK(*(*list)[1].find("id")->asText() == "r2");
+	}
+	fixture.time += 1500;
+	CHECK(IsOk(broker.call(Request("bots.inline_query", { { "bot", Int(9) }, { "query", Text("") } }))));
+	CHECK(fixture.data.inlineQueries.back() == "9//");
+	CHECK(Code(broker.call(Request("bots.inline_query", { { "bot", Int(9) }, { "query", Text("x") } }))) == "limit");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("bots.inline_query", { { "bot", Text("nobodybot") }, { "query", Text("x") } }))) == "not_found");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("bots.inline_query", { { "bot", Int(777000) }, { "query", Text("x") } }))) == "denied");
+	for (const auto &bad : {
+		Request("bots.inline_query", { { "bot", Int(0) }, { "query", Text("x") } }),
+		Request("bots.inline_query", { { "bot", Text("a b") }, { "query", Text("x") } }),
+		Request("bots.inline_query", { { "bot", Int(9) } }),
+		Request("bots.inline_query", { { "bot", Int(9) }, { "query", Text(std::string(300, 'a')) } }),
+	}) {
+		fixture.time += 1500;
+		CHECK(Code(broker.call(bad)) == "invalid");
+	}
+}
+
+void TestOpenSettings() {
+	auto kinds = std::vector<std::string>();
+	auto fixture = Fixture({ "ui.settings_page" });
+	fixture.services.ui = [&](std::string_view kind, const cbor::Value &) {
+		kinds.emplace_back(kind);
+		return true;
+	};
+	fixture.time = 100000;
+	auto broker = fixture.make();
+	CHECK(Code(broker.call(Request("ui.open_settings"))) == "denied");
+	broker.noteUserAction("menu.click");
+	CHECK(IsOk(broker.call(Request("ui.open_settings"))));
+	CHECK(kinds == (std::vector<std::string>{ "open_settings" }));
+	CHECK(Code(broker.call(Request("ui.open_settings"))) == "denied");
+	broker.noteUserAction("menu.click");
+	fixture.time += 11000;
+	CHECK(Code(broker.call(Request("ui.open_settings"))) == "denied");
+	CHECK(kinds.size() == 1);
+
+	auto plain = Fixture({});
+	plain.time = 100000;
+	auto other = plain.make();
+	other.noteUserAction("menu.click");
+	CHECK(Code(other.call(Request("ui.open_settings"))) == "denied");
+
+	auto unwired = Fixture({ "ui.settings_page" });
+	unwired.time = 100000;
+	auto idle = unwired.make();
+	idle.noteUserAction("menu.click");
+	CHECK(Code(idle.call(Request("ui.open_settings"))) == "unavailable");
+}
+
+void TestOutgoingEntities() {
+	auto fixture = Fixture({ "messages.transform_outgoing" });
+	auto broker = fixture.make();
+	const auto entity = [](std::string_view type, int64_t offset, int64_t length, cbor::Map extra = {}) {
+		auto map = cbor::Map{
+			{ "type", Text(type) },
+			{ "offset", Int(offset) },
+			{ "length", Int(length) },
+		};
+		for (auto &item : extra) {
+			map.push_back(std::move(item));
+		}
+		return cbor::Value::FromMap(std::move(map));
+	};
+	const auto set = [&](cbor::Value entities, cbor::Map extra = {}) {
+		extra.push_back({ "entities", std::move(entities) });
+		return broker.call(Request("messages.set_outgoing", std::move(extra)));
+	};
+	broker.beginOutgoing();
+	CHECK(IsOk(set(cbor::Value::FromArray({
+		entity("bold", 0, 3),
+		entity("italic", 4, 2),
+		entity("text_url", 0, 1, { { "url", Text("https://example.com/") } }),
+		entity("pre", 0, 2, { { "language", Text("cpp") } }),
+		entity("custom_emoji", 6, 2, { { "id", Int(55) } }),
+	}), { { "text", Text("abc de fg") } })));
+	auto edit = broker.finishOutgoing();
+	CHECK(edit.text == std::optional<std::string>("abc de fg"));
+	CHECK(edit.entities && edit.entities->size() == 5);
+	if (edit.entities && edit.entities->size() == 5) {
+		CHECK((*edit.entities)[0].type == "bold" && (*edit.entities)[1].offset == 4);
+		CHECK((*edit.entities)[2].url == "https://example.com/");
+		CHECK((*edit.entities)[3].language == "cpp");
+		CHECK((*edit.entities)[4].id == 55);
+	}
+
+	broker.beginOutgoing();
+	CHECK(IsOk(set(cbor::Value::FromArray(cbor::Array()))));
+	edit = broker.finishOutgoing();
+	CHECK(!edit.text && edit.entities && edit.entities->empty());
+
+	const auto refused = [&](cbor::Value entities, cbor::Map extra = {}) {
+		broker.beginOutgoing();
+		const auto code = Code(set(std::move(entities), std::move(extra)));
+		const auto result = broker.finishOutgoing();
+		return code == "invalid" && !result.entities;
+	};
+	CHECK(refused(Text("bold")));
+	CHECK(refused(cbor::Value::FromArray({ Text("bold") })));
+	CHECK(refused(cbor::Value::FromArray({ entity("mystery", 0, 1) })));
+	CHECK(refused(cbor::Value::FromArray({ entity("bold", -1, 1) })));
+	CHECK(refused(cbor::Value::FromArray({ entity("bold", 0, 0) })));
+	CHECK(refused(cbor::Value::FromArray({ entity("text_url", 0, 1) })));
+	CHECK(refused(cbor::Value::FromArray({ entity("text_url", 0, 1, { { "url", Text("javascript:alert(1)") } }) })));
+	CHECK(refused(cbor::Value::FromArray({ entity("custom_emoji", 0, 1) })));
+	CHECK(refused(cbor::Value::FromArray({ entity("custom_emoji", 0, 1, { { "id", Int(0) } }) })));
+	CHECK(refused(cbor::Value::FromArray({ entity("bold", 0, 1) }), { { "text", Text("x") }, { "format", Text("markdown") } }));
+	auto many = cbor::Array();
+	for (auto i = 0; i != 300; ++i) {
+		many.push_back(entity("bold", i, 1));
+	}
+	CHECK(refused(cbor::Value::FromArray(std::move(many))));
 }
 
 void TestPluginMessages() {
@@ -1995,6 +2160,11 @@ int main() {
 	TestSockets();
 	TestNewDataCalls();
 	TestOutgoingAndUnload();
+	TestServerTime();
+	TestHistoryFromUser();
+	TestInlineQuery();
+	TestOpenSettings();
+	TestOutgoingEntities();
 	TestPluginMessages();
 	TestDataIsFilteredByTheBroker();
 	TestRichIconsAndSubPages();

@@ -42,13 +42,15 @@ public:
 		}
 		return std::nullopt;
 	}
-	std::vector<Message> history(int64_t chat, size_t limit, int64_t, int64_t) override {
+	std::vector<Message> history(int64_t chat, size_t limit, int64_t, int64_t, int64_t fromUser) override {
+		historyFromUser = fromUser;
 		auto result = std::vector<Message>();
-		const auto message = [](int64_t id, int64_t chat, int64_t date, std::string text) {
+		const auto message = [=](int64_t id, int64_t chat, int64_t date, std::string text) {
 			auto result = Message();
 			result.id = id;
 			result.chat = chat;
-			result.from = 1;
+			result.from = fromUser ? fromUser : 1;
+			result.out = (fromUser == 42);
 			result.date = date;
 			result.text = std::move(text);
 			return result;
@@ -61,6 +63,22 @@ public:
 		}
 		result.push_back(message(999, chat + 1, 1000, "from another chat"));
 		return result;
+	}
+	int64_t serverTime() override {
+		return 1700000000;
+	}
+	Result<std::vector<InlineResult>, std::string> inlineQuery(
+			int64_t bot,
+			const std::string &username,
+			const std::string &query) override {
+		inlineQueries.push_back(std::to_string(bot) + "/" + username + "/" + query);
+		if (bot != 9 && username != "inlinebot") {
+			return std::string(api::error::kNotFound);
+		}
+		return std::vector<InlineResult>{
+			{ "r1", "Title " + query, "About", "Text one" },
+			{ "r2", "Second", "", "Text two" },
+		};
 	}
 	Account account() override {
 		return { 42, "Me", "me", true, "+10000000000" };
@@ -114,7 +132,7 @@ public:
 		return std::string(api::error::kNotFound);
 	}
 	std::vector<Message> mediaMessages(int64_t chat, const std::string &kind, size_t limit, int64_t) override {
-		auto result = history(chat, limit, 0, 0);
+		auto result = history(chat, limit, 0, 0, 0);
 		for (auto &message : result) {
 			message.media = (message.id == 100) ? std::string() : kind;
 		}
@@ -201,7 +219,7 @@ public:
 		return {};
 	}
 	std::vector<Message> search(int64_t chat, const std::string &query, size_t limit) override {
-		auto result = history(chat, limit, 0, 0);
+		auto result = history(chat, limit, 0, 0, 0);
 		std::erase_if(result, [&](const Message &message) {
 			return message.text.find(query) == std::string::npos;
 		});
@@ -267,6 +285,8 @@ public:
 	std::vector<std::string> actions;
 	std::string clipboard;
 	bool cancelPick = false;
+	int64_t historyFromUser = -1;
+	std::vector<std::string> inlineQueries;
 
 };
 

@@ -31,7 +31,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 `not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`,
 `cancelled` (the user closed a file dialog).
 
-## Calls (API level 4)
+## Calls (API level 5)
 
 | Call | Permission | Notes |
 |---|---|---|
@@ -49,7 +49,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `settings.read` | `settings.read` | `language`, `theme`, `streamerMode` |
 | `media.get` `{chat, message, thumbnail, download}` | `media.read` | the file of a message, up to 100 MiB: `kind`, `mime`, `name`, `data`; without `download` only a file already on this device (`not_found` otherwise), with `download: true` the app downloads it first (up to five minutes, `limit` for larger files; await it) |
 | `media.list` `{chat, kind, limit, before}` | `media.read` | messages with media, newest first, the same fields as the history; `kind` is `any` (the recent history), `photo`, `video`, `photo_video`, `file`, `voice`, `round`, `audio` or `gif` (searched on the server) |
-| `messages.set_outgoing` `{text, format, silent, schedule, reply_to, topic}` | `messages.transform_outgoing` | only while handling `message.outgoing`; give at least one field; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting; `schedule` is a unix time (0 sends now), `reply_to` a message id of the chat (0 for none), `topic` a forum topic; the app ignores a value it cannot use (a time out of range, a message that is not there) |
+| `messages.set_outgoing` `{text, entities, format, silent, schedule, reply_to, topic}` | `messages.transform_outgoing` | only while handling `message.outgoing`; give at least one field; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting; `entities` is a list of `{type, offset, length}` (UTF-16 units, up to 256) for the formatting of the text: `type` is `bold`, `italic`, `underline`, `strike`, `code`, `pre` (with `language`), `spoiler`, `blockquote`, `text_url` (needs an http, https or tg `url`) or `custom_emoji` (needs the document `id`); entities cannot be combined with `format: "markdown"`, a new `text` without `entities` is sent without formatting, and entities that do not fit the text are dropped; `schedule` is a unix time (0 sends now), `reply_to` a message id of the chat (0 for none), `topic` a forum topic; the app ignores a value it cannot use (a time out of range, a message that is not there) |
 | `messages.drop_outgoing` `{reason}` | `messages.transform_outgoing` | only while handling `message.outgoing`; the message is not sent and the input field stays empty; a non-empty `reason` (up to 200 bytes) is shown as a toast with the plugin's name; the plugins after this one do not see the message |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `ui.window.show` `{id, page, mode}`, `ui.window.update` `{id, page}`, `ui.window.close` `{id}` | `ui.dialog` | a window of the plugin's own: `id` is a lowercase token of up to 32 characters, `mode` is `layer` (over the chat, the default) or `window` (a window of its own); up to 3 windows at a time; see *Windows* |
@@ -58,7 +58,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
 | `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats, Saved Messages and the service chat 777000 are never returned |
-| `messages.history` `{chat, limit, before, topic}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
+| `messages.history` `{chat, limit, before, topic, from_user}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; `from_user` is a user id or `"me"` and keeps only the messages of that sender (the server is searched for it, so the limit is filled); limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted` when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
 | `messages.send` `{chat, text, format, reply_to, topic, silent, schedule, custom_emoji}` | `messages.send` | `custom_emoji` is a list of `{offset, length, id}` that show part of the text (UTF-16 units) as custom emoji; `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode; answers `{local_id}` at once: a negative id that `messages.edit`, `edit_media`, `react` and `delete` accept like a server id (they wait until a message that is still sending gets its server id, and fail with `failed` when the send fails); with `messages.ids` the call waits for the server and answers `{id, local_id}` too (`id` is null when the server did not answer in time, which is not an error, so a retry cannot send twice); `local_id` is null when no message was created (a dice, a text that is only spaces); scheduled sends have no ids |
 | `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send`; answers the ids like `messages.send` |
 | `messages.edit_media` `{chat, id, data, name, kind, caption, format, spoiler}` | `messages.edit` | replaces the media of a message you sent and may still edit, with a file of up to 100 MiB; `kind` is `auto` or `file` (not `voice`); `id` is a server or a local id; `caption` replaces the old one; waits until Telegram accepts the file (await it); `invalid` when the album or Telegram does not take the file, `denied` when the message cannot carry new media |
@@ -74,6 +74,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `chats.action` `{chat, kind, topic}` | `messages.send` | `typing` (default), `upload_photo`, `upload_video`, `upload_file`, `record_voice`, `upload_voice`, `record_video`, `record_round`, `choose_sticker` or `cancel`; once per 3 seconds per chat |
 | `users.info` `{id}` | `users.info` | `id, name, username, bot, premium, contact, self, status, last_seen, has_photo`; `status` is `online`, `offline` (with `last_seen`), `recently`, `week`, `month`, `long_ago`, `hidden` or `bot` |
 | `users.resolve` `{username}` | `users.info` | a user found by `@username` (with or without `@`); returns the same fields as `users.info`; asks the server for unknown names, once per second |
+| `bots.inline_query` `{bot, query}` | `bots.inline` | asks an inline bot (`bot` is its `@username` or user id, `query` up to 256 bytes, may be empty) and returns up to 50 results `[{id, title, description, text}]`; `text` is the text the bot would send and is empty for results that send media; nothing is sent to any chat; once per second; `not_found` when the bot is unknown or blocked, `failed` when it has no inline mode or does not answer; await it |
 | `users.photo` `{id}` | `users.info` | `{mime, data}`: the current profile photo in full size as JPEG bytes (`image/jpeg`), or MP4 bytes (`video/mp4`) when the user has a video avatar; falls back to the small cached JPEG if the server does not answer; `not_found` when the user has none |
 | `channels.info` `{id}` | `chat.info` | `id, title, username, type, about, members, verified, scam, fake, has_photo`; `type` is `channel` or `supergroup`, `members` is absent when unknown; other chats give `not_found` |
 | `channels.resolve` `{username}` | `chat.info` | the same fields for a channel found by `@username`; once per second |
@@ -89,6 +90,8 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `badges.set` `{user, items}`, `badges.clear` | `ui.badges` | icons or mini pictures next to the name of a user, group or channel (`user` is the peer id as in `chats.list`), see *Badges next to names*; up to 4 for a peer and 256 peers |
 | `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
 | `ui.toast` `{text, action, style, duration}` | `ui.toast` | the plugin id is prefixed; `action` is `{id, label}` and adds a button (the plugin gets `toast.click` `{id}` when it is pressed and `toast.close` `{id, reason}` when the toast goes, `reason` is `action` or `timeout`); `style: "undo"` needs an action and labels the button "Undo" when `label` is empty; `duration` is 1 to 8 seconds (5 for a toast with a button); an action id is up to 32 bytes, a label up to 40 |
+| `time.now` | none | the server's unix time in seconds, not the device clock |
+| `ui.open_settings` | `ui.settings_page` | opens the plugin's own settings page; only within 10 seconds after a user action (a menu click, a command, a settings or dialog event), once for each action; the manifest needs `contributes.settingsPage` |
 | `time.sleep` `{ms}` | none | awaitable only; up to 60000 ms |
 
 Every call counts against a budget of 200 calls a second; a plugin may make at
@@ -173,8 +176,8 @@ in `contributes.events`.
 Chat ids are the app's peer ids: users are their user id, basic groups and
 channels have a type in the high bits. Use them as they are.
 
-`message.outgoing` `{chat, text, chat_type, silent, topic, reply_to, scheduled}`
-(`topic`, `reply_to` and `scheduled` only when set) comes to plugins with
+`message.outgoing` `{chat, text, entities, chat_type, silent, topic, reply_to, scheduled}`
+(`topic`, `reply_to` and `scheduled` only when set; `entities` is the formatting of the text as in `messages.set_outgoing`, an empty list for plain text) comes to plugins with
 `messages.transform_outgoing` and `contributes.outgoing` before a text message is
 sent (never for secret chats, Saved Messages, 777000, business shortcuts, welcome templates or
 suggested posts; messages with files are not hooked yet). The plugin may call
@@ -485,6 +488,8 @@ logged and does not stop the others. The namespaces follow the calls:
 `media.get(..., download=True)`, `messages.edit`,
 `messages.delete`, `messages.react`, `messages.forward`, `messages.search`,
 `chats.mark_read`, `chats.action`, `users.info`, `messages.reactions`, `stickers.send/search/recent`, `users.resolve`, `users.photo`, `channels.info`, `channels.resolve`, `channels.photo`, `notify.show`,
+`bots.inline_query(bot, query)`, `ui.open_settings()`, `messages.history(..., from_user="me")`,
+`messages.set_outgoing(text, entities=[...])`, `freshgram.time()`,
 `clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`
 and `files.save` exist only in `freshgram.aio`.
 

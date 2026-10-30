@@ -106,6 +106,8 @@ void ShowPluginDialog(
 	const std::string &account,
 	const fgpl::cbor::Value *page);
 
+void OpenPluginSettings(const std::string &id, const std::string &account);
+
 void ShowPluginWindow(
 	const std::string &id,
 	const std::string &account,

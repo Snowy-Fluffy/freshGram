@@ -4,6 +4,7 @@
 #include "fgpl/result.h"
 #include "fgpl/semver.h"
 #include "fgpl/signature.h"
+#include "fgpl/text_entity.h"
 
 #include <map>
 #include <optional>
@@ -109,6 +110,7 @@ struct OutgoingInfo {
 	bool silent = false;
 	int64_t scheduled = 0;
 	std::string text;
+	std::vector<TextEntity> entities;
 };
 
 // The permission an event type needs, or null for an unknown event.
@@ -193,7 +195,7 @@ struct Manifest {
 
 struct HostEnvironment {
 	Version app;
-	int apiLevel = 4;
+	int apiLevel = 5;
 	std::set<std::string> features = HostFeatures();
 	bool premium = false;
 };
