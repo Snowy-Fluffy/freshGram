@@ -999,6 +999,8 @@ private:
 	std::atomic<bool> _closed = false;
 	std::mutex _limitsMutex;
 	double _sendTokens = 5.;
+	double _actionTokens = 20.;
+	int64_t _actionRefilled = 0;
 	int64_t _sendRefilled = 0;
 	int64_t _lastToast = 0;
 	int64_t _lastNotify = 0;

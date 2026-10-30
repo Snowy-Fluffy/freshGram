@@ -46,6 +46,8 @@ constexpr auto kMaxSleepMs = int64_t(60000);
 constexpr auto kMaxChatsScanned = size_t(5000);
 constexpr auto kSendBurst = 5.;
 constexpr auto kSendEachMs = 1000.;
+constexpr auto kActionEachMs = 200.;
+constexpr auto kActionBurst = 20.;
 constexpr auto kToastEachMs = int64_t(2000);
 constexpr auto kDialogEachMs = int64_t(60000);
 constexpr auto kUserActionWindowMs = int64_t(10000);
@@ -787,6 +789,20 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			return api::Fail(api::error::kLimit, "messages are sent too often");
 		}
 		_sendTokens -= 1.;
+	} else if (op == "messages.edit"
+		|| op == "messages.delete"
+		|| op == "messages.react"
+		|| op == "chats.mark_read"
+		|| op == "users.photo"
+		|| op == "channels.photo") {
+		_actionTokens = std::min(
+			kActionBurst,
+			_actionTokens + double(now - _actionRefilled) / kActionEachMs);
+		_actionRefilled = now;
+		if (_actionTokens < 1.) {
+			return api::Fail(api::error::kLimit, "this is done too often");
+		}
+		_actionTokens -= 1.;
 	} else if (op == "ui.toast") {
 		if (_lastToast && now - _lastToast < kToastEachMs) {
 			return api::Fail(api::error::kLimit, "toasts are shown too often");
