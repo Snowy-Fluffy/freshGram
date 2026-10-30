@@ -3,6 +3,7 @@
 #include "fgpl/base64.h"
 #include "fgpl/json.h"
 #include "fgpl/manifest.h"
+#include "fgpl/os.h"
 #include "fgpl/package.h"
 #include "fgpl/zip_reader.h"
 
@@ -10,9 +11,6 @@
 #include <fstream>
 #include <iterator>
 #include <set>
-
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace fgpl {
 namespace {
@@ -56,7 +54,7 @@ constexpr auto kIndexKeys = std::to_array<std::string_view>({
 	const auto slash = name.find('/');
 	const auto first = name.substr(0, slash);
 	if (slash == std::string::npos) {
-		return first == "fgpl_plugin_host";
+		return first == os::kHostFileName;
 	}
 	return first == "python" || first == "sdk";
 }
@@ -240,7 +238,7 @@ void SaveRuntimePolicy(const fs::path &root, const RuntimeIndex &index) {
 	}));
 	const auto temporary = root / (PolicyName() + ".tmp");
 	if (WriteBytes(temporary, { reinterpret_cast<const uint8_t*>(text.data()), text.size() })) {
-		fs::rename(temporary, root / PolicyName(), error);
+		(void)os::ReplaceFile(temporary, root / PolicyName(), error);
 	}
 }
 
@@ -277,7 +275,7 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 		if (!AllowedPath(file.name)) {
 			return std::string("unexpected file ") + file.name;
 		}
-		if (file.name == "fgpl_plugin_host") {
+		if (file.name == os::kHostFileName) {
 			host = HashText(file.data);
 		} else if (file.name == "python/python.wasm") {
 			python = HashText(file.data);
@@ -307,7 +305,7 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 			+ std::to_string((unpacked + kSpaceReserve) >> 20) + " MB needed";
 	}
 	const auto name = "rev-" + std::to_string(index.revision);
-	const auto staging = root / ("staging-" + std::to_string(::getpid()));
+	const auto staging = root / ("staging-" + std::to_string(os::ProcessId()));
 	fs::remove_all(staging, error);
 	for (const auto &file : files.value()) {
 		const auto path = staging / file.name;
@@ -317,7 +315,7 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 			return std::string("cannot write ") + file.name;
 		}
 	}
-	::chmod((staging / "fgpl_plugin_host").c_str(), 0700);
+	os::MakeExecutable(staging / os::kHostFileName);
 
 	auto installed = InstalledRuntime();
 	installed.revision = index.revision;
@@ -347,15 +345,7 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 		fs::remove_all(staging, error);
 		return std::string("cannot move the runtime into place");
 	}
-	const auto link = root / "current";
-	const auto temporary = root / ("current.tmp-" + std::to_string(::getpid()));
-	fs::remove(temporary, error);
-	fs::create_directory_symlink(name, temporary, error);
-	if (!error) {
-		fs::rename(temporary, link, error);
-	}
-	if (error) {
-		fs::remove(temporary, error);
+	if (!os::SetCurrent(root, name)) {
 		return std::string("cannot switch to the new runtime");
 	}
 	for (const auto &entry : fs::directory_iterator(root, error)) {
@@ -372,12 +362,12 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 			}
 		}
 	}
-	installed.directory = link;
+	installed.directory = os::ResolveCurrent(root);
 	return installed;
 }
 
 std::optional<InstalledRuntime> ReadInstalledRuntime(const fs::path &root) {
-	const auto directory = root / "current";
+	const auto directory = os::ResolveCurrent(root);
 	const auto text = ReadText(directory / "installed.json");
 	if (!text) {
 		return std::nullopt;
@@ -438,7 +428,7 @@ std::optional<InstalledRuntime> ReadTrustedRuntime(
 }
 
 bool VerifyInstalledRuntime(const InstalledRuntime &runtime) {
-	return Hash(runtime.directory / "fgpl_plugin_host") == runtime.hostHash
+	return Hash(runtime.directory / os::kHostFileName) == runtime.hostHash
 		&& Hash(runtime.directory / "python" / "python.wasm") == runtime.pythonHash;
 }
 

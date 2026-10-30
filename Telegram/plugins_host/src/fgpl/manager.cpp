@@ -3,6 +3,7 @@
 
 #include "fgpl/base64.h"
 #include "fgpl/json.h"
+#include "fgpl/os.h"
 #include "fgpl/sha256.h"
 
 #include <algorithm>
@@ -12,7 +13,6 @@
 #include <sstream>
 #include <system_error>
 
-#include <unistd.h>
 
 #ifdef __GLIBC__
 #include <malloc.h>
@@ -534,41 +534,6 @@ void AppendLog(LogRing &ring, size_t maxLines, std::string_view line, bool fromA
 	return cbor::Encode(event, bytes, 16) ? bytes.size() : kUnknownEventBytes;
 }
 
-struct Usage {
-	uint64_t cpuMs = 0;
-	uint64_t rssBytes = 0;
-};
-
-[[nodiscard]] Usage ProcessUsage(int pid) {
-	if (pid <= 0) {
-		return {};
-	}
-	auto stream = std::ifstream("/proc/" + std::to_string(pid) + "/stat");
-	auto line = std::string();
-	if (!std::getline(stream, line)) {
-		return {};
-	}
-	const auto close = line.rfind(')');
-	if (close == std::string::npos) {
-		return {};
-	}
-	auto fields = std::istringstream(line.substr(close + 2));
-	auto values = std::vector<std::string>();
-	for (auto value = std::string(); fields >> value;) {
-		values.push_back(value);
-	}
-	if (values.size() < 22) {
-		return {};
-	}
-	const auto ticks = sysconf(_SC_CLK_TCK);
-	const auto page = sysconf(_SC_PAGESIZE);
-	const auto cpu = std::stoull(values[11]) + std::stoull(values[12]);
-	return {
-		ticks > 0 ? cpu * 1000 / uint64_t(ticks) : 0,
-		std::stoull(values[21]) * uint64_t(page > 0 ? page : 4096),
-	};
-}
-
 } // namespace
 
 void PluginManager::addLog(Record &record, std::string_view line) {
@@ -613,7 +578,7 @@ void PluginManager::stopMany(const std::vector<Key> &keys) {
 			continue;
 		}
 		auto &instance = *i->second;
-		_finishedCpuMs[key.first] += ProcessUsage(instance.pid.load()).cpuMs;
+		_finishedCpuMs[key.first] += os::ProcessUsage(instance.pid.load()).cpuMs;
 		{
 			const auto lock = std::scoped_lock(instance.mutex);
 			instance.closing = true;
@@ -968,7 +933,7 @@ std::vector<PluginInfo> PluginManager::list() const {
 		}
 		for (const auto &instance : _instances) {
 			if (instance.first.first == record.id) {
-				const auto usage = ProcessUsage(instance.second->pid.load());
+				const auto usage = os::ProcessUsage(instance.second->pid.load());
 				info.stats.cpuMs += usage.cpuMs;
 				info.stats.memoryBytes += usage.rssBytes;
 				++info.stats.running;

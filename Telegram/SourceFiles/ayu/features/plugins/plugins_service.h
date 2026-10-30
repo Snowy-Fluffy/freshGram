@@ -3,6 +3,8 @@
 
 #include "base/basic_types.h"
 
+#include <filesystem>
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -56,6 +58,8 @@ bool Post(
 [[nodiscard]] QString StorePath();
 [[nodiscard]] QString RuntimeRootPath();
 [[nodiscard]] QString RuntimePath();
+// A file name as the standard library reads it, wide on Windows.
+[[nodiscard]] std::filesystem::path PathOf(const QString &text);
 void NotifyRuntimeChanged();
 [[nodiscard]] QString AccountId(not_null<Main::Session*> session);
 void WatchActiveChat(not_null<Window::SessionController*> controller);

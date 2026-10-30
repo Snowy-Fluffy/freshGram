@@ -1,73 +1,14 @@
 #include "fgpl/ipc.h"
 
-#include <poll.h>
-#include <unistd.h>
+#include "fgpl/ipc_io.h"
 
 #include <algorithm>
-#include <cerrno>
 #include <chrono>
 
 namespace fgpl::ipc {
 namespace {
 
 constexpr auto kReadStep = size_t(1) << 20;
-
-[[nodiscard]] bool WriteAll(int fd, const uint8_t *data, size_t size) {
-	while (size != 0) {
-		const auto written = write(fd, data, size);
-		if (written < 0) {
-			if (errno == EINTR) {
-				continue;
-			}
-			return false;
-		}
-		data += written;
-		size -= size_t(written);
-	}
-	return true;
-}
-
-[[nodiscard]] Result<std::monostate, IoError> ReadExact(
-		int fd,
-		uint8_t *data,
-		size_t size,
-		std::chrono::steady_clock::time_point deadline,
-		bool timed) {
-	auto first = true;
-	while (size != 0) {
-		if (timed) {
-			const auto left = std::chrono::duration_cast<
-				std::chrono::milliseconds>(
-					deadline - std::chrono::steady_clock::now()).count();
-			if (left <= 0) {
-				return IoError::Timeout;
-			}
-			auto descriptor = pollfd{ .fd = fd, .events = POLLIN, .revents = 0 };
-			const auto ready = poll(&descriptor, 1, int(left));
-			if (ready < 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				return IoError::Failed;
-			} else if (ready == 0) {
-				return IoError::Timeout;
-			}
-		}
-		const auto count = read(fd, data, size);
-		if (count < 0) {
-			if (errno == EINTR) {
-				continue;
-			}
-			return IoError::Failed;
-		} else if (count == 0) {
-			return first ? IoError::Closed : IoError::Failed;
-		}
-		first = false;
-		data += count;
-		size -= size_t(count);
-	}
-	return std::monostate();
-}
 
 } // namespace
 
@@ -92,7 +33,7 @@ cbor::Limits StrictLimits() {
 }
 
 Result<std::monostate, IoError> WriteFrame(
-		int fd,
+		os::Handle fd,
 		const cbor::Value &message,
 		size_t maxBytes) {
 	auto body = cbor::Bytes();
@@ -111,14 +52,14 @@ Result<std::monostate, IoError> WriteFrame(
 		uint8_t(size),
 	});
 	frame.insert(frame.end(), body.begin(), body.end());
-	if (!WriteAll(fd, frame.data(), frame.size())) {
+	if (!detail::WriteAll(fd, frame.data(), frame.size())) {
 		return IoError::Failed;
 	}
 	return std::monostate();
 }
 
 Result<cbor::Value, IoError> ReadFrame(
-		int fd,
+		os::Handle fd,
 		const cbor::Limits &limits,
 		size_t maxBytes,
 		int timeoutMs) {
@@ -126,7 +67,7 @@ Result<cbor::Value, IoError> ReadFrame(
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timed ? timeoutMs : 0);
 	uint8_t header[4];
-	const auto head = ReadExact(fd, header, 4, deadline, timed);
+	const auto head = detail::ReadExact(fd, header, 4, deadline, timed);
 	if (!head.ok()) {
 		return head.error();
 	}
@@ -142,7 +83,7 @@ Result<cbor::Value, IoError> ReadFrame(
 		const auto at = body.size();
 		const auto step = std::min(size - at, kReadStep);
 		body.resize(at + step);
-		const auto rest = ReadExact(fd, body.data() + at, step, deadline, timed);
+		const auto rest = detail::ReadExact(fd, body.data() + at, step, deadline, timed);
 		if (!rest.ok()) {
 			return (rest.error() == IoError::Closed)
 				? IoError::Failed

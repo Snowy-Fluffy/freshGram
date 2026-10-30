@@ -4,58 +4,13 @@
 #include "fgpl/package.h"
 #include "fgpl/protocol.h"
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-
-#include <signal.h>
-#include <spawn.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 #include <algorithm>
-#include <cerrno>
 #include <chrono>
-#include <cstring>
-
+#include <thread>
 
 namespace fgpl {
 namespace {
 
-constexpr auto kHostFd = 3;
-constexpr auto kExecutableFd = 4;
-constexpr auto kMaxExecutableBytes = off_t(256) << 20;
-
-#ifndef MFD_EXEC
-#define MFD_EXEC 0x0010U
-#endif
-
-[[nodiscard]] bool MemfdExecAllowed() {
-	auto stream = open("/proc/sys/vm/memfd_noexec", O_RDONLY | O_CLOEXEC);
-	if (stream < 0) {
-		return true;
-	}
-	auto value = char();
-	const auto read = ::read(stream, &value, 1);
-	close(stream);
-	return read != 1 || value != '2';
-}
-
-[[nodiscard]] bool WriteAll(int fd, const std::vector<uint8_t> &data) {
-	auto offset = size_t(0);
-	while (offset < data.size()) {
-		const auto written = write(fd, data.data() + offset, data.size() - offset);
-		if (written < 0 && errno == EINTR) {
-			continue;
-		} else if (written <= 0) {
-			return false;
-		}
-		offset += size_t(written);
-	}
-	return true;
-}
 constexpr auto kCallGraceMs = 3000;
 
 [[nodiscard]] ClientFailure Failure(ClientError error, std::string detail) {
@@ -68,62 +23,62 @@ HostClient::~HostClient() {
 	kill();
 }
 
-int HostClient::reap(int pid, int &status, int flags) {
+int HostClient::reap(bool block, os::ExitInfo &info) {
 	const auto lock = std::scoped_lock(_reap);
-	if (_pid.load() != pid) {
-		return pid;
+	if (_pid.load() <= 0 || !_child) {
+		return -1;
 	}
-	const auto waited = waitpid(pid, &status, flags);
-	if (waited == pid) {
-		_pid.store(-1);
+	if (block) {
+		_child->wait(info);
+	} else if (!_child->tryWait(info)) {
+		return 0;
 	}
-	return waited;
+	_pid.store(-1);
+	return 1;
 }
 
 void HostClient::abort() {
 	const auto lock = std::scoped_lock(_reap);
-	const auto pid = _pid.load();
-	if (pid > 0) {
-		::kill(pid, SIGKILL);
+	if (_pid.load() > 0 && _child) {
+		_child->terminate();
 	}
 }
 
 void HostClient::kill() {
 	if (_fd >= 0) {
-		close(_fd);
-		_fd = -1;
+		os::CloseChannel(_fd);
+		_fd = os::kNoHandle;
 	}
-	const auto pid = _pid.load();
-	if (pid > 0) {
+	if (_pid.load() > 0) {
 		abort();
-		auto status = 0;
-		reap(pid, status, 0);
+		auto info = os::ExitInfo();
+		reap(true, info);
 	}
 }
 
 ClientFailure HostClient::died(const std::string &context) {
 	auto failure = Failure(ClientError::HostDied, context);
-	const auto pid = _pid.load();
-	if (pid > 0) {
-		auto status = 0;
-		auto waited = reap(pid, status, WNOHANG);
+	if (_pid.load() > 0) {
+		auto info = os::ExitInfo();
+		auto waited = reap(false, info);
 		for (auto i = 0; waited == 0 && i != 200; ++i) {
-			usleep(5000);
-			waited = reap(pid, status, WNOHANG);
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			waited = reap(false, info);
 		}
 		if (waited == 0) {
 			abort();
-			waited = reap(pid, status, 0);
+			waited = reap(true, info);
 			failure.detail += ": the host stopped answering";
 		}
-		if (waited == pid) {
-			if (WIFSIGNALED(status)) {
-				failure.signal = WTERMSIG(status);
-				if (failure.signal == SIGSYS) {
+		if (waited == 1) {
+			if (info.signaled) {
+				failure.signal = info.signal;
+				if (info.signal != 0
+					&& info.signal == os::SandboxViolationSignal()) {
 					failure.detail += ": blocked by the seccomp filter";
 				}
-			} else if (WIFEXITED(status)) {
-				failure.exitCode = WEXITSTATUS(status);
+			} else {
+				failure.exitCode = info.code;
 			}
 		}
 	}
@@ -148,139 +103,45 @@ ClientFailure HostClient::fail(ipc::IoError error, const std::string &context) {
 	return Failure(ClientError::Protocol, context);
 }
 
-Result<int, std::string> SealExecutable(
-		const std::string &path,
-		const std::string &hash) {
-	const auto file = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-	if (file < 0) {
-		return std::string("cannot open the host: ") + std::strerror(errno);
-	}
-	struct stat info {};
-	if (fstat(file, &info) != 0 || !S_ISREG(info.st_mode)
-		|| info.st_size <= 0 || info.st_size > kMaxExecutableBytes) {
-		close(file);
-		return std::string("the host is not a regular file of a sane size");
-	}
-	auto data = std::vector<uint8_t>(size_t(info.st_size));
-	auto offset = size_t(0);
-	while (offset < data.size()) {
-		const auto got = pread(file, data.data() + offset, data.size() - offset, off_t(offset));
-		if (got < 0 && errno == EINTR) {
-			continue;
-		} else if (got <= 0) {
-			close(file);
-			return std::string("cannot read the host");
-		}
-		offset += size_t(got);
-	}
-	if (HashText(data) != hash) {
-		close(file);
-		return std::string("the host does not match the signed runtime index");
-	}
-	if (!MemfdExecAllowed()) {
-		return file;
-	}
-	auto sealed = memfd_create("fgpl_plugin_host", MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_EXEC);
-	if (sealed < 0 && errno == EINVAL) {
-		sealed = memfd_create("fgpl_plugin_host", MFD_CLOEXEC | MFD_ALLOW_SEALING);
-	}
-	if (sealed < 0) {
-		return file;
-	}
-	const auto seals = F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE;
-	if (!WriteAll(sealed, data) || fcntl(sealed, F_ADD_SEALS, seals) != 0) {
-		close(sealed);
-		return file;
-	}
-	close(file);
-	return sealed;
-}
-
 Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 		const HostConfig &config) {
-	int pair[2];
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, pair) != 0) {
-		return Failure(ClientError::SpawnFailed, std::strerror(errno));
-	}
-	signal(SIGPIPE, SIG_IGN);
-	auto actions = posix_spawn_file_actions_t();
-	posix_spawn_file_actions_init(&actions);
-	posix_spawn_file_actions_adddup2(&actions, pair[1], kHostFd);
-	for (const auto fd : { 0, 1, 2 }) {
-		posix_spawn_file_actions_addopen(&actions, fd, "/dev/null", O_RDWR, 0);
-	}
-	const auto executable = (config.executableFd >= 0)
-		? fcntl(config.executableFd, F_DUPFD_CLOEXEC, 10)
-		: -1;
-	if (config.executableFd >= 0) {
-		if (executable < 0) {
-			posix_spawn_file_actions_destroy(&actions);
-			close(pair[0]);
-			close(pair[1]);
-			return Failure(ClientError::SpawnFailed, std::strerror(errno));
-		}
-		posix_spawn_file_actions_adddup2(&actions, executable, kExecutableFd);
-	}
-	const auto program = (executable >= 0)
-		? "/proc/self/fd/" + std::to_string(kExecutableFd)
-		: config.path;
-	auto arguments = std::vector<std::string>{
-		config.path,
-		"--ipc-fd=" + std::to_string(kHostFd),
-	};
+	auto spec = os::SpawnSpec();
+	spec.path = config.path;
+	spec.executable = config.executableFd;
+	spec.addressSpaceMb = config.addressSpaceMb;
+	spec.cpuSeconds = config.cpuSeconds;
+	spec.sendTimeoutMs = config.sendTimeoutMs;
+	spec.sandboxed = !config.unsandboxedTestHost;
 	if (config.unsandboxedTestHost) {
-		arguments.push_back("--layers=none");
+		spec.arguments.push_back("--layers=none");
 	}
 	if (!config.selftest.empty()) {
-		arguments.push_back("--selftest=" + config.selftest);
+		spec.arguments.push_back("--selftest=" + config.selftest);
 	}
 	if (config.addressSpaceMb > 0) {
-		arguments.push_back(
+		spec.arguments.push_back(
 			"--address-space-mb=" + std::to_string(config.addressSpaceMb));
 	}
 	if (config.cpuSeconds > 0) {
-		arguments.push_back("--cpu-seconds=" + std::to_string(config.cpuSeconds));
+		spec.arguments.push_back(
+			"--cpu-seconds=" + std::to_string(config.cpuSeconds));
 	}
 	if (config.reservationMb > 0) {
-		arguments.push_back(
+		spec.arguments.push_back(
 			"--reservation-mb=" + std::to_string(config.reservationMb));
 	}
 	for (const auto &argument : config.extraArguments) {
-		arguments.push_back(argument);
+		spec.arguments.push_back(argument);
 	}
-	auto argv = std::vector<char *>();
-	for (auto &argument : arguments) {
-		argv.push_back(argument.data());
-	}
-	argv.push_back(nullptr);
-	char *environment[] = { nullptr };
-	auto pid = pid_t();
-	const auto spawned = posix_spawn(
-		&pid,
-		program.c_str(),
-		&actions,
-		nullptr,
-		argv.data(),
-		environment);
-	posix_spawn_file_actions_destroy(&actions);
-	if (executable >= 0) {
-		close(executable);
-	}
-	close(pair[1]);
-	if (config.sendTimeoutMs > 0) {
-		const auto timeout = timeval{
-			.tv_sec = config.sendTimeoutMs / 1000,
-			.tv_usec = (config.sendTimeoutMs % 1000) * 1000,
-		};
-		setsockopt(pair[0], SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-	}
-	if (spawned != 0) {
-		close(pair[0]);
-		return Failure(ClientError::SpawnFailed, std::strerror(spawned));
+	auto channel = os::kNoHandle;
+	auto child = os::Child::Spawn(spec, channel);
+	if (!child.ok()) {
+		return Failure(ClientError::SpawnFailed, child.error());
 	}
 	auto client = std::unique_ptr<HostClient>(new HostClient());
-	client->_fd = pair[0];
-	client->_pid.store(pid);
+	client->_fd = channel;
+	client->_pid.store(child.value()->id());
+	client->_child = std::move(child.value());
 
 	auto hello = ipc::ReadFrame(
 		client->_fd,
@@ -290,6 +151,10 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 	if (!hello.ok()) {
 		return client->fail(hello.error(), "the host did not start");
 	}
+#ifdef __APPLE__
+	// RLIMIT_AS does nothing on macOS, so the cap is checked from this side.
+	client->_rssLimit = uint64_t(std::max(config.addressSpaceMb, 0)) << 20;
+#endif // __APPLE__
 	client->_maxLogBytes = config.maxLogBytes;
 	client->_maxCalls = config.maxCalls;
 	const auto type = proto::TypeOf(hello.value());
@@ -312,11 +177,15 @@ Result<std::unique_ptr<HostClient>, ClientFailure> HostClient::Start(
 	client->_sandbox.landlock = flag("landlock");
 	client->_sandbox.seccomp = flag("seccomp");
 	client->_sandbox.rlimits = flag("rlimits");
+	client->_sandbox.filesystem = flag("fs");
+	client->_sandbox.processes = flag("proc");
+	client->_sandbox.limits = flag("limits");
+	client->_sandbox.platform = proto::TextField(hello.value(), "platform");
 	client->_sandbox.engine = proto::TextField(hello.value(), "engine");
 	if (!config.unsandboxedTestHost
-		&& !(client->_sandbox.landlock
-			&& client->_sandbox.seccomp
-			&& client->_sandbox.rlimits)) {
+		&& !(client->_sandbox.filesystem
+			&& client->_sandbox.processes
+			&& client->_sandbox.limits)) {
 		client->kill();
 		return Failure(
 			ClientError::Sandbox,
@@ -487,12 +356,21 @@ Result<int32_t, ClientFailure> HostClient::run(
 	while (true) {
 		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
 			deadline - std::chrono::steady_clock::now()).count();
+		if (_rssLimit != 0 && os::ProcessUsage(_pid.load()).rssBytes > _rssLimit) {
+			kill();
+			return Failure(ClientError::HostDied, "the host used too much memory");
+		}
+		// Slices keep the memory check frequent on a host that sends nothing.
+		const auto slice = (_rssLimit != 0) ? std::min<int64_t>(left, 100) : left;
 		auto frame = ipc::ReadFrame(
 			_fd,
 			ipc::StrictLimits(),
 			ipc::kMaxFrameBytes,
-			int(left > 0 ? left : 0));
+			int(slice > 0 ? slice : 0));
 		if (!frame.ok()) {
+			if (frame.error() == ipc::IoError::Timeout && slice < left) {
+				continue;
+			}
 			return fail(frame.error(), "waiting for the host");
 		}
 		const auto kind = proto::TypeOf(frame.value());
@@ -555,18 +433,31 @@ Result<cbor::Value, ClientFailure> HostClient::waitFor(int timeoutMs) {
 	if (_fd < 0) {
 		return Failure(ClientError::HostDied, "the host is not running");
 	}
-	auto frame = ipc::ReadFrame(
-		_fd,
-		ipc::StrictLimits(),
-		ipc::kMaxFrameBytes,
-		timeoutMs);
-	if (!frame.ok()) {
-		if (frame.error() == ipc::IoError::Timeout) {
+	const auto deadline = std::chrono::steady_clock::now()
+		+ std::chrono::milliseconds(std::max(timeoutMs, 0));
+	while (true) {
+		if (_rssLimit != 0 && os::ProcessUsage(_pid.load()).rssBytes > _rssLimit) {
+			kill();
+			return Failure(ClientError::HostDied, "the host used too much memory");
+		}
+		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+			deadline - std::chrono::steady_clock::now()).count();
+		const auto slice = (_rssLimit != 0) ? std::min<int64_t>(left, 100) : left;
+		auto frame = ipc::ReadFrame(
+			_fd,
+			ipc::StrictLimits(),
+			ipc::kMaxFrameBytes,
+			(_rssLimit != 0) ? int(std::max<int64_t>(slice, 0)) : timeoutMs);
+		if (frame.ok()) {
+			return std::move(frame.value());
+		} else if (frame.error() == ipc::IoError::Timeout) {
+			if (_rssLimit != 0 && left > slice) {
+				continue;
+			}
 			return Failure(ClientError::Timeout, "no message");
 		}
 		return fail(frame.error(), "waiting for a message");
 	}
-	return std::move(frame.value());
 }
 
 } // namespace fgpl

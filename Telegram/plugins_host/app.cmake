@@ -1,9 +1,33 @@
 # The app side of the plugins: no Wasmtime here, the host process is downloaded.
-if (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+# WHY: the Mac App Store and Microsoft Store builds cannot start a downloaded executable.
+if (build_macstore OR build_winstore)
 	return()
 endif()
 
 set(fgpl_src ${CMAKE_CURRENT_LIST_DIR}/src/fgpl)
+
+if (WIN32)
+	set(fgpl_platform_sources
+		${fgpl_src}/os_win.cpp
+		${fgpl_src}/ipc_win.cpp
+		${fgpl_src}/process_win.cpp
+		${fgpl_src}/sealed_win.cpp
+		${fgpl_src}/sandbox_win.cpp)
+elseif (APPLE)
+	set(fgpl_platform_sources
+		${fgpl_src}/os_posix.cpp
+		${fgpl_src}/ipc_posix.cpp
+		${fgpl_src}/process_posix.cpp
+		${fgpl_src}/sealed_mac.cpp
+		${fgpl_src}/sandbox_mac.cpp)
+else()
+	set(fgpl_platform_sources
+		${fgpl_src}/os_posix.cpp
+		${fgpl_src}/ipc_posix.cpp
+		${fgpl_src}/process_posix.cpp
+		${fgpl_src}/sealed_linux.cpp
+		${fgpl_src}/sandbox_linux.cpp)
+endif()
 
 add_library(fgpl_app STATIC
 	${fgpl_src}/cbor.cpp
@@ -24,7 +48,7 @@ add_library(fgpl_app STATIC
 	${fgpl_src}/permissions.cpp
 	${fgpl_src}/file_storage.cpp
 	${fgpl_src}/runtime_bundle.cpp
-	${fgpl_src}/sandbox_linux.cpp
+	${fgpl_platform_sources}
 	${fgpl_src}/ui_tree.cpp
 	${fgpl_src}/ipc.cpp
 	${fgpl_src}/host_client.cpp
@@ -38,3 +62,6 @@ target_link_libraries(fgpl_app
 PUBLIC
 	desktop-app::external_zlib
 	desktop-app::external_openssl)
+if (WIN32)
+	target_link_libraries(fgpl_app PUBLIC bcrypt advapi32 userenv)
+endif()

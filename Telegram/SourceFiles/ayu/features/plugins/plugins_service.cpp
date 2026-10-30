@@ -48,10 +48,9 @@
 #ifdef FRESHGRAM_PLUGINS
 #include "fgpl/manager.h"
 #include "fgpl/runtime_bundle.h"
-#include "fgpl/sandbox_linux.h"
+#include "fgpl/os.h"
+#include "fgpl/sandbox.h"
 #include "fgpl/semver.h"
-
-#include <unistd.h>
 #endif
 
 #include <cctype>
@@ -108,7 +107,7 @@ struct Service {
 	rpl::variable<State> state = State::Disabled;
 	rpl::event_stream<> list;
 	rpl::lifetime lifetime;
-	int hostFd = -1;
+	fgpl::os::Handle hostFd = fgpl::os::kNoHandle;
 	int revision = 0;
 	bool started = false;
 };
@@ -119,7 +118,7 @@ struct Service {
 }
 
 [[nodiscard]] QString HostBinary() {
-	return RuntimePath() + u"/fgpl_plugin_host"_q;
+	return RuntimePath() + u"/"_q + QString::fromLatin1(fgpl::os::kHostFileName);
 }
 
 [[nodiscard]] std::optional<fgpl::InstalledRuntime> Installed() {
@@ -133,7 +132,7 @@ struct Service {
 [[nodiscard]] std::optional<fgpl::ManagerConfig> MakeConfig(
 		Service &service) {
 	auto config = fgpl::ManagerConfig();
-	config.root = StorePath().toStdString();
+	config.root = PathOf(StorePath());
 	config.host.path = HostBinary().toStdString();
 	config.services.dataFor = &DataFor;
 	config.services.transport = NetworkTransport();
@@ -197,13 +196,13 @@ struct Service {
 	service.hostFd = sealed.value();
 	service.revision = installed->revision;
 	config.host.executableFd = service.hostFd;
-	const auto runtime = RuntimePath().toStdString();
+	const auto runtime = PathOf(RuntimePath());
 	config.python.expectedHash = installed->pythonHash;
-	config.python.wasm = runtime + "/python/python.wasm";
-	config.python.library = runtime + "/python/lib";
-	config.python.sdk = runtime + "/sdk";
+	config.python.wasm = runtime / "python" / "python.wasm";
+	config.python.library = runtime / "python" / "lib";
+	config.python.sdk = runtime / "sdk";
 
-	config.cache.directory = (cWorkingDir() + u"tdata/plugins/cache"_q).toStdString();
+	config.cache.directory = PathOf(cWorkingDir() + u"tdata/plugins/cache"_q);
 	if (!DeriveSecret("freshgram.plugins.cache", config.cache.secret)
 		|| !DeriveSecret("freshgram.plugins.state", config.stateKey)) {
 		return std::nullopt;
@@ -249,8 +248,9 @@ void DropManager(Service &service) {
 		service.control = nullptr;
 		ReleaseData();
 	}
-	if (service.hostFd >= 0) {
-		close(base::take(service.hostFd));
+	if (service.hostFd != fgpl::os::kNoHandle) {
+		fgpl::os::CloseExecutable(service.hostFd);
+		service.hostFd = fgpl::os::kNoHandle;
 	}
 	service.revision = 0;
 }
@@ -1119,7 +1119,7 @@ bool HasPendingOutgoing(not_null<History*> history) {
 
 bool SandboxSupported() {
 #ifdef FRESHGRAM_PLUGINS
-	static const auto result = (fgpl::sandbox::LandlockAbi() > 0);
+	static const auto result = fgpl::sandbox::Supported();
 	return result;
 #else
 	return false;
@@ -1193,7 +1193,22 @@ QString RuntimeRootPath() {
 }
 
 QString RuntimePath() {
+#ifdef FRESHGRAM_PLUGINS
+	// On Windows "current" is a pointer file, not a link.
+	return QString::fromStdString(fgpl::os::PathToUtf8(
+		fgpl::os::ResolveCurrent(PathOf(RuntimeRootPath()))));
+#else // FRESHGRAM_PLUGINS
 	return RuntimeRootPath() + u"/current"_q;
+#endif // FRESHGRAM_PLUGINS
+}
+
+std::filesystem::path PathOf(const QString &text) {
+#ifdef Q_OS_WIN
+	// std::filesystem would read a narrow string as ANSI here.
+	return std::filesystem::path(text.toStdWString());
+#else // Q_OS_WIN
+	return std::filesystem::path(text.toStdString());
+#endif // Q_OS_WIN
 }
 
 void NotifyRuntimeChanged() {

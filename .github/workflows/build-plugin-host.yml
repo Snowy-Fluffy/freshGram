@@ -1,0 +1,163 @@
+name: Build plugin host
+
+# The plugin host runs in the OS sandbox of each platform, so it is built and
+# tested on the platform itself. The signed binaries are artifacts: they go
+# into the runtime bundles with Telegram/plugins_host/runtime/add_platform.py.
+
+on:
+  push:
+    branches-ignore:
+      - 'dependabot/**'
+    paths:
+      - 'Telegram/plugins_host/**'
+      - '.github/workflows/build-plugin-host.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: build-plugin-host-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-2025
+            wasmtime: x86_64-windows
+            triplet: x64-windows-static
+            platform: windows-x86_64
+          - arch: arm64
+            runner: windows-11-arm
+            wasmtime: aarch64-windows
+            triplet: arm64-windows-static
+            platform: windows-arm64
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Set up the compiler
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Fetch Wasmtime
+        shell: bash
+        run: python Telegram/plugins_host/runtime/fetch_wasmtime.py ${{ matrix.wasmtime }}
+
+      - name: Install OpenSSL and zlib
+        shell: bash
+        run: vcpkg install openssl zlib --triplet ${{ matrix.triplet }}
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S Telegram/plugins_host -B build -G Ninja \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -D VCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Check what the host depends on
+        shell: bash
+        run: python Telegram/plugins_host/runtime/check_host.py build/fgpl_plugin_host.exe
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload the host
+        uses: actions/upload-artifact@v4
+        with:
+          name: fgpl_plugin_host-${{ matrix.platform }}
+          path: build/fgpl_plugin_host.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            wasmtime: aarch64-macos
+            platform: macos-arm64
+            tests: true
+          - arch: x86_64
+            wasmtime: x86_64-macos
+            platform: macos-x86_64
+            tests: false
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Fetch Wasmtime
+        run: python3 Telegram/plugins_host/runtime/fetch_wasmtime.py ${{ matrix.wasmtime }}
+
+      - name: Install tools
+        if: matrix.tests
+        run: brew install ninja openssl@3
+
+      - name: Install tools for the host only
+        if: ${{ !matrix.tests }}
+        run: brew install ninja
+
+      # An x86_64 host built on this arm64 runner has no x86_64 OpenSSL to link
+      # the tests with, so only the host itself is built for it.
+      - name: Configure
+        run: |
+          flags="-D CMAKE_BUILD_TYPE=Release -D CMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -D CMAKE_OSX_DEPLOYMENT_TARGET=10.15"
+          if [ "${{ matrix.tests }}" = "true" ]; then
+            flags="$flags -D OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)"
+          else
+            flags="$flags -D FGPL_HOST_ONLY=ON -D FGPL_BUILD_TESTS=OFF"
+          fi
+          cmake -S Telegram/plugins_host -B build -G Ninja $flags
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Check what the host depends on
+        run: python3 Telegram/plugins_host/runtime/check_host.py build/fgpl_plugin_host
+
+      # Apple Silicon starts only signed code. The signature has to be on the
+      # binary before it is hashed into the runtime index.
+      - name: Sign
+        run: |
+          codesign --force --sign - \
+            --entitlements Telegram/plugins_host/runtime/host.entitlements \
+            build/fgpl_plugin_host
+          codesign --verify --verbose build/fgpl_plugin_host
+
+      - name: Test
+        if: matrix.tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Smoke test under Rosetta
+        if: ${{ !matrix.tests }}
+        continue-on-error: true
+        run: |
+          softwareupdate --install-rosetta --agree-to-license
+          # No channel handle is the one thing it must refuse with status 64.
+          set +e
+          arch -x86_64 build/fgpl_plugin_host
+          test $? -eq 64
+
+      - name: Upload the host
+        uses: actions/upload-artifact@v4
+        with:
+          name: fgpl_plugin_host-${{ matrix.platform }}
+          path: build/fgpl_plugin_host
+          if-no-files-found: error

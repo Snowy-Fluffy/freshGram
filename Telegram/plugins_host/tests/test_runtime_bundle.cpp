@@ -2,6 +2,7 @@
 #include "fgpl/base64.h"
 #include "fgpl/json.h"
 #include "fgpl/manifest.h"
+#include "fgpl/os.h"
 #include "fgpl/package.h"
 #include "fgpl/runtime_bundle.h"
 #include "fgpl/zip_reader.h"
@@ -9,7 +10,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <sys/stat.h>
 
 namespace {
 
@@ -36,7 +36,7 @@ namespace fs = std::filesystem;
 
 [[nodiscard]] cbor::Bytes ValidArchive(const std::string &host = "host-binary") {
 	return WriteZip({
-		{ "fgpl_plugin_host", Bytes(host) },
+		{ os::kHostFileName, Bytes(host) },
 		{ "python/python.wasm", Bytes("wasm-python") },
 		{ "python/lib/os.py", Bytes("import sys") },
 		{ "sdk/freshgram/__init__.py", Bytes("") },
@@ -75,7 +75,7 @@ namespace fs = std::filesystem;
 				{ "sha256", Text(HashText(archive)) },
 				{ "size", Int(int64_t(archive.size())) },
 				{ "hostSha256", Text(hostHash.empty()
-					? FileHash(archive, "fgpl_plugin_host")
+					? FileHash(archive, os::kHostFileName)
 					: hostHash) },
 				{ "pythonSha256", Text(FileHash(archive, "python/python.wasm")) },
 			}) },
@@ -154,18 +154,19 @@ void TestInstall() {
 
 	const auto installed = InstallRuntime(archive, index, bundle, lab.root);
 	CHECK(installed.ok());
+	CHECK(fs::exists(os::ResolveCurrent(lab.root) / "python" / "lib" / "os.py"));
+#ifndef _WIN32
 	CHECK(fs::is_symlink(lab.root / "current"));
-	CHECK(fs::exists(lab.root / "current" / "python" / "lib" / "os.py"));
-	struct stat info{};
-	CHECK(::stat((lab.root / "current" / "fgpl_plugin_host").c_str(), &info) == 0);
-	CHECK((info.st_mode & 0777) == 0700);
+	CHECK((fs::status(os::ResolveCurrent(lab.root) / os::kHostFileName).permissions()
+		& fs::perms::all) == fs::perms::owner_all);
+#endif // !_WIN32
 
 	const auto read = ReadInstalledRuntime(lab.root);
 	CHECK(read && read->revision == 3 && read->python == "3.14.0");
 	CHECK(read && VerifyInstalledRuntime(*read));
 
 	{
-		auto stream = std::ofstream(lab.root / "current" / "fgpl_plugin_host", std::ios::binary | std::ios::trunc);
+		auto stream = std::ofstream(os::ResolveCurrent(lab.root) / os::kHostFileName, std::ios::binary | std::ios::trunc);
 		stream << "evil";
 	}
 	CHECK(read && !VerifyInstalledRuntime(*read));
@@ -186,7 +187,7 @@ void TestTrustedRead() {
 	CHECK(!ReadTrustedRuntime(lab.root, Key(2), "linux-x86_64"));
 	CHECK(!ReadTrustedRuntime(lab.root, Key(), "linux-aarch64"));
 
-	const auto info = lab.root / "current" / "installed.json";
+	const auto info = os::ResolveCurrent(lab.root) / "installed.json";
 	auto text = std::string();
 	{
 		auto stream = std::ifstream(info);
@@ -205,7 +206,7 @@ void TestTrustedRead() {
 		stream << text;
 	}
 
-	fs::remove(lab.root / "current" / "index.json");
+	fs::remove(os::ResolveCurrent(lab.root) / "index.json");
 	CHECK(ReadInstalledRuntime(lab.root));
 	CHECK(!ReadTrustedRuntime(lab.root, Key(), "linux-x86_64"));
 }
@@ -231,13 +232,13 @@ void TestRefusals() {
 	unsignedIndex.text.clear();
 	CHECK(!InstallRuntime(archive, unsignedIndex, bundle, lab.root).ok());
 
-	const auto incomplete = WriteZip({ { "fgpl_plugin_host", Bytes("x") } });
+	const auto incomplete = WriteZip({ { os::kHostFileName, Bytes("x") } });
 	const auto incompleteIndex = Parsed(incomplete);
 	CHECK(!InstallRuntime(incomplete, incompleteIndex, *BundleFor(incompleteIndex, "linux-x86_64"), lab.root).ok());
 
 	for (const auto &name : { "other", "python/../x", "/etc/passwd", "sdk" }) {
 		const auto sneaky = WriteZip({
-			{ "fgpl_plugin_host", Bytes("x") },
+			{ os::kHostFileName, Bytes("x") },
 			{ "python/python.wasm", Bytes("w") },
 			{ "python/lib/a.py", Bytes("") },
 			{ "sdk/freshgram/b.py", Bytes("") },

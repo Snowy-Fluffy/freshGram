@@ -1,12 +1,13 @@
 #include "fgpl/module_cache.h"
 
+#include "fgpl/os.h"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
 #include <fstream>
 #include <system_error>
-#include <unistd.h>
 
 namespace fgpl {
 namespace {
@@ -129,10 +130,10 @@ bool ModuleCache::store(
 
 	const auto target = pathFor(wasm);
 	static auto counter = std::atomic<uint64_t>(0);
-	const auto temporary = target.string()
-		+ "." + std::to_string(getpid())
+	const auto temporary = std::filesystem::path(target) += (
+		"." + std::to_string(os::ProcessId())
 		+ "." + std::to_string(counter.fetch_add(1))
-		+ ".tmp";
+		+ ".tmp");
 	{
 		auto stream = std::ofstream(temporary, std::ios::binary | std::ios::trunc);
 		if (!stream.write(
@@ -141,8 +142,7 @@ bool ModuleCache::store(
 			return false;
 		}
 	}
-	std::filesystem::rename(temporary, target, error);
-	if (error) {
+	if (!os::ReplaceFile(temporary, target, error)) {
 		std::filesystem::remove(temporary, error);
 		return false;
 	}

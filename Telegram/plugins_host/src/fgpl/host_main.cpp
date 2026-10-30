@@ -1,21 +1,37 @@
 #include "fgpl/ipc.h"
 #include "fgpl/protocol.h"
 #include "fgpl/runtime.h"
-#include "fgpl/sandbox_linux.h"
+#include "fgpl/os.h"
+#include "fgpl/sandbox.h"
 
-#include <fcntl.h>
+#ifdef __GLIBC__
 #include <malloc.h>
-#include <time.h>
-#include <unistd.h>
+#endif // __GLIBC__
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <cwchar>
+#else // _WIN32
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
 extern char **environ;
+#endif // _WIN32
 
 namespace {
 
@@ -23,7 +39,7 @@ using namespace fgpl;
 
 class SocketBridge final : public Bridge {
 public:
-	explicit SocketBridge(int fd) : _fd(fd) {
+	explicit SocketBridge(os::Handle fd) : _fd(fd) {
 	}
 
 	cbor::Value call(const cbor::Value &request) override {
@@ -59,11 +75,11 @@ public:
 	}
 
 private:
-	int _fd = -1;
+	os::Handle _fd = os::kNoHandle;
 
 };
 
-void Fatal(int fd, const std::string &detail) {
+void Fatal(os::Handle fd, const std::string &detail) {
 	if (!ipc::WriteFrame(fd, proto::Map({
 			{ "t", proto::Text("fatal") },
 			{ "detail", proto::Text(detail) },
@@ -102,13 +118,13 @@ void Fatal(int fd, const std::string &detail) {
 	return result;
 }
 
-void Reply(int fd, const cbor::Value &message) {
+void Reply(os::Handle fd, const cbor::Value &message) {
 	if (!ipc::WriteFrame(fd, message).ok()) {
 		std::_Exit(3);
 	}
 }
 
-void RunCompiler(int fd, Runtime &runtime) {
+void RunCompiler(os::Handle fd, Runtime &runtime) {
 	auto frame = ipc::ReadFrame(fd, ipc::TrustedLimits());
 	if (!frame.ok() || proto::TypeOf(frame.value()) != "compile") {
 		std::_Exit(3);
@@ -152,6 +168,84 @@ void RunCompiler(int fd, Runtime &runtime) {
 	std::_Exit(0);
 }
 
+#if defined _WIN32
+constexpr auto kPlatformName = "windows";
+constexpr auto kSelftestFile = "C:\\Windows\\win.ini";
+#elif defined __APPLE__
+constexpr auto kPlatformName = "macos";
+constexpr auto kSelftestFile = "/etc/passwd";
+#else
+constexpr auto kPlatformName = "linux";
+constexpr auto kSelftestFile = "/etc/passwd";
+#endif
+
+[[nodiscard]] int64_t EnvironmentCount() {
+	auto count = int64_t(0);
+#ifdef _WIN32
+	if (const auto block = GetEnvironmentStringsW()) {
+		for (auto entry = block; *entry; entry += wcslen(entry) + 1) {
+			++count;
+		}
+		FreeEnvironmentStringsW(block);
+	}
+#else // _WIN32
+	for (auto entry = environ; entry && *entry; ++entry) {
+		++count;
+	}
+#endif // _WIN32
+	return count;
+}
+
+// The selftests below try what a plugin that escaped Wasmtime would try.
+[[nodiscard]] bool CanSpawnProcess() {
+#ifdef _WIN32
+	auto info = PROCESS_INFORMATION();
+	auto startup = STARTUPINFOW();
+	startup.cb = sizeof(startup);
+	wchar_t line[] = L"cmd.exe /c exit 0";
+	if (!CreateProcessW(
+			L"C:\\Windows\\System32\\cmd.exe",
+			line,
+			nullptr,
+			nullptr,
+			FALSE,
+			CREATE_NO_WINDOW,
+			nullptr,
+			nullptr,
+			&startup,
+			&info)) {
+		return false;
+	}
+	WaitForSingleObject(info.hProcess, 5000);
+	CloseHandle(info.hThread);
+	CloseHandle(info.hProcess);
+	return true;
+#else // _WIN32
+	auto pid = pid_t();
+	char program[] = "/bin/sh";
+	char flag[] = "-c";
+	char command[] = "exit 0";
+	char *arguments[] = { program, flag, command, nullptr };
+	char *environment[] = { nullptr };
+	if (posix_spawn(&pid, program, nullptr, nullptr, arguments, environment) != 0) {
+		return false;
+	}
+	waitpid(pid, nullptr, 0);
+	return true;
+#endif // _WIN32
+}
+
+[[nodiscard]] bool CanAllocate(uint64_t megabytes) {
+	for (auto done = uint64_t(0); done < megabytes; done += 64) {
+		const auto block = static_cast<char*>(std::malloc(size_t(64) << 20));
+		if (!block) {
+			return false;
+		}
+		std::memset(block, 1, size_t(64) << 20);
+	}
+	return true;
+}
+
 void ReleaseFreedMemory() {
 #ifdef __GLIBC__
 	malloc_trim(0);
@@ -159,7 +253,7 @@ void ReleaseFreedMemory() {
 }
 
 void HandleLoad(
-		int fd,
+		os::Handle fd,
 		cbor::Value message,
 		Runtime &runtime,
 		SocketBridge &bridge,
@@ -228,7 +322,7 @@ void HandleLoad(
 
 class HostDispatcher final : public Dispatcher {
 public:
-	explicit HostDispatcher(int fd) : _fd(fd) {
+	explicit HostDispatcher(os::Handle fd) : _fd(fd) {
 	}
 
 	Dispatch next() override {
@@ -274,12 +368,12 @@ public:
 	}
 
 private:
-	int _fd = -1;
+	os::Handle _fd = os::kNoHandle;
 	int64_t _open = -1;
 
 };
 
-void RunCommand(int fd, Plugin &plugin) {
+void RunCommand(os::Handle fd, Plugin &plugin) {
 	auto dispatcher = HostDispatcher(fd);
 	const auto result = plugin.runCommand(dispatcher);
 	if (dispatcher.open() >= 0) {
@@ -295,7 +389,7 @@ void RunCommand(int fd, Plugin &plugin) {
 }
 
 void HandleCall(
-		int fd,
+		os::Handle fd,
 		const cbor::Value &message,
 		Plugin &plugin,
 		bool init) {
@@ -322,7 +416,7 @@ void HandleCall(
 } // namespace
 
 int main(int argc, char **argv) {
-	auto fd = -1;
+	auto fd = os::kNoHandle;
 	auto layers = sandbox::kLayersAll;
 	auto selftest = std::string();
 	auto compileOnly = false;
@@ -332,7 +426,7 @@ int main(int argc, char **argv) {
 	for (auto i = 1; i < argc; ++i) {
 		const auto argument = std::string(argv[i]);
 		if (argument.rfind("--ipc-fd=", 0) == 0) {
-			fd = std::atoi(argument.c_str() + 9);
+			fd = os::Handle(std::strtoll(argument.c_str() + 9, nullptr, 10));
 #ifdef FGPL_UNSANDBOXED_TEST_HOST
 		} else if (argument == "--layers=none") {
 			layers = 0;
@@ -369,6 +463,17 @@ int main(int argc, char **argv) {
 	if (!restricted.ok()) {
 		Fatal(fd, restricted.error());
 	}
+#ifdef __APPLE__
+	// There is no parent-death signal here: leave when the app is gone.
+	std::thread([parent = getppid()] {
+		while (true) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(250));
+			if (getppid() != parent) {
+				std::_Exit(1);
+			}
+		}
+	}).detach();
+#endif // __APPLE__
 	auto runtime = Runtime(runtimeOptions);
 	auto locked = sandbox::Lock(options, restricted.value());
 	if (!locked.ok()) {
@@ -376,11 +481,15 @@ int main(int argc, char **argv) {
 	}
 	const auto report = locked.value();
 	if (layers == sandbox::kLayersAll
-		&& !(report.rlimits && report.landlock && report.seccomp)) {
+		&& !report.complete()) {
 		Fatal(fd, "the sandbox is incomplete");
 	}
 	Reply(fd, proto::Map({
 		{ "t", proto::Text("hello") },
+		{ "fs", proto::Bool(report.filesystem) },
+		{ "proc", proto::Bool(report.processes) },
+		{ "limits", proto::Bool(report.limits) },
+		{ "platform", proto::Text(kPlatformName) },
 		{ "landlock_abi", proto::Int(report.landlockAbi) },
 		{ "landlock", proto::Bool(report.landlock) },
 		{ "seccomp", proto::Bool(report.seccomp) },
@@ -389,7 +498,17 @@ int main(int argc, char **argv) {
 	}));
 
 	if (selftest == "open") {
-		if (open("/etc/passwd", O_RDONLY) >= 0) {
+		if (const auto file = std::fopen(kSelftestFile, "rb")) {
+			std::fclose(file);
+			Reply(fd, proto::Map({ { "t", proto::Text("selftest_survived") } }));
+		}
+	} else if (selftest == "spawn") {
+		if (CanSpawnProcess()) {
+			Reply(fd, proto::Map({ { "t", proto::Text("selftest_survived") } }));
+		}
+	} else if (selftest == "alloc") {
+		// Twice what the host may use, whatever limit applies.
+		if (CanAllocate(std::max<uint64_t>(addressSpaceMb, 256) * 2)) {
 			Reply(fd, proto::Map({ { "t", proto::Text("selftest_survived") } }));
 		}
 	} else if (selftest == "spin") {
@@ -398,18 +517,14 @@ int main(int argc, char **argv) {
 			counter = counter + 1;
 		}
 	} else if (selftest == "env") {
-		auto count = int64_t(0);
-		for (auto entry = environ; entry && *entry; ++entry) {
-			++count;
-		}
+		auto count = EnvironmentCount();
 		Reply(fd, proto::Map({
 			{ "t", proto::Text("selftest_env") },
 			{ "count", proto::Int(count) },
 		}));
 	} else if (selftest == "hang") {
 		while (true) {
-			const auto pause = timespec{ 1, 0 };
-			nanosleep(&pause, nullptr);
+			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 	}
 

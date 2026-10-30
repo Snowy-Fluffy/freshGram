@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fgpl/cbor.h"
+#include "fgpl/os.h"
 #include "fgpl/result.h"
 
 #include <cstddef>
@@ -19,12 +20,12 @@ enum class IoError : uint8_t {
 constexpr auto kMaxFrameBytes = size_t(256) << 20;
 
 [[nodiscard]] Result<std::monostate, IoError> WriteFrame(
-	int fd,
+	os::Handle fd,
 	const cbor::Value &message,
 	size_t maxBytes = kMaxFrameBytes);
 
 [[nodiscard]] Result<cbor::Value, IoError> ReadFrame(
-	int fd,
+	os::Handle fd,
 	const cbor::Limits &limits,
 	size_t maxBytes = kMaxFrameBytes,
 	int timeoutMs = -1);

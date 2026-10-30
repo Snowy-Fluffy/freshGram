@@ -1,9 +1,7 @@
 #include "fgpl/file_storage.h"
 
-#include <fcntl.h>
-#include <unistd.h>
+#include "fgpl/os.h"
 
-#include <cerrno>
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -45,49 +43,11 @@ enum class Loaded {
 	return Loaded::Ok;
 }
 
-[[nodiscard]] bool WriteSynced(
-		const std::filesystem::path &file,
-		const cbor::Bytes &bytes) {
-	const auto fd = ::open(
-		file.c_str(),
-		O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-		0600);
-	if (fd < 0) {
-		return false;
-	}
-	auto written = size_t(0);
-	while (written < bytes.size()) {
-		const auto result = ::write(
-			fd,
-			bytes.data() + written,
-			bytes.size() - written);
-		if (result < 0 && errno == EINTR) {
-			continue;
-		} else if (result <= 0) {
-			::close(fd);
-			return false;
-		}
-		written += size_t(result);
-	}
-	const auto synced = (::fsync(fd) == 0);
-	return (::close(fd) == 0) && synced;
-}
-
-void SyncDirectory(const std::filesystem::path &directory) {
-	const auto fd = ::open(
-		directory.c_str(),
-		O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (fd >= 0) {
-		::fsync(fd);
-		::close(fd);
-	}
-}
-
 } // namespace
 
 FileStorage::FileStorage(std::filesystem::path file)
 : _file(std::move(file)) {
-	const auto backup = _file.string() + ".bak";
+	const auto backup = std::filesystem::path(_file) += ".bak";
 	auto error = std::error_code();
 	const auto main = Load(_file, _items);
 	if (main == Loaded::Ok) {
@@ -98,7 +58,10 @@ FileStorage::FileStorage(std::filesystem::path file)
 	}
 	if (main == Loaded::Corrupt) {
 		_healthy = false;
-		std::filesystem::rename(_file, _file.string() + ".corrupt", error);
+		std::filesystem::rename(
+			_file,
+			std::filesystem::path(_file) += ".corrupt",
+			error);
 		_items.clear();
 	}
 	// The main file is damaged or missing, use the previous good copy.
@@ -190,16 +153,16 @@ bool FileStorage::flush() {
 	}
 	auto error = std::error_code();
 	std::filesystem::create_directories(_file.parent_path(), error);
-	const auto temporary = std::filesystem::path(_file.string() + "."
-		+ std::to_string(getpid()) + "."
+	const auto temporary = std::filesystem::path(_file) += ("."
+		+ std::to_string(os::ProcessId()) + "."
 		+ std::to_string(reinterpret_cast<uintptr_t>(this)) + ".tmp");
-	if (!WriteSynced(temporary, bytes)) {
+	if (!os::WriteDurable(temporary, bytes)) {
 		std::filesystem::remove(temporary, error);
 		return false;
 	}
 	// Keep the previous version as a hard link, the rename leaves it intact.
 	if (!_recovered && std::filesystem::exists(_file, error)) {
-		const auto backup = std::filesystem::path(_file.string() + ".bak");
+		const auto backup = std::filesystem::path(_file) += ".bak";
 		std::filesystem::remove(backup, error);
 		std::filesystem::create_hard_link(_file, backup, error);
 		if (error) {
@@ -210,12 +173,11 @@ bool FileStorage::flush() {
 				error);
 		}
 	}
-	std::filesystem::rename(temporary, _file, error);
-	if (error) {
+	if (!os::ReplaceFile(temporary, _file, error)) {
 		std::filesystem::remove(temporary, error);
 		return false;
 	}
-	SyncDirectory(_file.parent_path());
+	os::SyncDirectory(_file.parent_path());
 	_dirty = false;
 	_recovered = false;
 	return true;

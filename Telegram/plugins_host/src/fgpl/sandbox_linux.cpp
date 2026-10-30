@@ -219,11 +219,11 @@ private:
 		});
 	};
 
-	auto writable = std::vector<int>{ options.ipcFd };
+	auto writable = std::vector<int>{ int(options.ipcFd) };
 	if (options.allowStderr) {
 		writable.push_back(2);
 	}
-	fdIn(uint32_t(SYS_read), { options.ipcFd });
+	fdIn(uint32_t(SYS_read), { int(options.ipcFd) });
 	fdIn(uint32_t(SYS_write), writable);
 	conditional(uint32_t(SYS_tgkill), [&] {
 		program.load(argLow(0));
@@ -327,6 +327,10 @@ bool SpeculationRestricted() {
 	return true;
 }
 
+bool Supported() {
+	return LandlockAbi() > 0;
+}
+
 int LandlockAbi() {
 	const auto abi = syscall(
 		SYS_landlock_create_ruleset,
@@ -343,7 +347,7 @@ Result<Report, std::string> Restrict(const Options &options, Report report) {
 		return Errno("PR_SET_DUMPABLE");
 	} else if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0) {
 		return Errno("PR_SET_PDEATHSIG");
-	} else if (!CloseExtraDescriptors(options.ipcFd)) {
+	} else if (!CloseExtraDescriptors(int(options.ipcFd))) {
 		return Errno("closing inherited descriptors");
 	}
 	RestrictSpeculation();
@@ -367,6 +371,7 @@ Result<Report, std::string> Restrict(const Options &options, Report report) {
 			return Errno("setrlimit(RLIMIT_CPU)");
 		}
 		report.rlimits = true;
+		report.limits = true;
 	}
 	if ((options.layers & kLayerLandlock) != 0) {
 		report.landlockAbi = LandlockAbi();
@@ -399,6 +404,7 @@ Result<Report, std::string> Restrict(const Options &options, Report report) {
 			return Errno("landlock_restrict_self");
 		}
 		report.landlock = true;
+		report.filesystem = true;
 	}
 	return report;
 }
@@ -423,6 +429,7 @@ Result<Report, std::string> Lock(const Options &options, Report report) {
 		return Errno("seccomp");
 	}
 	report.seccomp = true;
+	report.processes = true;
 	return report;
 }
 

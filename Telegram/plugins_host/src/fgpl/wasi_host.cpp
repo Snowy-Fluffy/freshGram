@@ -1,11 +1,11 @@
 #include "fgpl/wasi_host.h"
 
 #include "fgpl/guest.h"
+#include "fgpl/os.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
-#include <random>
 #include <thread>
 
 namespace fgpl {
@@ -340,13 +340,7 @@ void Wasi::linkClocks(
 			} else if (!InRange(*data, uint32_t(pointer), uint32_t(length))) {
 				return code::kFault;
 			}
-			auto device = std::random_device();
-			for (auto i = uint32_t(0); i < uint32_t(length);) {
-				const auto word = device();
-				for (auto k = 0; k != 4 && i < uint32_t(length); ++k, ++i) {
-					data->data()[uint32_t(pointer) + i] = uint8_t(word >> (8 * k));
-				}
-			}
+			os::RandomBytes({ data->data() + uint32_t(pointer), size_t(length) });
 			return code::kSuccess;
 		});
 	Define(linker, defined, module, "sched_yield", []() -> int32_t {

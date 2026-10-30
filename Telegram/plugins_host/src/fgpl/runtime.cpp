@@ -538,6 +538,10 @@ void LinkHost(
 	config.parallel_compilation(false);
 	config.debug_info(false);
 	config.memory_init_cow(false);
+#ifdef __APPLE__
+	// Mach exception ports need lookups the host's sandbox does not allow.
+	config.macos_use_mach_ports(false);
+#endif // __APPLE__
 	if (options.baselineCompiler) {
 		config.strategy(wasmtime::Strategy::Winch);
 	}

@@ -3,10 +3,9 @@
 #include "fgpl/abi.h"
 #include "fgpl/base64.h"
 #include "fgpl/json.h"
+#include "fgpl/os.h"
 #include "fgpl/sha256.h"
 #include "fgpl/wasm_scan.h"
-
-#include <unistd.h>
 
 #include <algorithm>
 #include <fstream>
@@ -224,12 +223,12 @@ Result<std::filesystem::path, std::string> InstallPackage(
 	namespace fs = std::filesystem;
 	const auto target = root / package.manifest.id / package.manifest.version.text();
 	const auto staging = root / package.manifest.id
-		/ (".staging-" + std::to_string(getpid()));
+		/ (".staging-" + std::to_string(os::ProcessId()));
 	auto error = std::error_code();
 	fs::remove_all(staging, error);
 	fs::create_directories(staging, error);
 	if (error) {
-		return "cannot create " + staging.string();
+		return "cannot create " + os::PathToUtf8(staging);
 	}
 	const auto write = [&](const fs::path &path, const char *data, size_t size) {
 		fs::create_directories(path.parent_path(), error);

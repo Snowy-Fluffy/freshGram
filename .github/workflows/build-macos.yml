@@ -164,12 +164,14 @@ jobs:
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           cd freshGram/Telegram
           # std::filesystem in whisper.cpp, Tesseract and the settings needs 10.15.
           ./configure.sh \
             -D TDESKTOP_API_ID="$API_ID" \
             -D TDESKTOP_API_HASH="$API_HASH" \
+            -D FRESHGRAM_RUNTIME_KEY="$RUNTIME_KEY" \
             -D CMAKE_CXX_FLAGS_DEBUG=-g1 \
             -D CMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
             -D CMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
