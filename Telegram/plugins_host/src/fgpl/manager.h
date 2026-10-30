@@ -48,6 +48,11 @@ public:
 		size_t limit) override;
 	uint64_t usedBytes() override;
 	size_t count() override;
+	SetResult trySet(
+		const std::string &key,
+		cbor::Bytes value,
+		uint64_t quotaBytes,
+		size_t maxKeys) override;
 	bool flush();
 	[[nodiscard]] bool healthy();
 	[[nodiscard]] bool recovered();
