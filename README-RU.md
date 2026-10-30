@@ -98,9 +98,6 @@ freshGram основан на [Telegram Desktop](https://github.com/telegramdesk
 - Дата создания аккаунта и датацентр в профиле
 - Пакеты Flatpak и Arch Linux
 
-> Там, где AyuGram и materialgram решают одну задачу, freshGram оставляет реализацию AyuGram,
-> а внешний вид materialgram задаёт как значение по умолчанию соответствующей настройки.
-
 ## Arch Linux
 
 freshGram есть в AUR, пакеты поддерживает [Snowy-Fluffy](https://github.com/Snowy-Fluffy):
@@ -149,6 +146,8 @@ nix profile install 'git+https://relay.ngit.dev/npub18eectrgnhcmmp6e0ec6sp3scf4m
 - [Kotatogram](https://github.com/kotatogram/kotatogram-desktop)
 - [64Gram](https://github.com/TDesktop-x64/tdesktop)
 - [Forkgram](https://github.com/forkgram/tdesktop)
+- [FAgram Desktop](https://github.com/fagramdesktop/fadesktop)
+- [PTelegram Desktop](https://github.com/wrwrabbit/tdesktop)
 
 ### Используемые библиотеки
 

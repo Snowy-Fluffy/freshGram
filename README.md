@@ -146,6 +146,8 @@ The source code is published under GPLv3 with OpenSSL exception, the license is 
 - [Kotatogram](https://github.com/kotatogram/kotatogram-desktop)
 - [64Gram](https://github.com/TDesktop-x64/tdesktop)
 - [Forkgram](https://github.com/forkgram/tdesktop)
+- [FAgram Desktop](https://github.com/fagramdesktop/fadesktop)
+- [PTelegram Desktop](https://github.com/wrwrabbit/tdesktop)
 
 ### Libraries used
 
