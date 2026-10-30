@@ -42,7 +42,7 @@ void RandomBytes(std::span<uint8_t> out);
 	std::span<const uint8_t> bytes);
 void SyncDirectory(const std::filesystem::path &directory);
 // Replaces the target atomically, retries while another process holds it.
-[[nodiscard]] bool ReplaceFile(
+[[nodiscard]] bool ReplaceFileAtomic(
 	const std::filesystem::path &from,
 	const std::filesystem::path &to,
 	std::error_code &error);

@@ -150,7 +150,7 @@ bool WriteDurable(
 void SyncDirectory(const std::filesystem::path &) {
 }
 
-bool ReplaceFile(
+bool ReplaceFileAtomic(
 		const std::filesystem::path &from,
 		const std::filesystem::path &to,
 		std::error_code &error) {
@@ -186,7 +186,7 @@ bool SetCurrent(const std::filesystem::path &root, const std::string &name) {
 		return false;
 	}
 	auto error = std::error_code();
-	if (!ReplaceFile(temporary, root / "current", error)) {
+	if (!ReplaceFileAtomic(temporary, root / "current", error)) {
 		std::filesystem::remove(temporary, error);
 		return false;
 	}

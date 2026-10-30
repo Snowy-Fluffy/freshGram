@@ -238,7 +238,7 @@ void SaveRuntimePolicy(const fs::path &root, const RuntimeIndex &index) {
 	}));
 	const auto temporary = root / (PolicyName() + ".tmp");
 	if (WriteBytes(temporary, { reinterpret_cast<const uint8_t*>(text.data()), text.size() })) {
-		(void)os::ReplaceFile(temporary, root / PolicyName(), error);
+		(void)os::ReplaceFileAtomic(temporary, root / PolicyName(), error);
 	}
 }
 

@@ -159,7 +159,7 @@ void TestFilesInANonAsciiFolder() {
 	const auto second = std::vector<uint8_t>{ 4, 5, 6, 7 };
 	CHECK(os::WriteDurable(file, first));
 	CHECK(os::WriteDurable(root / "b.bin", second));
-	CHECK(os::ReplaceFile(root / "b.bin", file, error));
+	CHECK(os::ReplaceFileAtomic(root / "b.bin", file, error));
 	CHECK(!fs::exists(root / "b.bin"));
 	CHECK(fs::file_size(file) == second.size());
 

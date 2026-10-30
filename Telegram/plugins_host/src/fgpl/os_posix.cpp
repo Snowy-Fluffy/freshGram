@@ -96,7 +96,7 @@ void SyncDirectory(const std::filesystem::path &directory) {
 	}
 }
 
-bool ReplaceFile(
+bool ReplaceFileAtomic(
 		const std::filesystem::path &from,
 		const std::filesystem::path &to,
 		std::error_code &error) {
