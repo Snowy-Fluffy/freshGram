@@ -494,7 +494,7 @@ const std::set<std::string> &KnownPermissions() {
 		"messages.edit", "messages.delete", "messages.react", "users.info",
 		"chats.active", "messages.ids", "chats.activity", "users.presence",
 		"app.activity", "translate.provide", "bots.inline", "chats.manage",
-		"contacts.manage",
+		"contacts.manage", "ghost.control",
 	};
 	return known;
 }

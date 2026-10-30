@@ -282,6 +282,23 @@ class _Chats(_Namespace):
         """Show "typing…" or another action in the chat, "cancel" to stop."""
         return self._call("chats.action", _nothing, chat=chat, kind=kind, **_given(topic=topic))
 
+    def members(self, chat, limit=50, offset=0, query=None):
+        """Members of a group or channel: [{"id", "name", "username", "role", "bot"}] (chat.info and users.info).
+
+        role is member, admin or creator (also banned or left in some lists). query
+        searches by name; once per second; channels where you cannot see members are denied.
+        """
+        return self._call(
+            "chats.members",
+            chat=chat,
+            limit=limit,
+            **_given(offset=offset),
+            **({} if query is None else {"query": query}))
+
+    def admins(self, chat, limit=50, offset=0):
+        """Administrators of a group or channel, like members() (chat.info and users.info)."""
+        return self._call("chats.admins", chat=chat, limit=limit, **_given(offset=offset))
+
     def mute(self, chat, seconds=0, forever=False):
         """Mute the chat for some seconds (up to a year) or for good; no arguments unmute it (chats.manage)."""
         return self._call(
@@ -444,6 +461,27 @@ class _Messages(_Namespace):
     def search(self, chat, query, limit=20):
         """Search the chat on the server (messages.history)."""
         return self._call("messages.search", chat=chat, query=query, limit=limit)
+
+    def send_poll(self, chat, question, options, anonymous=True, multiple=False, quiz=False,
+                  correct=None, explanation="", close_period=0, reply_to=0, topic=0,
+                  silent=False):
+        """Send a poll (messages.send, the same limits as send).
+
+        2 to 10 options. A quiz needs correct, the index of the right option, may
+        have an explanation and cannot be multiple. close_period is 5 to 600 seconds.
+        """
+        return self._call(
+            "messages.send_poll",
+            _nothing,
+            chat=chat,
+            question=question,
+            options=list(options),
+            anonymous=bool(anonymous),
+            multiple=bool(multiple),
+            quiz=bool(quiz),
+            **({} if correct is None else {"correct": correct}),
+            **_given(explanation=explanation, close_period=close_period, reply_to=reply_to,
+                     topic=topic, silent=silent))
 
     def get(self, chat, message):
         """One message by its server id (messages.history); loads it from the server if needed."""
@@ -725,6 +763,18 @@ class _Stars(_Namespace):
         return self._call("stars.balance", lambda value: value["balance"])
 
 
+class _Ghost(_Namespace):
+    def get(self):
+        """The ghost mode of this account (ghost.control): {"active", "send_read_messages",
+        "send_read_stories", "send_online", "send_typing"}."""
+        return self._call("ghost.get")
+
+    def set(self, enabled):
+        """Turn the ghost mode on or off (ghost.control); turning it off works only right
+        after a user action."""
+        return self._call("ghost.set", _nothing, enabled=bool(enabled))
+
+
 class _Composer(_Namespace):
     def draft(self, chat):
         return self._call("composer.draft", chat=chat)
@@ -752,6 +802,7 @@ settings = _Settings(_sync_call)
 media = _Media(_sync_call)
 users = _Users(_sync_call)
 bots = _Bots(_sync_call)
+ghost = _Ghost(_sync_call)
 channels = _Channels(_sync_call)
 stickers = _Stickers(_sync_call)
 notify = _Notify(_sync_call)

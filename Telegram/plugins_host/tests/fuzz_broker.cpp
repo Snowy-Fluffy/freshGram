@@ -26,7 +26,7 @@ enum class Config : uint8_t {
 // WHY: strings only the fakes produce, unless the plugin sent them in itself.
 const auto kPrivate = std::vector<std::string>{
 	"Alice", "Group", "Channel", "Bob", "Carol", "hello", "removed", "Work", "News",
-	"About", "Text one", "Text two", "Pressed",
+	"About", "Text one", "Text two", "Pressed", "bobby", "evey",
 };
 const auto kHidden = std::vector<std::string>{ "Secret", "Saved Messages" };
 

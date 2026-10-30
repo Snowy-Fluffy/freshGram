@@ -74,6 +74,12 @@ constexpr auto kResolveEachMs = int64_t(1000);
 constexpr auto kInlineEachMs = int64_t(1000);
 constexpr auto kMaxInlineResults = size_t(50);
 constexpr auto kMaxReplyChain = int64_t(20);
+constexpr auto kMaxMembers = int64_t(200);
+constexpr auto kMembersEachMs = int64_t(1000);
+constexpr auto kMaxPollQuestion = size_t(1024);
+constexpr auto kMaxPollOption = size_t(400);
+constexpr auto kMaxPollOptions = size_t(10);
+constexpr auto kMaxPollExplanation = size_t(800);
 constexpr auto kMaxMuteSeconds = int64_t(366) * 24 * 3600;
 constexpr auto kMaxContactName = size_t(64);
 constexpr auto kChatActionEachMs = int64_t(3000);
@@ -748,7 +754,8 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 		|| op == "stickers.send"
 		|| op == "messages.forward"
 		|| op == "messages.send_media"
-		|| op == "messages.edit_media") {
+		|| op == "messages.edit_media"
+		|| op == "messages.send_poll") {
 		_sendTokens = std::min(
 			kSendBurst,
 			_sendTokens + double(now - _sendRefilled) / kSendEachMs);
@@ -772,6 +779,11 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			return api::Fail(api::error::kLimit, "usernames are resolved too often");
 		}
 		_lastResolve = now;
+	} else if (op == "chats.members" || op == "chats.admins") {
+		if (_lastMembers && now - _lastMembers < kMembersEachMs) {
+			return api::Fail(api::error::kLimit, "members are listed too often");
+		}
+		_lastMembers = now;
 	} else if (op == "bots.inline_query" || op == "bots.press_button") {
 		if (_lastInline && now - _lastInline < kInlineEachMs) {
 			return api::Fail(api::error::kLimit, "bots are asked too often");
@@ -2280,6 +2292,138 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		return Done(
 			data->addContact(*id, *first, *last),
 			"the contact was not added");
+	} else if (op == "chats.members" || op == "chats.admins") {
+		if (const auto refused = need({ "chat.info", "users.info" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		if (!chat.ok()) {
+			return chat.error();
+		}
+		auto kind = std::string(op == "chats.admins" ? "admins" : "recent");
+		auto query = std::string();
+		if (op == "chats.members" && Arg(args, "query")) {
+			const auto text = TextArg(args, "query", kMaxQuery);
+			if (!text || text->empty()) {
+				return api::Fail(api::error::kInvalid, "query");
+			}
+			kind = "search";
+			query = *text;
+		}
+		const auto limit = size_t(std::clamp<int64_t>(
+			IntArg(args, "limit").value_or(50),
+			1,
+			kMaxMembers));
+		const auto offset = IntArg(args, "offset").value_or(0);
+		if (offset < 0 || offset > 1000000) {
+			return api::Fail(api::error::kInvalid, "offset");
+		}
+		const auto found = data->members(chat.value(), kind, query, size_t(offset), limit);
+		if (!found.ok()) {
+			return api::Fail(found.error(), "members");
+		}
+		auto result = cbor::Array();
+		for (const auto &member : found.value()) {
+			if (member.id <= 0
+				|| member.id == api::kServiceChat
+				|| result.size() >= limit) {
+				continue;
+			}
+			result.push_back(cbor::Value::FromMap({
+				{ "id", Int(member.id) },
+				{ "name", Text(member.name) },
+				{ "username", Text(member.username) },
+				{ "role", Text(member.role) },
+				{ "bot", cbor::Value::FromBool(member.bot) },
+			}));
+		}
+		return api::Ok(cbor::Value::FromArray(std::move(result)));
+	} else if (op == "messages.send_poll") {
+		if (const auto refused = need({ "messages.send" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		if (!chat.ok()) {
+			return chat.error();
+		}
+		auto poll = OutgoingPoll{ .chat = chat.value() };
+		const auto question = TextArg(args, "question", kMaxPollQuestion);
+		const auto list = Arg(args, "options") ? Arg(args, "options")->asArray() : nullptr;
+		const auto anonymous = BoolArg(args, "anonymous", true);
+		const auto multiple = BoolArg(args, "multiple", false);
+		const auto quiz = BoolArg(args, "quiz", false);
+		const auto silent = BoolArg(args, "silent", false);
+		const auto explanation = Arg(args, "explanation")
+			? TextArg(args, "explanation", kMaxPollExplanation)
+			: std::optional<std::string>(std::string());
+		const auto correct = Arg(args, "correct") ? IntArg(args, "correct") : std::optional<int64_t>(-1);
+		const auto closePeriod = IntArg(args, "close_period").value_or(0);
+		poll.replyTo = IntArg(args, "reply_to").value_or(0);
+		poll.topic = IntArg(args, "topic").value_or(0);
+		if (!question
+			|| question->empty()
+			|| !list
+			|| list->size() < 2
+			|| list->size() > kMaxPollOptions
+			|| !anonymous
+			|| !multiple
+			|| !quiz
+			|| !silent
+			|| !explanation
+			|| !correct
+			|| (closePeriod != 0 && (closePeriod < 5 || closePeriod > 600))
+			|| poll.replyTo < 0
+			|| poll.topic < 0) {
+			return api::Fail(api::error::kInvalid, "question, options or flags");
+		}
+		for (const auto &item : *list) {
+			const auto text = item.asText();
+			if (!text || text->empty() || text->size() > kMaxPollOption) {
+				return api::Fail(api::error::kInvalid, "options");
+			}
+			poll.options.push_back(*text);
+		}
+		if (*quiz) {
+			if (*multiple || *correct < 0 || *correct >= int64_t(poll.options.size())) {
+				return api::Fail(api::error::kInvalid, "correct or multiple");
+			}
+		} else if (*correct != -1 || !explanation->empty()) {
+			return api::Fail(api::error::kInvalid, "correct or explanation");
+		}
+		poll.question = *question;
+		poll.anonymous = *anonymous;
+		poll.multiple = *multiple;
+		poll.quiz = *quiz;
+		poll.correct = *correct;
+		poll.explanation = *explanation;
+		poll.closePeriod = closePeriod;
+		poll.silent = *silent;
+		return Sent(data->sendPoll(poll), "the poll was not sent", false);
+	} else if (op == "ghost.get" || op == "ghost.set") {
+		if (const auto refused = need({ "ghost.control" })) {
+			return *refused;
+		}
+		if (op == "ghost.get") {
+			const auto state = data->ghostState();
+			if (!state.ok()) {
+				return api::Fail(state.error(), "ghost mode");
+			}
+			const auto &value = state.value();
+			return api::Ok(cbor::Value::FromMap({
+				{ "active", cbor::Value::FromBool(value.active) },
+				{ "send_read_messages", cbor::Value::FromBool(value.readMessages) },
+				{ "send_read_stories", cbor::Value::FromBool(value.readStories) },
+				{ "send_online", cbor::Value::FromBool(value.onlinePackets) },
+				{ "send_typing", cbor::Value::FromBool(value.uploadProgress) },
+			}));
+		}
+		const auto enabled = Arg(args, "enabled") ? Arg(args, "enabled")->asBool() : std::nullopt;
+		if (!enabled) {
+			return api::Fail(api::error::kInvalid, "enabled");
+		} else if (!*enabled && !recentUserAction()) {
+			return api::Fail(api::error::kDenied, "only right after a user action");
+		}
+		return Done(data->setGhost(*enabled), "ghost mode was not changed");
 	} else if (op == "bots.press_button") {
 		if (const auto refused = need({ "bots.inline" })) {
 			return *refused;

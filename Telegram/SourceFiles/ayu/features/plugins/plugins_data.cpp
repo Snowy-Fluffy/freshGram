@@ -44,6 +44,8 @@
 #include "data/data_session.h"
 #include "data/notify/data_notify_settings.h"
 #include "api/api_blocked_peers.h"
+#include "api/api_polls.h"
+#include "data/data_poll.h"
 #include "data/stickers/data_stickers.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "ui/emoji_config.h"
@@ -106,6 +108,9 @@ constexpr auto kEditMediaTimeout = crl::time(270 * 1000);
 constexpr auto kMaxAliases = size_t(512);
 constexpr auto kMaxPluginIds = size_t(256);
 constexpr auto kOutboxLifetime = std::chrono::hours(1);
+constexpr auto kPollQuestionLimit = 255;
+constexpr auto kPollOptionLimit = 100;
+constexpr auto kPollExplanationLimit = 200;
 constexpr auto kMaxHistory = size_t(200);
 constexpr auto kMaxScheduleSeconds = TimeId(365 * 24 * 3600);
 
@@ -1518,6 +1523,246 @@ public:
 				done(fgpl::api::error::kFailed);
 			}).send();
 		}, fgpl::api::error::kUnavailable, kWaitSend);
+	}
+
+	fgpl::Result<std::vector<fgpl::Member>, std::string> members(
+			int64_t chat,
+			const std::string &kind,
+			const std::string &query,
+			size_t offset,
+			size_t limit) override {
+		struct Listed {
+			std::string error;
+			std::vector<fgpl::Member> list;
+		};
+		const auto listed = OnMainAsync<Listed>([=](Fn<void(Listed)> done) {
+			const auto session = FindSession(_account);
+			const auto peer = session
+				? session->data().peerLoaded(PeerId(uint64(chat)))
+				: nullptr;
+			if (!peer || HiddenPeer(peer)) {
+				done({ .error = fgpl::api::error::kNotFound });
+				return;
+			}
+			const auto memberOf = [=](
+					PeerId id,
+					const char *role) -> std::optional<fgpl::Member> {
+				const auto user = peerIsUser(id)
+					? session->data().userLoaded(peerToUser(id))
+					: nullptr;
+				if (!user || HiddenPeer(user)) {
+					return std::nullopt;
+				}
+				return fgpl::Member{
+					.id = ChatId(user),
+					.name = Utf8(user->name()),
+					.username = Utf8(user->username()),
+					.role = role,
+					.bot = user->isBot(),
+				};
+			};
+			const auto fail = [=] {
+				done({ .error = fgpl::api::error::kFailed });
+			};
+			if (const auto channel = peer->asChannel()) {
+				if (!channel->canViewMembers()) {
+					done({ .error = fgpl::api::error::kDenied });
+					return;
+				}
+				auto filter = MTPChannelParticipantsFilter(
+					MTP_channelParticipantsRecent());
+				if (kind == "admins") {
+					filter = MTP_channelParticipantsAdmins();
+				} else if (kind == "search") {
+					filter = MTP_channelParticipantsSearch(
+						MTP_string(QString::fromStdString(query)));
+				}
+				session->api().request(MTPchannels_GetParticipants(
+					channel->inputChannel(),
+					filter,
+					MTP_int(int(offset)),
+					MTP_int(int(limit)),
+					MTP_long(0)
+				)).done([=](const MTPchannels_ChannelParticipants &result) {
+					auto answer = Listed();
+					result.match([&](const MTPDchannels_channelParticipants &data) {
+						session->data().processUsers(data.vusers());
+						session->data().processChats(data.vchats());
+						for (const auto &participant : data.vparticipants().v) {
+							const auto [id, role] = participant.match([](
+									const MTPDchannelParticipant &d) {
+								return std::pair(peerFromUser(UserId(d.vuser_id().v)), "member");
+							}, [](const MTPDchannelParticipantSelf &d) {
+								return std::pair(peerFromUser(UserId(d.vuser_id().v)), "member");
+							}, [](const MTPDchannelParticipantCreator &d) {
+								return std::pair(peerFromUser(UserId(d.vuser_id().v)), "creator");
+							}, [](const MTPDchannelParticipantAdmin &d) {
+								return std::pair(peerFromUser(UserId(d.vuser_id().v)), "admin");
+							}, [](const MTPDchannelParticipantBanned &d) {
+								return std::pair(peerFromMTP(d.vpeer()), "banned");
+							}, [](const MTPDchannelParticipantLeft &d) {
+								return std::pair(peerFromMTP(d.vpeer()), "left");
+							});
+							if (const auto member = memberOf(id, role)) {
+								answer.list.push_back(*member);
+							}
+						}
+					}, [](const MTPDchannels_channelParticipantsNotModified &) {
+					});
+					done(std::move(answer));
+				}).fail(fail).send();
+			} else if (const auto basic = peer->asChat()) {
+				session->api().request(MTPmessages_GetFullChat(
+					basic->inputChat()
+				)).done([=](const MTPmessages_ChatFull &result) {
+					const auto &data = result.data();
+					session->data().processUsers(data.vusers());
+					session->data().processChats(data.vchats());
+					auto answer = Listed();
+					data.vfull_chat().match([&](const MTPDchatFull &full) {
+						full.vparticipants().match([&](const MTPDchatParticipants &list) {
+							const auto needle = QString::fromStdString(query).toLower();
+							auto skipped = size_t(0);
+							for (const auto &participant : list.vparticipants().v) {
+								const auto [id, role] = participant.match([](
+										const MTPDchatParticipant &d) {
+									return std::pair(peerFromUser(UserId(d.vuser_id().v)), "member");
+								}, [](const MTPDchatParticipantCreator &d) {
+									return std::pair(peerFromUser(UserId(d.vuser_id().v)), "creator");
+								}, [](const MTPDchatParticipantAdmin &d) {
+									return std::pair(peerFromUser(UserId(d.vuser_id().v)), "admin");
+								});
+								auto member = memberOf(id, role);
+								if (!member
+									|| (kind == "admins" && std::string(role) == "member")
+									|| (kind == "search"
+										&& !QString::fromStdString(member->name).toLower().contains(needle)
+										&& !QString::fromStdString(member->username).toLower().contains(needle))) {
+									continue;
+								} else if (skipped < offset) {
+									++skipped;
+									continue;
+								} else if (answer.list.size() >= limit) {
+									break;
+								}
+								answer.list.push_back(std::move(*member));
+							}
+						}, [](const MTPDchatParticipantsForbidden &) {
+						});
+					}, [](const auto &) {
+					});
+					done(std::move(answer));
+				}).fail(fail).send();
+			} else {
+				done({ .error = fgpl::api::error::kNotFound });
+			}
+		}, Listed{ .error = fgpl::api::error::kUnavailable });
+		if (!listed.error.empty()) {
+			return listed.error;
+		}
+		return listed.list;
+	}
+
+	fgpl::SendResult sendPoll(const fgpl::OutgoingPoll &poll) override {
+		return OnMain<fgpl::SendResult>([=] {
+			const auto session = FindSession(_account);
+			const auto history = historyOf(poll.chat);
+			if (!session || !history || HiddenPeer(history->peer)) {
+				return fgpl::SendResult{ .error = fgpl::api::error::kNotFound };
+			}
+			const auto target = ResolveTarget(
+				session,
+				history,
+				MsgId(poll.topic),
+				MsgId(poll.replyTo));
+			if (target.missingReply) {
+				return fgpl::SendResult{ .error = fgpl::api::error::kNotFound };
+			} else if (!Data::CanSend(target.thread, ChatRestriction::SendPolls)) {
+				return fgpl::SendResult{ .error = fgpl::api::error::kDenied };
+			} else if (history->peer->slowmodeSecondsLeft() > 0) {
+				return fgpl::SendResult{ .error = fgpl::api::error::kLimit };
+			}
+			const auto question = QString::fromStdString(poll.question).trimmed();
+			const auto explanation = QString::fromStdString(poll.explanation).trimmed();
+			if (question.isEmpty() || question.size() > kPollQuestionLimit
+				|| explanation.size() > kPollExplanationLimit) {
+				return fgpl::SendResult{ .error = fgpl::api::error::kInvalid };
+			}
+			using Flag = PollData::Flag;
+			auto data = PollData(&session->data(), base::RandomValue<uint64>());
+			data.question = TextWithEntities{ question };
+			data.solution = TextWithEntities{ explanation };
+			auto index = 0;
+			for (const auto &option : poll.options) {
+				const auto text = QString::fromStdString(option).trimmed();
+				if (text.isEmpty() || text.size() > kPollOptionLimit) {
+					return fgpl::SendResult{ .error = fgpl::api::error::kInvalid };
+				}
+				auto answer = PollAnswer{
+					TextWithEntities{ text },
+					QByteArray(1, char('0' + index)),
+				};
+				answer.correct = (index == poll.correct);
+				data.answers.push_back(std::move(answer));
+				++index;
+			}
+			if (poll.closePeriod) {
+				data.closePeriod = TimeId(poll.closePeriod);
+				data.closeDate = base::unixtime::now() + data.closePeriod;
+			}
+			data.setFlags(Flag(0)
+				| (poll.anonymous ? Flag(0) : Flag::PublicVotes)
+				| (poll.multiple ? Flag::MultiChoice : Flag(0))
+				| (poll.quiz ? Flag::Quiz : Flag(0)));
+			auto action = Api::SendAction(target.thread);
+			action.clearDraft = false;
+			action.options.silent = poll.silent;
+			action.options.sendAs = ChosenSendAs(history);
+			ApplyTarget(action, target);
+			session->api().polls().create(
+				data,
+				TextWithEntities(),
+				action,
+				[] {},
+				[](bool) {});
+			return fgpl::SendResult();
+		}, fgpl::SendResult{ .error = fgpl::api::error::kUnavailable });
+	}
+
+	fgpl::Result<fgpl::GhostState, std::string> ghostState() override {
+		struct Read {
+			std::string error;
+			fgpl::GhostState state;
+		};
+		const auto read = OnMain<Read>([=] {
+			const auto session = FindSession(_account);
+			if (!session) {
+				return Read{ .error = fgpl::api::error::kNotFound };
+			}
+			const auto &ghost = AyuSettings::ghost(session);
+			return Read{ .state = {
+				.active = ghost.isGhostModeActive(),
+				.readMessages = ghost.sendReadMessages(),
+				.readStories = ghost.sendReadStories(),
+				.onlinePackets = ghost.sendOnlinePackets(),
+				.uploadProgress = ghost.sendUploadProgress(),
+			} };
+		}, Read{ .error = fgpl::api::error::kUnavailable });
+		if (!read.error.empty()) {
+			return read.error;
+		}
+		return read.state;
+	}
+
+	std::string setGhost(bool enabled) override {
+		return OnMain<std::string>([=] {
+			const auto session = FindSession(_account);
+			if (!session) {
+				return std::string(fgpl::api::error::kNotFound);
+			}
+			AyuSettings::ghost(session).setGhostModeEnabled(enabled);
+			return std::string();
+		}, std::string(fgpl::api::error::kUnavailable));
 	}
 
 	fgpl::Result<fgpl::ButtonAnswer, std::string> pressButton(

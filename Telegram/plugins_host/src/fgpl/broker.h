@@ -264,6 +264,37 @@ struct InlineResult {
 	std::string text;
 };
 
+struct Member {
+	int64_t id = 0;
+	std::string name;
+	std::string username;
+	std::string role;
+	bool bot = false;
+};
+
+struct OutgoingPoll {
+	int64_t chat = 0;
+	std::string question;
+	std::vector<std::string> options;
+	bool anonymous = true;
+	bool multiple = false;
+	bool quiz = false;
+	int64_t correct = -1;
+	std::string explanation;
+	int64_t closePeriod = 0;
+	bool silent = false;
+	int64_t replyTo = 0;
+	int64_t topic = 0;
+};
+
+struct GhostState {
+	bool active = false;
+	bool readMessages = false;
+	bool readStories = false;
+	bool onlinePackets = false;
+	bool uploadProgress = false;
+};
+
 struct ButtonAnswer {
 	std::string text;
 	bool alert = false;
@@ -528,6 +559,30 @@ public:
 	[[nodiscard]] virtual SendResult sendInlineResult(const OutgoingInline &result) {
 		(void)result;
 		return { .error = api::error::kUnavailable };
+	}
+	[[nodiscard]] virtual Result<std::vector<Member>, std::string> members(
+			int64_t chat,
+			const std::string &kind,
+			const std::string &query,
+			size_t offset,
+			size_t limit) {
+		(void)chat;
+		(void)kind;
+		(void)query;
+		(void)offset;
+		(void)limit;
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual SendResult sendPoll(const OutgoingPoll &poll) {
+		(void)poll;
+		return { .error = api::error::kUnavailable };
+	}
+	[[nodiscard]] virtual Result<GhostState, std::string> ghostState() {
+		return std::string(api::error::kUnavailable);
+	}
+	[[nodiscard]] virtual std::string setGhost(bool enabled) {
+		(void)enabled;
+		return api::error::kUnavailable;
 	}
 	[[nodiscard]] virtual Result<ButtonAnswer, std::string> pressButton(
 			int64_t chat,
@@ -883,6 +938,7 @@ private:
 	int64_t _lastNotify = 0;
 	int64_t _lastResolve = 0;
 	int64_t _lastInline = 0;
+	int64_t _lastMembers = 0;
 	std::map<int64_t, int64_t> _lastChatAction;
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;

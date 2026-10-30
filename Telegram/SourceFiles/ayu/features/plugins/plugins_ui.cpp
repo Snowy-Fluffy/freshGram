@@ -38,6 +38,7 @@
 #include "main/main_session.h"
 #include "settings/detailed_settings_button.h"
 #include "settings/settings_common.h"
+#include "styles/style_ayu_icons.h"
 #include "styles/style_ayu_styles.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
@@ -2918,6 +2919,7 @@ namespace {
 		{ "bots.inline", &st::menuIconBot },
 		{ "chats.manage", &st::menuIconPin },
 		{ "contacts.manage", &st::menuIconProfile },
+		{ "ghost.control", &st::ayuGhostIcon },
 	};
 	const auto i = icons.find(id);
 	return (i != icons.end()) ? i->second : &st::menuIconLock;
@@ -3439,6 +3441,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "bots.inline", tr::fresh_PermBotsInline },
 		{ "chats.manage", tr::fresh_PermChatsManage },
 		{ "contacts.manage", tr::fresh_PermContactsManage },
+		{ "ghost.control", tr::fresh_PermGhostControl },
 	};
 	const auto i = titles.find(id);
 	return (i != titles.end()) ? i->second(tr::now) : Utf8(id);

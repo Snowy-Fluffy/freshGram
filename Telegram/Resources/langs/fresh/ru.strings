@@ -217,6 +217,7 @@
 "fresh_PermBotsInline" = "Обращаться к ботам и нажимать их кнопки за вас";
 "fresh_PermChatsManage" = "Закреплять сообщения, отключать звук, закреплять и архивировать чаты";
 "fresh_PermContactsManage" = "Добавлять контакты и блокировать пользователей";
+"fresh_PermGhostControl" = "Видеть и менять режим призрака";
 "fresh_PluginSettingsExport" = "Экспорт настроек";
 "fresh_PluginSettingsImport" = "Импорт настроек";
 "fresh_PluginSettingsExported" = "Настройки сохранены.";

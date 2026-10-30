@@ -217,6 +217,7 @@
 "fresh_PermBotsInline" = "代你查询机器人并点击其按钮";
 "fresh_PermChatsManage" = "置顶消息，静音、置顶和归档聊天";
 "fresh_PermContactsManage" = "添加联系人并屏蔽用户";
+"fresh_PermGhostControl" = "查看并切换幽灵模式";
 "fresh_PluginSettingsExport" = "导出设置";
 "fresh_PluginSettingsImport" = "导入设置";
 "fresh_PluginSettingsExported" = "设置已保存。";

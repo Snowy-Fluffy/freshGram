@@ -158,6 +158,50 @@ public:
 		actions.push_back("contact " + std::to_string(id) + " " + first + "|" + last);
 		return {};
 	}
+	Result<std::vector<Member>, std::string> members(
+			int64_t chat,
+			const std::string &kind,
+			const std::string &query,
+			size_t offset,
+			size_t limit) override {
+		actions.push_back("members " + std::to_string(chat) + " " + kind + " "
+			+ query + " " + std::to_string(offset) + " " + std::to_string(limit));
+		auto all = std::vector<Member>{
+			{ 7, "Bob", "bobby", "member", false },
+			{ 8, "Eve", "evey", "admin", false },
+			{ 9, "Ann", "", "creator", false },
+			{ 777000, "Telegram", "", "member", false },
+			{ 0, "Broken", "", "member", false },
+		};
+		auto result = std::vector<Member>();
+		for (const auto &member : all) {
+			if (kind != "admins" || member.role != "member") {
+				result.push_back(member);
+			}
+		}
+		return result;
+	}
+	SendResult sendPoll(const OutgoingPoll &poll) override {
+		auto line = "poll " + std::to_string(poll.chat) + " " + poll.question + " [";
+		for (const auto &option : poll.options) {
+			line += option + ",";
+		}
+		line += "]" + std::string(poll.anonymous ? "" : " public")
+			+ (poll.multiple ? " multiple" : "")
+			+ (poll.quiz ? " quiz" + std::to_string(poll.correct) : "")
+			+ (poll.explanation.empty() ? "" : " why:" + poll.explanation)
+			+ (poll.closePeriod ? " close" + std::to_string(poll.closePeriod) : "");
+		actions.push_back(std::move(line));
+		return {};
+	}
+	Result<GhostState, std::string> ghostState() override {
+		return ghost;
+	}
+	std::string setGhost(bool enabled) override {
+		ghost = { enabled, !enabled, !enabled, !enabled, !enabled };
+		actions.push_back(std::string("ghost ") + (enabled ? "on" : "off"));
+		return {};
+	}
 	std::string composerInsert(int64_t chat, const std::string &text) override {
 		actions.push_back("insert " + std::to_string(chat) + " " + text);
 		return {};
@@ -369,6 +413,7 @@ public:
 	std::string clipboard;
 	bool cancelPick = false;
 	int64_t historyFromUser = -1;
+	GhostState ghost;
 	std::vector<std::string> inlineQueries;
 
 };
