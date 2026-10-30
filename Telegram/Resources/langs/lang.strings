@@ -9072,6 +9072,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermNetHttps" = "Make HTTPS requests";
 "fresh_PermNetTcp" = "Open TCP connections";
 "fresh_PermNetUdp" = "Open UDP connections";
+"fresh_PermNetWs" = "Open secure WebSocket connections";
 "fresh_PermStorage" = "Keep its own data";
 "fresh_PermPluginsMessage" = "Exchange messages with other plugins";
 "fresh_PermFiles" = "Open and save files you choose";

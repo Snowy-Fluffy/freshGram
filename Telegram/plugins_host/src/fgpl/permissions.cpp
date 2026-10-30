@@ -66,7 +66,7 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 		granted.end(),
 		[](const std::string &id) { return kReadingPermissions.contains(id); });
 	const auto sockets = Has(granted, "net.tcp") || Has(granted, "net.udp");
-	const auto network = Has(granted, "net.https") || sockets;
+	const auto network = Has(granted, "net.https") || Has(granted, "net.ws") || sockets;
 	if (reads && network) {
 		notes.push_back({
 			Risk::ExfiltrationPossible,

@@ -11,14 +11,17 @@ void ShowToastWithAction(
 		::Ui::Toast::Config &&config,
 		const QString &buttonText,
 		Fn<void()> callback,
-		Fn<void()> closed) {
+		Fn<void()> closed,
+		QWidget *parent) {
 	const auto st = std::make_shared<style::Toast>(*config.st);
 	st->padding.setRight(st::historyPremiumViewSet.style.font->width(buttonText)
 		- st::historyPremiumViewSet.width);
 	config.st = st.get();
 	config.acceptinput = true;
 
-	const auto weak = ::Ui::Toast::Show(std::move(config));
+	const auto weak = parent
+		? ::Ui::Toast::Show(parent, std::move(config))
+		: ::Ui::Toast::Show(std::move(config));
 	const auto strong = weak.get();
 	if (!strong) {
 		return;

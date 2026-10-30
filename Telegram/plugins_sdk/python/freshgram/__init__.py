@@ -156,7 +156,60 @@ class Socket:
         await self.close()
 
 
+class WebSocket:
+    """A secure WebSocket (wss://) opened through the app.
+
+    protocol is the subprotocol the server chose, or "". Timeouts are in
+    milliseconds. A socket opened through freshgram.aio returns awaitables
+    from send, recv and close.
+    """
+
+    def __init__(self, socket_id, protocol, call=_sync_call):
+        self.id = socket_id
+        self.protocol = protocol
+        self._call = call
+
+    def send(self, data, timeout=10000):
+        """Send text (a str) or a binary message (bytes) of up to 1 MiB."""
+        return self._call("net.ws.send", lambda value: value["sent"], id=self.id, data=data, timeout=timeout)
+
+    def recv(self, timeout=1000):
+        """The next message: {"kind": "text" | "binary" | "close" | "none", "data", "closed"}.
+
+        "none" means nothing arrived in time; "close" also has "code" and "reason".
+        Pings are answered by the app.
+        """
+        return self._call("net.ws.recv", lambda value: value, id=self.id, timeout=timeout)
+
+    def close(self, code=1000, reason=""):
+        return self._call("net.ws.close", _nothing, id=self.id, code=code, reason=reason)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *details):
+        self.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *details):
+        await self.close()
+
+
 class _Net(_Namespace):
+    def ws(self, url, protocols=None, headers=None, timeout=10000):
+        """Open a secure WebSocket (net.ws); url starts with wss:// and the host rules of fetch apply."""
+        arguments = {"url": url, "timeout": timeout}
+        if protocols:
+            arguments["protocols"] = list(protocols)
+        if headers:
+            arguments["headers"] = headers
+        return self._call(
+            "net.ws.connect",
+            lambda value: WebSocket(value["id"], value["protocol"], self._call),
+            **arguments)
+
     def tcp(self, host, port, tls=False, timeout=10000):
         """Open a TCP connection (net.tcp), optionally wrapped in TLS."""
         return self._call(

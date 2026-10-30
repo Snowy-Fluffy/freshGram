@@ -24,6 +24,9 @@
 #include "data/data_histories.h"
 #include "data/data_message_reaction_id.h"
 #include "window/notifications_manager.h"
+#include "window/main_window.h"
+#include "window/window_controller.h"
+#include "window/window_separate_id.h"
 #include "apiwrap.h"
 #include "core/application.h"
 #include "crl/crl_on_main.h"
@@ -242,6 +245,26 @@ template <typename T>
 		}
 	}
 	return nullptr;
+}
+
+// WHY: Ui::Toast::Show() without a parent uses one global window, so a toast
+// of the second account would land in the first account's window.
+[[nodiscard]] QWidget *ToastParentFor(const std::string &account) {
+	const auto session = FindSession(account);
+	if (!session) {
+		return nullptr;
+	}
+	const auto window = Core::App().windowFor(
+		Window::SeparateId(&session->account()));
+	return window ? window->widget()->bodyWidget() : nullptr;
+}
+
+void ShowPluginToast(const std::string &account, QString text) {
+	if (const auto parent = ToastParentFor(account)) {
+		Ui::Toast::Show(parent, text);
+	} else {
+		Ui::Toast::Show(text);
+	}
 }
 
 [[nodiscard]] std::string Utf8(const QString &text) {
@@ -2857,7 +2880,7 @@ public:
 				static_cast<Window::Notifications::NativeManager&>(
 					manager).showPluginNotification(session->user(), heading, body);
 			} else {
-				Ui::Toast::Show(heading + u": "_q + body);
+				ShowPluginToast(_account, heading + u": "_q + body);
 			}
 			return {};
 		}, fgpl::api::error::kUnavailable);
@@ -2952,7 +2975,7 @@ public:
 
 	void toast(const std::string &text) override {
 		OnMain<bool>([=] {
-			Ui::Toast::Show(QString::fromStdString(text));
+			ShowPluginToast(_account, QString::fromStdString(text));
 			return true;
 		}, false);
 	}
@@ -2988,7 +3011,7 @@ public:
 				notify("toast.click", nullptr);
 			}, [=] {
 				notify("toast.close", *clicked ? "action" : "timeout");
-			});
+			}, ToastParentFor(account));
 			return true;
 		}, false);
 	}

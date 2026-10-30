@@ -3,6 +3,7 @@
 
 #include "lang/lang_keys.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_log_view.h"
 #include "ayu/features/plugins/plugins_runtime.h"
@@ -1854,7 +1855,7 @@ void FillLogBox(
 	if (!grant) {
 		return false;
 	}
-	for (const auto permission : { "net.https", "net.tcp", "net.udp" }) {
+	for (const auto permission : { "net.https", "net.tcp", "net.udp", "net.ws" }) {
 		if (grant->granted.contains(permission)) {
 			return true;
 		}
@@ -2904,6 +2905,7 @@ namespace {
 		{ "net.https", &st::menuIconNetwork },
 		{ "net.tcp", &st::menuIconNetwork },
 		{ "net.udp", &st::menuIconNetwork },
+		{ "net.ws", &st::menuIconNetwork },
 		{ "storage.private", &st::menuIconDownload },
 		{ "plugins.message", &st::menuIconBot },
 		{ "fs.user_selected", &st::menuIconFile },
@@ -3428,6 +3430,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "net.https", tr::fresh_PermNetHttps },
 		{ "net.tcp", tr::fresh_PermNetTcp },
 		{ "net.udp", tr::fresh_PermNetUdp },
+		{ "net.ws", tr::fresh_PermNetWs },
 		{ "storage.private", tr::fresh_PermStorage },
 		{ "plugins.message", tr::fresh_PermPluginsMessage },
 		{ "fs.user_selected", tr::fresh_PermFiles },
@@ -3886,9 +3889,21 @@ void ForgetBadges(const std::string &plugin) {
 	RefreshBadgeViews(0);
 }
 
+namespace {
+
+bool BadgesHiddenFlag = false;
+
+} // namespace
+
+void SetBadgesHidden(bool hidden) {
+	BadgesHiddenFlag = hidden;
+}
+
 std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer) {
 	const auto &store = GetBadgeStore();
-	if (store.users.empty()) {
+	if (store.users.empty()
+		|| BadgesHiddenFlag
+		|| AyuFeatures::StreamerMode::spoilersActive()) {
 		return {};
 	}
 	// WHY: the key is the peer id as the plugin API shows it, so a group or
@@ -3923,7 +3938,12 @@ std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer) {
 }
 
 rpl::producer<> BadgesChanged() {
-	return rpl::merge(GetBadgeStore().changes.events(), ListChanges());
+	return rpl::merge(
+		GetBadgeStore().changes.events(),
+		ListChanges(),
+		AyuFeatures::StreamerMode::spoilersActiveValue()
+			| rpl::skip(1)
+			| rpl::to_empty);
 }
 
 int BadgesWidth(const std::vector<PluginBadge> &badges, int side) {
@@ -4670,6 +4690,9 @@ void ForgetBadges(const std::string &) {
 
 std::vector<PluginBadge> BadgesFor(not_null<PeerData*>) {
 	return {};
+}
+
+void SetBadgesHidden(bool) {
 }
 
 rpl::producer<> BadgesChanged() {
