@@ -99,3 +99,17 @@ fgpl_tool pack <directory> <output.fgpl> --key plugins.key
 ```
 
 Its public part is the default of `-DFRESHGRAM_PLUGINS_KEY`. Keep `plugins.key` offline.
+
+## Fuzzing
+
+Needs clang. The libraries are built with `-fsanitize=fuzzer-no-link` and UBSan aborts on the first hit.
+
+```
+cmake -S . -B build-fuzz -DCMAKE_CXX_COMPILER=clang++ -DFGPL_FUZZ=ON
+cmake --build build-fuzz -j
+build-fuzz/fuzz_seed_gen tests/fuzz_corpus/broker tests/fuzz_corpus/ui
+build-fuzz/fuzz_broker build-fuzz/corpus_broker tests/fuzz_corpus/broker -dict=tests/fuzz_corpus/broker.dict -timeout=20
+build-fuzz/fuzz_ui build-fuzz/corpus_ui tests/fuzz_corpus/ui -dict=tests/fuzz_corpus/ui.dict -timeout=20
+```
+
+`fuzz_broker` takes a grants byte (everything, one selected chat, nothing) and up to 16 CBOR requests. It aborts if a response leaks a hidden chat, a call without permission has an effect, or a message goes to a chat outside the grant. Other targets: `fuzz_cbor`, `fuzz_vfs`, `fuzz_frame`, `fuzz_wasi`, `fuzz_package`.
