@@ -34,6 +34,9 @@ const QVector<QString> icons{
 	AyuAssets::CHIBI_ICON,
 	AyuAssets::CHIBI2_ICON,
 	AyuAssets::EXTERA2_ICON,
+	AyuAssets::PLANE_ICON,
+	AyuAssets::WHEELOLD_ICON,
+	AyuAssets::SEGMENT_ICON,
 };
 
 const auto rows = static_cast<int>(icons.size()) / IconPicker::kColumns
