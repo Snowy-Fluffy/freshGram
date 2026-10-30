@@ -2550,6 +2550,11 @@ void TestLevelTwoCalls() {
 		{ "custom_emoji", cbor::Value::FromArray({ cbor::Value::FromMap({
 			{ "offset", Int(0) }, { "length", Int(1) }, { "id", Int(5) } }) }) } }))));
 	fixture.time += 5000;
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("a") },
+		{ "custom_emoji", cbor::Value::FromArray({ cbor::Value::FromMap({
+			{ "offset", Int(INT64_MAX) }, { "length", Int(INT64_MAX) }, { "id", Int(5) } }) }) } }))) == "invalid");
+	fixture.time += 5000;
 
 	CHECK(IsOk(broker.call(Request("notify.show", { { "title", Text("T") }, { "text", Text("x") } }))));
 	CHECK(Code(broker.call(Request("notify.show", { { "text", Text("x") } }))) == "limit");

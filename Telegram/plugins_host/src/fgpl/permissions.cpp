@@ -35,7 +35,7 @@ const auto kLowPermissions = std::set<std::string>{
 
 Danger PermissionDanger(const std::string &id, const std::string &scope) {
 	if (kHighPermissions.contains(id)
-		|| (id == "messages.read" && scope == "all")) {
+		|| (id == "messages.read" && scope != "selected")) {
 		return Danger::High;
 	} else if (kLowPermissions.contains(id)) {
 		return Danger::Low;

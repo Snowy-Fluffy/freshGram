@@ -349,7 +349,8 @@ void AddReactionKind(cbor::Map &map, const ReactionKind &kind) {
 		const auto offset = item.find("offset") ? item.find("offset")->asInt() : std::nullopt;
 		const auto length = item.find("length") ? item.find("length")->asInt() : std::nullopt;
 		const auto id = item.find("id") ? item.find("id")->asInt() : std::nullopt;
-		if (!offset || !length || !id || *offset < 0 || *length <= 0 || *id <= 0) {
+		if (!offset || !length || !id || *offset < 0 || *length <= 0 || *id <= 0
+			|| size_t(*offset) > kMaxMessage || size_t(*length) > kMaxMessage) {
 			return std::nullopt;
 		}
 		result.push_back({ *offset, *length, *id });
