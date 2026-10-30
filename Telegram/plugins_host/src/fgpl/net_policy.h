@@ -48,6 +48,8 @@ struct Endpoint {
 
 [[nodiscard]] bool IsValidHeaderName(std::string_view name);
 
+[[nodiscard]] bool IsValidHeaderValue(std::string_view value);
+
 [[nodiscard]] bool IsAllowedMethod(std::string_view method);
 
 // Continues decoding a chunked body that starts at raw[at]; false if malformed or over maxBytes.
