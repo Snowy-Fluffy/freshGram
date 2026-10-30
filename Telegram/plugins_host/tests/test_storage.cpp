@@ -136,7 +136,21 @@ void TestDestructorFlushes() {
 
 } // namespace
 
+void TestTrySetKeepsTheLimits() {
+	const auto directory = TempDirectory("fgpl-storage-try");
+	auto storage = FileStorage(directory / "store.cbor");
+	using Result = Storage::SetResult;
+	CHECK(storage.trySet("a", Value("12345"), 20, 2) == Result::Ok);
+	CHECK(storage.trySet("b", Value("12345678901234"), 20, 2) == Result::OverQuota);
+	CHECK(storage.trySet("a", Value("12345678901234567890"), 20, 2) == Result::OverQuota);
+	CHECK(storage.trySet("a", Value("1234567890123456"), 20, 2) == Result::Ok);
+	CHECK(storage.usedBytes() == 17);
+	CHECK(storage.trySet("b", Value(""), 20, 1) == Result::TooManyKeys);
+	CHECK(storage.count() == 1);
+}
+
 int main() {
+	TestTrySetKeepsTheLimits();
 	TestUsedBytesStaysConsistent();
 	TestFlushKeepsPreviousVersion();
 	TestDamagedFileFallsBackToBackup();

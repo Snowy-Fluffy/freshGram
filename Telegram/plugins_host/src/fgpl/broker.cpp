@@ -1193,16 +1193,14 @@ cbor::Value Broker::storageCall(const std::string &op, const cbor::Value *args) 
 		if (bytes.empty() || bytes.size() > kMaxValueBytes) {
 			return api::Fail(api::error::kLimit, "the value is too large");
 		}
-		const auto existing = storage->get(*key);
-		const auto freed = existing ? key->size() + existing->size() : 0;
-		const auto added = key->size() + bytes.size();
-		if (!existing && storage->count() >= kMaxKeys) {
+		switch (storage->trySet(*key, std::move(bytes), _grants.storageQuotaBytes, kMaxKeys)) {
+		case Storage::SetResult::TooManyKeys:
 			return api::Fail(api::error::kQuota, "too many keys");
-		} else if (storage->usedBytes() - freed + added > _grants.storageQuotaBytes) {
+		case Storage::SetResult::OverQuota:
 			return api::Fail(api::error::kQuota, "the quota is used up");
+		case Storage::SetResult::Ok:
+			return api::Ok();
 		}
-		storage->set(*key, std::move(bytes));
-		return api::Ok();
 	}
 	return api::Fail(api::error::kInvalid, "unknown storage operation");
 }

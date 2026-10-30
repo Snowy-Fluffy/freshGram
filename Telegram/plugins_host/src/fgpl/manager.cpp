@@ -1902,6 +1902,17 @@ void SharedStorage::set(const std::string &key, cbor::Bytes value) {
 	}
 }
 
+Storage::SetResult SharedStorage::trySet(
+		const std::string &key,
+		cbor::Bytes value,
+		uint64_t quotaBytes,
+		size_t maxKeys) {
+	const auto lock = std::scoped_lock(_mutex);
+	return _storage
+		? _storage->trySet(key, std::move(value), quotaBytes, maxKeys)
+		: SetResult::OverQuota;
+}
+
 bool SharedStorage::remove(const std::string &key) {
 	const auto lock = std::scoped_lock(_mutex);
 	return _storage && _storage->remove(key);

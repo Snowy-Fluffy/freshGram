@@ -69,6 +69,28 @@ public:
 		size_t limit) = 0;
 	[[nodiscard]] virtual uint64_t usedBytes() = 0;
 	[[nodiscard]] virtual size_t count() = 0;
+
+	enum class SetResult : uint8_t {
+		Ok,
+		TooManyKeys,
+		OverQuota,
+	};
+	// Checks the limits and writes as one step; overridden where the store is shared.
+	[[nodiscard]] virtual SetResult trySet(
+			const std::string &key,
+			cbor::Bytes value,
+			uint64_t quotaBytes,
+			size_t maxKeys) {
+		const auto existing = get(key);
+		const auto freed = existing ? key.size() + existing->size() : 0;
+		if (!existing && count() >= maxKeys) {
+			return SetResult::TooManyKeys;
+		} else if (usedBytes() - freed + key.size() + value.size() > quotaBytes) {
+			return SetResult::OverQuota;
+		}
+		set(key, std::move(value));
+		return SetResult::Ok;
+	}
 };
 
 class MemoryStorage final : public Storage {
