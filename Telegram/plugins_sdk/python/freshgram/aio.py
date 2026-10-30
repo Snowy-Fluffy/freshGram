@@ -24,6 +24,7 @@ from . import (
     _Contacts,
     _Files,
     _Folders,
+    _Ghost,
     _Media,
     _Messages,
     _Net,
@@ -59,6 +60,7 @@ settings = _Settings(_async_call)
 media = _Media(_async_call)
 users = _Users(_async_call)
 bots = _Bots(_async_call)
+ghost = _Ghost(_async_call)
 channels = _Channels(_async_call)
 stickers = _Stickers(_async_call)
 notify = _Notify(_async_call)

@@ -9000,6 +9000,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermBotsInline" = "Ask bots and press their buttons for you";
 "fresh_PermChatsManage" = "Pin messages, mute, pin and archive chats";
 "fresh_PermContactsManage" = "Add contacts and block users";
+"fresh_PermGhostControl" = "See and change the ghost mode";
 "fresh_PluginSettingsExport" = "Export settings";
 "fresh_PluginSettingsImport" = "Import settings";
 "fresh_PluginSettingsExported" = "Settings saved.";

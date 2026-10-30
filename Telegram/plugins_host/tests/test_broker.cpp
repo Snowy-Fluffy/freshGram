@@ -260,6 +260,9 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "contacts.manage", Request("users.unblock", { { "id", Int(7) } }) },
 		{ "contacts.manage", Request("contacts.add", { { "id", Int(7) }, { "first_name", Text("Bob") } }) },
 		{ "composer.draft", Request("composer.insert", { { "chat", Int(1) }, { "text", Text("x") } }) },
+		{ "messages.send", Request("messages.send_poll", { { "chat", Int(1) }, { "question", Text("q?") }, { "options", cbor::Value::FromArray({ Text("a"), Text("b") }) } }) },
+		{ "ghost.control", Request("ghost.get") },
+		{ "ghost.control", Request("ghost.set", { { "enabled", cbor::Value::FromBool(true) } }) },
 	};
 	for (const auto &item : calls) {
 		auto fixture = Fixture({});
@@ -854,6 +857,95 @@ void TestChatManagement() {
 	CHECK(Code(composerBroker.call(Request("composer.insert", { { "chat", Int(1) }, { "text", Text("") } }))) == "invalid");
 	CHECK(Code(composerBroker.call(Request("composer.insert", { { "chat", Int(777000) }, { "text", Text("x") } }))) == "denied");
 	CHECK(composer.data.actions == (std::vector<std::string>{ "insert 1 hi" }));
+}
+
+void TestMembersPollsAndGhost() {
+	auto fixture = Fixture({ "chat.info", "users.info", "messages.send", "ghost.control" });
+	auto broker = fixture.make();
+	fixture.time = 5000;
+	const auto members = broker.call(Request("chats.members", { { "chat", Int(1) }, { "limit", Int(10) } }));
+	CHECK(IsOk(members) && Payload(members).asArray() && Payload(members).asArray()->size() == 3);
+	if (Payload(members).asArray() && Payload(members).asArray()->size() == 3) {
+		const auto &first = (*Payload(members).asArray())[0];
+		CHECK(first.find("id")->asInt() == 7 && *first.find("role")->asText() == "member");
+		CHECK(*(*Payload(members).asArray())[2].find("role")->asText() == "creator");
+	}
+	CHECK(Code(broker.call(Request("chats.members", { { "chat", Int(1) } }))) == "limit");
+	fixture.time += 1500;
+	const auto small = broker.call(Request("chats.members", { { "chat", Int(1) }, { "limit", Int(2) }, { "offset", Int(4) } }));
+	CHECK(IsOk(small) && Payload(small).asArray()->size() == 2);
+	fixture.time += 1500;
+	CHECK(IsOk(broker.call(Request("chats.admins", { { "chat", Int(1) } }))));
+	fixture.time += 1500;
+	CHECK(IsOk(broker.call(Request("chats.members", { { "chat", Int(1) }, { "query", Text("bo") } }))));
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("chats.members", { { "chat", Int(1) }, { "query", Text("") } }))) == "invalid");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("chats.members", { { "chat", Int(1) }, { "offset", Int(-1) } }))) == "invalid");
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("chats.members", { { "chat", Int(777000) } }))) == "denied");
+	CHECK(fixture.data.actions == (std::vector<std::string>{
+		"members 1 recent  0 10", "members 1 recent  4 2", "members 1 admins  0 50", "members 1 search bo 0 50",
+	}));
+	auto onlyChat = Fixture({ "chat.info" });
+	auto onlyChatBroker = onlyChat.make();
+	CHECK(Code(onlyChatBroker.call(Request("chats.members", { { "chat", Int(1) } }))) == "denied");
+
+	fixture.data.actions.clear();
+	const auto options = [](std::initializer_list<const char*> list) {
+		auto result = cbor::Array();
+		for (const auto item : list) {
+			result.push_back(Text(item));
+		}
+		return cbor::Value::FromArray(std::move(result));
+	};
+	const auto yes = cbor::Value::FromBool(true);
+	CHECK(IsOk(broker.call(Request("messages.send_poll", {
+		{ "chat", Int(1) }, { "question", Text("Lunch?") }, { "options", options({ "pizza", "soup" }) },
+		{ "anonymous", cbor::Value::FromBool(false) }, { "multiple", yes }, { "close_period", Int(60) },
+	}))));
+	CHECK(IsOk(broker.call(Request("messages.send_poll", {
+		{ "chat", Int(1) }, { "question", Text("2+2") }, { "options", options({ "3", "4" }) },
+		{ "quiz", yes }, { "correct", Int(1) }, { "explanation", Text("math") },
+	}))));
+	CHECK(fixture.data.actions == (std::vector<std::string>{
+		"poll 1 Lunch? [pizza,soup,] public multiple close60",
+		"poll 1 2+2 [3,4,] quiz1 why:math",
+	}));
+	const auto invalid = [&](cbor::Map args) {
+		args.push_back({ "chat", Int(1) });
+		fixture.time += 1500;
+		return Code(broker.call(Request("messages.send_poll", std::move(args)))) == "invalid";
+	};
+	CHECK(invalid({ { "question", Text("") }, { "options", options({ "a", "b" }) } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a" }) } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "" }) } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k" }) } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", Text("a") } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b" }) }, { "quiz", yes } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b" }) }, { "quiz", yes }, { "correct", Int(2) } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b" }) }, { "quiz", yes }, { "correct", Int(0) }, { "multiple", yes } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b" }) }, { "correct", Int(0) } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b" }) }, { "explanation", Text("why") } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b" }) }, { "close_period", Int(2) } }));
+	CHECK(invalid({ { "question", Text("q") }, { "options", options({ "a", "b" }) }, { "close_period", Int(601) } }));
+	fixture.time += 1500;
+	CHECK(Code(broker.call(Request("messages.send_poll", { { "chat", Int(777000) }, { "question", Text("q") }, { "options", options({ "a", "b" }) } }))) == "denied");
+
+	const auto state = broker.call(Request("ghost.get"));
+	CHECK(IsOk(state) && Payload(state).find("active")->asBool() == false);
+	CHECK(IsOk(broker.call(Request("ghost.set", { { "enabled", yes } }))));
+	CHECK(Payload(broker.call(Request("ghost.get"))).find("active")->asBool() == true);
+	CHECK(Payload(broker.call(Request("ghost.get"))).find("send_read_messages")->asBool() == false);
+	CHECK(Code(broker.call(Request("ghost.set", { { "enabled", cbor::Value::FromBool(false) } }))) == "denied");
+	CHECK(Code(broker.call(Request("ghost.set", { { "enabled", Int(1) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("ghost.set"))) == "invalid");
+	broker.noteUserAction("menu.click");
+	CHECK(IsOk(broker.call(Request("ghost.set", { { "enabled", cbor::Value::FromBool(false) } }))));
+	CHECK(Payload(broker.call(Request("ghost.get"))).find("active")->asBool() == false);
+	fixture.time += 11000;
+	CHECK(IsOk(broker.call(Request("ghost.set", { { "enabled", yes } }))));
+	CHECK(Code(broker.call(Request("ghost.set", { { "enabled", cbor::Value::FromBool(false) } }))) == "denied");
 }
 
 void TestBotButtons() {
@@ -2386,6 +2478,7 @@ int main() {
 	TestMessageLookups();
 	TestChatManagement();
 	TestBotButtons();
+	TestMembersPollsAndGhost();
 	TestEntitiesInMessages();
 	TestOutgoingEntities();
 	TestPluginMessages();

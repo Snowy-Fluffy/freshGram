@@ -217,6 +217,7 @@
 "fresh_PermBotsInline" = "Interrogare i bot e premere i loro pulsanti per te";
 "fresh_PermChatsManage" = "Fissare messaggi, silenziare, fissare e archiviare chat";
 "fresh_PermContactsManage" = "Aggiungere contatti e bloccare utenti";
+"fresh_PermGhostControl" = "Vedere e cambiare la modalità fantasma";
 "fresh_PluginSettingsExport" = "Esporta impostazioni";
 "fresh_PluginSettingsImport" = "Importa impostazioni";
 "fresh_PluginSettingsExported" = "Impostazioni salvate.";

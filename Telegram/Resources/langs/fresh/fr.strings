@@ -217,6 +217,7 @@
 "fresh_PermBotsInline" = "Interroger des bots et appuyer sur leurs boutons pour vous";
 "fresh_PermChatsManage" = "Épingler des messages, mettre en sourdine, épingler et archiver des discussions";
 "fresh_PermContactsManage" = "Ajouter des contacts et bloquer des utilisateurs";
+"fresh_PermGhostControl" = "Voir et changer le mode fantôme";
 "fresh_PluginSettingsExport" = "Exporter les réglages";
 "fresh_PluginSettingsImport" = "Importer les réglages";
 "fresh_PluginSettingsExported" = "Réglages enregistrés.";

@@ -21,7 +21,7 @@ const auto kReadingPermissions = std::set<std::string>{
 const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
 	"net.tcp", "net.udp", "background", "fs.user_selected", "clipboard",
-	"messages.edit", "messages.delete",
+	"messages.edit", "messages.delete", "ghost.control",
 };
 
 const auto kLowPermissions = std::set<std::string>{
