@@ -3,11 +3,14 @@
 #include <poll.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 
 namespace fgpl::ipc {
 namespace {
+
+constexpr auto kReadStep = size_t(1) << 20;
 
 [[nodiscard]] bool WriteAll(int fd, const uint8_t *data, size_t size) {
 	while (size != 0) {
@@ -134,12 +137,17 @@ Result<cbor::Value, IoError> ReadFrame(
 	if (size > maxBytes) {
 		return IoError::TooLarge;
 	}
-	auto body = cbor::Bytes(size);
-	const auto rest = ReadExact(fd, body.data(), size, deadline, timed);
-	if (!rest.ok()) {
-		return (rest.error() == IoError::Closed)
-			? IoError::Failed
-			: rest.error();
+	auto body = cbor::Bytes();
+	while (body.size() != size) {
+		const auto at = body.size();
+		const auto step = std::min(size - at, kReadStep);
+		body.resize(at + step);
+		const auto rest = ReadExact(fd, body.data() + at, step, deadline, timed);
+		if (!rest.ok()) {
+			return (rest.error() == IoError::Closed)
+				? IoError::Failed
+				: rest.error();
+		}
 	}
 	auto decoded = cbor::Decode(body, limits);
 	if (!decoded.ok()) {
