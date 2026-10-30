@@ -58,7 +58,8 @@ void TestPermissions() {
 	CHECK(PermissionDanger("ui.toast") == Danger::Low);
 	CHECK(PermissionDanger("storage.private") == Danger::Low);
 	CHECK(PermissionDanger("net.https") == Danger::Medium);
-	CHECK(PermissionDanger("messages.read") == Danger::Medium);
+	CHECK(PermissionDanger("messages.read") == Danger::High);
+	CHECK(PermissionDanger("messages.read", "selected") == Danger::Medium);
 	CHECK(PermissionDanger("messages.read", "all") == Danger::High);
 	CHECK(PermissionDanger("net.udp") == Danger::High);
 	CHECK(PermissionDanger("messages.send") == Danger::High);
