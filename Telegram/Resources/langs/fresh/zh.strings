@@ -265,6 +265,7 @@
 "fresh_PermMessagesReadDeleted" = "读取已删除的消息";
 "fresh_PermMessagesSend" = "以你的名义发送消息";
 "fresh_PermMessagesTransform" = "修改你发送的消息";
+"fresh_PermMessagesTransformIncoming" = "更改或隐藏你收到的消息";
 "fresh_PermMediaRead" = "读取已下载的媒体";
 "fresh_PermChatsList" = "查看聊天列表";
 "fresh_PermChatInfo" = "查看聊天详情";
@@ -297,6 +298,7 @@
 "fresh_RiskDeleted" = "可以读取保存在此设备上的已删除消息";
 "fresh_RiskSends" = "可以以你的名义发送消息";
 "fresh_RiskOutgoing" = "可以修改你发送的内容";
+"fresh_RiskIncoming" = "可以更改或隐藏你收到的消息";
 "fresh_RiskBackground" = "会在后台持续运行";
 "fresh_RiskClipboard" = "可以使用剪贴板";
 "fresh_RiskFiles" = "可以读取和保存你选择的文件";

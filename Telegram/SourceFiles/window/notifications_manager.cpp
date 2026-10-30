@@ -986,7 +986,8 @@ void System::showNext() {
 				? notify->reactionOrVoteSender
 				: notify->item->specialNotificationPeer();
 			if ((!reactionNotification || !reaction.empty())
-				&& (!pollVoteNotification || !pollVoteOption.isEmpty())) {
+				&& (!pollVoteNotification || !pollVoteOption.isEmpty())
+				&& !isMessageHidden(notify->item)) {
 				_manager->showNotification({
 					.item = notify->item,
 					.forwardedCount = forwardedCount,

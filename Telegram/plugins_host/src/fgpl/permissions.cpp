@@ -21,7 +21,7 @@ const auto kReadingPermissions = std::set<std::string>{
 const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
 	"net.tcp", "net.udp", "background", "fs.user_selected", "clipboard",
-	"messages.edit", "messages.delete", "ghost.control",
+	"messages.edit", "messages.delete", "ghost.control", "messages.transform_incoming",
 };
 
 const auto kLowPermissions = std::set<std::string>{
@@ -89,6 +89,12 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 	}
 	if (Has(granted, "messages.transform_outgoing")) {
 		notes.push_back({ Risk::ChangesOutgoing, "can change what you send" });
+	}
+	if (Has(granted, "messages.transform_incoming")) {
+		notes.push_back({
+			Risk::ChangesIncoming,
+			"can change or hide the messages you receive",
+		});
 	}
 	if (Has(granted, "messages.edit") || Has(granted, "messages.delete")) {
 		notes.push_back({ Risk::ChangesMessages, "can edit or delete messages you sent" });

@@ -1165,6 +1165,105 @@ void TestOutgoingEntities() {
 	CHECK(rewritten.text == "bye" && rewritten.entities && rewritten.entities->empty());
 }
 
+void TestIncomingTransform() {
+	auto lab = Lab("fgpl-manager-incoming");
+	auto manager = PluginManager(lab.config());
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "messages.read", {} },
+		{ "messages.transform_incoming", {} },
+	};
+	const auto filtered = [](int64_t chat, const char *policy = "pass", const char *mode = "swap") {
+		return [=](cbor::Value &document) {
+			Set(document, "contributes.incoming.onFailure", Text(policy));
+			Set(document, "contributes.incoming.mode", Text(mode));
+			Set(document, "contributes.incoming.filter.chats", cbor::Value::FromArray({ Int(chat) }));
+		};
+	};
+	const auto retexter = std::string("com.example.retexter");
+	const auto formatter = std::string("com.example.formatter");
+	const auto hider = std::string("com.example.hider");
+	const auto crasher = std::string("com.example.crasher");
+	CHECK(manager.install(CustomArchive(retexter, CallingModule(EncodedRequest(
+		"messages.set_incoming",
+		{ { "text", Text("bye") } })), permissions, filtered(21))).ok());
+	CHECK(manager.install(CustomArchive(formatter, CallingModule(EncodedRequest(
+		"messages.set_incoming",
+		{ { "entities", cbor::Value::FromArray({
+			cbor::Value::FromMap({
+				{ "type", Text("italic") },
+				{ "offset", Int(1) },
+				{ "length", Int(1) },
+			}),
+		}) } })), permissions, filtered(22))).ok());
+	CHECK(manager.install(CustomArchive(hider, CallingModule(EncodedRequest(
+		"messages.hide_incoming",
+		{ { "reason", Text("spam") } })), permissions, filtered(23))).ok());
+	CHECK(manager.install(CustomArchive(crasher, CrashOnEvent(), permissions,
+		filtered(24, "block", "hold"))).ok());
+	for (const auto &id : { retexter, formatter, hider, crasher }) {
+		CHECK(manager.setEnabled(id, true));
+		CHECK(manager.grant(id, "A", { { "messages.read", "messages.transform_incoming" }, std::nullopt }));
+	}
+	manager.startEnabled("A");
+	CHECK(manager.drain(20000));
+
+	const auto info = [](int64_t chat, const char *type, bool secret = false) {
+		auto result = IncomingInfo();
+		result.chat = chat;
+		result.chatType = type;
+		result.secret = secret;
+		result.text = "hi";
+		result.entities.push_back({ "bold", 0, 2 });
+		result.message = {
+			{ "id", Int(5) },
+			{ "chat", Int(chat) },
+			{ "from", Int(9) },
+			{ "out", cbor::Value::FromBool(false) },
+		};
+		return result;
+	};
+	const auto run = [&](IncomingInfo value) {
+		auto result = std::optional<IncomingResult>();
+		manager.transformIncomingAsync("A", std::move(value), 5000, [&](IncomingResult done) {
+			result = std::move(done);
+		});
+		while (!result) {
+			manager.pump();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+		return std::move(*result);
+	};
+
+	const auto untouched = run(info(1, "group"));
+	CHECK(!untouched.hidden && !untouched.text && !untouched.entities);
+	const auto retexted = run(info(21, "group"));
+	CHECK(!retexted.hidden && retexted.text == std::optional<std::string>("bye"));
+	CHECK(retexted.entities && retexted.entities->empty());
+	const auto formatted = run(info(22, "group"));
+	CHECK(!formatted.hidden && !formatted.text);
+	CHECK(formatted.entities && formatted.entities->size() == 1);
+	if (formatted.entities && formatted.entities->size() == 1) {
+		CHECK((*formatted.entities)[0].type == "italic" && (*formatted.entities)[0].offset == 1);
+	}
+	const auto hidden = run(info(23, "group"));
+	CHECK(hidden.hidden && hidden.reason == "spam" && hidden.plugin == hider);
+	const auto failed = run(info(24, "group"));
+	CHECK(failed.hidden && failed.plugin == crasher);
+	CHECK(!run(info(21, "group", true)).text);
+	CHECK(!run(info(21, "self")).text);
+	CHECK(!run(info(api::kServiceChat, "user")).text);
+	CHECK(!run(info(23, "group", true)).hidden);
+
+	const auto snapshot = manager.snapshot();
+	CHECK(snapshot.transformsIncoming(info(21, "group")) == IncomingMode::Swap);
+	CHECK(snapshot.transformsIncoming(info(24, "group")) == IncomingMode::Hold);
+	CHECK(snapshot.transformsIncoming(info(1, "group")) == IncomingMode::None);
+	CHECK(snapshot.transformsIncoming(info(21, "group", true)) == IncomingMode::None);
+	CHECK(snapshot.transformsIncoming(info(21, "self")) == IncomingMode::None);
+	CHECK(!snapshot.transformsOutgoing(21, false));
+	manager.shutdown();
+}
+
 void TestSettingsExport() {
 #ifdef FGPL_COUNTER_WASM
 	auto lab = Lab("fgpl-manager-export");
@@ -1785,6 +1884,7 @@ int main(int argc, char **argv) {
 	run("outgoing", TestOutgoingTransform);
 	run("outgoing-options", TestOutgoingFilterDropAndOptions);
 	run("outgoing-entities", TestOutgoingEntities);
+	run("incoming", TestIncomingTransform);
 	run("translator", TestTranslator);
 	run("toast-events", TestToastEvents);
 	run("settings-export", TestSettingsExport);

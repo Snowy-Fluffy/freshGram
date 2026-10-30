@@ -50,6 +50,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `media.get` `{chat, message, thumbnail, download}` | `media.read` | the file of a message, up to 100 MiB: `kind`, `mime`, `name`, `data`; without `download` only a file already on this device (`not_found` otherwise), with `download: true` the app downloads it first (up to five minutes, `limit` for larger files; await it) |
 | `media.list` `{chat, kind, limit, before}` | `media.read` | messages with media, newest first, the same fields as the history; `kind` is `any` (the recent history), `photo`, `video`, `photo_video`, `file`, `voice`, `round`, `audio` or `gif` (searched on the server) |
 | `messages.set_outgoing` `{text, entities, format, silent, schedule, reply_to, topic}` | `messages.transform_outgoing` | only while handling `message.outgoing`; give at least one field; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting; `entities` is a list of `{type, offset, length}` (UTF-16 units, up to 256) for the formatting of the text: `type` is `bold`, `italic`, `underline`, `strike`, `code`, `pre` (with `language`), `spoiler`, `blockquote`, `text_url` (needs an http, https or tg `url`), `mention_name` (needs the user `id`) or `custom_emoji` (needs the document `id`); the types Telegram finds itself (`url`, `mention`, `hashtag`, ...) are accepted so that entities read from a message can be passed back, and are ignored; entities cannot be combined with `format: "markdown"`, a new `text` without `entities` is sent without formatting, and entities that do not fit the text are dropped; `schedule` is a unix time (0 sends now), `reply_to` a message id of the chat (0 for none), `topic` a forum topic; the app ignores a value it cannot use (a time out of range, a message that is not there) |
+| `messages.set_incoming` `{text, format, entities}`, `messages.hide_incoming` `{reason}` | `messages.transform_incoming` | only while handling `message.incoming`; give `text`, `entities` or both (not with `format: "markdown"`); `hide_incoming` hides the message and the plugins after this one do not see it; the real text of the message stays unchanged |
 | `messages.drop_outgoing` `{reason}` | `messages.transform_outgoing` | only while handling `message.outgoing`; the message is not sent and the input field stays empty; a non-empty `reason` (up to 200 bytes) is shown as a toast with the plugin's name; the plugins after this one do not see the message |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `ui.window.show` `{id, page, mode}`, `ui.window.update` `{id, page}`, `ui.window.close` `{id}` | `ui.dialog` | a window of the plugin's own: `id` is a lowercase token of up to 32 characters, `mode` is `layer` (over the chat, the default) or `window` (a window of its own); up to 3 windows at a time; see *Windows* |
@@ -204,6 +205,24 @@ chat ids) and `chat_types` (`user`, `bot`, `self`, `group`, `supergroup`, `forum
 plugins see a message one after another, each one the changes of those before. It has about a second; `contributes.outgoing.onFailure` says what
 happens when it fails or is late: `pass` sends the text unchanged, `block` stops
 the message and puts it back into the input field.
+
+`message.incoming` comes to plugins with `messages.transform_incoming` and
+`contributes.incoming` for every new or edited message you receive: the fields of the
+message (`id, chat, from, date, text, entities, out, ...`, see `messages.history`) and
+`chat_type`, `edited`. It is never sent for secret chats, Saved Messages, 777000 or
+service messages, and not for the history the app loads when you scroll. The plugin may
+call `messages.set_incoming` to change the shown text or entities, or
+`messages.hide_incoming` to hide the message; other data calls are refused during this
+event, and the handler must answer before its first `await`. Only the display changes:
+the message list, replies, copied text, the chat list and notifications show the new
+text, while forwarding, editing, quotes and plugin events keep the real text. An edit
+of the message brings the event again (`edited` is true). `contributes.incoming` takes
+the same `filter` and `onFailure` as `contributes.outgoing` (`block` hides the message
+when the plugin fails or is late) and `mode`: `swap` (the default) shows the message at
+once and replaces it when the plugin answers, `hold` hides it until the plugin answers
+or about a second passes. The plugins answer one after another. A plugin that falls
+behind (more than 64 events waiting) is skipped for new messages. The event handler also
+has to finish within the plugin's `eventTimeoutMs`.
 
 ## Translator
 

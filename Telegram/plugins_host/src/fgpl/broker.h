@@ -160,6 +160,8 @@ struct Message {
 	std::vector<std::vector<MessageButton>> buttons;
 };
 
+[[nodiscard]] cbor::Value MessageValue(const Message &message);
+
 struct Account {
 	int64_t id = 0;
 	std::string name;
@@ -208,7 +210,14 @@ struct OutgoingMessage {
 	std::vector<TextEntity> entities;
 };
 
-// What a plugin asked for while handling message.outgoing.
+// Which hook a plugin is answering: the calls it may make depend on it.
+enum class HookKind {
+	None,
+	Outgoing,
+	Incoming,
+};
+
+// What a plugin asked for while handling message.outgoing or message.incoming.
 struct OutgoingEdit {
 	std::optional<std::string> text;
 	bool markdown = false;
@@ -871,6 +880,7 @@ public:
 	}
 
 	void beginOutgoing();
+	void beginIncoming();
 	[[nodiscard]] OutgoingEdit finishOutgoing();
 	void releaseSockets();
 
@@ -947,7 +957,7 @@ private:
 	std::map<std::string, std::string> _windows;
 	std::map<std::string, int64_t> _windowUpdated;
 	int64_t _nextTicket = 1;
-	bool _outgoing = false;
+	HookKind _hook = HookKind::None;
 	OutgoingEdit _outgoingEdit;
 
 };

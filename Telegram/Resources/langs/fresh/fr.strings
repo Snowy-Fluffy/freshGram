@@ -265,6 +265,7 @@
 "fresh_PermMessagesReadDeleted" = "Lire les messages supprimés";
 "fresh_PermMessagesSend" = "Envoyer des messages en votre nom";
 "fresh_PermMessagesTransform" = "Modifier les messages que vous envoyez";
+"fresh_PermMessagesTransformIncoming" = "Modifier ou masquer les messages que vous recevez";
 "fresh_PermMediaRead" = "Lire les médias téléchargés";
 "fresh_PermChatsList" = "Voir la liste des discussions";
 "fresh_PermChatInfo" = "Voir les détails des discussions";
@@ -297,6 +298,7 @@
 "fresh_RiskDeleted" = "Peut lire les messages supprimés conservés sur cet appareil";
 "fresh_RiskSends" = "Peut envoyer des messages en votre nom";
 "fresh_RiskOutgoing" = "Peut modifier ce que vous envoyez";
+"fresh_RiskIncoming" = "Peut modifier ou masquer les messages que vous recevez";
 "fresh_RiskBackground" = "Continue de fonctionner en arrière-plan";
 "fresh_RiskClipboard" = "Peut utiliser le presse-papiers";
 "fresh_RiskFiles" = "Peut lire et enregistrer les fichiers que vous choisissez";

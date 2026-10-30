@@ -79,6 +79,8 @@ struct Events {
 	base::flat_set<FullMsgId> byPlugin;
 	std::map<FullMsgId, Seen> seen;
 	std::deque<FullMsgId> seenOrder;
+	std::map<FullMsgId, Seen> incoming;
+	std::deque<FullMsgId> incomingOrder;
 	base::flat_set<FullMsgId> deleted;
 	std::deque<FullMsgId> deletedOrder;
 	std::map<std::tuple<PeerId, PeerId, QString, bool>, crl::time> typing;
@@ -359,6 +361,92 @@ void Trim(Map &map) {
 	}
 }
 
+void ApplyIncoming(
+		not_null<Main::Session*> session,
+		FullMsgId id,
+		const fgpl::IncomingResult &result) {
+	const auto item = session->data().message(id);
+	if (!item) {
+		return;
+	}
+	SetHiddenByPlugin(item, result.hidden, true);
+	SetHiddenByPlugin(item, result.hidden, false);
+	if (result.hidden) {
+		return;
+	}
+	if (!result.text && !result.entities) {
+		item->setPluginDisplay(std::nullopt);
+		return;
+	}
+	auto display = TextWithEntities();
+	if (result.text && result.markdown) {
+		display = TextWithEntities{ QString::fromStdString(*result.text) };
+		TextUtilities::ParseEntities(display, TextParseMarkdown);
+	} else {
+		display = DisplayTextOf(
+			session,
+			result.text
+				? QString::fromStdString(*result.text)
+				: item->originalText().text,
+			result.entities.value_or(std::vector<fgpl::TextEntity>()));
+	}
+	item->setPluginDisplay(std::move(display));
+}
+
+void RunIncoming(
+		not_null<Main::Session*> session,
+		const std::string &account,
+		not_null<HistoryItem*> item,
+		not_null<Events*> events) {
+	if (item->out() || !Reportable(item) || Hidden(item->history()->peer)) {
+		return;
+	}
+	const auto snapshot = Snapshot();
+	const auto fullId = item->fullId();
+	const auto now = SeenOf(item);
+	const auto known = events->incoming.find(fullId);
+	const auto edited = (known != end(events->incoming));
+	if (edited && known->second.editDate == now.editDate
+		&& known->second.textHash == now.textHash) {
+		return;
+	} else if (!edited && now.editDate && now.editDate
+			<= base::unixtime::now() - kFreshEditSeconds) {
+		return;
+	} else if (!snapshot) {
+		return;
+	}
+	auto info = IncomingInfoOf(item, edited);
+	const auto mode = snapshot->transformsIncoming(info);
+	if (mode == fgpl::IncomingMode::None) {
+		return;
+	}
+	if (!edited) {
+		Remember(events->incoming, events->incomingOrder, fullId);
+	}
+	events->incoming[fullId] = now;
+	const auto hold = (mode == fgpl::IncomingMode::Hold);
+	if (hold) {
+		SetHiddenByPlugin(item, true, true);
+	}
+	const auto weak = base::make_weak(session);
+	const auto posted = Post([=](not_null<fgpl::PluginManager*> manager) {
+		manager->transformIncomingAsync(
+			account,
+			info,
+			kOutgoingTimeoutMs,
+			[=](fgpl::IncomingResult result) {
+				crl::on_main([=] {
+					if (const auto strong = weak.get()) {
+						ApplyIncoming(strong, fullId, result);
+					}
+				});
+			});
+	}, false);
+	if (!posted && hold) {
+		SetHiddenByPlugin(item, false, true);
+	}
+}
+
 void WatchActivity(
 		not_null<Main::Session*> session,
 		const std::string &id,
@@ -525,7 +613,9 @@ void WatchEvents(
 				}
 			}
 			return;
-		} else if (!WantsEvents() || !Reportable(item)) {
+		}
+		RunIncoming(session, id, item, events);
+		if (!WantsEvents() || !Reportable(item)) {
 			return;
 		}
 		Note(*events, item);
@@ -550,6 +640,9 @@ void WatchEvents(
 			| Data::MessageUpdate::Flag::NewUnreadReaction
 	) | rpl::on_next([=](const Data::MessageUpdate &update) {
 		const auto item = update.item;
+		if (update.flags & Data::MessageUpdate::Flag::Edited) {
+			RunIncoming(session, id, item, events);
+		}
 		if (!WantsEvents() || !Reportable(item)) {
 			return;
 		} else if (update.flags & Data::MessageUpdate::Flag::NewUnreadReaction) {
@@ -577,6 +670,8 @@ void WatchEvents(
 	) | rpl::on_next([=](not_null<const HistoryItem*> item) {
 		const auto fullId = item->fullId();
 		events->seen.erase(fullId);
+		events->incoming.erase(fullId);
+		ForgetHiddenByPlugin(fullId);
 		events->sending.remove(fullId);
 		events->byPlugin.remove(fullId);
 		if (!WantsEvents() || !Reportable(item) || item->isDeleted()) {
@@ -725,6 +820,7 @@ void Stop() {
 	auto &service = GetService();
 	service.lifetime.destroy();
 	service.watched.clear();
+	ReleasePendingHidden();
 	for (auto &[history, queue] : base::take(service.outgoing)) {
 		for (const auto &outgoing : queue) {
 			if (!outgoing.byPlugin) {

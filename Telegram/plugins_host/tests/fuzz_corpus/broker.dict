@@ -187,3 +187,6 @@
 "close_period"
 "anonymous"
 "multiple"
+"messages.set_incoming"
+"messages.hide_incoming"
+"messages.transform_incoming"

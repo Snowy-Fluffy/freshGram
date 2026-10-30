@@ -1914,7 +1914,8 @@ const HistoryMessageRichPage *Element::richpage() const {
 }
 
 OnlyEmojiAndSpaces Element::isOnlyEmojiAndSpaces() const {
-	if (data()->Has<HistoryMessageTranslation>()) {
+	if (data()->Has<HistoryMessageTranslation>()
+		|| data()->Has<HistoryMessagePluginDisplay>()) {
 		return OnlyEmojiAndSpaces::No;
 	} else if (!_text.isEmpty()) {
 		return _text.hasNotEmojiAndSpaces()

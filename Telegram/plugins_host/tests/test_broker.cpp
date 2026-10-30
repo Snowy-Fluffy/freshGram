@@ -750,6 +750,57 @@ void TestOutgoingEntities() {
 	CHECK(refused(cbor::Value::FromArray(std::move(many))));
 }
 
+void TestIncomingHook() {
+	auto fixture = Fixture({ "messages.transform_incoming", "messages.transform_outgoing", "chats.list" });
+	auto broker = fixture.make();
+	CHECK(Code(broker.call(Request("messages.set_incoming", { { "text", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.hide_incoming"))) == "invalid");
+
+	broker.beginIncoming();
+	CHECK(Code(broker.call(Request("chats.list"))) == "unavailable");
+	CHECK(IsOk(broker.call(Request("log", { { "text", Text("fine") } }))));
+	CHECK(Code(broker.call(Request("messages.set_outgoing", { { "text", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.drop_outgoing"))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_incoming"))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_incoming", { { "text", Text("") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_incoming", { { "silent", cbor::Value::FromBool(true) } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.set_incoming", { { "text", Text("seen") } }))));
+	const auto bold = cbor::Value::FromMap({ { "type", Text("bold") }, { "offset", Int(0) }, { "length", Int(2) } });
+	CHECK(IsOk(broker.call(Request("messages.set_incoming", { { "entities", cbor::Value::FromArray({ bold }) } }))));
+	CHECK(Code(broker.call(Request("messages.set_incoming", {
+		{ "text", Text("x") }, { "format", Text("markdown") },
+		{ "entities", cbor::Value::FromArray({ bold }) },
+	}))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_incoming", { { "entities", Text("bold") } }))) == "invalid");
+	auto edit = broker.finishOutgoing();
+	CHECK(edit.text == std::optional<std::string>("seen") && edit.entities && edit.entities->size() == 1);
+	CHECK(!edit.drop);
+
+	broker.beginIncoming();
+	CHECK(IsOk(broker.call(Request("messages.hide_incoming", { { "reason", Text("spam") } }))));
+	CHECK(Code(broker.call(Request("messages.hide_incoming", { { "reason", Text(std::string(300, 'a')) } }))) == "invalid");
+	edit = broker.finishOutgoing();
+	CHECK(edit.drop && edit.dropReason == "spam");
+
+	broker.beginOutgoing();
+	CHECK(Code(broker.call(Request("messages.set_incoming", { { "text", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.hide_incoming"))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.set_outgoing", { { "text", Text("x") } }))));
+	(void)broker.finishOutgoing();
+
+	auto outgoingOnly = Fixture({ "messages.transform_outgoing" });
+	auto outgoingBroker = outgoingOnly.make();
+	outgoingBroker.beginIncoming();
+	CHECK(Code(outgoingBroker.call(Request("messages.set_incoming", { { "text", Text("x") } }))) == "denied");
+	CHECK(Code(outgoingBroker.call(Request("messages.hide_incoming"))) == "denied");
+	(void)outgoingBroker.finishOutgoing();
+	auto incomingOnly = Fixture({ "messages.transform_incoming" });
+	auto incomingBroker = incomingOnly.make();
+	incomingBroker.beginOutgoing();
+	CHECK(Code(incomingBroker.call(Request("messages.set_outgoing", { { "text", Text("x") } }))) == "denied");
+	(void)incomingBroker.finishOutgoing();
+}
+
 void TestMessageLookups() {
 	auto fixture = Fixture({ "messages.history" });
 	auto broker = fixture.make();
@@ -2475,6 +2526,7 @@ int main() {
 	TestHistoryFromUser();
 	TestInlineQuery();
 	TestOpenSettings();
+	TestIncomingHook();
 	TestMessageLookups();
 	TestChatManagement();
 	TestBotButtons();

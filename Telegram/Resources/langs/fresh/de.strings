@@ -265,6 +265,7 @@
 "fresh_PermMessagesReadDeleted" = "Gelöschte Nachrichten lesen";
 "fresh_PermMessagesSend" = "Nachrichten in deinem Namen senden";
 "fresh_PermMessagesTransform" = "Gesendete Nachrichten ändern";
+"fresh_PermMessagesTransformIncoming" = "Empfangene Nachrichten ändern oder ausblenden";
 "fresh_PermMediaRead" = "Heruntergeladene Medien lesen";
 "fresh_PermChatsList" = "Deine Chatliste sehen";
 "fresh_PermChatInfo" = "Chatdetails sehen";
@@ -297,6 +298,7 @@
 "fresh_RiskDeleted" = "Kann gelöschte Nachrichten auf diesem Gerät lesen";
 "fresh_RiskSends" = "Kann Nachrichten in deinem Namen senden";
 "fresh_RiskOutgoing" = "Kann ändern, was du sendest";
+"fresh_RiskIncoming" = "Kann empfangene Nachrichten ändern oder ausblenden";
 "fresh_RiskBackground" = "Läuft im Hintergrund weiter";
 "fresh_RiskClipboard" = "Kann die Zwischenablage nutzen";
 "fresh_RiskFiles" = "Kann von dir gewählte Dateien lesen und speichern";

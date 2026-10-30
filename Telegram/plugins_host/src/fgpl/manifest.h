@@ -100,6 +100,25 @@ struct OutgoingHook {
 	OutgoingFilter filter;
 };
 
+struct IncomingHook {
+	bool declared = false;
+	bool block = false;
+	bool hold = false;
+	OutgoingFilter filter;
+};
+
+// What the app knows about an incoming message that is about to be shown:
+// `message` holds its fields except text and entities, which change as plugins answer.
+struct IncomingInfo {
+	int64_t chat = 0;
+	bool secret = false;
+	std::string chatType;
+	bool edited = false;
+	std::string text;
+	std::vector<TextEntity> entities;
+	cbor::Map message;
+};
+
 // What the app knows about a message that is about to be sent.
 struct OutgoingInfo {
 	int64_t chat = 0;
@@ -122,6 +141,9 @@ struct OutgoingInfo {
 [[nodiscard]] bool Matches(
 	const OutgoingFilter &filter,
 	const OutgoingInfo &info);
+[[nodiscard]] bool Matches(
+	const OutgoingFilter &filter,
+	const IncomingInfo &info);
 
 struct Dependency {
 	std::string id;
@@ -178,6 +200,7 @@ struct Manifest {
 	std::vector<Command> commands;
 	bool settingsPage = false;
 	OutgoingHook outgoing;
+	IncomingHook incoming;
 	TranslatorDecl translator;
 	std::vector<std::string> messagesFrom;
 

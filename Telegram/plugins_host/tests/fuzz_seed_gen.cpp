@@ -101,6 +101,8 @@ int main(int argc, char **argv) {
 		call("users.resolve", { { "username", Text("bobby") } }),
 		call("bots.inline_query", { { "bot", Text("inlinebot") }, { "query", Text("cats") } }),
 		call("time.now"),
+		call("messages.set_incoming", { { "text", Text("seen") } }),
+		call("messages.hide_incoming", { { "reason", Text("spam") } }),
 		call("chats.members", { { "chat", chat } }),
 		call("chats.admins", { { "chat", chat } }),
 		call("messages.send_poll", { { "chat", chat }, { "question", Text("q?") }, { "options", cbor::Value::FromArray({ Text("a"), Text("b") }) } }),

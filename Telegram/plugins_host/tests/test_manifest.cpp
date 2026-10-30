@@ -225,6 +225,27 @@ void TestRejections() {
 		}));
 		Set(d, "contributes.outgoing.onFailure", Text("maybe"));
 	}, "onFailure");
+	ExpectError("incoming without permission", [](auto &d) {
+		Set(d, "contributes.incoming.onFailure", Text("block"));
+	}, "messages.transform_incoming");
+	ExpectError("incoming policy", [](auto &d) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("messages.transform_incoming") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.incoming.onFailure", Text("maybe"));
+	}, "onFailure");
+	ExpectError("incoming mode", [](auto &d) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("messages.transform_incoming") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.incoming.mode", Text("later"));
+	}, "mode");
+	ExpectError("outgoing has no mode", [](auto &d) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("messages.transform_outgoing") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.outgoing.mode", Text("hold"));
+	}, "mode");
 	ExpectError("unknown event", [](auto &d) {
 		Set(d, "contributes.events", Array({ "chat.shouting" }));
 	}, "unknown event");
@@ -502,6 +523,45 @@ void TestMenuConditions() {
 	CHECK(Matches(MenuWhen(), MenuContext()));
 }
 
+void TestIncomingHook() {
+	auto document = ValidDocument();
+	Set(document, "permissions.optional", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "id", Text("messages.transform_incoming") }, { "reason", Text("x") } }),
+	}));
+	Set(document, "contributes.incoming.mode", Text("hold"));
+	Set(document, "contributes.incoming.onFailure", Text("block"));
+	Set(document, "contributes.incoming.filter", cbor::Value::FromMap({
+		{ "chats", cbor::Value::FromArray({ Int(5) }) },
+		{ "chat_types", Array({ "group" }) },
+	}));
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (!parsed.ok()) {
+		return;
+	}
+	const auto &hook = parsed.value().incoming;
+	CHECK(hook.declared && hook.block && hook.hold);
+	CHECK(!parsed.value().outgoing.declared);
+	auto info = IncomingInfo();
+	info.chat = 5;
+	info.chatType = "group";
+	CHECK(Matches(hook.filter, info));
+	info.chatType = "user";
+	CHECK(!Matches(hook.filter, info));
+	info.chatType = "group";
+	info.chat = 6;
+	CHECK(!Matches(hook.filter, info));
+
+	auto plain = ValidDocument();
+	Set(plain, "permissions.optional", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "id", Text("messages.transform_incoming") }, { "reason", Text("x") } }),
+	}));
+	Set(plain, "contributes.incoming.onFailure", Text("pass"));
+	const auto swapped = Parse(plain);
+	CHECK(swapped.ok() && swapped.value().incoming.declared && !swapped.value().incoming.hold);
+	CHECK(HostFeatures().contains("messages.transform_incoming"));
+}
+
 void TestOutgoingFilter() {
 	const auto withHook = [](cbor::Value filter) {
 		return [filter = std::move(filter)](cbor::Value &d) {
@@ -605,6 +665,7 @@ int main() {
 	TestSignedTextIgnoresTheSignature();
 	TestIcons();
 	TestOutgoingFilter();
+	TestIncomingHook();
 	TestMenuConditions();
 	TestTranslatorManifest();
 	TestStorageExport();
