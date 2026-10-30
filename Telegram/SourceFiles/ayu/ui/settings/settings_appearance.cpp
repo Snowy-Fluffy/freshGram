@@ -234,8 +234,6 @@ void BuildAppearance(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		},
 	});
 	builder.addSkip();
-	builder.addDividerText(tr::fresh_DesignStyleDescription());
-	builder.addSkip();
 
 
 	if (settings->designStyle()

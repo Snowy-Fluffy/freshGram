@@ -86,10 +86,8 @@
 "ayu_CrashReportingDescription" = "Ist diese Option aktiviert, wirst du nach einem Absturz der App gefragt, ob du einen Bericht senden möchtest. Du entscheidest, ob du ihn sendest.";
 "fresh_Plugins" = "Plugins";
 "fresh_PluginsEnable" = "Plugins aktivieren";
-"fresh_PluginsDescription" = "Plugins laufen in einem separaten, isolierten Prozess und können nur nutzen, was du ihnen erlaubst.";
 "fresh_PluginsNoRuntime" = "Die Plugin-Komponenten sind noch nicht installiert.";
 "fresh_PluginsNoSandbox" = "Plugins brauchen die Sandbox des Betriebssystems, und dieses System bietet sie nicht. Nutze unter Linux Version 5.13 oder neuer mit aktiviertem Landlock, unter Windows Version 10 oder neuer, unter macOS Version 10.15 oder neuer.";
-"fresh_PluginPermissionsAllAccounts" = "Berechtigungen und Daten eines Plugins gelten für alle deine Konten.";
 "fresh_PluginAcceptsFrom" = "Nimmt Nachrichten an von: {list}";
 "fresh_PluginAcceptsAny" = "jedem Plugin";
 "fresh_PluginDangerLow" = "Sicher";
@@ -177,7 +175,6 @@
 "fresh_PluginBrokenToast" = "Die Plugin-Dateien sind beschädigt. Entferne das Plugin oder installiere es neu.";
 "fresh_PluginStatusOff" = "Aus";
 "fresh_PluginsComponents" = "Plugin-Komponenten";
-"fresh_PluginsComponentsAbout" = "Wasmtime führt die Plugins aus und Python die in Python geschriebenen. Sie werden einmal aus Telegram geladen und per Signatur und Hash geprüft.";
 "fresh_PluginsListAbout" = "Tippe auf ein Plugin, um seine Einstellungen, Berechtigungen und sein Protokoll zu öffnen.";
 "fresh_PluginsAdvanced" = "Erweitert";
 "fresh_PluginId" = "ID: {id}";
@@ -200,10 +197,8 @@
 "fresh_PluginsBlockHttps" = "HTTPS für alle Plugins blockieren";
 "fresh_PluginsBlockTcp" = "TCP für alle Plugins blockieren";
 "fresh_PluginsBlockUdp" = "UDP für alle Plugins blockieren";
-"fresh_PluginsBlockAbout" = "Gilt zusätzlich zu den eigenen Berechtigungen jedes Plugins. Offene Verbindungen der blockierten Art werden geschlossen.";
 "fresh_PluginsProxy" = "Proxy für Plugins";
 "fresh_PluginsProxyOff" = "Aus";
-"fresh_PluginsProxyAbout" = "Nur der Datenverkehr der Plugins läuft über diesen Proxy. Fällt der Proxy aus, erhalten Plugins einen Fehler, statt direkt zu verbinden. UDP funktioniert nur mit SOCKS5. Hostnamen löst der Proxy auf.";
 "fresh_PermMessagesEdit" = "Von dir gesendete Nachrichten bearbeiten";
 "fresh_PermMessagesDelete" = "Von dir gesendete Nachrichten löschen";
 "fresh_PermMessagesReact" = "Auf Nachrichten reagieren";
@@ -253,7 +248,6 @@
 "fresh_PluginLicense" = "Lizenz: {license}";
 "fresh_PluginPermissionRequiredShort" = "Erforderlich";
 "fresh_PluginPermissionNewShort" = "Neu";
-"fresh_PluginPermissionsRequiredAbout" = "Ohne diese Berechtigungen funktioniert das Plugin nicht, deshalb sind sie immer aktiv.";
 "fresh_PluginLogTabAll" = "Alle";
 "fresh_PluginLogTabProblems" = "Probleme";
 "fresh_PluginLogSearch" = "Suchen";
@@ -366,7 +360,6 @@
 "fresh_DesignStyleTelegram" = "Standard-Telegram-Design";
 "fresh_DesignStyleMaterialgram" = "Materialgram-Design";
 "fresh_DesignStyleFagram" = "FagramDesktop-Design";
-"fresh_DesignStyleDescription" = "Der Designstil legt Abstände, Größen und das Aussehen der Oberflächenelemente fest. Stil und Symbole werden nach einem Neustart wirksam. Das Fagram-Design bringt die Pillen-Kopfleiste, das Navigationsmenü, Karten in Einstellungen und Profil sowie Schieberegler und Schalter im Material-3-Stil aus FAgram Desktop. Das Telegram-Design entspricht Telegram Desktop, einschließlich Schriftart, Themes und Symbolfarben.";
 "fresh_ManageWhisperModels" = "Modelle zur Spracherkennung";
 "fresh_ManageOcrLanguages" = "Sprachen der Texterkennung";
 "fresh_ModelEnabled" = "Aktiviert";
@@ -554,7 +547,6 @@
 "fresh_DeletedPostCommentsUnavailable" = "Die Kommentare zu diesem gelöschten Beitrag sind nicht mehr verfügbar.";
 "fresh_GesturesHeader" = "Gesten";
 "fresh_InvertSwipeGestures" = "Wischgesten umkehren";
-"fresh_InvertSwipeGesturesDescription" = "Bei Wischgesten der Scrollrichtung des Touchpads statt der Fingerrichtung folgen: Chats öffnen und schließen, auf Nachrichten antworten, Schnellaktionen.";
 "fresh_StreamerSpoilers" = "Fotos, Avatare und persönliche Daten ausblenden";
 "fresh_StreamerSpoilersDescription" = "Fotos, Videos, Avatare, Benutzernamen, IDs, Telefonnummern und Registrierungsdaten werden bei aktivem Streamer-Modus hinter Spoilern verborgen.";
 "ayu_EditsHistoryTitle" = "Bearbeitungsverlauf";
@@ -783,7 +775,6 @@
 "fresh_StashHint" = "Drücke {shortcut}, um diesen Entwurf abzulegen.";
 "fresh_KeepDeletedDays" = "Gelöschte Nachrichten und Bearbeitungen behalten für";
 "fresh_DeleteSavedFiles" = "Dateien mit gespeicherten Nachrichten löschen";
-"fresh_DeleteSavedFilesAbout" = "Werden gespeicherte gelöschte Nachrichten von Hand oder nach Ablauf der Frist entfernt, werden ihre Medien überschrieben und sie werden auch aus den Sicherungen entfernt. Die vollste Sicherung wird nicht mehr über die Anzahl der Sicherungen hinaus behalten.";
 "fresh_BackupKeepCount" = "Zu behaltende Datenbank-Backups";
 "fresh_BackupInterval" = "Datenbank-Backup alle";
 "fresh_StorageUnlimited" = "Unbegrenzt";
@@ -970,7 +961,6 @@
 "fresh_PasscodeWiped" = "Zu viele Fehlversuche. Die Daten wurden gelöscht.";
 "fresh_PasscodeKeyUnavailable" = "Der Code konnte nicht geprüft werden: Diesem Build fehlt Argon2id oder es gibt nicht genug Speicher. Der Versuch wurde nicht gezählt.";
 "fresh_PasscodeKdfFailed" = "Der neue Schlüssel konnte nicht erzeugt werden, nichts wurde geändert.";
-"fresh_PasscodeLockMinimizeWayland" = "Unter Wayland weiß das Fenster nicht, ob es minimiert ist, daher sperrt die App, wenn sie für die gewählte Zeit inaktiv bleibt.";
 "fresh_PasscodeLockScreen" = "Sperrbildschirm";
 "fresh_PasscodeShowClock" = "Uhr anzeigen";
 "fresh_PasscodeShowDate" = "Datum anzeigen";

@@ -8872,10 +8872,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_CrashReportingDescription" = "When this option is enabled, you'll be prompted to send a report after the app crashes. You can decide whether to send it or not.";
 "fresh_Plugins" = "Plugins";
 "fresh_PluginsEnable" = "Enable plugins";
-"fresh_PluginsDescription" = "Plugins run in a separate sandboxed process and can use only what you allow them.";
 "fresh_PluginsNoRuntime" = "The plugin components are not installed yet.";
 "fresh_PluginsNoSandbox" = "Plugins need the sandbox of the operating system to run, and this system does not provide it. On Linux use version 5.13 or newer with Landlock enabled, on Windows use version 10 or newer, on macOS use version 10.15 or newer.";
-"fresh_PluginPermissionsAllAccounts" = "The permissions and data of a plugin are shared by all your accounts.";
 "fresh_PluginAcceptsFrom" = "Accepts messages from: {list}";
 "fresh_PluginAcceptsAny" = "any plugin";
 "fresh_PluginUpdateTitle" = "Update plugin";
@@ -8960,7 +8958,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginBrokenToast" = "The plugin files are damaged. Remove the plugin or install it again.";
 "fresh_PluginStatusOff" = "Off";
 "fresh_PluginsComponents" = "Plugin components";
-"fresh_PluginsComponentsAbout" = "Wasmtime runs the plugins and Python runs the plugins written in Python. They are downloaded once from Telegram and checked by signature and hash.";
 "fresh_PluginsListAbout" = "Tap a plugin to open its settings, permissions and log.";
 "fresh_PluginsAdvanced" = "Advanced";
 "fresh_PluginId" = "ID: {id}";
@@ -8983,10 +8980,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsBlockHttps" = "Block HTTPS for all plugins";
 "fresh_PluginsBlockTcp" = "Block TCP for all plugins";
 "fresh_PluginsBlockUdp" = "Block UDP for all plugins";
-"fresh_PluginsBlockAbout" = "Applies to every plugin on top of its own permissions. Open connections of a blocked kind are closed.";
 "fresh_PluginsProxy" = "Proxy for plugins";
 "fresh_PluginsProxyOff" = "Off";
-"fresh_PluginsProxyAbout" = "Only plugin traffic goes through this proxy. If the proxy fails, plugins get an error instead of connecting directly. UDP works only with SOCKS5. Host names are resolved by the proxy.";
 "fresh_PermMessagesEdit" = "Edit messages you sent";
 "fresh_PermMessagesDelete" = "Delete messages you sent";
 "fresh_PermMessagesReact" = "Put reactions on messages";
@@ -9037,7 +9032,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginPermissionRequiredShort" = "Required";
 "fresh_PluginPermissionOptionalShort" = "Optional";
 "fresh_PluginPermissionNewShort" = "New";
-"fresh_PluginPermissionsRequiredAbout" = "The plugin cannot work without these permissions, so they are always on.";
 "fresh_PluginLogTabAll" = "All";
 "fresh_PluginLogTabProblems" = "Problems";
 "fresh_PluginLogSearch" = "Search";
@@ -9150,7 +9144,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_DesignStyleTelegram" = "Default Telegram design";
 "fresh_DesignStyleMaterialgram" = "Materialgram design";
 "fresh_DesignStyleFagram" = "FagramDesktop design";
-"fresh_DesignStyleDescription" = "The design style sets paddings, sizes and the look of interface elements. The design style and the icons are applied after a restart. The Fagram design adds the pill top bar, the navigation drawer menu, the cards in settings and profile, and the sliders and switches in the Material 3 style, ported from FAgram Desktop. The Telegram design matches Telegram Desktop, including its font, themes and icon colors.";
 "fresh_ManageWhisperModels" = "Speech recognition models";
 "fresh_ManageOcrLanguages" = "Text recognition languages";
 "fresh_ModelEnabled" = "Enabled";
@@ -9346,7 +9339,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_DeletedPostCommentsUnavailable" = "The comments of this deleted post are no longer available.";
 "fresh_GesturesHeader" = "Gestures";
 "fresh_InvertSwipeGestures" = "Invert swipe gestures";
-"fresh_InvertSwipeGesturesDescription" = "Follow the scroll direction of the touchpad instead of the finger direction for swipes: opening and closing chats, replying to messages, quick actions.";
 "fresh_StreamerSpoilers" = "Hide photos, avatars and personal data";
 "fresh_StreamerSpoilersDescription" = "Photos, videos, avatars, usernames, IDs, phone numbers and registration dates are hidden behind spoilers, and Premium badges and tag colors are hidden, while Streamer Mode is on.";
 "ayu_EditsHistoryTitle" = "Edits History";
@@ -9641,7 +9633,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_StashHint" = "Press {shortcut} to stash this draft.";
 "fresh_KeepDeletedDays" = "Keep deleted messages and edits for";
 "fresh_DeleteSavedFiles" = "Delete files with saved messages";
-"fresh_DeleteSavedFilesAbout" = "When saved deleted messages are removed by hand or by the time limit, their media is wiped and they are removed from the backups too. The fullest backup is no longer kept beyond the backup count.";
 "fresh_BackupKeepCount" = "Database backups to keep";
 "fresh_BackupInterval" = "Database backup every";
 "fresh_StorageUnlimited" = "No limit";
@@ -9762,7 +9753,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PasscodeWiped" = "Too many failed attempts. The data was removed.";
 "fresh_PasscodeKeyUnavailable" = "Could not check the passcode: this build has no Argon2id or there is not enough memory. The attempt was not counted.";
 "fresh_PasscodeKdfFailed" = "Could not derive the new key, nothing was changed.";
-"fresh_PasscodeLockMinimizeWayland" = "On Wayland the window cannot tell whether it is minimized, so the app locks when it stays inactive for the chosen time.";
 "fresh_PasscodeLockScreen" = "Lock screen";
 "fresh_PasscodeShowClock" = "Show clock";
 "fresh_PasscodeShowDate" = "Show date";

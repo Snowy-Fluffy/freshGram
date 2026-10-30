@@ -1025,9 +1025,6 @@ void AddPasscodeSecuritySettings(SectionBuilder &builder) {
 			AyuSettings::getInstance().setLockedNotifications(value);
 		});
 	builder.addSkip();
-	if (Platform::IsWayland()) {
-		builder.addDividerText(tr::fresh_PasscodeLockMinimizeWayland());
-	}
 }
 
 } // namespace AyuUi

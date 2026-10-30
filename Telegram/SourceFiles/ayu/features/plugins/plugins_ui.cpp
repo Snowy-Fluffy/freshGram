@@ -2996,10 +2996,6 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 	auto initial = std::set<std::string>();
 	auto checks = std::make_shared<std::vector<std::pair<std::string, DetailedSettingsButton*>>>();
 
-	box->addRow(object_ptr<Ui::FlatLabel>(
-		box,
-		tr::fresh_PluginPermissionsAllAccounts(tr::now),
-		st::boxDividerLabel));
 	if (manifest.permissions.empty()) {
 		Ui::AddSkip(container);
 		box->addRow(object_ptr<Ui::FlatLabel>(
@@ -3096,9 +3092,6 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 			addRow(request);
 		}
 		Ui::AddSkip(container);
-		Ui::AddDividerText(
-			container,
-			tr::fresh_PluginPermissionsRequiredAbout());
 	}
 	if (!optional.empty()) {
 		Ui::AddSkip(container);

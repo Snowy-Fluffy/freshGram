@@ -86,10 +86,8 @@
 "ayu_CrashReportingDescription" = "Если опция включена, после сбоя приложения вам предложат отправить отчёт. Вы сами решаете, отправлять его или нет.";
 "fresh_Plugins" = "Плагины";
 "fresh_PluginsEnable" = "Включить плагины";
-"fresh_PluginsDescription" = "Плагины работают в отдельном изолированном процессе и могут использовать только то, что вы им разрешили.";
 "fresh_PluginsNoRuntime" = "Компоненты для плагинов ещё не установлены.";
 "fresh_PluginsNoSandbox" = "Плагинам для работы нужна песочница операционной системы, а в этой системе её нет. В Linux нужна версия 5.13 или новее с включённым Landlock, в Windows — версия 10 или новее, в macOS — версия 10.15 или новее.";
-"fresh_PluginPermissionsAllAccounts" = "Права и данные плагина общие для всех ваших аккаунтов.";
 "fresh_PluginAcceptsFrom" = "Принимает сообщения от: {list}";
 "fresh_PluginAcceptsAny" = "любого плагина";
 "fresh_PluginDangerLow" = "Безопасно";
@@ -177,7 +175,6 @@
 "fresh_PluginBrokenToast" = "Файлы плагина повреждены. Удалите плагин или установите его заново.";
 "fresh_PluginStatusOff" = "Выключен";
 "fresh_PluginsComponents" = "Компоненты для плагинов";
-"fresh_PluginsComponentsAbout" = "Wasmtime запускает плагины, а Python — плагины на Python. Они скачиваются один раз из Telegram и проверяются по подписи и хешу.";
 "fresh_PluginsListAbout" = "Нажмите на плагин, чтобы открыть его настройки, разрешения и журнал.";
 "fresh_PluginsAdvanced" = "Дополнительно";
 "fresh_PluginId" = "ID: {id}";
@@ -200,10 +197,8 @@
 "fresh_PluginsBlockHttps" = "Блокировать HTTPS для всех плагинов";
 "fresh_PluginsBlockTcp" = "Блокировать TCP для всех плагинов";
 "fresh_PluginsBlockUdp" = "Блокировать UDP для всех плагинов";
-"fresh_PluginsBlockAbout" = "Действует на всех плагинов поверх их собственных разрешений. Открытые соединения заблокированного вида закрываются.";
 "fresh_PluginsProxy" = "Прокси для плагинов";
 "fresh_PluginsProxyOff" = "Выкл";
-"fresh_PluginsProxyAbout" = "Через этот прокси идёт только трафик плагинов. Если прокси не работает, плагины получают ошибку, а не соединяются напрямую. UDP работает только с SOCKS5. Имена хостов разрешает прокси.";
 "fresh_PermMessagesEdit" = "Изменять отправленные вами сообщения";
 "fresh_PermMessagesDelete" = "Удалять отправленные вами сообщения";
 "fresh_PermMessagesReact" = "Ставить реакции на сообщения";
@@ -253,7 +248,6 @@
 "fresh_PluginLicense" = "Лицензия: {license}";
 "fresh_PluginPermissionRequiredShort" = "Обязательно";
 "fresh_PluginPermissionNewShort" = "Новое";
-"fresh_PluginPermissionsRequiredAbout" = "Без этих прав плагин не работает, поэтому они всегда включены.";
 "fresh_PluginLogTabAll" = "Все";
 "fresh_PluginLogTabProblems" = "Проблемы";
 "fresh_PluginLogSearch" = "Поиск";
@@ -366,7 +360,6 @@
 "fresh_DesignStyleTelegram" = "Стандартный дизайн Telegram";
 "fresh_DesignStyleMaterialgram" = "Дизайн Materialgram";
 "fresh_DesignStyleFagram" = "Дизайн FagramDesktop";
-"fresh_DesignStyleDescription" = "Стиль оформления задаёт отступы, размеры и вид элементов интерфейса. Стиль и иконки применяются после перезапуска. Дизайн Fagram добавляет верхнюю панель-«пилюлю», меню-«шторку», карточки в настройках и профиле, а также слайдеры и переключатели в стиле Material 3 из FAgram Desktop. Дизайн Telegram повторяет Telegram Desktop, включая шрифт, темы и цвета иконок.";
 "fresh_ManageWhisperModels" = "Модели распознавания речи";
 "fresh_ManageOcrLanguages" = "Языки распознавания текста";
 "fresh_ModelEnabled" = "Включено";
@@ -570,7 +563,6 @@
 "fresh_DeletedPostCommentsUnavailable" = "Комментарии к этому удалённому посту больше недоступны.";
 "fresh_GesturesHeader" = "Жесты";
 "fresh_InvertSwipeGestures" = "Инвертировать жесты смахивания";
-"fresh_InvertSwipeGesturesDescription" = "Следовать направлению прокрутки тачпада, а не направлению движения пальцев: открытие и закрытие чатов, ответ на сообщения, быстрые действия.";
 "fresh_StreamerSpoilers" = "Скрывать фото, аватарки и личные данные";
 "fresh_StreamerSpoilersDescription" = "Пока включён режим стримера, фото, видео, аватарки, имена пользователей, ID, номера телефонов и даты регистрации скрыты под спойлерами, а премиум-значки и цвета тегов скрыты.";
 "ayu_EditsHistoryTitle" = "История правок";
@@ -800,7 +792,6 @@
 "fresh_StashHint" = "Нажмите {shortcut}, чтобы спрятать этот черновик.";
 "fresh_KeepDeletedDays" = "Хранить удалённые сообщения и правки";
 "fresh_DeleteSavedFiles" = "Удалять файлы вместе с сохранёнными сообщениями";
-"fresh_DeleteSavedFilesAbout" = "Когда сохранённые удалённые сообщения удаляются вручную или по сроку хранения, их медиа затираются, а сами сообщения удаляются и из бэкапов. Самый полный бэкап больше не хранится сверх заданного числа копий.";
 "fresh_BackupKeepCount" = "Резервных копий базы хранить";
 "fresh_BackupInterval" = "Резервная копия базы каждые";
 "fresh_StorageUnlimited" = "Без ограничений";
@@ -996,7 +987,6 @@
 "fresh_PasscodeWiped" = "Слишком много неверных попыток. Данные удалены.";
 "fresh_PasscodeKeyUnavailable" = "Не удалось проверить код-пароль: в этой сборке нет Argon2id или не хватило памяти. Попытка не засчитана.";
 "fresh_PasscodeKdfFailed" = "Не удалось вычислить новый ключ, ничего не изменено.";
-"fresh_PasscodeLockMinimizeWayland" = "В Wayland окно не знает, свёрнуто ли оно, поэтому приложение блокируется, если остаётся неактивным выбранное время.";
 "fresh_PasscodeLockScreen" = "Экран блокировки";
 "fresh_PasscodeShowClock" = "Показывать часы";
 "fresh_PasscodeShowDate" = "Показывать дату";

@@ -339,8 +339,6 @@ void BuildGestures(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 
 	builder.addSkip();
-	builder.addDividerText(tr::fresh_InvertSwipeGesturesDescription());
-	builder.addSkip();
 }
 
 void BuildContextMenuElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
