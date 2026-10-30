@@ -474,6 +474,7 @@ public:
 	[[nodiscard]] bool showContactsInDrawer() const { return _showContactsInDrawer.current(); }
 	[[nodiscard]] bool showCallsInDrawer() const { return _showCallsInDrawer.current(); }
 	[[nodiscard]] bool showSavedMessagesInDrawer() const { return _showSavedMessagesInDrawer.current(); }
+	[[nodiscard]] bool showPluginsInDrawer() const { return _showPluginsInDrawer.current(); }
 	[[nodiscard]] bool showLReadToggleInDrawer() const { return _showLReadToggleInDrawer.current(); }
 	[[nodiscard]] bool showSReadToggleInDrawer() const { return _showSReadToggleInDrawer.current(); }
 	[[nodiscard]] bool showNightModeToggleInDrawer() const { return _showNightModeToggleInDrawer.current(); }
@@ -661,6 +662,7 @@ public:
 	void setShowContactsInDrawer(bool val);
 	void setShowCallsInDrawer(bool val);
 	void setShowSavedMessagesInDrawer(bool val);
+	void setShowPluginsInDrawer(bool val);
 	void setShowLReadToggleInDrawer(bool val);
 	void setShowSReadToggleInDrawer(bool val);
 	void setShowNightModeToggleInDrawer(bool val);
@@ -877,7 +879,9 @@ public:
 	[[nodiscard]] rpl::producer<bool> showCallsInDrawerValue() const { return _showCallsInDrawer.value(); }
 	[[nodiscard]] rpl::producer<bool> showCallsInDrawerChanges() const { return _showCallsInDrawer.changes(); }
 	[[nodiscard]] rpl::producer<bool> showSavedMessagesInDrawerValue() const { return _showSavedMessagesInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showPluginsInDrawerValue() const { return _showPluginsInDrawer.value(); }
 	[[nodiscard]] rpl::producer<bool> showSavedMessagesInDrawerChanges() const { return _showSavedMessagesInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showPluginsInDrawerChanges() const { return _showPluginsInDrawer.changes(); }
 	[[nodiscard]] rpl::producer<bool> showLReadToggleInDrawerValue() const { return _showLReadToggleInDrawer.value(); }
 	[[nodiscard]] rpl::producer<bool> showLReadToggleInDrawerChanges() const { return _showLReadToggleInDrawer.changes(); }
 	[[nodiscard]] rpl::producer<bool> showSReadToggleInDrawerValue() const { return _showSReadToggleInDrawer.value(); }
@@ -1083,6 +1087,7 @@ private:
 	rpl::variable<bool> _showContactsInDrawer = true;
 	rpl::variable<bool> _showCallsInDrawer = true;
 	rpl::variable<bool> _showSavedMessagesInDrawer = true;
+	rpl::variable<bool> _showPluginsInDrawer = true;
 	rpl::variable<bool> _showLReadToggleInDrawer = false;
 	rpl::variable<bool> _showSReadToggleInDrawer = true;
 	rpl::variable<bool> _showNightModeToggleInDrawer = true;
