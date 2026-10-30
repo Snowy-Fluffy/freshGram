@@ -19,6 +19,13 @@ namespace {
 using namespace fgpl;
 namespace fs = std::filesystem;
 
+[[nodiscard]] std::string SecretFile() {
+	const auto path = fs::temp_directory_path() / "fgpl-secret.txt";
+	auto stream = std::ofstream(path, std::ios::binary | std::ios::trunc);
+	stream << "secret";
+	return path.string();
+}
+
 [[nodiscard]] std::string TypeOf(const cbor::Value &value) {
 	const auto type = value.find("t");
 	return (type && type->asText()) ? *type->asText() : std::string();
@@ -33,6 +40,8 @@ namespace fs = std::filesystem;
 	config.unsandboxedTestHost = !sandboxed;
 	config.selftest = selftest;
 	config.addressSpaceMb = addressSpaceMb;
+	// Something only the user can read: system files are open to a container.
+	config.extraArguments.push_back("--selftest-file=" + SecretFile());
 	const auto trace = (fs::temp_directory_path() / "fgpl-host-trace.txt").string();
 	if (!sandboxed) {
 		config.extraArguments.push_back("--trace=" + trace);
