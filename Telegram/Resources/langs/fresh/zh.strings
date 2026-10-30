@@ -216,6 +216,7 @@
 "fresh_PermTranslateProvide" = "为你翻译文本";
 "fresh_PermBotsInline" = "代你查询机器人并点击其按钮";
 "fresh_PermChatsManage" = "置顶消息，静音、置顶和归档聊天";
+"fresh_PermChatsModerate" = "封禁和解封聊天成员";
 "fresh_PermContactsManage" = "添加联系人并屏蔽用户";
 "fresh_PermGhostControl" = "查看并切换幽灵模式";
 "fresh_PluginSettingsExport" = "导出设置";
@@ -299,6 +300,7 @@
 "fresh_RiskSends" = "可以以你的名义发送消息";
 "fresh_RiskOutgoing" = "可以修改你发送的内容";
 "fresh_RiskIncoming" = "可以更改或隐藏你收到的消息";
+"fresh_RiskModerate" = "可以封禁和解封聊天成员";
 "fresh_RiskBackground" = "会在后台持续运行";
 "fresh_RiskClipboard" = "可以使用剪贴板";
 "fresh_RiskFiles" = "可以读取和保存你选择的文件";

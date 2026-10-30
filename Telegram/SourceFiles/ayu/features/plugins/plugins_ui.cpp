@@ -2866,6 +2866,7 @@ namespace {
 	case fgpl::Risk::SendsInYourName: return tr::fresh_RiskSends(tr::now);
 	case fgpl::Risk::ChangesOutgoing: return tr::fresh_RiskOutgoing(tr::now);
 	case fgpl::Risk::ChangesIncoming: return tr::fresh_RiskIncoming(tr::now);
+	case fgpl::Risk::Moderates: return tr::fresh_RiskModerate(tr::now);
 	case fgpl::Risk::ChangesMessages: return tr::fresh_RiskChangesMessages(tr::now);
 	case fgpl::Risk::Background: return tr::fresh_RiskBackground(tr::now);
 	case fgpl::Risk::Clipboard: return tr::fresh_RiskClipboard(tr::now);
@@ -2920,6 +2921,7 @@ namespace {
 		{ "translate.provide", &st::menuIconTranslate },
 		{ "bots.inline", &st::menuIconBot },
 		{ "chats.manage", &st::menuIconPin },
+		{ "chats.moderate", &st::menuIconBlock },
 		{ "contacts.manage", &st::menuIconProfile },
 		{ "ghost.control", &st::ayuGhostIcon },
 	};
@@ -2933,7 +2935,7 @@ namespace {
 		"messages.send", "messages.transform_outgoing", "messages.transform_incoming", "chats.list",
 		"chat.info", "media.read", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
-		"messages.ids", "chats.activity", "chats.manage",
+		"messages.ids", "chats.activity", "chats.manage", "chats.moderate",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -3443,6 +3445,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "translate.provide", tr::fresh_PermTranslateProvide },
 		{ "bots.inline", tr::fresh_PermBotsInline },
 		{ "chats.manage", tr::fresh_PermChatsManage },
+		{ "chats.moderate", tr::fresh_PermChatsModerate },
 		{ "contacts.manage", tr::fresh_PermContactsManage },
 		{ "ghost.control", tr::fresh_PermGhostControl },
 	};

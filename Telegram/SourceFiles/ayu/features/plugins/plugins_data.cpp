@@ -46,6 +46,7 @@
 #include "ayu/features/filters/filters_cache_controller.h"
 #include "data/notify/data_notify_settings.h"
 #include "api/api_blocked_peers.h"
+#include "api/api_chat_participants.h"
 #include "api/api_polls.h"
 #include "data/data_poll.h"
 #include "data/stickers/data_stickers.h"
@@ -1475,6 +1476,42 @@ public:
 				owner->notifyPinnedDialogsOrderUpdated();
 			}).send();
 			return std::string();
+		}, std::string(fgpl::api::error::kUnavailable));
+	}
+
+	std::string moderate(int64_t chat, int64_t user, bool ban) override {
+		return OnMain<std::string>([=] {
+			const auto session = FindSession(_account);
+			const auto peer = session
+				? session->data().peerLoaded(PeerId(uint64(chat)))
+				: nullptr;
+			const auto member = session
+				? session->data().userLoaded(UserId(user))
+				: nullptr;
+			if (!peer || HiddenPeer(peer) || !member || HiddenPeer(member)) {
+				return std::string(fgpl::api::error::kNotFound);
+			} else if (const auto channel = peer->asChannel()) {
+				if (!channel->canBanMembers()) {
+					return std::string(fgpl::api::error::kDenied);
+				} else if (ban) {
+					session->api().chatParticipants().kick(
+						channel,
+						member,
+						ChatRestrictionsInfo());
+				} else {
+					session->api().chatParticipants().unblock(channel, member);
+				}
+				return std::string();
+			} else if (const auto basic = peer->asChat()) {
+				if (!ban) {
+					return std::string(fgpl::api::error::kInvalid);
+				} else if (!basic->canBanMembers()) {
+					return std::string(fgpl::api::error::kDenied);
+				}
+				session->api().chatParticipants().kick(basic, member);
+				return std::string();
+			}
+			return std::string(fgpl::api::error::kNotFound);
 		}, std::string(fgpl::api::error::kUnavailable));
 	}
 
