@@ -43,6 +43,20 @@ namespace {
 
 using namespace fgpl;
 
+#ifdef FGPL_UNSANDBOXED_TEST_HOST
+// The test host leaves a trail where it got to, a start that hangs has no other witness.
+std::FILE *TraceFile = nullptr;
+void Trace(const char *what) {
+	if (TraceFile) {
+		std::fprintf(TraceFile, "%s\n", what);
+		std::fflush(TraceFile);
+	}
+}
+#else // FGPL_UNSANDBOXED_TEST_HOST
+inline void Trace(const char *) {
+}
+#endif // FGPL_UNSANDBOXED_TEST_HOST
+
 class SocketBridge final : public Bridge {
 public:
 	explicit SocketBridge(os::Handle fd) : _fd(fd) {
@@ -271,7 +285,11 @@ constexpr auto kSelftestFile = "/etc/passwd";
 		if (!block) {
 			return false;
 		}
-		std::memset(block, 1, size_t(64) << 20);
+		// Touched through volatile, the compiler may drop an allocation nobody reads.
+		const auto touch = static_cast<volatile char*>(block);
+		for (auto i = size_t(0); i < (size_t(64) << 20); i += 4096) {
+			touch[i] = 1;
+		}
 		// A host that is watched from outside needs time to be caught.
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 #ifdef __APPLE__
@@ -470,6 +488,9 @@ int main(int argc, char **argv) {
 #ifdef FGPL_UNSANDBOXED_TEST_HOST
 		} else if (argument == "--layers=none") {
 			layers = 0;
+		} else if (argument.rfind("--trace=", 0) == 0) {
+			TraceFile = std::fopen(argument.c_str() + 8, "wb");
+			Trace("arguments");
 #endif
 		} else if (argument.rfind("--layers=", 0) == 0) {
 			return 64;
@@ -499,6 +520,7 @@ int main(int argc, char **argv) {
 	options.layers = layers;
 	options.addressSpaceBytes = addressSpaceMb << 20;
 	options.cpuSeconds = cpuSeconds;
+	Trace("restricting");
 	auto restricted = sandbox::Restrict(options);
 	if (!restricted.ok()) {
 		Fatal(fd, restricted.error());
@@ -518,11 +540,14 @@ int main(int argc, char **argv) {
 		}
 	}).detach();
 #endif // __APPLE__
+	Trace("runtime");
 	auto runtime = Runtime(runtimeOptions);
+	Trace("locking");
 	auto locked = sandbox::Lock(options, restricted.value());
 	if (!locked.ok()) {
 		Fatal(fd, locked.error());
 	}
+	Trace("hello");
 	const auto report = locked.value();
 	if (layers == sandbox::kLayersAll
 		&& !report.complete()) {

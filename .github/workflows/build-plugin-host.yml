@@ -72,6 +72,15 @@ jobs:
         shell: bash
         run: python Telegram/plugins_host/runtime/check_host.py build/fgpl_plugin_host.exe
 
+      # Without a channel the host must refuse with status 64: this tells a host
+      # that does not load from one that does not answer.
+      - name: Start the host without a channel
+        shell: pwsh
+        run: |
+          & build/fgpl_plugin_host.exe
+          Write-Host "exit code $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 64) { exit 1 }
+
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
