@@ -477,6 +477,7 @@ int main(int argc, char **argv) {
 	auto fd = os::kNoHandle;
 	auto layers = sandbox::kLayersAll;
 	auto selftest = std::string();
+	auto selftestFile = std::string(kSelftestFile);
 	auto compileOnly = false;
 	auto addressSpaceMb = uint64_t(0);
 	auto cpuSeconds = uint64_t(0);
@@ -510,6 +511,8 @@ int main(int argc, char **argv) {
 			runtimeOptions.baselineCompiler = true;
 		} else if (argument.rfind("--selftest=", 0) == 0) {
 			selftest = argument.substr(11);
+		} else if (argument.rfind("--selftest-file=", 0) == 0) {
+			selftestFile = argument.substr(16);
 		}
 	}
 	if (fd < 3) {
@@ -567,7 +570,7 @@ int main(int argc, char **argv) {
 	}));
 
 	if (selftest == "open") {
-		if (const auto file = std::fopen(kSelftestFile, "rb")) {
+		if (const auto file = std::fopen(selftestFile.c_str(), "rb")) {
 			std::fclose(file);
 			Reply(fd, proto::Map({ { "t", proto::Text("selftest_survived") } }));
 		}

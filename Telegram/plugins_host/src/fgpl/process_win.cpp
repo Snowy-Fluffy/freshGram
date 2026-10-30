@@ -284,9 +284,12 @@ struct Pipe {
 	auto limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
 	auto &basic = limits.BasicLimitInformation;
 	basic.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-		| JOB_OBJECT_LIMIT_ACTIVE_PROCESS
 		| JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
-	basic.ActiveProcessLimit = 1;
+	// The test host without its sandbox is the control of the escape tests.
+	if (spec.sandboxed) {
+		basic.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+		basic.ActiveProcessLimit = 1;
+	}
 	if (spec.addressSpaceMb > 0) {
 		// The limit counts committed memory, the address space Wasmtime reserves is free.
 		basic.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
@@ -444,11 +447,13 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 			inherited.data(),
 			sizeof(HANDLE) * inherited.size(),
 			"handles");
-		ok = ok && update(
-			PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
-			&policy,
-			sizeof(policy),
-			"children");
+		if (ok && spec.sandboxed) {
+			ok = update(
+				PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
+				&policy,
+				sizeof(policy),
+				"children");
+		}
 		if (ok && spec.sandboxed) {
 			ok = update(
 				PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
