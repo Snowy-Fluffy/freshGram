@@ -480,7 +480,7 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 			nullptr,
 			nullptr,
 			TRUE,
-			EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW
+			EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | DETACHED_PROCESS
 				| CREATE_UNICODE_ENVIRONMENT,
 			attempt.bareEnvironment ? environment.data() : nullptr,
 			nullptr,
@@ -511,7 +511,15 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 		cleanup();
 		return text;
 	}
-	ResumeThread(info.hThread);
+	if (ResumeThread(info.hThread) == DWORD(-1)) {
+		const auto text = Describe("resuming the host");
+		TerminateProcess(info.hProcess, 1);
+		CloseHandle(info.hThread);
+		CloseHandle(info.hProcess);
+		CloseHandle(pipe.server);
+		cleanup();
+		return text;
+	}
 	CloseHandle(info.hThread);
 	CloseHandle(pipe.client);
 	CloseHandle(nul);
