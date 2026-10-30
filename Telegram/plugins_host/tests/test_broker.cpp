@@ -411,6 +411,8 @@ void TestNetwork() {
 	CHECK(Code(withHeaders({ { "Host", Text("evil") } })) == "invalid");
 	CHECK(Code(withHeaders({ { "Cookie", Text("a=b") } })) == "invalid");
 	CHECK(Code(withHeaders({ { "X-A", Text("a\r\nInjected: 1") } })) == "invalid");
+	CHECK(Code(withHeaders({ { "X-A", Text(std::string("a\0b", 3)) } })) == "invalid");
+	CHECK(Code(withHeaders({ { "X-A", Text("a\x7f") } })) == "invalid");
 	CHECK(Code(withHeaders({ { "Bad Name", Text("a") } })) == "invalid");
 	CHECK(Code(withHeaders({ { "X-A", Int(1) } })) == "invalid");
 	CHECK(Code(withHeaders({ { "X-Big", Text(std::string(5000, 'a')) } })) == "invalid");

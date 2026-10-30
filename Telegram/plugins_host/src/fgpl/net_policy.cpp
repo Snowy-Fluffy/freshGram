@@ -512,6 +512,16 @@ bool IsForbiddenRequestHeader(std::string_view name) {
 		|| lower.rfind("sec-", 0) == 0;
 }
 
+bool IsValidHeaderValue(std::string_view value) {
+	for (const auto ch : value) {
+		const auto byte = static_cast<unsigned char>(ch);
+		if ((byte < 0x20 && byte != '\t') || byte == 0x7F) {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool IsAllowedMethod(std::string_view method) {
 	return method == "GET"
 		|| method == "POST"

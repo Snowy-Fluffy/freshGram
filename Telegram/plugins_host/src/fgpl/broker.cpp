@@ -1259,7 +1259,7 @@ cbor::Value Broker::netFetch(const cbor::Value *args) {
 				|| text->size() > kMaxHeaderValue
 				|| !net::IsValidHeaderName(entry.key)
 				|| net::IsForbiddenRequestHeader(entry.key)
-				|| text->find_first_of("\r\n") != std::string::npos) {
+				|| !net::IsValidHeaderValue(*text)) {
 				return api::Fail(api::error::kInvalid, "header " + entry.key);
 			}
 			request.headers.emplace_back(entry.key, *text);
@@ -1520,7 +1520,7 @@ cbor::Value Broker::wsConnect(const cbor::Value *args) {
 				|| value->size() > kMaxHeaderValue
 				|| !net::IsValidHeaderName(entry.key)
 				|| net::IsForbiddenRequestHeader(entry.key)
-				|| value->find_first_of("\r\n") != std::string::npos) {
+				|| !net::IsValidHeaderValue(*value)) {
 				return api::Fail(api::error::kInvalid, "header " + entry.key);
 			}
 			extra += entry.key + ": " + *value + "\r\n";
