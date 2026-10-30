@@ -2367,6 +2367,16 @@ void TestRateLimits() {
 		CHECK(IsOk(send()));
 	}
 	CHECK(Code(send()) == "limit");
+	const auto mark = [&] {
+		return Code(broker.call(Request("chats.mark_read", { { "chat", Int(1) } })));
+	};
+	for (auto i = 0; i != 20; ++i) {
+		CHECK(mark() != "limit");
+	}
+	CHECK(mark() == "limit");
+	fixture.time += 200;
+	CHECK(mark() != "limit");
+	fixture.time -= 200;
 	fixture.time += 1000;
 	CHECK(IsOk(send()));
 	CHECK(Code(send()) == "limit");
