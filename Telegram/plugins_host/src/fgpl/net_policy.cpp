@@ -24,6 +24,9 @@ namespace {
 	auto digits = 0;
 	for (const auto ch : text) {
 		if (ch >= '0' && ch <= '9') {
+			if (digits == 1 && value == 0) {
+				return std::nullopt;
+			}
 			value = value * 10 + (ch - '0');
 			if (++digits > 3 || value > 255) {
 				return std::nullopt;

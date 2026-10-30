@@ -712,7 +712,12 @@ cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
 
 void Broker::noteUserAction(std::string_view type, std::string_view window) {
 	const auto lock = std::scoped_lock(_limitsMutex);
-	_lastUserAction = _services.clockMs();
+	// The app sends closes itself (toast timeout, refused dialog), so they are no gesture.
+	if (type != "dialog.close"
+		&& type != "window.close"
+		&& type != "toast.close") {
+		_lastUserAction = _services.clockMs();
+	}
 	if (type == "dialog.close") {
 		_dialogOpen = false;
 	} else if (type == "window.close") {
