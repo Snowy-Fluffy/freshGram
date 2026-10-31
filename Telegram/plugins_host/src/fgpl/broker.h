@@ -22,7 +22,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(5);
+constexpr auto kVersion = int64_t(6);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -51,6 +51,9 @@ struct Grants {
 	std::set<std::string> permissions;
 	std::optional<std::set<int64_t>> chats;
 	std::vector<std::pair<int, int>> localPorts;
+	// The folder the user picked for fs.folder, empty when none.
+	std::string folder;
+	bool folderWritable = false;
 	uint64_t storageQuotaBytes = uint64_t(10) << 20;
 	int callsPerSecond = 200;
 	int maxPending = 32;
@@ -894,6 +897,12 @@ struct BrokerServices {
 		std::vector<std::string> items,
 		bool markdown,
 		std::string error)> translateReply;
+	// Answers an empty string, or an error code (not_found, invalid).
+	std::function<std::string(
+		int64_t ticket,
+		std::string text,
+		bool markdown,
+		std::string error)> aiReply;
 
 	std::function<void(std::function<void()> work)> post;
 	std::function<void(int64_t delayMs, std::function<void()> work)> after;
@@ -982,6 +991,10 @@ private:
 	[[nodiscard]] cbor::Value timerCall(
 		const std::string &op,
 		const cbor::Value *args);
+	[[nodiscard]] cbor::Value folderAnswer(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] bool takeFolderWriteBudget(uint64_t bytes);
 	[[nodiscard]] bool recentUserAction();
 	[[nodiscard]] bool admit();
 	[[nodiscard]] std::optional<cbor::Value> throttle(const std::string &op);
@@ -1003,6 +1016,8 @@ private:
 	int64_t _actionRefilled = 0;
 	int64_t _sendRefilled = 0;
 	int64_t _lastToast = 0;
+	int64_t _folderWindow = 0;
+	uint64_t _folderWritten = 0;
 	int64_t _lastNotify = 0;
 	int64_t _lastResolve = 0;
 	int64_t _lastInline = 0;

@@ -1,4 +1,5 @@
 #include "fgpl/broker.h"
+#include "fgpl/folder.h"
 #include "fgpl/manifest.h"
 #include "fgpl/ui_tree.h"
 
@@ -94,6 +95,9 @@ constexpr auto kChatActionEachMs = int64_t(3000);
 constexpr auto kMaxClipboard = size_t(64) << 10;
 constexpr auto kMaxFile = size_t(100) << 20;
 constexpr auto kMaxFileName = size_t(128);
+constexpr auto kFolderWriteWindowMs = int64_t(60000);
+constexpr auto kFolderWriteBudget = uint64_t(512) << 20;
+constexpr auto kFolderDefaultPage = int64_t(200);
 constexpr auto kMaxSentMedia = size_t(100) << 20;
 constexpr auto kMaxCaption = size_t(4096);
 constexpr auto kMinTimerMs = int64_t(1000);
@@ -108,6 +112,7 @@ constexpr auto kMaxTimerMs = int64_t(7) * 24 * 3600 * 1000;
 }
 
 constexpr auto kMaxTranslateItems = size_t(20);
+constexpr auto kMaxAiAnswer = size_t(64) << 10;
 constexpr auto kMaxTranslatedItem = size_t(32) << 10;
 constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 
@@ -679,7 +684,10 @@ cbor::Value Broker::call(const cbor::Value &request) {
 		&& *name != "messages.set_incoming"
 		&& *name != "messages.hide_incoming") {
 		response = api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
-	} else if (*name == "time.sleep" || *name == "files.pick" || *name == "files.save") {
+	} else if (*name == "time.sleep"
+		|| *name == "files.pick"
+		|| *name == "files.save"
+		|| name->rfind("fs.", 0) == 0) {
 		response = api::Fail(api::error::kInvalid, *name + " must be awaited");
 	} else if (IsSocketCall(*name)) {
 		response = sockets().run([&] { return socketCall(*name, args); });
@@ -1003,6 +1011,25 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			*markdown,
 			*error);
 		return Done(refused, "no such translation");
+	} else if (op == "ai.reply") {
+		if (!has("ai.provide")) {
+			return api::Fail(api::error::kDenied, "ai.provide");
+		} else if (!_services.aiReply) {
+			return api::Fail(api::error::kUnavailable, "the AI provider");
+		}
+		const auto ticket = IntArg(args, "ticket");
+		const auto markdown = MarkdownArg(args);
+		const auto error = Arg(args, "error")
+			? TextArg(args, "error", 200)
+			: std::optional<std::string>(std::string());
+		const auto text = Arg(args, "text")
+			? TextArg(args, "text", kMaxAiAnswer)
+			: std::optional<std::string>(std::string());
+		if (!ticket || !markdown || !error || !text || (error->empty() && text->empty())) {
+			return api::Fail(api::error::kInvalid, "ticket, text, format or error");
+		}
+		const auto refused = _services.aiReply(*ticket, *text, *markdown, *error);
+		return Done(refused, "no such request");
 	} else if (op == "plugins.send" || op == "plugins.peers") {
 		if (!has("plugins.message")) {
 			return api::Fail(api::error::kDenied, "plugins.message");
@@ -3167,6 +3194,9 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		}
 		return api::Ok(UserValue(*user));
 	}
+	if (op.rfind("fs.", 0) == 0) {
+		return folderAnswer(op, args);
+	}
 	return deviceAnswer(op, args);
 }
 
@@ -3269,6 +3299,160 @@ cbor::Value Broker::deviceAnswer(const std::string &op, const cbor::Value *args)
 			: error.empty()
 			? api::Ok(cbor::Value::FromBool(true))
 			: api::Fail(error, "the file was not saved");
+	}
+	return api::Fail(api::error::kInvalid, "unknown operation");
+}
+
+bool Broker::takeFolderWriteBudget(uint64_t bytes) {
+	const auto lock = std::scoped_lock(_limitsMutex);
+	const auto now = _services.clockMs();
+	if (!_folderWindow || now - _folderWindow >= kFolderWriteWindowMs) {
+		_folderWindow = now;
+		_folderWritten = 0;
+	}
+	if (_folderWritten + bytes > kFolderWriteBudget) {
+		return false;
+	}
+	_folderWritten += bytes;
+	return true;
+}
+
+cbor::Value Broker::folderAnswer(const std::string &op, const cbor::Value *args) {
+	using folder::Fail;
+	const auto failure = [](Fail fail, const char *what) {
+		switch (fail) {
+		case Fail::Invalid: return api::Fail(api::error::kInvalid, what);
+		case Fail::NotFound: return api::Fail(api::error::kNotFound, what);
+		case Fail::Denied: return api::Fail(api::error::kDenied, what);
+		case Fail::Exists: return api::Fail(api::error::kInvalid, "already exists");
+		case Fail::NotEmpty: return api::Fail(api::error::kInvalid, "not empty");
+		case Fail::Limit: return api::Fail(api::error::kLimit, what);
+		case Fail::Failed: break;
+		}
+		return api::Fail(api::error::kFailed, what);
+	};
+	const auto entry = [](const folder::Entry &item) {
+		return cbor::Value::FromMap({
+			{ "name", Text(item.name) },
+			{ "dir", cbor::Value::FromBool(item.directory) },
+			{ "size", Int(int64_t(item.size)) },
+			{ "modified", Int(item.modified) },
+		});
+	};
+	const auto text = [&](const char *key) -> std::optional<std::string> {
+		return Arg(args, key) ? TextArg(args, key, folder::kMaxPathBytes) : std::optional<std::string>(std::string());
+	};
+	const auto writing = (op == "fs.write"
+		|| op == "fs.mkdir"
+		|| op == "fs.remove"
+		|| op == "fs.rename");
+	if (!has("fs.folder")) {
+		return api::Fail(api::error::kDenied, "fs.folder");
+	} else if (_grants.folder.empty()) {
+		return api::Fail(api::error::kUnavailable, "no folder was chosen");
+	} else if (writing && !_grants.folderWritable) {
+		return api::Fail(api::error::kDenied, "this folder is read only");
+	}
+	const auto &root = _grants.folder;
+	if (op == "fs.list") {
+		const auto path = text("path");
+		const auto offset = Arg(args, "offset") ? IntArg(args, "offset") : std::optional<int64_t>(0);
+		const auto limit = Arg(args, "limit") ? IntArg(args, "limit") : std::optional<int64_t>(kFolderDefaultPage);
+		if (!path || !offset || !limit || *offset < 0 || *limit < 1) {
+			return api::Fail(api::error::kInvalid, "path, offset or limit");
+		}
+		const auto listing = folder::List(root, *path, size_t(*offset), size_t(*limit));
+		if (!listing.ok()) {
+			return failure(listing.error(), "the folder was not listed");
+		}
+		auto list = cbor::Array();
+		for (const auto &item : listing.value().entries) {
+			list.push_back(entry(item));
+		}
+		return api::Ok(cbor::Value::FromMap({
+			{ "entries", cbor::Value::FromArray(std::move(list)) },
+			{ "more", cbor::Value::FromBool(listing.value().more) },
+		}));
+	} else if (op == "fs.stat") {
+		const auto path = TextArg(args, "path", folder::kMaxPathBytes);
+		if (!path) {
+			return api::Fail(api::error::kInvalid, "path");
+		}
+		const auto found = folder::Stat(root, *path);
+		return found.ok()
+			? api::Ok(entry(found.value()))
+			: failure(found.error(), "no such file");
+	} else if (op == "fs.read") {
+		const auto path = TextArg(args, "path", folder::kMaxPathBytes);
+		const auto offset = Arg(args, "offset") ? IntArg(args, "offset") : std::optional<int64_t>(0);
+		const auto length = Arg(args, "length") ? IntArg(args, "length") : std::optional<int64_t>(int64_t(kMaxFile));
+		if (!path || !offset || !length || *offset < 0 || *length < 0) {
+			return api::Fail(api::error::kInvalid, "path, offset or length");
+		} else if (uint64_t(*length) > kMaxFile) {
+			return api::Fail(api::error::kLimit, "the read is too large");
+		}
+		const auto bytes = folder::Read(root, *path, uint64_t(*offset), size_t(*length));
+		return bytes.ok()
+			? api::Ok(cbor::Value::FromBytes(bytes.value()))
+			: failure(bytes.error(), "the file was not read");
+	} else if (op == "fs.write") {
+		const auto path = TextArg(args, "path", folder::kMaxPathBytes);
+		const auto data = Arg(args, "data");
+		const auto raw = data ? data->asBytes() : nullptr;
+		const auto content = data ? data->asText() : nullptr;
+		const auto kind = Arg(args, "mode")
+			? TextArg(args, "mode", 16)
+			: std::optional<std::string>("replace");
+		if (!path || !kind || (!raw && !content)) {
+			return api::Fail(api::error::kInvalid, "path, data or mode");
+		}
+		auto mode = folder::WriteMode::Replace;
+		if (*kind == "create") {
+			mode = folder::WriteMode::Create;
+		} else if (*kind == "append") {
+			mode = folder::WriteMode::Append;
+		} else if (*kind != "replace") {
+			return api::Fail(api::error::kInvalid, "mode");
+		}
+		const auto size = raw ? raw->size() : content->size();
+		if (size > kMaxFile) {
+			return api::Fail(api::error::kLimit, "the file is too large");
+		} else if (!takeFolderWriteBudget(size)) {
+			return api::Fail(api::error::kQuota, "too much was written lately");
+		}
+		const auto written = raw
+			? folder::Write(root, *path, std::span<const uint8_t>(raw->data(), raw->size()), mode)
+			: folder::Write(
+				root,
+				*path,
+				std::span<const uint8_t>(
+					reinterpret_cast<const uint8_t*>(content->data()),
+					content->size()),
+				mode);
+		return written.ok()
+			? api::Ok(cbor::Value::FromBool(true))
+			: failure(written.error(), "the file was not written");
+	} else if (op == "fs.mkdir" || op == "fs.remove") {
+		const auto path = TextArg(args, "path", folder::kMaxPathBytes);
+		if (!path) {
+			return api::Fail(api::error::kInvalid, "path");
+		}
+		const auto done = (op == "fs.mkdir")
+			? folder::MakeDirectory(root, *path)
+			: folder::Remove(root, *path);
+		return done.ok()
+			? api::Ok(cbor::Value::FromBool(true))
+			: failure(done.error(), "the change was not made");
+	} else if (op == "fs.rename") {
+		const auto from = TextArg(args, "from", folder::kMaxPathBytes);
+		const auto to = TextArg(args, "to", folder::kMaxPathBytes);
+		if (!from || !to) {
+			return api::Fail(api::error::kInvalid, "from or to");
+		}
+		const auto done = folder::Rename(root, *from, *to);
+		return done.ok()
+			? api::Ok(cbor::Value::FromBool(true))
+			: failure(done.error(), "the file was not renamed");
 	}
 	return api::Fail(api::error::kInvalid, "unknown operation");
 }

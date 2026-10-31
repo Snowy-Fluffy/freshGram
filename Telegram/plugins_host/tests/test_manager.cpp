@@ -1436,6 +1436,125 @@ void TestTranslator() {
 	CHECK(empty && empty->error == "invalid");
 }
 
+void TestAiProvider() {
+	auto lab = Lab("fgpl-manager-ai");
+	auto manager = PluginManager(lab.config());
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "ai.provide", {} },
+	};
+	const auto provider = [](cbor::Value &document) {
+		Remove(document, "contributes.events");
+		Set(document, "contributes.aiProvider", cbor::Value::FromMap({
+			{ "name", Text("Model") },
+			{ "maxChars", Int(100) },
+		}));
+	};
+	const auto good = std::string("com.example.model");
+	const auto crashing = std::string("com.example.aicrasher");
+	const auto bystander = std::string("com.example.aibystander");
+	CHECK(manager.install(CustomArchive(good, CallingModule(EncodedRequest(
+		"ai.reply",
+		{ { "ticket", Int(1) }, { "text", Text("X") } })), permissions, provider)).ok());
+	CHECK(manager.install(CustomArchive(crashing, CrashOnEvent(), permissions, provider)).ok());
+	CHECK(manager.install(CustomArchive(bystander, CallingModule(EncodedRequest(
+		"ai.reply",
+		{ { "ticket", Int(2) }, { "text", Text("STOLEN") } })), permissions, provider)).ok());
+	for (const auto &id : { good, crashing, bystander }) {
+		CHECK(manager.setEnabled(id, true));
+	}
+	CHECK(manager.grant(good, "A", { { "ai.provide" }, std::nullopt }));
+	CHECK(manager.grant(crashing, "A", { { "ai.provide" }, std::nullopt }));
+
+	auto names = std::vector<std::string>();
+	for (const auto &entry : manager.snapshot().contributions("A", "en")) {
+		if (entry.aiProvider.declared) {
+			names.push_back(entry.aiProvider.name);
+		}
+	}
+	CHECK(names.size() == 2 && names[0] == "Model");
+
+	const auto ask = [&](const std::string &plugin, std::string text = "hi", const char *account = "A") {
+		auto result = std::optional<AiResult>();
+		auto request = AiRequest();
+		request.text = std::move(text);
+		request.tone = "formal";
+		manager.aiAsync(account, plugin, request, 5000, [&](AiResult value) {
+			result = std::move(value);
+		});
+		for (auto waited = 0; !result && waited < 20000; waited += 5) {
+			manager.pump();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+		return result;
+	};
+	const auto answered = ask(good);
+	CHECK(answered && answered->error.empty() && answered->text == "X");
+	const auto refused = ask(bystander);
+	CHECK(refused && !refused->error.empty());
+	const auto failed = ask(crashing);
+	CHECK(failed && !failed->error.empty());
+	CHECK(ask("com.example.none")->error == "unavailable");
+	CHECK(ask(good, "hi", "bad account!")->error == "unavailable");
+	CHECK(ask(good, "")->error == "invalid");
+	CHECK(ask(good, std::string(401, 'x'))->error == "invalid");
+
+	auto cancelled = false;
+	auto request = AiRequest();
+	request.text = "later";
+	const auto ticket = manager.aiAsync("A", good, request, 5000, [&](AiResult) {
+		cancelled = true;
+	});
+	manager.cancelAi(ticket);
+	manager.pump();
+	CHECK(!cancelled);
+}
+
+void TestFolderGrant() {
+	auto lab = Lab("fgpl-manager-folder");
+	const auto folder = lab.root / "shared";
+	fs::create_directories(folder);
+	const auto id = std::string("com.example.files");
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "storage.private", {} },
+	};
+	const auto withFolder = [](cbor::Value &document) {
+		Remove(document, "contributes.events");
+		Set(document, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({
+				{ "id", Text("fs.folder") },
+				{ "reason", Text("x") },
+				{ "mode", Text("write") },
+			}),
+		}));
+	};
+	const auto canonical = os::PathToUtf8(fs::canonical(folder));
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(manager.install(CustomArchive(id, CallingModule(EncodedRequest("log", { { "text", Text("x") } })), permissions, withFolder)).ok());
+		CHECK(manager.setEnabled(id, true));
+		CHECK(manager.grant(id, "A", { { "fs.folder" }, std::nullopt, canonical }));
+		CHECK(manager.grants(id, "A")->folder == canonical);
+		CHECK(manager.grants(id, "A")->granted.contains("fs.folder"));
+
+		CHECK(manager.grant(id, "A", { { "fs.folder" }, std::nullopt, "/" }));
+		CHECK(!manager.grants(id, "A")->granted.contains("fs.folder"));
+		CHECK(manager.grants(id, "A")->folder.empty());
+
+		CHECK(manager.grant(id, "A", { { "fs.folder" }, std::nullopt, (lab.root / "missing").string() }));
+		CHECK(!manager.grants(id, "A")->granted.contains("fs.folder"));
+
+		CHECK(manager.grant(id, "A", { { "fs.folder" }, std::nullopt, canonical }));
+		manager.shutdown();
+	}
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(!manager.stateWasTampered());
+		CHECK(manager.grants(id, "A")->folder == canonical);
+		CHECK(manager.grant(id, "A", { { "storage.private" }, std::nullopt, canonical }));
+		CHECK(manager.grants(id, "A")->folder.empty());
+	}
+}
+
 void TestPluginsTalkThroughTheApp() {
 #ifdef FGPL_COUNTER_WASM
 	auto lab = Lab("fgpl-manager-messages");
@@ -1886,6 +2005,8 @@ int main(int argc, char **argv) {
 	run("outgoing-entities", TestOutgoingEntities);
 	run("incoming", TestIncomingTransform);
 	run("translator", TestTranslator);
+	run("ai provider", TestAiProvider);
+	run("folder grant", TestFolderGrant);
 	run("toast-events", TestToastEvents);
 	run("settings-export", TestSettingsExport);
 	run("conflicts", TestConflictsBothWays);

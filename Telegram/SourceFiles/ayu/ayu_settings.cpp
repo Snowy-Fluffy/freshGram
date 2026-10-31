@@ -1817,6 +1817,14 @@ void AyuSettings::setTranslationPlugin(const QString &id) {
 	save();
 }
 
+void AyuSettings::setAiPlugin(const QString &id) {
+	if (_aiPlugin.current() == id) {
+		return;
+	}
+	_aiPlugin = id;
+	save();
+}
+
 void AyuSettings::setAdaptiveCoverColor(bool val) {
 	if (_adaptiveCoverColor.current() == val) return;
 	_adaptiveCoverColor = val;
@@ -2031,6 +2039,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"showTranslateButtonInMessageField", s._showTranslateButtonInMessageField.current()},
 		{"translateComposeTo", s._translateComposeTo.current()},
 		{"translationPlugin", s._translationPlugin.current()},
+		{"aiPlugin", s._aiPlugin.current()},
 		{"autoTranslateOutgoing", s._autoTranslateOutgoing.current()},
 		{"showAiEditorButtonInMessageField", s._showAiEditorButtonInMessageField.current()},
 		{"showAttachPopup", s._showAttachPopup.current()},
@@ -2228,6 +2237,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._showTranslateButtonInMessageField = j.value("showTranslateButtonInMessageField", defaults._showTranslateButtonInMessageField.current());
 	s._translateComposeTo = j.value("translateComposeTo", defaults._translateComposeTo.current());
 	s._translationPlugin = j.value("translationPlugin", defaults._translationPlugin.current());
+	s._aiPlugin = j.value("aiPlugin", defaults._aiPlugin.current());
 	s._autoTranslateOutgoing = j.value("autoTranslateOutgoing", defaults._autoTranslateOutgoing.current());
 	s._showAiEditorButtonInMessageField = j.value("showAiEditorButtonInMessageField", defaults._showAiEditorButtonInMessageField.current());
 	s._showAttachPopup = j.value("showAttachPopup", defaults._showAttachPopup.current());

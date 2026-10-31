@@ -528,6 +528,8 @@ public:
 	[[nodiscard]] bool roundConfirmation() const { return _roundConfirmation.current(); }
 	[[nodiscard]] TranslationProvider translationProvider() const { return _translationProvider.current(); }
 	[[nodiscard]] const QString &translationPlugin() const { return _translationPlugin.current(); }
+	[[nodiscard]] const QString &aiPlugin() const { return _aiPlugin.current(); }
+	[[nodiscard]] rpl::producer<QString> aiPluginValue() const { return _aiPlugin.value(); }
 	[[nodiscard]] TranscriptionProvider transcriptionProvider() const { return _transcriptionProvider.current(); }
 	[[nodiscard]] bool adaptiveCoverColor() const { return _adaptiveCoverColor.current(); }
 	[[nodiscard]] bool improveLinkPreviews() const { return _improveLinkPreviews.current(); }
@@ -703,6 +705,7 @@ public:
 	void setRoundConfirmation(bool val);
 	void setTranslationProvider(TranslationProvider val);
 	void setTranslationPlugin(const QString &id);
+	void setAiPlugin(const QString &id);
 	void setTranscriptionProvider(TranscriptionProvider val);
 	void setAdaptiveCoverColor(bool val);
 	void setImproveLinkPreviews(bool val);
@@ -1129,6 +1132,7 @@ private:
 	rpl::variable<bool> _roundConfirmation = false;
 	rpl::variable<TranslationProvider> _translationProvider = TranslationProvider::Telegram;
 	rpl::variable<QString> _translationPlugin;
+	rpl::variable<QString> _aiPlugin;
 	rpl::variable<TranscriptionProvider> _transcriptionProvider = TranscriptionProvider::Telegram;
 	rpl::variable<bool> _adaptiveCoverColor = true;
 	rpl::variable<bool> _improveLinkPreviews = false;

@@ -14,6 +14,7 @@
 #include "ayu/features/recognition/text_recognition.h"
 #include "ayu/features/recognition/text_translation.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "ayu/features/plugins/plugins_ai.h"
 #include "ayu/features/plugins/plugins_translate.h"
 #include "ayu/ui/boxes/recognition_models_box.h"
 #include "ayu/ui/settings/ayu_builder.h"
@@ -157,6 +158,52 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	if (button) {
 		ayu.addBetaBadge(button);
 	}
+	builder.addButton({
+		.id = u"ayu/aiProvider"_q,
+		.title = tr::fresh_AiProvider(),
+		.st = &st::settingsButtonNoIcon,
+		.label = rpl::combine(
+			settings->aiPluginValue(),
+			rpl::single(rpl::empty) | rpl::then(FreshPlugins::ListChanges() | rpl::to_empty)
+		) | rpl::map([](const QString &plugin, auto) {
+			return plugin.isEmpty()
+				? u"Telegram"_q
+				: FreshPlugins::AiProviderName(plugin);
+		}),
+		.onClick = [=] {
+			const auto controller = Core::App().activeWindow()->sessionController();
+			if (!controller) {
+				return;
+			}
+			controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+				const auto list = FreshPlugins::AiProviders();
+				auto labels = std::vector<QString>{ u"Telegram"_q };
+				auto selected = 0;
+				for (const auto &entry : list) {
+					labels.push_back(entry.name);
+					if (entry.plugin == settings->aiPlugin()) {
+						selected = int(labels.size()) - 1;
+					}
+				}
+				SingleChoiceBox(box, {
+					.title = tr::fresh_AiProvider(),
+					.options = labels,
+					.initialSelection = selected,
+					.callback = [=](int index) {
+						settings->setAiPlugin(index
+							? list[index - 1].plugin
+							: QString());
+					},
+				});
+			}));
+		},
+		.shown = rpl::single(rpl::empty)
+			| rpl::then(FreshPlugins::ListChanges() | rpl::to_empty)
+			| rpl::map([=](auto) {
+				return !settings->aiPlugin().isEmpty()
+					|| !FreshPlugins::AiProviders().empty();
+			}),
+	});
 	if (!FreshRecognition::TextTranslationAvailable()) {
 		return;
 	}

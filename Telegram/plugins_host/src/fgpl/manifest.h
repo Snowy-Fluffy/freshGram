@@ -27,6 +27,8 @@ struct PermissionRequest {
 	bool required = false;
 	// Ports of this computer that net.local may reach, as inclusive ranges.
 	std::vector<std::pair<int, int>> ports;
+	// "read" or "write" for fs.folder.
+	std::string mode;
 };
 
 // Declarative visibility of a menu item.
@@ -88,6 +90,12 @@ struct TranslatorDecl {
 	bool declared = false;
 	std::string name;
 	std::vector<std::string> languages;
+	int maxChars = 4096;
+};
+
+struct AiProviderDecl {
+	bool declared = false;
+	std::string name;
 	int maxChars = 4096;
 };
 
@@ -192,7 +200,7 @@ struct Manifest {
 	int eventTimeoutMs = 500;
 	int storageMb = 10;
 
-	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer", "translate", "toast" };
+	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer", "translate", "ai", "toast" };
 	bool background = false;
 
 	std::vector<PermissionRequest> permissions;
@@ -204,6 +212,7 @@ struct Manifest {
 	OutgoingHook outgoing;
 	IncomingHook incoming;
 	TranslatorDecl translator;
+	AiProviderDecl aiProvider;
 	std::vector<std::string> messagesFrom;
 
 	std::vector<Dependency> dependencies;
@@ -220,7 +229,7 @@ struct Manifest {
 
 struct HostEnvironment {
 	Version app;
-	int apiLevel = 5;
+	int apiLevel = 6;
 	std::set<std::string> features = HostFeatures();
 	bool premium = false;
 };

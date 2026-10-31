@@ -2,6 +2,7 @@
 #include "fgpl/ui_tree.h"
 
 #include "fgpl/base64.h"
+#include "fgpl/folder.h"
 #include "fgpl/json.h"
 #include "fgpl/os.h"
 #include "fgpl/sha256.h"
@@ -162,6 +163,9 @@ cbor::Value PluginManager::stateDocument() const {
 		for (const auto &grant : record.grants) {
 			auto entry = cbor::Map();
 			entry.push_back({ "granted", Strings(grant.second.granted) });
+			if (!grant.second.folder.empty()) {
+				entry.push_back({ "folder", Text(grant.second.folder) });
+			}
 			if (grant.second.chats) {
 				auto chats = cbor::Array();
 				for (const auto chat : *grant.second.chats) {
@@ -477,6 +481,11 @@ void PluginManager::loadState() {
 						}
 					}
 				}
+				if (const auto folder = grant.value.find("folder")) {
+					if (const auto text = folder->asText()) {
+						stored.folder = *text;
+					}
+				}
 				if (const auto chats = grant.value.find("chats")) {
 					stored.chats = std::set<int64_t>();
 					for (const auto &item : chats->asArray() ? *chats->asArray() : cbor::Array()) {
@@ -491,6 +500,10 @@ void PluginManager::loadState() {
 						break;
 					}
 					continue;
+				}
+				if (stored.folder != merged->folder) {
+					merged->granted.erase("fs.folder");
+					merged->folder.clear();
 				}
 				std::erase_if(merged->granted, [&](const std::string &id) {
 					return !stored.granted.contains(id);
@@ -573,6 +586,7 @@ void PluginManager::stopMany(const std::vector<Key> &keys) {
 	auto victims = std::vector<Instance *>();
 	for (const auto &key : keys) {
 		failTranslations(key.first, key.second, "the plugin stopped");
+		failAi(key.first, key.second, "the plugin stopped");
 		const auto i = _instances.find(key);
 		if (i == _instances.end()) {
 			continue;
@@ -888,6 +902,14 @@ bool PluginManager::grant(
 		}
 	}
 	stored.chats = decision.chats;
+	if (stored.granted.contains("fs.folder")) {
+		const auto checked = folder::CheckRoot(decision.folder);
+		if (checked.ok()) {
+			stored.folder = checked.value();
+		} else {
+			stored.granted.erase("fs.folder");
+		}
+	}
 	record.grants.clear();
 	record.grants[kAllAccounts] = std::move(stored);
 	stopPlugin(id);
@@ -907,7 +929,11 @@ std::optional<GrantDecision> PluginManager::grants(
 	if (grant == found->second.grants.end()) {
 		return std::nullopt;
 	}
-	return GrantDecision{ grant->second.granted, grant->second.chats };
+	return GrantDecision{
+		grant->second.granted,
+		grant->second.chats,
+		grant->second.folder,
+	};
 }
 
 std::vector<PluginInfo> PluginManager::list() const {
@@ -1147,6 +1173,13 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 			}
 		}
 		entry.settingsPage = parsed->settingsPage && has("ui.settings_page");
+		if (parsed->aiProvider.declared && has("ai.provide")) {
+			entry.aiProvider = {
+				true,
+				parsed->aiProvider.name,
+				parsed->aiProvider.maxChars,
+			};
+		}
 		if (parsed->translator.declared && has("translate.provide")) {
 			entry.translator = {
 				true,
@@ -1158,7 +1191,8 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 		if (!entry.menus.empty()
 			|| !entry.commands.empty()
 			|| entry.settingsPage
-			|| entry.translator.declared) {
+			|| entry.translator.declared
+			|| entry.aiProvider.declared) {
 			result.push_back(std::move(entry));
 		}
 	}
@@ -1577,6 +1611,13 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 			markdown,
 			std::move(error));
 	};
+	services.aiReply = [this, pluginId, account](
+			int64_t ticket,
+			std::string text,
+			bool markdown,
+			std::string error) {
+		return acceptAi(pluginId, account, ticket, std::move(text), markdown, std::move(error));
+	};
 	services.setTimer = [this, key](const std::string &id, int64_t delayMs, bool repeat) {
 		return setTimer(key, id, delayMs, repeat);
 	};
@@ -1627,7 +1668,7 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		}
 		strong->wake.notify_one();
 	};
-	auto grants = MakeGrants(manifest, { grant->second.granted, grant->second.chats });
+	auto grants = MakeGrants(manifest, { grant->second.granted, grant->second.chats, grant->second.folder });
 	grants.account = account;
 	instance->broker = std::make_shared<Broker>(std::move(grants), std::move(services));
 
@@ -2175,6 +2216,7 @@ int PluginManager::pump() {
 	}
 	advanceOutgoing();
 	expireTranslations();
+	expireAi();
 	return handled;
 }
 
@@ -2264,7 +2306,7 @@ DispatchReport PluginManager::dispatch(
 			continue;
 		}
 		const auto grant = record.grants.find(kAllAccounts);
-		if (!FilterEvent(MakeGrants(*parsed, { grant->second.granted, grant->second.chats }), event)) {
+		if (!FilterEvent(MakeGrants(*parsed, { grant->second.granted, grant->second.chats, grant->second.folder }), event)) {
 			++report.skipped;
 			continue;
 		}
@@ -2964,6 +3006,185 @@ void PluginManager::failTranslations(
 	}
 	for (auto &pending : failed) {
 		auto result = TranslateResult();
+		result.error = reason;
+		pending.done(std::move(result));
+	}
+}
+
+constexpr auto kMaxAiRequests = size_t(4);
+constexpr auto kMaxAiBytes = size_t(32) << 10;
+constexpr auto kMaxAiPrompt = size_t(2048);
+
+int64_t PluginManager::aiAsync(
+		const std::string &account,
+		const std::string &plugin,
+		AiRequest request,
+		int timeoutMs,
+		std::function<void(AiResult)> done) {
+	const auto fail = [&](const char *why) {
+		auto result = AiResult();
+		result.error = why;
+		done(std::move(result));
+		return int64_t(0);
+	};
+	const auto found = _records.find(plugin);
+	if (!ValidAccount(account) || !mayRun() || found == _records.end()) {
+		return fail("unavailable");
+	} else if (request.text.empty()
+		|| request.text.size() > kMaxAiBytes
+		|| request.translateTo.size() > 12
+		|| request.tone.size() > kMaxAiPrompt
+		|| request.prompt.size() > kMaxAiPrompt) {
+		return fail("invalid");
+	}
+	auto &record = found->second;
+	const auto grant = record.grants.find(kAllAccounts);
+	const auto parsed = manifest(plugin);
+	if (!record.enabled
+		|| grant == record.grants.end()
+		|| !grant->second.granted.contains("ai.provide")
+		|| !parsed
+		|| !parsed->aiProvider.declared) {
+		return fail("unavailable");
+	} else if (request.text.size() > size_t(parsed->aiProvider.maxChars) * 4) {
+		return fail("invalid");
+	}
+	{
+		const auto lock = std::scoped_lock(_aiMutex);
+		const auto busy = std::count_if(
+			_ai.begin(),
+			_ai.end(),
+			[&](const auto &entry) { return entry.second.plugin == plugin; });
+		if (size_t(busy) >= kMaxAiRequests) {
+			return fail("busy");
+		}
+	}
+	pump();
+	auto *instance = ensure(record, account, "ai");
+	if (!instance) {
+		return fail("unavailable");
+	}
+	auto ticket = int64_t(0);
+	{
+		const auto lock = std::scoped_lock(_aiMutex);
+		ticket = _nextAi++;
+		_ai.emplace(ticket, PendingAi{
+			plugin,
+			account,
+			std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs),
+			std::move(done),
+		});
+	}
+	auto fields = cbor::Map{
+		{ "type", Text("ai.request") },
+		{ "ticket", cbor::Value::FromInt(ticket) },
+		{ "text", Text(request.text) },
+		{ "format", Text("plain") },
+		{ "proofread", cbor::Value::FromBool(request.proofread) },
+		{ "emojify", cbor::Value::FromBool(request.emojify) },
+	};
+	if (!request.translateTo.empty()) {
+		fields.push_back({ "translate_to", Text(request.translateTo) });
+	}
+	if (!request.tone.empty()) {
+		fields.push_back({ "tone", Text(request.tone) });
+	}
+	if (!request.prompt.empty()) {
+		fields.push_back({ "prompt", Text(request.prompt) });
+	}
+	const auto event = cbor::Value::FromMap(std::move(fields));
+	const auto size = EncodedSize(event);
+	auto queued = false;
+	{
+		const auto lock = std::scoped_lock(instance->mutex);
+		if (!instance->closing && !instance->finished) {
+			instance->queue.emplace_back(event, size);
+			instance->queuedBytes += size;
+			queued = true;
+		}
+	}
+	if (!queued) {
+		failAi(plugin, account, "unavailable");
+		return 0;
+	}
+	instance->wake.notify_one();
+	return ticket;
+}
+
+void PluginManager::cancelAi(int64_t ticket) {
+	const auto lock = std::scoped_lock(_aiMutex);
+	_ai.erase(ticket);
+}
+
+std::string PluginManager::acceptAi(
+		const std::string &plugin,
+		const std::string &account,
+		int64_t ticket,
+		std::string text,
+		bool markdown,
+		std::string error) {
+	auto pending = std::optional<PendingAi>();
+	{
+		const auto lock = std::scoped_lock(_aiMutex);
+		const auto i = _ai.find(ticket);
+		if (i == _ai.end()
+			|| i->second.plugin != plugin
+			|| i->second.account != account) {
+			return api::error::kNotFound;
+		}
+		pending = std::move(i->second);
+		_ai.erase(i);
+	}
+	auto result = AiResult();
+	if (error.empty()) {
+		result.text = std::move(text);
+		result.markdown = markdown;
+	} else {
+		result.error = std::move(error);
+	}
+	pending->done(std::move(result));
+	return {};
+}
+
+void PluginManager::expireAi() {
+	auto expired = std::vector<PendingAi>();
+	{
+		const auto lock = std::scoped_lock(_aiMutex);
+		const auto now = std::chrono::steady_clock::now();
+		for (auto i = _ai.begin(); i != _ai.end();) {
+			if (now >= i->second.deadline) {
+				expired.push_back(std::move(i->second));
+				i = _ai.erase(i);
+			} else {
+				++i;
+			}
+		}
+	}
+	for (auto &pending : expired) {
+		auto result = AiResult();
+		result.error = "timeout";
+		pending.done(std::move(result));
+	}
+}
+
+void PluginManager::failAi(
+		const std::string &plugin,
+		const std::string &account,
+		const std::string &reason) {
+	auto failed = std::vector<PendingAi>();
+	{
+		const auto lock = std::scoped_lock(_aiMutex);
+		for (auto i = _ai.begin(); i != _ai.end();) {
+			if (i->second.plugin == plugin && i->second.account == account) {
+				failed.push_back(std::move(i->second));
+				i = _ai.erase(i);
+			} else {
+				++i;
+			}
+		}
+	}
+	for (auto &pending : failed) {
+		auto result = AiResult();
 		result.error = reason;
 		pending.done(std::move(result));
 	}

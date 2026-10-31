@@ -209,7 +209,7 @@ struct Service {
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
-	config.environment.apiLevel = 5;
+	config.environment.apiLevel = 6;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}

@@ -23,6 +23,7 @@ from . import (
     _Composer,
     _Contacts,
     _Files,
+    _Fs,
     _Folders,
     _Ghost,
     _Media,
@@ -67,6 +68,7 @@ notify = _Notify(_async_call)
 badges = _Badges(_async_call)
 clipboard = _Clipboard(_async_call)
 files = _Files(_async_call)
+fs = _Fs(_async_call)
 timers = _Timers(_async_call)
 
 

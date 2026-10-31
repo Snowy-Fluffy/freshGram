@@ -9,6 +9,7 @@ set(fgpl_src ${CMAKE_CURRENT_LIST_DIR}/src/fgpl)
 if (WIN32)
 	set(fgpl_platform_sources
 		${fgpl_src}/os_win.cpp
+		${fgpl_src}/folder_win.cpp
 		${fgpl_src}/ipc_win.cpp
 		${fgpl_src}/process_win.cpp
 		${fgpl_src}/sealed_win.cpp
@@ -16,6 +17,7 @@ if (WIN32)
 elseif (APPLE)
 	set(fgpl_platform_sources
 		${fgpl_src}/os_posix.cpp
+		${fgpl_src}/folder_posix.cpp
 		${fgpl_src}/ipc_posix.cpp
 		${fgpl_src}/process_posix.cpp
 		${fgpl_src}/sealed_mac.cpp
@@ -23,6 +25,7 @@ elseif (APPLE)
 else()
 	set(fgpl_platform_sources
 		${fgpl_src}/os_posix.cpp
+		${fgpl_src}/folder_posix.cpp
 		${fgpl_src}/ipc_posix.cpp
 		${fgpl_src}/process_posix.cpp
 		${fgpl_src}/sealed_linux.cpp
@@ -32,6 +35,7 @@ endif()
 add_library(fgpl_app STATIC
 	${fgpl_src}/cbor.cpp
 	${fgpl_src}/vfs.cpp
+	${fgpl_src}/folder.cpp
 	${fgpl_src}/sha256.cpp
 	${fgpl_src}/module_cache.cpp
 	${fgpl_src}/base64.cpp

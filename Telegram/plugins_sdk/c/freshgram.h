@@ -669,6 +669,32 @@ static int fg_translate_error(fg_i64 ticket, const char *error) {
 	return fg_send(&w, 0);
 }
 
+/* Answers an ai.request with the new text (up to 64 KiB). */
+static int fg_ai_reply(fg_i64 ticket, const char *text, int markdown) {
+	fg_writer w;
+	fg_begin(&w, "ai.reply", markdown ? 3 : 2);
+	fg_w_text(&w, "ticket");
+	fg_w_int(&w, ticket);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	if (markdown) {
+		fg_w_text(&w, "format");
+		fg_w_text(&w, "markdown");
+	}
+	return fg_send(&w, 0);
+}
+
+/* Answers an ai.request with an error (up to 200 bytes). */
+static int fg_ai_error(fg_i64 ticket, const char *error) {
+	fg_writer w;
+	fg_begin(&w, "ai.reply", 2);
+	fg_w_text(&w, "ticket");
+	fg_w_int(&w, ticket);
+	fg_w_text(&w, "error");
+	fg_w_text(&w, error);
+	return fg_send(&w, 0);
+}
+
 static int fg_toast(const char *text) {
 	fg_writer w;
 	fg_begin(&w, "ui.toast", 1);

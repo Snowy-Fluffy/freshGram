@@ -88,6 +88,12 @@ public:
 	void cancel(mtpRequestId requestId);
 
 private:
+	mtpRequestId requestFromPlugin(
+		const QString &plugin,
+		Request request,
+		Fn<void(Result &&)> done,
+		Fn<void(const MTP::Error &)> fail);
+
 	[[nodiscard]] static Diff ParseDiff(
 		not_null<Main::Session*> session,
 		const MTPTextWithEntities &text);

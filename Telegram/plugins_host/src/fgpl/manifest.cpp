@@ -505,10 +505,10 @@ const std::set<std::string> &KnownPermissions() {
 		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",
 		"ui.toast", "ui.badges", "notifications", "net.https", "net.tcp", "net.udp", "net.ws", "net.local", "storage.private",
 		"plugins.message",
-		"fs.user_selected", "clipboard", "background",
+		"fs.user_selected", "fs.folder", "clipboard", "background",
 		"messages.edit", "messages.delete", "messages.react", "users.info",
 		"chats.active", "messages.ids", "chats.activity", "users.presence",
-		"app.activity", "translate.provide", "bots.inline", "chats.manage",
+		"app.activity", "translate.provide", "ai.provide", "bots.inline", "chats.manage",
 		"messages.transform_incoming",
 		"contacts.manage", "ghost.control", "chats.moderate",
 	};
@@ -673,7 +673,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				if (!name
 					|| (*name != "startup" && *name != "command" && *name != "event"
 						&& *name != "menu" && *name != "settings" && *name != "message"
-						&& *name != "timer" && *name != "translate"
+						&& *name != "timer" && *name != "translate" && *name != "ai"
 						&& *name != "toast")) {
 					reader.error("activation.on", "has an unknown trigger");
 				} else {
@@ -695,7 +695,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					reader.error(where, "entries must be objects");
 					continue;
 				}
-				reader.checkKeys(item, where, { "id", "reason", "scope", "ports" });
+				reader.checkKeys(item, where, { "id", "reason", "scope", "ports", "mode" });
 				auto request = PermissionRequest();
 				request.required = required;
 				request.id = reader.text(item, "id", where, true, 64).value_or("");
@@ -714,6 +714,14 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					&& (request.id != "messages.read"
 						|| (request.scope != "selected" && request.scope != "all"))) {
 					reader.error(where, "'scope' is only for messages.read ('selected' or 'all')");
+				}
+				request.mode = reader.text(item, "mode", where, false, 8).value_or("");
+				if (request.id == "fs.folder") {
+					if (request.mode != "read" && request.mode != "write") {
+						reader.error(where, "fs.folder needs 'mode': 'read' or 'write'");
+					}
+				} else if (item.find("mode")) {
+					reader.error(where, "'mode' is only for fs.folder");
 				}
 				const auto ports = item.find("ports");
 				if (request.id == "net.local") {
@@ -758,7 +766,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
 			"events", "menus", "commands", "settingsPage", "outgoing", "incoming", "messages", "icons",
-			"translator" })) {
+			"translator", "aiProvider" })) {
 		if (const auto icons = contributes->find("icons"); icons && !icons->asMap()) {
 			reader.error("contributes.icons", "must be an object");
 		} else if (icons) {
@@ -893,6 +901,13 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				}
 			}
 			decl.maxChars = int(reader.integer(*translator, "maxChars", "contributes.translator", 64, 8192).value_or(4096));
+		}
+		if (const auto provider = reader.object(*contributes, "aiProvider", "contributes", false, {
+				"name", "maxChars" })) {
+			auto &decl = manifest.aiProvider;
+			decl.declared = true;
+			decl.name = reader.text(*provider, "name", "contributes.aiProvider", true, 40).value_or("");
+			decl.maxChars = int(reader.integer(*provider, "maxChars", "contributes.aiProvider", 64, 8192).value_or(4096));
 		}
 		const auto readHook = [&](
 				const char *key,
@@ -1051,6 +1066,9 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 	if (manifest.translator.declared && !hasPermission("translate.provide")) {
 		reader.error("contributes.translator", "needs the translate.provide permission");
+	}
+	if (manifest.aiProvider.declared && !hasPermission("ai.provide")) {
+		reader.error("contributes.aiProvider", "needs the ai.provide permission");
 	}
 	if (manifest.outgoing.declared && !hasPermission("messages.transform_outgoing")) {
 		reader.error("contributes.outgoing", "needs the messages.transform_outgoing permission");

@@ -761,6 +761,36 @@ class _Files(_Namespace):
         return self._call("files.save", name=name, data=data)
 
 
+class _Fs(_Namespace):
+    """The folder the user chose for the plugin (fs.folder); only awaitable, see freshgram.aio."""
+
+    def list(self, path="", offset=0, limit=200):
+        """{"entries": [{"name", "dir", "size", "modified"}], "more"}."""
+        return self._call("fs.list", path=path, offset=offset, limit=limit)
+
+    def stat(self, path):
+        return self._call("fs.stat", path=path)
+
+    def read(self, path, offset=0, length=None):
+        """The bytes of a file, from offset, up to length bytes."""
+        extra = {} if length is None else {"length": length}
+        return self._call("fs.read", path=path, offset=offset, **extra)
+
+    def write(self, path, data, mode="replace"):
+        """Write bytes or text; mode is "replace", "create" or "append" (mode "write" of the permission)."""
+        return self._call("fs.write", path=path, data=data, mode=mode)
+
+    def mkdir(self, path):
+        return self._call("fs.mkdir", path=path)
+
+    def remove(self, path):
+        """Delete a file or an empty directory."""
+        return self._call("fs.remove", path=path)
+
+    def rename(self, source, target):
+        return self._call("fs.rename", **{"from": source, "to": target})
+
+
 class _Timers(_Namespace):
     """Timers that wake the plugin with a timer event, even after it stopped.
 
@@ -1075,6 +1105,52 @@ def on_translate(function=None, markdown=False):
             else:
                 reply(result)
         _event_handlers.append(("translate.request", wrapper))
+        return handler
+    return register(function) if function is not None else register
+
+
+def on_ai(function=None, markdown=False):
+    """Make the plugin an AI provider (ai.provide, contributes.aiProvider).
+
+    The function gets one dict: "text" (the message, formatting removed),
+    and when asked for them "translate_to" (a two-letter language code),
+    "tone" (a name such as "formal"), "prompt" (a free instruction),
+    "proofread" and "emojify" (booleans). It returns the new text, or a
+    coroutine of it. Raise an exception to answer with an error. With
+    markdown=True the answer uses **bold** and the like. A plugin whose
+    manifest lists activation triggers needs "ai" among them.
+    """
+    def register(handler):
+        def wrapper(event):
+            ticket = event["ticket"]
+
+            def reply(text=None, error=None):
+                if error is not None:
+                    _request("ai.reply", ticket=ticket, error=str(error)[:200])
+                else:
+                    _request("ai.reply", ticket=ticket, text=str(text), **_format(markdown))
+
+            request = {key: value for key, value in event.items() if key not in ("type", "ticket", "format")}
+            try:
+                result = handler(request)
+            except Exception as error:
+                _log_exception()
+                reply(error=error)
+                return
+
+            if isinstance(result, _types.CoroutineType):
+                async def finish():
+                    try:
+                        text = await result
+                    except Exception as error:
+                        _log_exception()
+                        reply(error=error)
+                        return
+                    reply(text)
+                _aio.spawn(finish())
+            else:
+                reply(result)
+        _event_handlers.append(("ai.request", wrapper))
         return handler
     return register(function) if function is not None else register
 
