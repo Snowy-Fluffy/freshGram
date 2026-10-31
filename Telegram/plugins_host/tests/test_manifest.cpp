@@ -458,6 +458,41 @@ void TestTranslatorManifest() {
 	CHECK(HostFeatures().contains("translate.provide"));
 }
 
+void TestAiProviderManifest() {
+	const auto withProvider = [](cbor::Value provider, bool permission = true) {
+		return [=](cbor::Value &d) {
+			if (permission) {
+				Set(d, "permissions.optional", cbor::Value::FromArray({
+					cbor::Value::FromMap({ { "id", Text("ai.provide") }, { "reason", Text("x") } }),
+				}));
+			}
+			Set(d, "contributes.aiProvider", provider);
+		};
+	};
+	ExpectError("provider permission", withProvider(cbor::Value::FromMap({
+		{ "name", Text("P") } }), false), "ai.provide");
+	ExpectError("provider name", withProvider(cbor::Value::FromMap({})), "name");
+	ExpectError("provider key", withProvider(cbor::Value::FromMap({
+		{ "name", Text("P") }, { "speed", Int(1) } })), "speed");
+	ExpectError("provider limit", withProvider(cbor::Value::FromMap({
+		{ "name", Text("P") }, { "maxChars", Int(10) } })), "maxChars");
+
+	auto document = ValidDocument();
+	withProvider(cbor::Value::FromMap({
+		{ "name", Text("My model") },
+		{ "maxChars", Int(2000) },
+	}))(document);
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (parsed.ok()) {
+		const auto &decl = parsed.value().aiProvider;
+		CHECK(decl.declared && decl.name == "My model" && decl.maxChars == 2000);
+		CHECK(parsed.value().activation.contains("ai"));
+	}
+	CHECK(HostFeatures().contains("ai.provide"));
+	CHECK(PermissionDanger("ai.provide") == Danger::High);
+}
+
 void TestMenuConditions() {
 	const auto withMenu = [](const char *surface, cbor::Value when) {
 		return [=](cbor::Value &d) {
@@ -561,6 +596,60 @@ void TestLocalPorts() {
 	CHECK(grants.permissions.contains("net.local") && grants.localPorts == ports);
 	CHECK(MakeGrants(parsed.value(), { {}, std::nullopt }).localPorts.empty());
 	CHECK(HostFeatures().contains("net.local"));
+}
+
+void TestFolderPermission() {
+	const auto withMode = [](std::optional<const char*> mode, const char *id = "fs.folder") {
+		return [=](cbor::Value &d) {
+			auto entry = cbor::Map{ { "id", Text(id) }, { "reason", Text("x") } };
+			if (mode) {
+				entry.push_back({ "mode", Text(*mode) });
+			}
+			Set(d, "permissions.optional", cbor::Value::FromArray({ cbor::Value::FromMap(std::move(entry)) }));
+		};
+	};
+	ExpectError("folder without mode", withMode(std::nullopt), "mode");
+	ExpectError("folder bad mode", withMode("rw"), "mode");
+	ExpectError("mode elsewhere", withMode("read", "clipboard"), "mode");
+
+	for (const auto mode : { "read", "write" }) {
+		auto document = ValidDocument();
+		withMode(mode)(document);
+		const auto parsed = Parse(document);
+		CHECK(parsed.ok());
+		if (!parsed.ok()) {
+			return;
+		}
+		const auto writable = (std::string(mode) == "write");
+		const auto chosen = MakeGrants(parsed.value(), { { "fs.folder" }, std::nullopt, "/some/dir" });
+		CHECK(chosen.permissions.contains("fs.folder"));
+		CHECK(chosen.folder == "/some/dir" && chosen.folderWritable == writable);
+		const auto unset = MakeGrants(parsed.value(), { { "fs.folder" }, std::nullopt, "" });
+		CHECK(!unset.permissions.contains("fs.folder") && unset.folder.empty());
+		const auto declined = MakeGrants(parsed.value(), { {}, std::nullopt, "/some/dir" });
+		CHECK(declined.folder.empty());
+	}
+	CHECK(PermissionDanger("fs.folder") == Danger::High);
+	CHECK(HostFeatures().contains("fs.folder"));
+
+	auto read = ValidDocument();
+	withMode("read")(read);
+	auto write = ValidDocument();
+	withMode("write")(write);
+	const auto before = Parse(read);
+	const auto after = Parse(write);
+	CHECK(before.ok() && after.ok());
+	if (before.ok() && after.ok()) {
+		const auto raised = NewRequests(before.value(), after.value());
+		CHECK(raised.size() == 1 && raised[0] == "fs.folder:write");
+		CHECK(NewRequests(after.value(), before.value()).empty());
+	}
+	const auto notes = RiskNotes({ "fs.folder", "net.https" });
+	auto folderNotes = 0;
+	for (const auto &note : notes) {
+		folderNotes += (note.risk == Risk::Folder || note.risk == Risk::FolderExfiltration);
+	}
+	CHECK(folderNotes == 2);
 }
 
 void TestIncomingHook() {
@@ -707,8 +796,10 @@ int main() {
 	TestOutgoingFilter();
 	TestIncomingHook();
 	TestLocalPorts();
+	TestFolderPermission();
 	TestMenuConditions();
 	TestTranslatorManifest();
+	TestAiProviderManifest();
 	TestStorageExport();
 	return Failures() ? 1 : 0;
 }

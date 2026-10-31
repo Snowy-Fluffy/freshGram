@@ -4,6 +4,8 @@
 #include "fgpl/net_policy.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
@@ -226,7 +228,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 5);
+	CHECK(Payload(info).find("api")->asInt() == 6);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -2177,6 +2179,39 @@ void TestTranslateReply() {
 		{ "ticket", Int(7) }, { "items", Texts({ "a" }) } }))) == "denied");
 }
 
+void TestAiReply() {
+	auto fixture = Fixture({ "ai.provide" });
+	auto seen = std::vector<std::tuple<int64_t, std::string, bool, std::string>>();
+	fixture.services.aiReply = [&](
+			int64_t ticket,
+			std::string text,
+			bool markdown,
+			std::string error) -> std::string {
+		seen.emplace_back(ticket, text, markdown, error);
+		return (ticket == 7) ? std::string() : std::string(api::error::kNotFound);
+	};
+	auto broker = fixture.make();
+	const auto reply = [&](cbor::Map args) {
+		return Code(broker.call(Request("ai.reply", std::move(args))));
+	};
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Text("hi") } }) == "");
+	CHECK(IsOk(broker.call(Request("ai.reply", {
+		{ "ticket", Int(7) }, { "text", Text("**a**") }, { "format", Text("markdown") } }))));
+	CHECK(IsOk(broker.call(Request("ai.reply", { { "ticket", Int(7) }, { "error", Text("no key") } }))));
+	CHECK(seen.size() == 3 && std::get<0>(seen[0]) == 7 && std::get<1>(seen[0]) == "hi");
+	CHECK(std::get<2>(seen[1]) && std::get<3>(seen[2]) == "no key");
+	CHECK(reply({ { "ticket", Int(8) }, { "text", Text("a") } }) == "not_found");
+	CHECK(reply({ { "text", Text("a") } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Int(1) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Text("a") }, { "format", Text("html") } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Text(std::string((size_t(64) << 10) + 1, 'x')) } }) == "invalid");
+	CHECK(Code(Fixture({}).make().call(Request("ai.reply", {
+		{ "ticket", Int(7) }, { "text", Text("a") } }))) == "denied");
+	CHECK(Code(Fixture({ "translate.provide" }).make().call(Request("ai.reply", {
+		{ "ticket", Int(7) }, { "text", Text("a") } }))) == "denied");
+}
+
 void TestActivityEvents() {
 	const auto chatEvent = [](const char *type, int64_t chat, bool secret = false) {
 		return cbor::Value::FromMap({
@@ -2749,6 +2784,89 @@ void TestSentIds() {
 	send(true, true);
 }
 
+void TestFolderCalls() {
+	namespace fs = std::filesystem;
+	const auto base = fs::temp_directory_path() / "fgpl_broker_folder";
+	auto error = std::error_code();
+	fs::remove_all(base, error);
+	fs::create_directories(base / "root");
+	fs::create_directories(base / "outside");
+	{
+		auto stream = std::ofstream(base / "outside" / "secret.txt");
+		stream << "secret";
+	}
+	const auto root = fs::canonical(base / "root").string();
+
+	const auto make = [&](std::set<std::string> permissions, bool writable, std::string folder) {
+		auto fixture = std::make_unique<Fixture>(std::move(permissions));
+		fixture->grants.folder = std::move(folder);
+		fixture->grants.folderWritable = writable;
+		return fixture;
+	};
+	auto queued = std::vector<std::function<void()>>();
+	auto results = std::map<int64_t, cbor::Value>();
+	const auto run = [&](Fixture &fixture, cbor::Value request) {
+		fixture.services.post = [&](std::function<void()> work) {
+			queued.push_back(std::move(work));
+		};
+		fixture.services.after = [&](int64_t, std::function<void()> work) {
+			queued.push_back(std::move(work));
+		};
+		fixture.services.complete = [&](int64_t ticket, cbor::Value result) {
+			results[ticket] = std::move(result);
+		};
+		const auto broker = std::make_shared<Broker>(fixture.grants, fixture.services);
+		const auto response = broker->call(request);
+		if (!IsOk(response)) {
+			return response;
+		}
+		for (auto &work : queued) {
+			work();
+		}
+		queued.clear();
+		return results[*Payload(response).find("ticket")->asInt()];
+	};
+
+	auto nothing = make({}, true, root);
+	CHECK(Code(run(*nothing, Awaited("fs.list"))) == "denied");
+	auto unset = make({ "fs.folder" }, true, "");
+	CHECK(Code(run(*unset, Awaited("fs.list"))) == "unavailable");
+	CHECK(Code(unset->make().call(Request("fs.list"))) == "invalid");
+
+	auto readonly = make({ "fs.folder" }, false, root);
+	CHECK(Code(run(*readonly, Awaited("fs.write", { { "path", Text("a.txt") }, { "data", Text("x") } }))) == "denied");
+	CHECK(Code(run(*readonly, Awaited("fs.mkdir", { { "path", Text("d") } }))) == "denied");
+	CHECK(Code(run(*readonly, Awaited("fs.remove", { { "path", Text("a.txt") } }))) == "denied");
+	CHECK(Code(run(*readonly, Awaited("fs.rename", { { "from", Text("a") }, { "to", Text("b") } }))) == "denied");
+	CHECK(IsOk(run(*readonly, Awaited("fs.list"))));
+
+	auto writable = make({ "fs.folder" }, true, root);
+	const auto written = run(*writable, Awaited("fs.write", {
+		{ "path", Text("a.txt") }, { "data", Text("hello") } }));
+	CHECK(IsOk(written));
+	const auto read = run(*writable, Awaited("fs.read", { { "path", Text("a.txt") } }));
+	CHECK(IsOk(read) && Payload(read).asBytes()->size() == 5);
+	const auto listed = run(*writable, Awaited("fs.list"));
+	CHECK(IsOk(listed) && Payload(listed).find("entries")->asArray()->size() == 1);
+	CHECK(Code(run(*writable, Awaited("fs.write", {
+		{ "path", Text("a.txt") }, { "data", Text("x") }, { "mode", Text("create") } }))) == "invalid");
+	CHECK(Code(run(*writable, Awaited("fs.write", {
+		{ "path", Text("a.txt") }, { "data", Text("x") }, { "mode", Text("nope") } }))) == "invalid");
+	CHECK(Code(run(*writable, Awaited("fs.read", { { "path", Text("missing") } }))) == "not_found");
+	CHECK(Code(run(*writable, Awaited("fs.read", { { "path", Text("a.txt") }, { "offset", Int(-1) } }))) == "invalid");
+	CHECK(Code(run(*writable, Awaited("fs.bogus", { { "path", Text("a.txt") } }))) == "invalid");
+
+	for (const auto &path : { "../outside/secret.txt", "/etc/passwd", "a/../../outside/secret.txt", "..", "a\\..\\b" }) {
+		CHECK(!IsOk(run(*writable, Awaited("fs.read", { { "path", Text(path) } }))));
+		CHECK(!IsOk(run(*writable, Awaited("fs.write", { { "path", Text(path) }, { "data", Text("x") } }))));
+		CHECK(!IsOk(run(*writable, Awaited("fs.remove", { { "path", Text(path) } }))));
+	}
+	CHECK(fs::exists(base / "outside" / "secret.txt"));
+	CHECK(!fs::exists(base / "outside" / "x"));
+
+	fs::remove_all(base, error);
+}
+
 void TestFilesAndTimers() {
 	auto fixture = Fixture({ "fs.user_selected" });
 	fixture.time = 100000;
@@ -2936,6 +3054,7 @@ int main() {
 	TestEvents();
 	TestActivityEvents();
 	TestTranslateReply();
+	TestAiReply();
 	TestToastActions();
 	TestAwaitableCalls();
 	TestRateLimits();
@@ -2944,5 +3063,6 @@ int main() {
 	TestMediaCalls();
 	TestSentIds();
 	TestFilesAndTimers();
+	TestFolderCalls();
 	return Failures() ? 1 : 0;
 }

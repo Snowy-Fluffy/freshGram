@@ -31,7 +31,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 `not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`,
 `cancelled` (the user closed a file dialog).
 
-## Calls (API level 5)
+## Calls (API level 6)
 
 | Call | Permission | Notes |
 |---|---|---|
@@ -58,6 +58,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `messages.drop_outgoing` `{reason}` | `messages.transform_outgoing` | only while handling `message.outgoing`; the message is not sent and the input field stays empty; a non-empty `reason` (up to 200 bytes) is shown as a toast with the plugin's name; the plugins after this one do not see the message |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `ui.window.show` `{id, page, mode}`, `ui.window.update` `{id, page}`, `ui.window.close` `{id}` | `ui.dialog` | a window of the plugin's own: `id` is a lowercase token of up to 32 characters, `mode` is `layer` (over the chat, the default) or `window` (a window of its own); up to 3 windows at a time; see *Windows* |
+| `ai.reply` `{ticket, text, format, error}` | `ai.provide` | answers an `ai.request`: `text` is the new text (up to 64 KiB), `format` is `plain` (default) or `markdown`; or `error` (up to 200 bytes) instead; `not_found` for a ticket that is not yours or already answered |
 | `translate.reply` `{ticket, items, format, error}` | `translate.provide` | answers a `translate.request`: `items` is a list with one translation for each requested text (up to 32 KiB each, 96 KiB in all), `format` is `plain` (default) or `markdown`; or `error` (up to 200 bytes) instead; `not_found` for a ticket that is not yours or already answered |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
@@ -103,6 +104,11 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `notify.show` `{title, text}` | `notifications` | a system notification (a toast when the app's notifications are off); once per 5 seconds; clicking it opens Saved Messages |
 | `clipboard.write` `{text}`, `clipboard.read` | `clipboard` | only within 10 seconds after a user action; up to 64 KiB |
 | `files.pick` `{title, filter}` | `fs.user_selected` | awaitable only, after a user action; the user picks a file in the system dialog; returns `{name, data}` (up to 100 MiB) or nothing when cancelled; `filter` is like `Images (*.png *.jpg)` |
+| `fs.list` `{path, offset, limit}` | `fs.folder` | awaitable only; lists a directory of the chosen folder (`path` is relative, empty for the folder itself) as `{entries: [{name, dir, size, modified}], more}`, sorted by name, up to 1000 per page; links and special files are not shown |
+| `fs.stat` `{path}` | `fs.folder` | awaitable only; `{name, dir, size, modified}` |
+| `fs.read` `{path, offset, length}` | `fs.folder` | awaitable only; bytes of a regular file, up to 100 MiB per call |
+| `fs.write` `{path, data, mode}` | `fs.folder` with `mode: "write"` | awaitable only; `data` is bytes or text up to 100 MiB; `mode` is `replace` (the default), `create` (fails when the file exists) or `append`; the plugin may write 512 MiB per minute |
+| `fs.mkdir` `{path}`, `fs.remove` `{path}`, `fs.rename` `{from, to}` | `fs.folder` with `mode: "write"` | awaitable only; `fs.remove` deletes a file or an empty directory, `fs.rename` fails when the target exists |
 | `files.save` `{name, data}` | `fs.user_selected` | awaitable only, after a user action; asks where to save `data` (bytes or text, up to 100 MiB); returns `true`, or `false` when cancelled |
 | `timers.set` `{id, delay, repeat}`, `timers.clear` `{id}`, `timers.list` | none | `delay` in ms, from 1000 to 7 days; a timer sends a `timer` event and starts a stopped plugin (activation `timer`); at most 32 per plugin and account; timers live while the app runs and are dropped when the plugin is disabled |
 | `account.info` | `account.info` | no phone number |
@@ -190,6 +196,7 @@ for the account, reads you make (`chat.read` with `outbox: false`) and
 | `chat.member` | `chats.activity` | `{chat, user, joined}`; someone joined or left a group or supergroup (not for channels) |
 | `user.status` | `users.presence` | `{user, status, last_seen}` with the values of `users.info`; not for yourself, bots, or users who hide their status |
 | `app.focus`, `app.blur` | `app.activity` | `{}`; the app window got or lost the focus |
+| `ai.request` | `ai.provide` | `{ticket, text, format, translate_to, tone, prompt, proofread, emojify}`: a text to rewrite; the last five are present only when asked for; see *AI provider* |
 | `translate.request` | `translate.provide` | `{ticket, to, format, items}`: texts to translate into the language `to` (a two-letter code); see *Translator* |
 `timer` `{id}` comes when a timer set with `timers.set` fires; it is not listed
 in `contributes.events`.
@@ -251,6 +258,23 @@ computer. Local connections do not use the app's proxy, `net.fetch` does not fol
 redirects of local URLs (the 3xx answer comes back as it is), and the call counts
 against the limits of its protocol.
 
+## A folder on this computer
+
+The permission `fs.folder` gives a plugin one folder that the user picks, with `"mode": "read"` or
+`"mode": "write"` in the manifest. The path never appears in the manifest and the plugin never
+sees it: every `fs.*` call takes a path relative to the folder, and the app resolves it. Absolute
+paths, `..`, backslashes, control characters and links are refused, and the app never follows a
+symbolic link, junction or hard link out of the folder. Files that are not regular files
+or directories (pipes, devices) are invisible. The user can change or remove the folder at any
+time in the permissions of the plugin; the plugin is restarted then, so every pending call fails.
+The folder cannot be a file system root, the home folder, a parent of it or a system location.
+
+```
+"permissions": {"optional": [{"id": "fs.folder", "mode": "read", "reason": {...}}]}
+```
+
+Changing `mode` from `read` to `write` in an update asks the user again.
+
 ## Translator
 
 A plugin with the `translate.provide` permission and `contributes.translator`
@@ -274,6 +298,30 @@ def translate(items, to):
 `on_translate(markdown=True)` makes the answers parsed as markdown, and an
 `async def` handler is run on the plugin's own loop. In C, answer with
 `fg_translate_reply` or `fg_translate_error`.
+
+## AI provider
+
+A plugin with the `ai.provide` permission and `contributes.aiProvider`
+(`{"name": "My model", "maxChars": 4096}`: `maxChars` from 64 to 8192 is the longest text it takes,
+4096 by default) appears in the app's list of AI providers (Settings, AI). When the user picks it, the
+text actions of the message field (rewrite, tone, translate, proofread, add emoji) go to the plugin
+instead of Telegram's servers; nothing falls back to the servers. The plugin gets `ai.request`
+`{ticket, text, format: "plain", ...}` and answers with `ai.reply` within 60 seconds (a plugin that is
+not running is started; its `activation.on`, when listed, must contain `ai`). `translate_to` is a
+two-letter language code, `tone` a name such as `formal` or `friendly`, `prompt` a free
+instruction, `proofread` and `emojify` are booleans; only the ones asked for are present. A plugin may
+be asked up to 4 times at once, so answer by ticket. The plugin reaches its model through its own
+`net.https` or `net.local` permission; without them it can only transform the text itself.
+In Python:
+
+```python
+@freshgram.on_ai
+def rewrite(request):
+    return request["text"].upper()
+```
+
+`on_ai(markdown=True)` makes the answer parsed as markdown, and an `async def` handler is run
+on the plugin's own loop. In C, answer with `fg_ai_reply` or `fg_ai_error`.
 
 ## Waiting without blocking
 
@@ -362,7 +410,7 @@ it starts again. Keys that are not in the file stay as they are.
 ## Activation and unloading
 
 `activation.on` lists what may start the plugin: `startup`, `event`, `command`,
-`menu`, `settings`, `message`, `timer`, `translate`, `toast` (the default is all of them except `startup`). Plugins that
+`menu`, `settings`, `message`, `timer`, `translate`, `ai`, `toast` (the default is all of them except `startup`). Plugins that
 change outgoing messages or run in the background start with the app. A plugin
 calls `plugin.unload` when it has nothing to do; it is stopped after the
 current event and started again by its next activation, so it costs no memory
@@ -551,8 +599,8 @@ logged and does not stop the others. The namespaces follow the calls:
 `chats.mark_read`, `chats.action`, `users.info`, `messages.reactions`, `stickers.send/search/recent`, `users.resolve`, `users.photo`, `channels.info`, `channels.resolve`, `channels.photo`, `notify.show`,
 `bots.inline_query(bot, query, chat=None)`, `bots.send_inline_result(chat, query_id, result)`, `bots.press_button(chat, message, row, column)`, `ui.open_settings()`, `messages.history(..., from_user="me")`,
 `messages.set_outgoing(text, entities=[...])`, `messages.get/reply_chain/pinned/scheduled/scheduled_delete/pin/unpin`, `chats.members/admins/ban/unban/mute/archive/pin`, `messages.send_poll`, `ghost.get/set`, `users.block/unblock`, `contacts.add`, `composer.insert`, `freshgram.time()`,
-`clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`
-and `files.save` exist only in `freshgram.aio`.
+`clipboard.read/write`, `timers.set(id, seconds, repeat=False)`; `files.pick`,
+`files.save` and `fs.list/stat/read/write/mkdir/remove/rename` exist only in `freshgram.aio`.
 
 Calls raise `freshgram.Denied`, `Invalid`, `NotFound`, `QuotaExceeded`,
 `LimitExceeded`, `Unavailable` or `Failed`. `print` goes to the plugin log; the

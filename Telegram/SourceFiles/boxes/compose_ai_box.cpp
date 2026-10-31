@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_compose_with_ai.h"
 #include "apiwrap.h"
+#include "ayu/ayu_settings.h"
 #include "boxes/create_ai_tone_box.h"
 #include "core/shortcuts.h"
 #include "menu/menu_check_item.h"
@@ -1848,7 +1849,11 @@ void ComposeAiContent::request() {
 		break;
 	}
 
-	if (_richSource || _promptSelected) {
+	const auto viaPlugin = !AyuSettings::getInstance().aiPlugin().isEmpty();
+	if (_richSource && viaPlugin) {
+		showError(u"AI_PROVIDER_RICH"_q);
+		return;
+	} else if (_richSource || (_promptSelected && !viaPlugin)) {
 		requestRich(std::move(request));
 		return;
 	}

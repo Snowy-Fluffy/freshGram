@@ -9,7 +9,7 @@ const auto kReadingPermissions = std::set<std::string>{
 	"messages.read", "messages.read_deleted", "messages.history", "chats.list",
 	"chat.info", "account.info", "contacts.list", "composer.draft", "media.read",
 	"folders.list", "settings.read", "stars.balance", "users.info", "chats.active",
-	"chats.activity", "users.presence", "app.activity", "translate.provide",
+	"chats.activity", "users.presence", "app.activity", "translate.provide", "ai.provide",
 };
 
 [[nodiscard]] bool Has(
@@ -20,9 +20,9 @@ const auto kReadingPermissions = std::set<std::string>{
 
 const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
-	"net.tcp", "net.udp", "net.local", "background", "fs.user_selected", "clipboard",
+	"net.tcp", "net.udp", "net.local", "background", "fs.user_selected", "fs.folder", "clipboard",
 	"messages.edit", "messages.delete", "ghost.control", "messages.transform_incoming",
-	"chats.moderate",
+	"chats.moderate", "ai.provide",
 };
 
 const auto kLowPermissions = std::set<std::string>{
@@ -53,10 +53,15 @@ Grants MakeGrants(const Manifest &manifest, const GrantDecision &decision) {
 			continue;
 		} else if (request.scope == "selected" && !decision.chats) {
 			continue;
+		} else if (request.id == "fs.folder" && decision.folder.empty()) {
+			continue;
 		}
 		grants.permissions.insert(request.id);
 		if (request.id == "net.local") {
 			grants.localPorts = request.ports;
+		} else if (request.id == "fs.folder") {
+			grants.folder = decision.folder;
+			grants.folderWritable = (request.mode == "write");
 		}
 	}
 	return grants;
@@ -121,6 +126,18 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 	if (Has(granted, "fs.user_selected")) {
 		notes.push_back({ Risk::Files, "can read and save files you pick" });
 	}
+	if (Has(granted, "ai.provide")) {
+		notes.push_back({ Risk::AiProvider, "receives the text you ask it to rewrite" });
+	}
+	if (Has(granted, "fs.folder")) {
+		notes.push_back({ Risk::Folder, "can use the files in the folder you chose" });
+		if (network) {
+			notes.push_back({
+				Risk::FolderExfiltration,
+				"can send the files of that folder to the internet",
+			});
+		}
+	}
 	if (Has(granted, "plugins.message")) {
 		notes.push_back({
 			Risk::PluginMessages,
@@ -147,6 +164,11 @@ std::vector<std::string> NewRequests(
 			&& old->scope != "all"
 			&& request.scope == "all") {
 			result.push_back("messages.read:all");
+		}
+		if (request.id == "fs.folder"
+			&& old->mode != "write"
+			&& request.mode == "write") {
+			result.push_back("fs.folder:write");
 		}
 	}
 	return result;

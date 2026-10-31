@@ -80,12 +80,14 @@
 #include "window/window_session_controller.h"
 
 #ifdef FRESHGRAM_PLUGINS
+#include "fgpl/folder.h"
 #include "fgpl/manager.h"
 #include "fgpl/permissions.h"
 #endif
 
 #include <QtCore/QBuffer>
 #include <QtCore/QDateTime>
+#include <QtCore/QDir>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QUrl>
 #include <QtGui/QClipboard>
@@ -2873,6 +2875,9 @@ namespace {
 	case fgpl::Risk::Background: return tr::fresh_RiskBackground(tr::now);
 	case fgpl::Risk::Clipboard: return tr::fresh_RiskClipboard(tr::now);
 	case fgpl::Risk::Files: return tr::fresh_RiskFiles(tr::now);
+	case fgpl::Risk::Folder: return tr::fresh_RiskFolder(tr::now);
+	case fgpl::Risk::AiProvider: return tr::fresh_RiskAiProvider(tr::now);
+	case fgpl::Risk::FolderExfiltration: return tr::fresh_RiskFolderExfiltration(tr::now);
 	case fgpl::Risk::PluginMessages: return tr::fresh_RiskPlugins(tr::now);
 	}
 	return QString();
@@ -2911,6 +2916,7 @@ namespace {
 		{ "storage.private", &st::menuIconDownload },
 		{ "plugins.message", &st::menuIconBot },
 		{ "fs.user_selected", &st::menuIconFile },
+		{ "fs.folder", &st::menuIconFile },
 		{ "clipboard", &st::menuIconCopy },
 		{ "background", &st::menuIconPowerUsage },
 		{ "messages.edit", &st::menuIconEdit },
@@ -3046,7 +3052,9 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 				lt_ports,
 				ports.join(u", "_q)));
 		}
-		const auto title = PermissionTitle(request->id, request->scope);
+		const auto title = PermissionTitle(
+			request->id,
+			(request->id == "fs.folder") ? request->mode : request->scope);
 		const auto danger = fgpl::PermissionDanger(request->id, request->scope);
 		const auto button = AddDetailedSettingsButton(
 			container,
@@ -3166,6 +3174,60 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		Ui::AddDividerText(container, tr::fresh_PluginChatsAbout());
 	}
 
+	const auto folderRequest = ranges::find(
+		manifest.permissions,
+		std::string("fs.folder"),
+		&fgpl::PermissionRequest::id);
+	const auto folderShown = (folderRequest != end(manifest.permissions));
+	const auto folder = std::make_shared<QString>(
+		(current && !current->folder.empty()) ? Utf8(current->folder) : QString());
+	if (folderShown) {
+		const auto wrap = container->add(
+			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+				container,
+				object_ptr<Ui::VerticalLayout>(container)));
+		const auto inner = wrap->entity();
+		Ui::AddSkip(inner);
+		Ui::AddSubsectionTitle(inner, tr::fresh_PluginFolder());
+		const auto shown = box->lifetime().make_state<rpl::variable<QString>>(*folder);
+		Settings::AddButtonWithLabel(
+			inner,
+			tr::fresh_PluginFolderChoose(),
+			shown->value() | rpl::map([](const QString &path) {
+				return path.isEmpty()
+					? tr::fresh_PluginFolderNone(tr::now)
+					: QDir::toNativeSeparators(path);
+			}),
+			st::settingsButton,
+			{ &st::menuIconFile }
+		)->addClickHandler([=] {
+			FileDialog::GetFolder(
+				box.get(),
+				tr::fresh_PluginFolderChoose(tr::now),
+				*folder,
+				crl::guard(box, [=](QString &&result) {
+					const auto checked = fgpl::folder::CheckRoot(
+						result.toUtf8().toStdString());
+					if (!checked.ok()) {
+						controller->showToast(tr::fresh_PluginFolderRefused(tr::now));
+						return;
+					}
+					*folder = Utf8(checked.value());
+					*shown = *folder;
+				}));
+		});
+		Ui::AddSkip(inner);
+		Ui::AddDividerText(
+			inner,
+			(folderRequest->mode == "write")
+				? tr::fresh_PluginFolderAboutWrite()
+				: tr::fresh_PluginFolderAboutRead());
+		wrap->toggleOn(granted->value() | rpl::map([](const std::set<std::string> &now) {
+			return now.contains("fs.folder");
+		}));
+		wrap->finishAnimating();
+	}
+
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
@@ -3185,6 +3247,13 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 			if (button->toggled()) {
 				result.granted.insert(id);
 			}
+		}
+		if (folderShown && result.granted.contains("fs.folder")) {
+			if (folder->isEmpty()) {
+				controller->showToast(tr::fresh_PluginFolderChoose(tr::now));
+				return std::nullopt;
+			}
+			result.folder = folder->toUtf8().toStdString();
 		}
 		if (chatsShown && chatsMode->current() == 1) {
 			if (chats->empty()) {
@@ -3408,6 +3477,10 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		return tr::fresh_PermMessagesReadAll(tr::now);
 	} else if (id == "messages.read" && scope == "selected") {
 		return tr::fresh_PermMessagesReadSelected(tr::now);
+	} else if (id == "fs.folder") {
+		return (scope == "write")
+			? tr::fresh_PermFolderWrite(tr::now)
+			: tr::fresh_PermFolderRead(tr::now);
 	}
 	static const auto titles = std::map<std::string, tr::phrase<>>{
 		{ "messages.read", tr::fresh_PermMessagesRead },
@@ -3453,6 +3526,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "users.presence", tr::fresh_PermUsersPresence },
 		{ "app.activity", tr::fresh_PermAppActivity },
 		{ "translate.provide", tr::fresh_PermTranslateProvide },
+		{ "ai.provide", tr::fresh_PermAiProvide },
 		{ "bots.inline", tr::fresh_PermBotsInline },
 		{ "chats.manage", tr::fresh_PermChatsManage },
 		{ "chats.moderate", tr::fresh_PermChatsModerate },

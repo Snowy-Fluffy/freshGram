@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_compose_with_ai.h"
 
 #include "api/api_text_entities.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_ai.h"
 #include "apiwrap.h"
 #include "base/options.h"
 #include "core/shortcuts.h"
@@ -62,6 +64,10 @@ mtpRequestId ComposeWithAi::request(
 		Request request,
 		Fn<void(Result &&)> done,
 		Fn<void(const MTP::Error &)> fail) {
+	if (const auto plugin = AyuSettings::getInstance().aiPlugin();
+		!plugin.isEmpty()) {
+		return requestFromPlugin(plugin, std::move(request), std::move(done), std::move(fail));
+	}
 	using Flag = MTPmessages_composeMessageWithAI::Flag;
 	auto flags = MTPmessages_composeMessageWithAI::Flags(0);
 	if (request.proofread) {
@@ -101,8 +107,58 @@ mtpRequestId ComposeWithAi::request(
 	}).send();
 }
 
+mtpRequestId ComposeWithAi::requestFromPlugin(
+		const QString &plugin,
+		Request request,
+		Fn<void(Result &&)> done,
+		Fn<void(const MTP::Error &)> fail) {
+	auto data = FreshPlugins::AiRequestData{
+		.text = std::move(request.text),
+		.translateTo = request.translateToLang,
+		.proofread = request.proofread,
+		.emojify = request.emojify,
+	};
+	if (const auto tone = request.tone) {
+		if (!tone->customPrompt.isEmpty()) {
+			data.prompt = tone->customPrompt;
+		} else if (!tone->defaultTone.isEmpty()) {
+			data.tone = tone->defaultTone;
+		} else {
+			for (const auto &known : _session->data().aiComposeTones().list()) {
+				if (known.id == tone->id) {
+					data.prompt = known.prompt;
+					data.tone = known.defaultType.isEmpty()
+						? known.title
+						: known.defaultType;
+					break;
+				}
+			}
+		}
+	}
+	return FreshPlugins::RequestAi(
+		_session,
+		plugin,
+		std::move(data),
+		[done = std::move(done)](TextWithEntities &&text) {
+			if (done) {
+				done(Result{ .resultText = std::move(text) });
+			}
+		},
+		[fail = std::move(fail)](const QString &error) {
+			if (fail) {
+				fail(MTP::Error::Local(
+					u"AI_PROVIDER_FAILED"_q,
+					error.isEmpty()
+						? tr::fresh_AiProviderUnavailable(tr::now)
+						: error));
+			}
+		});
+}
+
 void ComposeWithAi::cancel(mtpRequestId requestId) {
-	if (requestId) {
+	if (requestId < 0) {
+		FreshPlugins::CancelAi(requestId);
+	} else if (requestId) {
 		_api.request(requestId).cancel();
 	}
 }
@@ -162,7 +218,11 @@ void ApplyAiInPlaceBySlug(
 	auto &tones = session->data().aiComposeTones();
 	for (const auto &cached : tones.list()) {
 		if (!cached.isDefault && cached.slug == slug) {
-			apply({ .id = cached.id, .accessHash = cached.accessHash });
+			apply({
+				.customPrompt = cached.prompt,
+				.id = cached.id,
+				.accessHash = cached.accessHash,
+			});
 			return;
 		}
 	}
@@ -171,7 +231,11 @@ void ApplyAiInPlaceBySlug(
 		if (tone.isDefault) {
 			apply({ .defaultTone = tone.defaultType });
 		} else {
-			apply({ .id = tone.id, .accessHash = tone.accessHash });
+			apply({
+				.customPrompt = tone.prompt,
+				.id = tone.id,
+				.accessHash = tone.accessHash,
+			});
 		}
 	}, std::move(fail));
 }

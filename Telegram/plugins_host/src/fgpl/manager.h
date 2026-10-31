@@ -215,6 +215,23 @@ struct TranslateResult {
 	bool markdown = false;
 };
 
+struct AiRequest {
+	std::string text;
+	// The language to translate into, a two-letter code, or empty.
+	std::string translateTo;
+	// A named tone such as "formal", or a free prompt; both may be empty.
+	std::string tone;
+	std::string prompt;
+	bool proofread = false;
+	bool emojify = false;
+};
+
+struct AiResult {
+	std::string error;
+	std::string text;
+	bool markdown = false;
+};
+
 struct PluginInfo {
 	std::string id;
 	std::string name;
@@ -252,6 +269,12 @@ struct ContributedTranslator {
 	int maxChars = 0;
 };
 
+struct ContributedAiProvider {
+	bool declared = false;
+	std::string name;
+	int maxChars = 0;
+};
+
 struct ContributedCommand {
 	std::string name;
 	std::string description;
@@ -264,6 +287,7 @@ struct Contribution {
 	std::vector<ContributedCommand> commands;
 	bool settingsPage = false;
 	ContributedTranslator translator;
+	ContributedAiProvider aiProvider;
 };
 
 struct DispatchReport {
@@ -398,6 +422,16 @@ public:
 		int timeoutMs,
 		std::function<void(TranslateResult)> done);
 
+	// Like translateAsync for contributes.aiProvider; returns the ticket for cancelAi.
+	int64_t aiAsync(
+		const std::string &account,
+		const std::string &plugin,
+		AiRequest request,
+		int timeoutMs,
+		std::function<void(AiResult)> done);
+	// The callback of a cancelled request is dropped without being called.
+	void cancelAi(int64_t ticket);
+
 	[[nodiscard]] ManagerSnapshot snapshot() const;
 
 	int pump();
@@ -422,6 +456,7 @@ private:
 	struct StoredGrant {
 		std::set<std::string> granted;
 		std::optional<std::set<int64_t>> chats;
+		std::string folder;
 	};
 
 	struct Record {
@@ -611,6 +646,18 @@ private:
 		bool markdown,
 		std::string error);
 	void expireTranslations();
+	[[nodiscard]] std::string acceptAi(
+		const std::string &plugin,
+		const std::string &account,
+		int64_t ticket,
+		std::string text,
+		bool markdown,
+		std::string error);
+	void expireAi();
+	void failAi(
+		const std::string &plugin,
+		const std::string &account,
+		const std::string &reason);
 	void failTranslations(
 		const std::string &plugin,
 		const std::string &account,
@@ -662,6 +709,15 @@ private:
 	std::mutex _translationsMutex;
 	std::map<int64_t, PendingTranslation> _translations;
 	int64_t _nextTranslation = 1;
+	struct PendingAi {
+		std::string plugin;
+		std::string account;
+		std::chrono::steady_clock::time_point deadline;
+		std::function<void(AiResult)> done;
+	};
+	std::mutex _aiMutex;
+	std::map<int64_t, PendingAi> _ai;
+	int64_t _nextAi = 1;
 	std::map<Key, std::map<std::string, Timer>> _timers;
 	std::set<std::string> _accounts;
 	bool _locked = false;

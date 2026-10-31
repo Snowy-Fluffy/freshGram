@@ -12,6 +12,7 @@ namespace fgpl {
 struct GrantDecision {
 	std::set<std::string> granted;
 	std::optional<std::set<int64_t>> chats;
+	std::string folder;
 };
 
 enum class Risk : uint8_t {
@@ -28,6 +29,9 @@ enum class Risk : uint8_t {
 	Background,
 	Clipboard,
 	Files,
+	Folder,
+	AiProvider,
+	FolderExfiltration,
 	PluginMessages,
 };
 
