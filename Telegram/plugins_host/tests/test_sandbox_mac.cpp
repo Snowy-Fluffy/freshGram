@@ -89,7 +89,7 @@ void CheckAllowed(const std::string &layers, const std::string &probe) {
 void TestProbesWorkWithoutTheSandbox() {
 	const auto controls = std::vector<std::string>{
 		"open_passwd", "opendir_root", "stat_root", "mkdir", "create_file",
-		"socket_inet", "socket_unix", "kill_parent", "fork", "spawn",
+		"bind_tcp", "connect_udp", "kill_parent", "fork", "spawn",
 		"sysctl_hostname", "shared_memory", "write_ipc", "read_ipc",
 	};
 	for (const auto &probe : controls) {
@@ -100,7 +100,7 @@ void TestProbesWorkWithoutTheSandbox() {
 void TestSandboxRefusesTheRest() {
 	const auto refused = std::vector<std::string>{
 		"open_passwd", "opendir_root", "stat_root", "mkdir", "create_file",
-		"socket_inet", "socket_unix", "connect_unix", "kill_parent", "fork",
+		"bind_tcp", "connect_udp", "connect_unix", "kill_parent", "fork",
 		"execve", "spawn", "mach_lookup", "task_for_parent",
 		"sysctl_hostname", "shared_memory",
 	};

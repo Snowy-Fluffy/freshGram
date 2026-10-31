@@ -3,6 +3,7 @@
 #include <bootstrap.h>
 #include <fcntl.h>
 #include <mach/mach.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <signal.h>
@@ -66,12 +67,27 @@ int CreateFile() {
 	return Outcome(fd >= 0);
 }
 
-int SocketInet() {
-	return Outcome(socket(AF_INET, SOCK_STREAM, 0) >= 0);
+int BindTcp() {
+	const auto fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (fd < 0) {
+		return Outcome(false);
+	}
+	auto address = sockaddr_in();
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	return Outcome(bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
 }
 
-int SocketUnix() {
-	return Outcome(socket(AF_UNIX, SOCK_STREAM, 0) >= 0);
+int ConnectUdp() {
+	const auto fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (fd < 0) {
+		return Outcome(false);
+	}
+	auto address = sockaddr_in();
+	address.sin_family = AF_INET;
+	address.sin_port = htons(9);
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	return Outcome(connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
 }
 
 int ConnectUnix() {
@@ -234,8 +250,8 @@ int main(int argc, char **argv) {
 		{ "stat_root", StatRoot },
 		{ "mkdir", MakeDirectory },
 		{ "create_file", CreateFile },
-		{ "socket_inet", SocketInet },
-		{ "socket_unix", SocketUnix },
+		{ "bind_tcp", BindTcp },
+		{ "connect_udp", ConnectUdp },
 		{ "connect_unix", ConnectUnix },
 		{ "kill_parent", KillParent },
 		{ "fork", Fork },
