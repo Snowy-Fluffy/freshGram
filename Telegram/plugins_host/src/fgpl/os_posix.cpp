@@ -136,13 +136,24 @@ Usage ProcessUsage(int pid) {
 	if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, sizeof(info)) != int(sizeof(info))) {
 		return {};
 	}
+	// The resident size leaves compressed pages out, the footprint counts them.
+	auto footprint = rusage_info_v2();
+	const auto measured = proc_pid_rusage(
+		pid,
+		RUSAGE_INFO_V2,
+		reinterpret_cast<rusage_info_t*>(&footprint)) == 0;
 	auto timebase = mach_timebase_info_data_t();
 	mach_timebase_info(&timebase);
 	const auto ticks = info.pti_total_user + info.pti_total_system;
 	const auto nanoseconds = (timebase.denom != 0)
 		? ticks * timebase.numer / timebase.denom
 		: ticks;
-	return { nanoseconds / 1000000, info.pti_resident_size };
+	return {
+		nanoseconds / 1000000,
+		measured
+			? std::max<uint64_t>(footprint.ri_phys_footprint, info.pti_resident_size)
+			: info.pti_resident_size,
+	};
 #else // __APPLE__
 	auto stream = std::ifstream("/proc/" + std::to_string(pid) + "/stat");
 	auto line = std::string();

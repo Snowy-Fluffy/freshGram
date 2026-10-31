@@ -207,6 +207,18 @@ if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 		add_test(NAME test_sandbox COMMAND test_sandbox)
 	endif()
 
+	if (APPLE)
+		add_executable(sandbox_probe_mac tests/sandbox_probe_mac.cpp)
+		target_link_libraries(sandbox_probe_mac PRIVATE fgpl_sandbox)
+		fgpl_warnings(sandbox_probe_mac)
+		add_executable(test_sandbox_mac tests/test_sandbox_mac.cpp)
+		target_compile_definitions(test_sandbox_mac PRIVATE
+			FGPL_SANDBOX_PROBE="$<TARGET_FILE:sandbox_probe_mac>")
+		add_dependencies(test_sandbox_mac sandbox_probe_mac)
+		fgpl_warnings(test_sandbox_mac)
+		add_test(NAME test_sandbox_mac COMMAND test_sandbox_mac)
+	endif()
+
 	if (NOT FGPL_SANITIZE)
 		add_executable(test_os tests/test_os.cpp)
 		target_link_libraries(test_os PRIVATE fgpl_client fgpl_sandbox)
