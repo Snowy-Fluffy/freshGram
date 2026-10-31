@@ -1233,14 +1233,13 @@ void InitialLoadTheme() {
 }
 
 bool ApplyDefaultNightMode() {
-	const auto NightByDefault = Platform::IsMacStoreBuild();
-	if (!NightByDefault
-		|| Window::Theme::IsNightMode()
+	if (Window::Theme::IsNightMode()
 		|| _themeKeyDay
 		|| _themeKeyNight
 		|| _themeKeyLegacy) {
 		return false;
 	}
+	Core::App().settings().setSystemDarkModeEnabled(false);
 	Core::App().startSettingsAndBackground();
 	Window::Theme::ToggleNightMode();
 	Window::Theme::KeepApplied();
