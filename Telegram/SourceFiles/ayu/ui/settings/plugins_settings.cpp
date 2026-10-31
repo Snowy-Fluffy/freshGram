@@ -507,7 +507,6 @@ void FillComponentsBox(
 			return status.installed;
 		}),
 		anim::type::instant);
-	Ui::AddSkip(container);
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -575,9 +574,30 @@ void AddPluginsSettings(
 		}
 	});
 	Ui::AddSkip(container);
+	const auto problem = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
 	Ui::AddDividerText(
-		container,
+		problem->entity(),
 		FreshPlugins::StateValue() | rpl::map(StateText));
+	const auto plain = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+	Ui::AddDivider(plain->entity());
+	const auto hasProblem = [](FreshPlugins::State state) {
+		return state != FreshPlugins::State::Ready
+			&& state != FreshPlugins::State::Disabled;
+	};
+	problem->toggleOn(
+		FreshPlugins::StateValue() | rpl::map(hasProblem),
+		anim::type::instant);
+	plain->toggleOn(
+		FreshPlugins::StateValue() | rpl::map([=](FreshPlugins::State state) {
+			return !hasProblem(state);
+		}),
+		anim::type::instant);
 
 #ifdef FRESHGRAM_PLUGINS
 	const auto ready = container->add(
@@ -726,6 +746,7 @@ void AddPluginsNetworkSettings(
 			AyuSettings::getInstance().setPluginsBlockUdp(value);
 		});
 	Ui::AddSkip(container);
+	Ui::AddDivider(container);
 	Ui::AddSkip(container);
 	Settings::AddButtonWithLabel(
 		container,
@@ -736,7 +757,6 @@ void AddPluginsNetworkSettings(
 	)->addClickHandler([=] {
 		ShowPluginsProxiesBox(controller);
 	});
-	Ui::AddSkip(container);
 }
 
 } // namespace AyuUi

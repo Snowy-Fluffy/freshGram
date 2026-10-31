@@ -3091,7 +3091,6 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		for (const auto request : required) {
 			addRow(request);
 		}
-		Ui::AddSkip(container);
 	}
 	if (!optional.empty()) {
 		Ui::AddSkip(container);
