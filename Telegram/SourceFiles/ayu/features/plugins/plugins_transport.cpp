@@ -12,6 +12,7 @@
 
 #include <QtCore/QDateTime>
 #include <QtCore/QDeadlineTimer>
+#include <QtCore/QtEndian>
 #include <QtCore/QUrl>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QHostInfo>
@@ -544,7 +545,7 @@ struct Parsed {
 		result.append(reinterpret_cast<const char*>(&raw), sizeof(raw));
 	} else if (ip) {
 		result.append(char(1));
-		const auto raw = htonl(address.toIPv4Address());
+		const auto raw = qToBigEndian(quint32(address.toIPv4Address()));
 		result.append(reinterpret_cast<const char*>(&raw), sizeof(raw));
 	} else if (host.empty() || host.size() > 255) {
 		return Error("invalid", u"a bad host name"_q);
@@ -596,7 +597,7 @@ struct Parsed {
 		}
 		auto value = uint32_t();
 		std::memcpy(&value, raw, sizeof(value));
-		bound = QHostAddress(quint32(ntohl(value)));
+		bound = QHostAddress(qFromBigEndian(quint32(value)));
 	} break;
 	case 4: {
 		char raw[16] = {};
