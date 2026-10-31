@@ -3062,7 +3062,7 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 				: (danger == fgpl::Danger::Medium)
 				? st::pluginPermissionButtonStyleMedium
 				: st::pluginPermissionButtonStyleLow);
-		button->setIconColor(&st::windowFgActive);
+		button->setIconColor(&st::settingsIconFg);
 		if (request->required) {
 			button->setToggleHidden(true);
 		}
