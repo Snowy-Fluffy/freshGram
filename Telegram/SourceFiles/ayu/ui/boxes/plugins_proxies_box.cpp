@@ -11,6 +11,7 @@
 #include "styles/style_connection_box.h"
 #include "styles/style_layers.h"
 #include "ui/layers/generic_box.h"
+#include "ui/vertical_list.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/padding_wrap.h"
