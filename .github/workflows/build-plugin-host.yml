@@ -21,6 +21,76 @@ permissions:
   contents: read
 
 jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    # Rocky 8 keeps the host on the oldest glibc the runtime supports. Docker's
+    # default seccomp profile would block the sandbox system calls.
+    container:
+      image: rockylinux:8
+      options: --security-opt seccomp=unconfined
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            wasmtime: x86_64-linux
+            platform: linux-x86_64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            wasmtime: aarch64-linux
+            platform: linux-aarch64
+
+    steps:
+      - name: Install tools
+        run: |
+          dnf -q -y install dnf-plugins-core
+          dnf config-manager --set-enabled powertools
+          dnf -q -y install gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils \
+            cmake make git openssl-devel zlib-devel python3.11
+
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Fetch Wasmtime
+        run: python3.11 Telegram/plugins_host/runtime/fetch_wasmtime.py ${{ matrix.wasmtime }}
+
+      - name: Configure
+        run: |
+          source /opt/rh/gcc-toolset-13/enable
+          cmake -S Telegram/plugins_host -B build -D CMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          source /opt/rh/gcc-toolset-13/enable
+          cmake --build build -j"$(nproc)"
+
+      - name: Check what the host depends on
+        run: python3.11 Telegram/plugins_host/runtime/check_host.py build/fgpl_plugin_host
+
+      - name: Start the host without a channel
+        run: |
+          set +e
+          build/fgpl_plugin_host
+          test $? -eq 64
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j4
+
+      - name: Strip the host
+        run: |
+          mkdir dist
+          strip -o dist/fgpl_plugin_host build/fgpl_plugin_host
+
+      - name: Upload the host
+        uses: actions/upload-artifact@v4
+        with:
+          name: fgpl_plugin_host-${{ matrix.platform }}
+          path: dist/fgpl_plugin_host
+          if-no-files-found: error
+
   windows:
     name: Windows ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}

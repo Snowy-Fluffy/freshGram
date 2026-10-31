@@ -35,7 +35,10 @@ The platforms are `windows-x86_64`, `windows-arm64`, `macos-x86_64` and `macos-a
 `linux-x86_64` and `linux-aarch64`. `python/` and `sdk/` are the same bytes everywhere; only the
 host differs, and it is built on the platform itself by the `Build plugin host` workflow, which
 also runs the tests there. Its artifacts `fgpl_plugin_host-<platform>` are the input of
-`runtime/add_platform.py`:
+`runtime/add_platform.py`. The workflow also builds and tests the Linux host in a Rocky 8
+container, on a native aarch64 runner too (`fgpl_plugin_host-linux-x86_64`, `-linux-aarch64`).
+Those artifacts only check the Linux code; the Linux bundles still come from `build_bundle.sh`,
+so their host hash is a different one.
 
 ```
 runtime/build_bundle.sh <revision>
