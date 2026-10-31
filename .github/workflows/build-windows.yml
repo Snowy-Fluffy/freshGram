@@ -174,7 +174,7 @@ jobs:
           RUNTIME_KEY: ${{ vars.FRESHGRAM_RUNTIME_KEY }}
         run: |
           cd freshGram\Telegram
-          call configure.bat ${{ matrix.arch == 'arm64' && 'arm' || matrix.arch }} -D TDESKTOP_API_ID=%API_ID% -D TDESKTOP_API_HASH=%API_HASH% -D FRESHGRAM_RUNTIME_KEY=%RUNTIME_KEY% -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          call configure.bat ${{ matrix.arch == 'arm64' && 'arm qt6' || matrix.arch }} -D TDESKTOP_API_ID=%API_ID% -D TDESKTOP_API_HASH=%API_HASH% -D FRESHGRAM_RUNTIME_KEY=%RUNTIME_KEY% -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
 
       - name: Build
         id: build
