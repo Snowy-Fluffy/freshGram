@@ -416,17 +416,10 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 	auto info = PROCESS_INFORMATION();
 	auto created = false;
 	auto problems = std::string();
-	// The mitigations are hardening on top of the container, and the full
-	// environment is the way out when a container refuses a bare one.
-	struct Attempt {
-		bool mitigations;
-		bool bareEnvironment;
-	};
-	for (const auto attempt : {
-			Attempt{ true, true },
-			Attempt{ false, true },
-			Attempt{ true, false },
-			Attempt{ false, false } }) {
+	// The mitigations are required, a host that cannot get them does not
+	// start. The full environment is the way out when a container refuses
+	// a bare one.
+	for (const auto bareEnvironment : { true, false }) {
 		auto size = SIZE_T(0);
 		InitializeProcThreadAttributeList(nullptr, 4, 0, &size);
 		auto storage = std::vector<uint8_t>(size);
@@ -461,7 +454,7 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 				sizeof(capabilities),
 				"container");
 		}
-		if (ok && attempt.mitigations) {
+		if (ok) {
 			ok = update(
 				PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
 				&mitigations,
@@ -487,14 +480,13 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 			TRUE,
 			EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | DETACHED_PROCESS
 				| CREATE_UNICODE_ENVIRONMENT,
-			attempt.bareEnvironment ? environment.data() : nullptr,
+			bareEnvironment ? environment.data() : nullptr,
 			nullptr,
 			&startup.StartupInfo,
 			&info) != FALSE;
 		if (!created) {
 			problems += std::string(" [create ")
-				+ (attempt.mitigations ? "m" : "-")
-				+ (attempt.bareEnvironment ? "b" : "-") + " "
+				+ (bareEnvironment ? "b" : "-") + " "
 				+ std::to_string(GetLastError()) + "]";
 		}
 		DeleteProcThreadAttributeList(list);
