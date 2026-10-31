@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <component type="desktop">
-    <id>io.github.snowyfluffy.freshgram</id>
+    <id>io.github.snowy-fluffy.freshgram</id>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0</project_license>
     <name>freshGram</name>
@@ -67,7 +67,7 @@
         <content_attribute id="money-gambling">none</content_attribute>
         <content_attribute id="money-advertising">moderate</content_attribute>
     </content_rating>
-    <launchable type="desktop-id">io.github.snowyfluffy.freshgram.desktop</launchable>
+    <launchable type="desktop-id">io.github.snowy-fluffy.freshgram.desktop</launchable>
     <provides>
         <binary>freshGram</binary>
     </provides>

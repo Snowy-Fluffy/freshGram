@@ -1,4 +1,4 @@
-app-id: io.github.snowyfluffy.freshgram
+app-id: io.github.snowy-fluffy.freshgram
 runtime: org.gnome.Platform
 runtime-version: '51'
 sdk: org.gnome.Sdk
@@ -20,8 +20,8 @@ modules:
     build-commands:
       - cp -a usr/. /app/
       - rm -rf /app/share/icons/hicolor/512x512@2
-      - sed -i -e 's|^Exec=env DESKTOPINTEGRATION=1 freshGram|Exec=freshGram|' -e '/^TryExec=/d' /app/share/applications/io.github.snowyfluffy.freshgram.desktop
-      - sed -i 's|^Exec=.*|Exec=/app/bin/freshGram|' /app/share/dbus-1/services/io.github.snowyfluffy.freshgram.service
+      - sed -i -e 's|^Exec=env DESKTOPINTEGRATION=1 freshGram|Exec=freshGram|' -e '/^TryExec=/d' /app/share/applications/io.github.snowy-fluffy.freshgram.desktop
+      - sed -i 's|^Exec=.*|Exec=/app/bin/freshGram|' /app/share/dbus-1/services/io.github.snowy-fluffy.freshgram.service
     sources:
       - type: dir
         path: root
