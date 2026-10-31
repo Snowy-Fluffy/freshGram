@@ -39,7 +39,7 @@ also runs the tests there. Its artifacts `fgpl_plugin_host-<platform>` are the i
 
 ```
 runtime/build_bundle.sh <revision>
-runtime/add_platform.py ~/freshgram-runtime/rev-<revision> windows-x86_64 fgpl_plugin_host.exe build-bundle/fgpl_tool
+runtime/add_platform.py ~/freshgram-runtime/rev-<revision> windows-x86_64 fgpl_plugin_host.exe build-rel/fgpl_tool
 ```
 
 It takes `python/` and `sdk/` from the Linux bundle of that directory, packs the new zip and appends

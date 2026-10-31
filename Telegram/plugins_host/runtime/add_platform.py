@@ -4,7 +4,8 @@
 usage: add_platform.py <rev-dir> <platform> <host-binary> <fgpl_tool>
   platform is windows-x86_64, windows-arm64, macos-x86_64 or macos-arm64;
   the host is the signed binary from the build-plugin-host workflow;
-  fgpl_tool is the Linux build that build_bundle.sh leaves in build-bundle/.
+  fgpl_tool is a build that runs on this machine, for example build-rel/fgpl_tool
+  (the one in build-bundle/ is built for Rocky Linux and only runs in its container).
 
 python/ and sdk/ are taken from a Linux bundle in the directory: they are the
 same bytes on every platform. The entry is appended to runtime.unsigned.json.
