@@ -88,6 +88,6 @@
   </qresource>
   <qresource prefix="/misc">
     <file alias="default_shortcuts-custom.json">../../default_shortcuts-custom.json</file>
-    <file alias="io.github.snowyfluffy.freshgram.desktop">../../../../lib/xdg/io.github.snowyfluffy.freshgram.desktop</file>
+    <file alias="io.github.snowy-fluffy.freshgram.desktop">../../../../lib/xdg/io.github.snowy-fluffy.freshgram.desktop</file>
   </qresource>
 </RCC>

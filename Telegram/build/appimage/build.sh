@@ -21,7 +21,7 @@ aarch64)
 esac
 tool_url=https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-$machine.AppImage
 runtime_url=https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-$machine
-app_id=io.github.snowyfluffy.freshgram
+app_id=io.github.snowy-fluffy.freshgram
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
