@@ -18,6 +18,10 @@ if (NOT FRESHGRAM_DISABLE_RECOGNITION AND NOT FRESHGRAM_DISABLE_TRANSLATION)
         if (APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
             set(CMAKE_SYSTEM_PROCESSOR x86_64)
         endif()
+        # Windows reports ARM64 in capitals, which its match for arm64 misses.
+        if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64)$")
+            set(CMAKE_SYSTEM_PROCESSOR arm64)
+        endif()
 
         set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
         set(CMAKE_SKIP_INSTALL_RULES ON)
