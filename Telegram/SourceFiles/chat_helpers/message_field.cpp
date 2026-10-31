@@ -705,13 +705,22 @@ void InitMessageFieldHandlers(
 }
 
 void InitMessageFieldGeometry(not_null<Ui::InputField*> field) {
-	field->setMinHeight(
-		st::historySendSize.height() - 2 * st::historySendPadding);
+	const auto minHeight = st::historySendSize.height()
+		- 2 * st::historySendPadding;
+	field->setMinHeight(minHeight);
 	field->setMaxHeight(st::historyComposeFieldMaxHeight);
 
 	// st::messageSendingAnimationTextFromOffset.
-	field->setDocumentMargin(4.);
-	field->setAdditionalMargin(style::ConvertScale(4) - 4);
+	constexpr auto kDocumentMargin = 4;
+	field->setDocumentMargin(kDocumentMargin);
+	const auto side = style::ConvertScale(4) - kDocumentMargin;
+	// A fixed margin leaves the line higher the larger the scale and font.
+	const auto &text = field->st().style;
+	const auto lineHeight = std::max(text.lineHeight, text.font->height);
+	const auto vertical = std::max(
+		(minHeight - lineHeight) / 2 - kDocumentMargin,
+		side);
+	field->setAdditionalMargins({ side, vertical, side, vertical });
 }
 
 std::shared_ptr<Ui::ChatStyle> InitMessageField(
