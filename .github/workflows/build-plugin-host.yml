@@ -214,8 +214,8 @@ jobs:
 
       # Apple Silicon starts only signed code. The signature has to be on the
       # binary before it is hashed into the runtime index. The hardened
-      # runtime is on, as it is in a notarized release, so the tests run
-      # with the entitlements the shipped host gets.
+      # runtime is on, so the tests run with the entitlements the shipped
+      # host gets.
       - name: Sign
         run: |
           codesign --force --sign - --options runtime \
