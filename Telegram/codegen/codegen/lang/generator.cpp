@@ -422,10 +422,7 @@ ushort GetTagIndex(QLatin1String tag) {\n\
 
 	source_->stream() << "\
 }\n\
-\n\
-ushort GetKeyIndex(QLatin1String key) {\n\
-	auto size = key.size();\n\
-	auto data = key.data();\n";
+\n";
 
 	auto indices = std::map<QString, QString>();
 	for (auto i = 0, total = int(langpack_.entries.size()); i != total; ++i) {
@@ -459,11 +456,39 @@ ushort GetKeyIndex(QLatin1String key) {\n\
 		}
 	}
 
-	writeSetSearch(keysSet, [&](const QString &key) {
+	// One huge function does not compile in MSVC for ARM64 (C1053).
+	constexpr auto kKeysPerPart = 1500;
+	const auto computeKey = [&](const QString &key) {
 		auto it = taggedKeys.find(key);
 		const auto name = (it != taggedKeys.end()) ? it->second : key;
 		return indexOfKey(name);
-	}, "kKeysCount");
+	};
+	auto partsCount = 0;
+	for (auto i = keysSet.begin(); i != keysSet.end();) {
+		auto part = std::set<QString, std::greater<>>();
+		for (; i != keysSet.end() && int(part.size()) != kKeysPerPart; ++i) {
+			part.insert(*i);
+		}
+		source_->stream() << "\
+static ushort GetKeyIndexPart" << partsCount << "(int size, const char *data) {\n";
+		writeSetSearch(part, computeKey, "kKeysCount");
+		source_->stream() << "\
+}\n\
+\n";
+		++partsCount;
+	}
+	source_->stream() << "\
+ushort GetKeyIndex(QLatin1String key) {\n\
+	const auto size = int(key.size());\n\
+	const auto data = key.data();\n";
+	for (auto i = 0; i != partsCount; ++i) {
+		source_->stream() << "\
+	if (const auto index = GetKeyIndexPart" << i << "(size, data); index != kKeysCount) {\n\
+		return index;\n\
+	}\n";
+	}
+	source_->stream() << "\
+	return kKeysCount;\n";
 	header_->popNamespace().newline();
 
 	source_->stream() << "\
