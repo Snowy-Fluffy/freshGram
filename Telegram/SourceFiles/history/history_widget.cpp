@@ -8023,7 +8023,8 @@ void HistoryWidget::moveFieldControls() {
 		_silent->moveToRight(right, buttonsBottom);
 	}
 	const auto kbShowShown = _history && !_kbShown && _keyboard->hasMarkup();
-	if (kbShowShown || (_cmdStartShown && settings.showCommandsButtonInMessageField()) || _silent) {
+	const auto silentShown = _silent && !_silent->isHidden();
+	if (kbShowShown || (_cmdStartShown && settings.showCommandsButtonInMessageField()) || silentShown) {
 		right += _botCommandStart->width();
 	}
 	if (!_translate->isHidden()) {
