@@ -1646,8 +1646,8 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 				_botCommandChosen.fire({
 					user,
 					row.pluginAmbiguous
-						? u"/%1@%2 "_q.arg(command, row.plugin)
-						: u"/%1 "_q.arg(command),
+						? u"/%1@%2"_q.arg(command, row.plugin)
+						: u"/%1"_q.arg(command),
 					FieldAutocompleteChooseMethod::ByTab,
 				});
 				return true;
