@@ -49,13 +49,16 @@ namespace {
 
 #if defined Q_OS_WIN
 #define FRESH_RUNTIME_OS "windows"
+#define FRESH_RUNTIME_ARM "-arm64"
 #elif defined Q_OS_MAC
 #define FRESH_RUNTIME_OS "macos"
+#define FRESH_RUNTIME_ARM "-arm64"
 #else
 #define FRESH_RUNTIME_OS "linux"
+#define FRESH_RUNTIME_ARM "-aarch64"
 #endif
 #if defined Q_PROCESSOR_ARM_64
-constexpr auto kPlatform = FRESH_RUNTIME_OS "-aarch64";
+constexpr auto kPlatform = FRESH_RUNTIME_OS FRESH_RUNTIME_ARM;
 #else
 constexpr auto kPlatform = FRESH_RUNTIME_OS "-x86_64";
 #endif
