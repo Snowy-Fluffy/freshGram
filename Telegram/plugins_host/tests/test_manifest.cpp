@@ -254,6 +254,10 @@ void TestRejections() {
 			{ "chat.typing", "chats.activity" },
 			{ "chat.read", "chats.activity" },
 			{ "chat.member", "chats.activity" },
+			{ "chat.title_changed", "chats.activity" },
+			{ "story.new", "stories.read" },
+			{ "call.incoming", "calls.activity" },
+			{ "call.ended", "calls.activity" },
 			{ "user.status", "users.presence" },
 			{ "app.focus", "app.activity" },
 			{ "app.blur", "app.activity" } }) {
@@ -669,7 +673,7 @@ void TestIncomingHook() {
 		return;
 	}
 	const auto &hook = parsed.value().incoming;
-	CHECK(hook.declared && hook.block && hook.hold);
+	CHECK(hook.declared && hook.block && hook.hold && !hook.service);
 	CHECK(!parsed.value().outgoing.declared);
 	auto info = IncomingInfo();
 	info.chat = 5;
@@ -686,6 +690,12 @@ void TestIncomingHook() {
 		cbor::Value::FromMap({ { "id", Text("messages.transform_incoming") }, { "reason", Text("x") } }),
 	}));
 	Set(plain, "contributes.incoming.onFailure", Text("pass"));
+	Set(plain, "contributes.incoming.service", cbor::Value::FromBool(true));
+	const auto serviced = Parse(plain);
+	CHECK(serviced.ok() && serviced.value().incoming.service);
+	Set(plain, "contributes.incoming.service", Text("yes"));
+	CHECK(!Parse(plain).ok());
+	Remove(plain, "contributes.incoming.service");
 	const auto swapped = Parse(plain);
 	CHECK(swapped.ok() && swapped.value().incoming.declared && !swapped.value().incoming.hold);
 	CHECK(HostFeatures().contains("messages.transform_incoming"));
@@ -718,7 +728,7 @@ void TestOutgoingFilter() {
 		return;
 	}
 	const auto &hook = parsed.value().outgoing;
-	CHECK(hook.declared && hook.block);
+	CHECK(hook.declared && hook.block && !hook.media);
 	CHECK(hook.filter.chats == std::set<int64_t>({ 5, 6 }));
 	CHECK(hook.filter.chatTypes.size() == 2);
 
@@ -734,6 +744,12 @@ void TestOutgoingFilter() {
 	info.chatType = "channel";
 	CHECK(Matches(hook.filter, info));
 	CHECK(Matches(OutgoingFilter(), info));
+
+	Set(document, "contributes.outgoing.media", cbor::Value::FromBool(true));
+	const auto withMedia = Parse(document);
+	CHECK(withMedia.ok() && withMedia.value().outgoing.media);
+	Set(document, "contributes.outgoing.media", Text("yes"));
+	CHECK(!Parse(document).ok());
 }
 
 void TestSignedTextIgnoresTheSignature() {

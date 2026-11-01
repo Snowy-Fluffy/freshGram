@@ -245,13 +245,16 @@ class _Net(_Namespace):
 
 
 class _Ui(_Namespace):
-    def toast(self, text, action=None, label=None, undo=False, duration=None):
+    def toast(self, text, action=None, label=None, undo=False, duration=None, title=None):
         """Show a toast. With an action id the toast gets a button (label, or "Undo"
         for undo=True) and on_toast(action) runs when it is pressed.
 
+        title adds a first line of up to 64 bytes above the text.
         duration is in seconds, from 1 to 8 (5 for a toast with a button).
         """
         arguments = {}
+        if title:
+            arguments["title"] = title
         if action is not None:
             arguments["action"] = {"id": action, **_given(label=label)}
         if undo:
@@ -317,7 +320,16 @@ def _given(**arguments):
 
 
 def _format(markdown):
-    return {"format": "markdown"} if markdown else {}
+    # True or "markdown" parses **bold** and the like, "html" parses <b>bold</b>.
+    if markdown is True or markdown == "markdown":
+        return {"format": "markdown"}
+    elif markdown == "html":
+        return {"format": "html"}
+    return {}
+
+
+def _entities(entities):
+    return {"entities": [dict(entity) for entity in entities]} if entities else {}
 
 
 class _Chats(_Namespace):
@@ -417,7 +429,12 @@ class _Messages(_Namespace):
 
     def send(self, chat, text, reply_to=0, topic=0, silent=False, schedule=0, markdown=False,
              custom_emoji=None, entities=None):
-        """Send a message; schedule is a unix time, markdown parses **bold** and the like.
+        """Send a message; schedule is a unix time.
+
+        markdown=True parses **bold**, __italic__, ~~strike~~, ||spoiler||, `code`,
+        ```lang blocks, [text](url), ![emoji](tg://emoji?id=N), > quotes and **> expandable
+        quotes; markdown="html" parses <b>, <i>, <u>, <s>, <code>, <pre>, <a href>,
+        <tg-spoiler>, <blockquote expandable>, <emoji id=N> and <br>. Bad markup raises Invalid.
 
         custom_emoji is a list of {"offset", "length", "id"}: the part of the text
         (UTF-16 units) that is shown as the custom emoji with this id (Premium).
@@ -438,8 +455,9 @@ class _Messages(_Namespace):
             **_format(markdown))
 
     def send_media(self, chat, data, name, caption="", kind="auto", markdown=False,
-                   reply_to=0, topic=0, silent=False, schedule=0, spoiler=False, duration=0):
-        """Send a file (messages.send), up to 100 MiB.
+                   reply_to=0, topic=0, silent=False, schedule=0, spoiler=False, duration=0,
+                   entities=None):
+        """Send a file (messages.send), up to 100 MiB; the caption is formatted as in send().
 
         kind "auto" sends photos and videos as media, "file" as a document,
         "voice" an OGG/Opus voice message (needs duration in seconds).
@@ -460,6 +478,7 @@ class _Messages(_Namespace):
                 schedule=schedule,
                 spoiler=spoiler,
                 duration=duration),
+            **_entities(entities),
             **_format(markdown))
 
     def edit(self, chat, message, text, markdown=False, entities=None):
@@ -474,7 +493,7 @@ class _Messages(_Namespace):
             **_format(markdown))
 
     def edit_media(self, chat, message, data, name, caption="", kind="auto",
-                   markdown=False, spoiler=False):
+                   markdown=False, spoiler=False, entities=None):
         """Replace the media of a message you sent (messages.edit), up to 100 MiB.
 
         kind "auto" or "file"; caption replaces the old one. Await it: the call
@@ -489,6 +508,7 @@ class _Messages(_Namespace):
             name=name,
             kind=kind,
             **_given(caption=caption, spoiler=spoiler),
+            **_entities(entities),
             **_format(markdown))
 
     def delete(self, chat, messages, everyone=True):
@@ -661,6 +681,47 @@ class _Bots(_Namespace):
         """
         return self._call(
             "bots.press_button", chat=chat, id=_ref(message), row=row, column=column)
+
+
+class _Image(_Namespace):
+    """Pictures (image.process): the app decodes and encodes them, a PNG, a JPEG or a WebP up to 16 MiB.
+
+    Each call answers {"format", "width", "height", "data"} (no data for info); format is "png",
+    "jpeg" or "webp". Animated pictures are refused, and the app asks for one call every 100 ms.
+    """
+
+    def info(self, data):
+        """The format and the size of a picture."""
+        return self._call("image.info", data=bytes(data))
+
+    def resize(self, data, width=0, height=0, fit="contain", format=None, quality=90):
+        """Resize to a box of width x height; with one of them 0 the ratio stays.
+
+        fit "contain" keeps the whole picture inside the box, "cover" fills the box and cuts
+        the rest, "exact" stretches it (the last two need both sizes). Up to 8192 per side.
+        """
+        return self._call(
+            "image.resize",
+            data=bytes(data),
+            fit=fit,
+            quality=quality,
+            **_given(width=width, height=height, format=format))
+
+    def convert(self, data, format, quality=90):
+        """Re-encode as "png", "jpeg" or "webp"; quality is 1 to 100."""
+        return self._call("image.convert", data=bytes(data), format=format, quality=quality)
+
+    def crop(self, data, x, y, width, height, format=None, quality=90):
+        """Keep the part of the picture with the corner x, y and this size."""
+        return self._call(
+            "image.crop",
+            data=bytes(data),
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            quality=quality,
+            **_given(format=format))
 
 
 class _Users(_Namespace):
@@ -914,6 +975,7 @@ folders = _Folders(_sync_call)
 settings = _Settings(_sync_call)
 media = _Media(_sync_call)
 users = _Users(_sync_call)
+image = _Image(_sync_call)
 bots = _Bots(_sync_call)
 ghost = _Ghost(_sync_call)
 channels = _Channels(_sync_call)
@@ -1008,7 +1070,7 @@ def on_plugin_message(sender=None):
 def on_setting(item_id=None):
     def register(function):
         def wrapper(event):
-            if event.get("type") == "settings.open":
+            if event.get("type") in ("settings.open", "settings.long_click"):
                 return None
             if item_id is None or event.get("id") == item_id:
                 return function(event)
@@ -1027,6 +1089,8 @@ def on_dialog(item_id=None):
     """Run for clicks and changes in the plugin's dialog, and when it closes."""
     def register(function):
         def wrapper(event):
+            if event.get("type") == "dialog.long_click":
+                return None
             if item_id is None or event.get("id") == item_id:
                 return function(event)
         _event_handlers.append(("dialog.*", wrapper))
@@ -1038,9 +1102,28 @@ def on_window(window_id, item_id=None):
     """Run for clicks and changes in a window of ui.window, and when it closes."""
     def register(function):
         def wrapper(event):
+            if event.get("type") == "window.long_click":
+                return None
             if event.get("window") == window_id and (item_id is None or event.get("id") == item_id):
                 return function(event)
         _event_handlers.append(("window.*", wrapper))
+        return function
+    return register
+
+
+def on_long_click(item_id=None, window=None):
+    """Run when the user long-presses (or right-clicks) an item that has long_click: true.
+
+    It works for the settings page, the dialog and the windows; window limits it to one window.
+    """
+    def register(function):
+        def wrapper(event):
+            if window is not None and event.get("window") != window:
+                return None
+            if item_id is None or event.get("id") == item_id:
+                return function(event)
+        for pattern in ("settings.long_click", "dialog.long_click", "window.long_click"):
+            _event_handlers.append((pattern, wrapper))
         return function
     return register
 
@@ -1208,6 +1291,46 @@ def on_member(function):
     The event has chat, user and joined.
     """
     _event_handlers.append(("chat.member", function))
+    return function
+
+
+def on_title_changed(function):
+    """Run when a group or channel is renamed (chats.activity).
+
+    The event has chat, title and old_title (missing when the app had not
+    seen the earlier title).
+    """
+    _event_handlers.append(("chat.title_changed", function))
+    return function
+
+
+def on_pinned(function):
+    """Run when a message is pinned or unpinned (messages.read).
+
+    It is a message event (see message.new) with pinned: true or false. Only
+    a pin that the app hears about while it runs is reported.
+    """
+    _event_handlers.append(("message.pinned", function))
+    return function
+
+
+def on_story(function):
+    """Run when someone posts a new story (stories.read).
+
+    The event has chat (the poster), story_id and date, never the story itself.
+    """
+    _event_handlers.append(("story.new", function))
+    return function
+
+
+def on_call(function):
+    """Run for incoming calls and when a call ends (calls.activity).
+
+    call.incoming has chat (the caller) and incoming; call.ended has chat,
+    incoming, reason ("ended", "busy", "failed" or "other_device") and duration
+    in seconds.
+    """
+    _event_handlers.append(("call.*", function))
     return function
 
 

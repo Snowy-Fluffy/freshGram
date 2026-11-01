@@ -427,30 +427,58 @@ bool Matches(const MenuWhen &when, const MenuContext &context) {
 	return true;
 }
 
-const char *EventPermission(const std::string &event) {
+namespace {
+
+const std::map<std::string, const char*> &EventPermissions() {
 	static const auto permissions = std::map<std::string, const char*>{
 		{ "message.new", "messages.read" },
 		{ "message.edited", "messages.read" },
 		{ "message.deleted", "messages.read" },
 		{ "message.reaction", "messages.read" },
+		{ "message.pinned", "messages.read" },
 		{ "chat.opened", "chats.active" },
 		{ "chat.typing", "chats.activity" },
 		{ "chat.read", "chats.activity" },
 		{ "chat.member", "chats.activity" },
+		{ "chat.title_changed", "chats.activity" },
 		{ "user.status", "users.presence" },
+		{ "story.new", "stories.read" },
+		{ "call.incoming", "calls.activity" },
+		{ "call.ended", "calls.activity" },
 		{ "app.focus", "app.activity" },
 		{ "app.blur", "app.activity" },
 	};
+	return permissions;
+}
+
+} // namespace
+
+const char *EventPermission(const std::string &event) {
+	const auto &permissions = EventPermissions();
 	const auto i = permissions.find(event);
 	return (i != permissions.end()) ? i->second : nullptr;
 }
 
+const std::vector<std::string> &KnownEvents() {
+	static const auto events = [] {
+		auto result = std::vector<std::string>();
+		for (const auto &[name, permission] : EventPermissions()) {
+			result.push_back(name);
+		}
+		return result;
+	}();
+	return events;
+}
+
 bool EventIsChatScoped(const std::string &event) {
 	return event.rfind("message.", 0) == 0
+		|| event.rfind("call.", 0) == 0
 		|| event == "chat.opened"
 		|| event == "chat.typing"
 		|| event == "chat.read"
-		|| event == "chat.member";
+		|| event == "chat.member"
+		|| event == "chat.title_changed"
+		|| event == "story.new";
 }
 
 const std::set<std::string> &OutgoingChatTypes() {
@@ -491,6 +519,7 @@ const std::set<std::string> &HostFeatures() {
 		for (const auto &surface : MenuSurfaces()) {
 			result.insert("menu." + surface);
 		}
+		result.insert("format.html");
 		return result;
 	}();
 	return features;
@@ -509,6 +538,7 @@ const std::set<std::string> &KnownPermissions() {
 		"messages.edit", "messages.delete", "messages.react", "users.info",
 		"chats.active", "messages.ids", "chats.activity", "users.presence",
 		"app.activity", "translate.provide", "ai.provide", "bots.inline", "chats.manage",
+		"stories.read", "calls.activity", "image.process",
 		"messages.transform_incoming",
 		"contacts.manage", "ghost.control", "chats.moderate",
 	};
@@ -785,7 +815,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				}
 			}
 		}
-		const auto events = reader.array(*contributes, "events", "contributes", 16);
+		const auto events = reader.array(*contributes, "events", "contributes", 32);
 		for (const auto &item : events ? *events : cbor::Array()) {
 			const auto name = item.asText();
 			if (!name || !EventPermission(*name)) {
@@ -914,11 +944,19 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				bool &declared,
 				bool &block,
 				bool *hold,
-				OutgoingFilter &parsed) {
+				OutgoingFilter &parsed,
+				bool *service = nullptr,
+				bool *media = nullptr) {
 			const auto where = std::string("contributes.") + key;
 			auto allowed = std::set<std::string>{ "onFailure", "filter" };
 			if (hold) {
 				allowed.insert("mode");
+			}
+			if (service) {
+				allowed.insert("service");
+			}
+			if (media) {
+				allowed.insert("media");
 			}
 			const auto hook = reader.object(*contributes, key, "contributes", false, allowed);
 			if (!hook) {
@@ -936,6 +974,12 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					reader.error(where, "mode must be 'swap' or 'hold'");
 				}
 				*hold = (mode == "hold");
+			}
+			if (service) {
+				*service = reader.boolean(*hook, "service", where).value_or(false);
+			}
+			if (media) {
+				*media = reader.boolean(*hook, "media", where).value_or(false);
 			}
 			if (const auto filter = reader.object(*hook, "filter", where, false, {
 					"chats", "chat_types" })) {
@@ -960,8 +1004,8 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				}
 			}
 		};
-		readHook("outgoing", manifest.outgoing.declared, manifest.outgoing.block, nullptr, manifest.outgoing.filter);
-		readHook("incoming", manifest.incoming.declared, manifest.incoming.block, &manifest.incoming.hold, manifest.incoming.filter);
+		readHook("outgoing", manifest.outgoing.declared, manifest.outgoing.block, nullptr, manifest.outgoing.filter, nullptr, &manifest.outgoing.media);
+		readHook("incoming", manifest.incoming.declared, manifest.incoming.block, &manifest.incoming.hold, manifest.incoming.filter, &manifest.incoming.service);
 	}
 
 	ReadDependencies(reader, document, "dependencies", true, manifest.id, manifest.dependencies);

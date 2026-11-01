@@ -34,6 +34,8 @@ struct LogLine {
 struct LogRing {
 	std::mutex mutex;
 	std::deque<LogLine> lines;
+	std::string plugin;
+	std::function<void(const std::string &plugin, const LogLine &line)> sink;
 };
 
 class SharedStorage final : public Storage {
@@ -103,6 +105,8 @@ struct ManagerServices {
 	std::function<DataProvider*(const std::string &account)> dataFor;
 	Transport *transport = nullptr;
 	std::function<int64_t()> clockMs;
+	// Called for every line of a plugin's log, from whichever thread wrote it.
+	std::function<void(const std::string &plugin, const LogLine &line)> logSink;
 };
 
 struct ManagerConfig {
@@ -179,7 +183,6 @@ struct OutgoingResult {
 	bool blocked = false;
 	bool dropped = false;
 	std::string text;
-	bool markdown = false;
 	std::optional<std::vector<TextEntity>> entities;
 	std::optional<bool> silent;
 	std::optional<int64_t> schedule;
@@ -192,7 +195,6 @@ struct OutgoingResult {
 struct IncomingResult {
 	bool hidden = false;
 	std::optional<std::string> text;
-	bool markdown = false;
 	std::optional<std::vector<TextEntity>> entities;
 	std::string plugin;
 	std::string reason;
@@ -212,7 +214,7 @@ struct TranslateRequest {
 struct TranslateResult {
 	std::string error;
 	std::vector<std::string> items;
-	bool markdown = false;
+	std::vector<std::vector<TextEntity>> entities;
 };
 
 struct AiRequest {
@@ -229,7 +231,7 @@ struct AiRequest {
 struct AiResult {
 	std::string error;
 	std::string text;
-	bool markdown = false;
+	std::vector<TextEntity> entities;
 };
 
 struct PluginInfo {
@@ -487,6 +489,8 @@ private:
 
 	struct Outgoing {
 		HookKind kind = HookKind::Outgoing;
+		bool service = false;
+		bool media = false;
 		cbor::Value event;
 		std::mutex mutex;
 		std::condition_variable done;
@@ -643,7 +647,7 @@ private:
 		const std::string &account,
 		int64_t ticket,
 		std::vector<std::string> items,
-		bool markdown,
+		std::vector<std::vector<TextEntity>> entities,
 		std::string error);
 	void expireTranslations();
 	[[nodiscard]] std::string acceptAi(
@@ -651,7 +655,7 @@ private:
 		const std::string &account,
 		int64_t ticket,
 		std::string text,
-		bool markdown,
+		std::vector<TextEntity> entities,
 		std::string error);
 	void expireAi();
 	void failAi(

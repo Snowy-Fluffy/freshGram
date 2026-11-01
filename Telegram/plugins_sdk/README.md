@@ -17,6 +17,33 @@ checked against the permissions the user granted.
   `fg_timer_set`, `fg_timer_clear`, sockets, storage); any other call is built with
   `fg_begin` and `fg_send`.
 
+## Running a plugin on your computer
+
+`fgpl_tool run <directory|package.fgpl>` installs the plugin into a temporary folder, grants what its
+manifest asks for and runs it against a small fake app, with the real sandbox. The plugin's log and
+everything it does to the app are printed live: `[plugin.id]` lines are its log, `[host]` lines come from
+the app side, `[app]` lines are effects (messages sent, toasts, settings pages, dialogs), `[net]` lines are
+`net.fetch` calls. Commands come from the standard input or from `--script <file>`, one per line; `help`
+lists them:
+
+```
+msg new 1 "hello"                 add a message to chat 1 and deliver message.new
+event chat.opened chat=1          deliver any event, fields are key=value (key:=<json> for objects)
+command hello chat=1              a /command, menu <surface> <id>, settings|dialog|window click <id>
+mock https://api.example.org/ 200 '{"ok":true}'   what net.fetch answers (nothing else leaves the machine)
+timer advance 60000               move the clock, so that timers fire
+outgoing 1 "text"                 run the message.outgoing hooks
+storage, info, wait <ms>, grant|revoke <permission>
+```
+
+A script that has a wrong command, or a plugin that fails, ends with exit code 3, so a script can run in CI.
+Options: `--runtime <dir>` (the directory of the downloaded runtime with `python/` and `sdk/`; also
+`FGPL_RUNTIME_DIR`), `--no-sandbox` (needs the test build of the host), `--state <dir>` (keeps the plugin's
+storage between runs), `--grant a,b` / `--deny a,b`, `--folder <dir>` (for `fs.folder`), `--app X.Y.Z`
+(the app version the manifest is checked against) and `--account <id>`. The fake app has three chats
+(1 user, 2 group, 3 channel); `chat add <id> <title> [type]` adds more. Calls that need a real account
+(`users.*`, `channels.*`, stickers, bots, media) answer `unavailable`. `examples/hello` is a plugin to try it on.
+
 ## Wire format
 
 Everything is CBOR (RFC 8949 subset: integers, byte and text strings, arrays,
@@ -31,7 +58,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 `not_found`, `quota`, `limit` (size or rate), `unavailable`, `failed`,
 `cancelled` (the user closed a file dialog).
 
-## Calls (API level 6)
+## Calls (API level 7)
 
 | Call | Permission | Notes |
 |---|---|---|
@@ -53,21 +80,21 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `settings.read` | `settings.read` | `language`, `theme`, `streamerMode` |
 | `media.get` `{chat, message, thumbnail, download}` | `media.read` | the file of a message, up to 100 MiB: `kind`, `mime`, `name`, `data`; without `download` only a file already on this device (`not_found` otherwise), with `download: true` the app downloads it first (up to five minutes, `limit` for larger files; await it) |
 | `media.list` `{chat, kind, limit, before}` | `media.read` | messages with media, newest first, the same fields as the history; `kind` is `any` (the recent history), `photo`, `video`, `photo_video`, `file`, `voice`, `round`, `audio` or `gif` (searched on the server) |
-| `messages.set_outgoing` `{text, entities, format, silent, schedule, reply_to, topic}` | `messages.transform_outgoing` | only while handling `message.outgoing`; give at least one field; `format: "markdown"` turns `**bold**`, `__italic__`, `` `code` ``, `~~strike~~` and `\|\|spoiler\|\|` into formatting; `entities` is a list of `{type, offset, length}` (UTF-16 units, up to 256) for the formatting of the text: `type` is `bold`, `italic`, `underline`, `strike`, `code`, `pre` (with `language`), `spoiler`, `blockquote`, `text_url` (needs an http, https or tg `url`), `mention_name` (needs the user `id`) or `custom_emoji` (needs the document `id`); the types Telegram finds itself (`url`, `mention`, `hashtag`, ...) are accepted so that entities read from a message can be passed back, and are ignored; entities cannot be combined with `format: "markdown"`, a new `text` without `entities` is sent without formatting, and entities that do not fit the text are dropped; `schedule` is a unix time (0 sends now), `reply_to` a message id of the chat (0 for none), `topic` a forum topic; the app ignores a value it cannot use (a time out of range, a message that is not there) |
-| `messages.set_incoming` `{text, format, entities}`, `messages.hide_incoming` `{reason}` | `messages.transform_incoming` | only while handling `message.incoming`; give `text`, `entities` or both (not with `format: "markdown"`); `hide_incoming` hides the message and the plugins after this one do not see it; the real text of the message stays unchanged |
+| `messages.set_outgoing` `{text, entities, format, silent, schedule, reply_to, topic}` | `messages.transform_outgoing` | only while handling `message.outgoing`; give at least one field; `format` is `plain` (the default), `markdown` or `html`, see *Text formatting*; `entities` is a list of `{type, offset, length}` (UTF-16 units, up to 256) for the formatting of the text: `type` is `bold`, `italic`, `underline`, `strike`, `code`, `pre` (with `language`), `spoiler`, `blockquote`, `text_url` (needs an http, https or tg `url`), `mention_name` (needs the user `id`) or `custom_emoji` (needs the document `id`); the types Telegram finds itself (`url`, `mention`, `hashtag`, ...) are accepted so that entities read from a message can be passed back, and are ignored; entities cannot be combined with a `format`, a new `text` without `entities` is sent without formatting, and entities that do not fit the text are dropped; `schedule` is a unix time (0 sends now), `reply_to` a message id of the chat (0 for none), `topic` a forum topic; the app ignores a value it cannot use (a time out of range, a message that is not there) |
+| `messages.set_incoming` `{text, format, entities}`, `messages.hide_incoming` `{reason}` | `messages.transform_incoming` | only while handling `message.incoming`; give `text`, `entities` or both (not with a `format`); `hide_incoming` hides the message and the plugins after this one do not see it; the real text of the message stays unchanged |
 | `messages.drop_outgoing` `{reason}` | `messages.transform_outgoing` | only while handling `message.outgoing`; the message is not sent and the input field stays empty; a non-empty `reason` (up to 200 bytes) is shown as a toast with the plugin's name; the plugins after this one do not see the message |
 | `ui.dialog.show` `{page}`, `ui.dialog.close` | `ui.dialog` | the same tree as a settings page, shown as a dialog with the plugin's name |
 | `ui.window.show` `{id, page, mode}`, `ui.window.update` `{id, page}`, `ui.window.close` `{id}` | `ui.dialog` | a window of the plugin's own: `id` is a lowercase token of up to 32 characters, `mode` is `layer` (over the chat, the default) or `window` (a window of its own); up to 3 windows at a time; see *Windows* |
-| `ai.reply` `{ticket, text, format, error}` | `ai.provide` | answers an `ai.request`: `text` is the new text (up to 64 KiB), `format` is `plain` (default) or `markdown`; or `error` (up to 200 bytes) instead; `not_found` for a ticket that is not yours or already answered |
-| `translate.reply` `{ticket, items, format, error}` | `translate.provide` | answers a `translate.request`: `items` is a list with one translation for each requested text (up to 32 KiB each, 96 KiB in all), `format` is `plain` (default) or `markdown`; or `error` (up to 200 bytes) instead; `not_found` for a ticket that is not yours or already answered |
+| `ai.reply` `{ticket, text, format, error}` | `ai.provide` | answers an `ai.request`: `text` is the new text (up to 64 KiB), `format` is `plain` (default), `markdown` or `html`; or `error` (up to 200 bytes) instead; `not_found` for a ticket that is not yours or already answered |
+| `translate.reply` `{ticket, items, format, error}` | `translate.provide` | answers a `translate.request`: `items` is a list with one translation for each requested text (up to 32 KiB each, 96 KiB in all), `format` is `plain` (default), `markdown` or `html`; or `error` (up to 200 bytes) instead; `not_found` for a ticket that is not yours or already answered |
 | `plugin.unload` | none | stop this plugin after the current event to free its memory |
 | `plugins.send` `{to, data}` | `plugins.message` | send any CBOR value up to 64 KiB to another plugin of the same account; `not_found` when it is not installed, enabled or granted, `denied` when it does not accept this sender |
 | `plugins.peers` | `plugins.message` | ids of the plugins this plugin may send to |
 | `chats.list` `{limit}`, `chat.info` `{chat}` | `chats.list`, `chat.info` | `{id, title, type, unread, pinned, archived}`; `type` is `user`, `bot`, `group`, `supergroup`, `forum` or `channel`; archived chats are included; secret chats, Saved Messages and the service chat 777000 are never returned |
 | `messages.history` `{chat, limit, before, topic, from_user}` | `messages.history` | newest first, `before` is a message id (exclusive); loads from the server when the app has not loaded enough; `topic` reads a forum topic; `from_user` is a user id or `"me"` and keeps only the messages of that sender (the server is searched for it, so the limit is filled); limit up to 100; chat must be in scope; each message has `id, chat, from, date, text, out` and `topic`, `reply_to`, `media`, `deleted`, `entities` (the formatting of the text, see `messages.set_outgoing`; also the types Telegram finds itself: `url`, `mention`, `hashtag`, `cashtag`, `bot_command`, `email`, `phone`) and `buttons` (the rows of an inline keyboard, each `{text, type, url?}` with `type` `callback`, `url` or `other`) when they apply; deleted messages kept by the app come only with `messages.read_deleted` |
-| `messages.send` `{chat, text, format, reply_to, topic, silent, schedule, custom_emoji, entities}` | `messages.send` | `custom_emoji` is a list of `{offset, length, id}` that show part of the text (UTF-16 units) as custom emoji; `entities` is the general form (a list of `{type, offset, length, ...}` as in `messages.set_outgoing`, plus `mention_name` with the user's `id`, who must be known to the app) and cannot be combined with `format: "markdown"`; `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode; answers `{local_id}` at once: a negative id that `messages.edit`, `edit_media`, `react` and `delete` accept like a server id (they wait until a message that is still sending gets its server id, and fail with `failed` when the send fails); with `messages.ids` the call waits for the server and answers `{id, local_id}` too (`id` is null when the server did not answer in time, which is not an error, so a retry cannot send twice); `local_id` is null when no message was created (a dice, a text that is only spaces); scheduled sends have no ids |
-| `messages.send_media` `{chat, data, name, kind, caption, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send`; answers the ids like `messages.send` |
-| `messages.edit_media` `{chat, id, data, name, kind, caption, format, spoiler}` | `messages.edit` | replaces the media of a message you sent and may still edit, with a file of up to 100 MiB; `kind` is `auto` or `file` (not `voice`); `id` is a server or a local id; `caption` replaces the old one; waits until Telegram accepts the file (await it); `invalid` when the album or Telegram does not take the file, `denied` when the message cannot carry new media |
+| `messages.send` `{chat, text, format, reply_to, topic, silent, schedule, custom_emoji, entities}` | `messages.send` | `custom_emoji` is a list of `{offset, length, id}` that show part of the text (UTF-16 units) as custom emoji; `entities` is the general form (a list of `{type, offset, length, ...}` as in `messages.set_outgoing`, plus `mention_name` with the user's `id`, who must be known to the app) and cannot be combined with a `format` (nor can `custom_emoji`: use the emoji markup); `reply_to` is a message id in the chat, `topic` a forum topic, `schedule` a unix time from 10 seconds to a year ahead; `denied` when you cannot write there, `limit` during slow mode; answers `{local_id}` at once: a negative id that `messages.edit`, `edit_media`, `react` and `delete` accept like a server id (they wait until a message that is still sending gets its server id, and fail with `failed` when the send fails); with `messages.ids` the call waits for the server and answers `{id, local_id}` too (`id` is null when the server did not answer in time, which is not an error, so a retry cannot send twice); `local_id` is null when no message was created (a dice, a text that is only spaces); scheduled sends have no ids |
+| `messages.send_media` `{chat, data, name, kind, caption, entities, format, reply_to, topic, silent, schedule, spoiler, duration}` | `messages.send` | sends a file of up to 100 MiB (`data` is bytes, `name` its file name); `kind` `auto` (default) sends photos and videos as media and the rest as files, `file` always as a file, `voice` sends OGG/Opus as a voice message and needs `duration` in seconds; `denied` when the chat forbids that kind of media or messages there cost Stars; counts against the same limit as `messages.send`; answers the ids like `messages.send` |
+| `messages.edit_media` `{chat, id, data, name, kind, caption, entities, format, spoiler}` | `messages.edit` | replaces the media of a message you sent and may still edit, with a file of up to 100 MiB; `kind` is `auto` or `file` (not `voice`); `id` is a server or a local id; `caption` replaces the old one; waits until Telegram accepts the file (await it); `invalid` when the album or Telegram does not take the file, `denied` when the message cannot carry new media |
 | `messages.edit` `{chat, id, text, format, entities}` | `messages.edit` | only messages you sent and may still edit; `id` may be a local id; `entities` as in `messages.send` |
 | `messages.delete` `{chat, ids, everyone}` | `messages.delete` | up to 100 of your own messages, server or local ids; for everyone (the default) when Telegram allows it for all of them |
 | `messages.react` `{chat, id, emoji}` or `{chat, id, custom_emoji}` | `messages.react` | sets an emoji or custom emoji (a document id) reaction; neither removes yours |
@@ -101,6 +128,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `channels.info` `{id}` | `chat.info` | `id, title, username, type, about, members, verified, scam, fake, has_photo`; `type` is `channel` or `supergroup`, `members` is absent when unknown; other chats give `not_found` |
 | `channels.resolve` `{username}` | `chat.info` | the same fields for a channel found by `@username`; once per second |
 | `channels.photo` `{id}` | `chat.info` | `{mime, data}` like `users.photo` |
+| `image.info` `{data}`, `image.resize` `{data, width, height, fit, format, quality}`, `image.convert` `{data, format, quality}`, `image.crop` `{data, x, y, width, height, format, quality}` | `image.process` | `data` is a PNG, a JPEG or a WebP of up to 16 MiB and 24 megapixels (animated pictures and other formats are `invalid`); answers `{format, width, height}` and, except for `info`, `data` (up to 32 MiB); `format` is `png`, `jpeg` or `webp` and keeps the input's when missing (a JPEG has no transparency: it is drawn on white), `quality` 1 to 100 (90); `resize` fits the box `width` x `height` (one may be 0 to keep the ratio): `fit` `contain` (default), `cover` (fills the box and cuts the rest) or `exact`, at most 8192 per side (`limit`); `crop` keeps the part from the corner `x`, `y`; the picture is decoded by the app, outside the sandbox, so the call is held to one in 100 ms and a plugin that does not need it should not ask for the permission; the EXIF orientation is not applied; `unavailable` when WebP cannot be written |
 | `notify.show` `{title, text}` | `notifications` | a system notification (a toast when the app's notifications are off); once per 5 seconds; clicking it opens Saved Messages |
 | `clipboard.write` `{text}`, `clipboard.read` | `clipboard` | only within 10 seconds after a user action; up to 64 KiB |
 | `files.pick` `{title, filter}` | `fs.user_selected` | awaitable only, after a user action; the user picks a file in the system dialog; returns `{name, data}` (up to 100 MiB) or nothing when cancelled; `filter` is like `Images (*.png *.jpg)` |
@@ -116,7 +144,7 @@ Error codes: `denied` (permission or scope), `invalid` (bad arguments),
 | `composer.draft`, `composer.set_draft` `{chat, text, replace}` | `composer.draft` | setting a draft never switches the chat; a non-empty draft is kept unless `replace: true` |
 | `badges.set` `{user, items}`, `badges.clear` | `ui.badges` | icons or mini pictures next to the name of a user, group or channel (`user` is the peer id as in `chats.list`), see *Badges next to names*; up to 4 for a peer and 256 peers |
 | `ui.settings.set` `{page}` | `ui.settings_page` | declares the plugin's settings page, see below; the manifest needs `contributes.settingsPage` |
-| `ui.toast` `{text, action, style, duration}` | `ui.toast` | the plugin id is prefixed; `action` is `{id, label}` and adds a button (the plugin gets `toast.click` `{id}` when it is pressed and `toast.close` `{id, reason}` when the toast goes, `reason` is `action` or `timeout`); `style: "undo"` needs an action and labels the button "Undo" when `label` is empty; `duration` is 1 to 8 seconds (5 for a toast with a button); an action id is up to 32 bytes, a label up to 40 |
+| `ui.toast` `{text, title, action, style, duration}` | `ui.toast` | the plugin id is prefixed (to the `title` when there is one: a first line of up to 64 bytes, the text stays below it); `action` is `{id, label}` and adds a button (the plugin gets `toast.click` `{id}` when it is pressed and `toast.close` `{id, reason}` when the toast goes, `reason` is `action` or `timeout`); `style: "undo"` needs an action and labels the button "Undo" when `label` is empty; `duration` is 1 to 8 seconds (5 for a toast with a button); an action id is up to 32 bytes, a label up to 40 |
 | `time.now` | none | the server's unix time in seconds, not the device clock |
 | `ui.open_settings` | `ui.settings_page` | opens the plugin's own settings page; only within 10 seconds after a user action (a menu click, a command, a settings or dialog event), once for each action; the manifest needs `contributes.settingsPage` |
 | `time.sleep` `{ms}` | none | awaitable only; up to 60000 ms |
@@ -154,6 +182,25 @@ no tray).
 Set `compat.testedWith` to the freshGram version you tested with: when the app's
 major or minor version is newer, the app marks the plugin as outdated.
 
+## Text formatting
+
+Every call with a `text` (or a `caption`) takes `format`: `plain` (the default) sends the text as it is,
+`markdown` and `html` are parsed by the app into the text and entities that `entities` would give, so the
+two cannot be mixed. Bad markup fails with `invalid` and a reason; the text must not be empty without its markup.
+
+- `markdown`: `**bold**`, `__italic__`, `~~strike~~`, `||spoiler||`, `` `code` ``, a fence ```` ```lang ```` with a
+  line break after the language, `[text](url)` (`https`, `http` or `tg` links; `tg://user?id=N` mentions a user),
+  `![alt](tg://emoji?id=N)` (a custom emoji over `alt`), `> quote` lines and `**> expandable quote`
+  lines. `\` before a punctuation mark writes it as it is. A marker with no closing one stays text, formatting
+  that closes in the wrong order is an error.
+- `html`: `<b>`/`<strong>`, `<i>`/`<em>`, `<u>`/`<ins>`, `<s>`/`<strike>`/`<del>`, `<code>`, `<pre>` (with
+  `<code class="language-x">` inside for the language), `<a href>`, `<tg-spoiler>`/`<span class="tg-spoiler">`,
+  `<blockquote>` (`expandable` collapses it), `<emoji id="N">🙂</emoji>`/`<tg-emoji emoji-id="N">🙂</tg-emoji>`
+  and `<br>`; `&lt;`, `&gt;`, `&amp;`, `&quot;` and `&#N;` are decoded. Other tags are errors.
+
+Entities have `collapsed: true` for an expandable `blockquote`, in both directions. A plugin that needs
+`html` lists `format.html` in `compat.requires`.
+
 ## Events
 
 The host delivers `init` once and then `event` messages. A `message.*` event is
@@ -179,6 +226,8 @@ and not a sticker or plain text), `entities` (the custom emoji of the text,
 - `message.edited` comes only when the text or the edit date changes.
 - `message.deleted` comes once, also when the app keeps deleted messages.
 - `message.reaction` comes when someone reacts to your message.
+- `message.pinned` comes with the same fields and `pinned` (true or false) when the app hears
+  that a message was pinned or unpinned while it runs; a pin it did not see is not reported.
 
 `chat.opened` `{chat, chat_title, topic}` comes when the user opens a chat; it
 needs `chats.active` instead of `messages.read` and follows the same chat scope.
@@ -194,6 +243,10 @@ for the account, reads you make (`chat.read` with `outbox: false`) and
 | `chat.typing` | `chats.activity` | `{chat, user, action, cancelled}`; `action` is `typing`, `upload_photo`, `upload_video`, `upload_file`, `record_voice`, `upload_voice`, `record_video`, `record_round`, `choose_sticker` or `other`; comes at most once every 3 seconds per chat, user and action; `topic` is added in a forum topic |
 | `chat.read` | `chats.activity` | `{chat, read_till, outbox}`; `outbox` is true when the other side read your messages up to `read_till`, false when you read theirs (also when you read them on another device); only when `read_till` grows |
 | `chat.member` | `chats.activity` | `{chat, user, joined}`; someone joined or left a group or supergroup (not for channels) |
+| `chat.title_changed` | `chats.activity` | `{chat, title, old_title}`; a group or channel was renamed; `old_title` is missing when the app had not seen the earlier title |
+| `story.new` | `stories.read` | `{chat, story_id, date}`; someone posted a story (`chat` is the poster); never the story itself |
+| `call.incoming` | `calls.activity` | `{chat, user, incoming}`; a call is ringing (`chat` is the caller) |
+| `call.ended` | `calls.activity` | `{chat, user, incoming, reason, duration}`; `reason` is `ended`, `busy`, `failed` or `other_device`, `duration` in seconds (0 when it never started) |
 | `user.status` | `users.presence` | `{user, status, last_seen}` with the values of `users.info`; not for yourself, bots, or users who hide their status |
 | `app.focus`, `app.blur` | `app.activity` | `{}`; the app window got or lost the focus |
 | `ai.request` | `ai.provide` | `{ticket, text, format, translate_to, tone, prompt, proofread, emojify}`: a text to rewrite; the last five are present only when asked for; see *AI provider* |
@@ -208,7 +261,7 @@ channels have a type in the high bits. Use them as they are.
 (`topic`, `reply_to` and `scheduled` only when set; `entities` is the formatting of the text as in `messages.set_outgoing`, an empty list for plain text) comes to plugins with
 `messages.transform_outgoing` and `contributes.outgoing` before a text message is
 sent (never for secret chats, Saved Messages, 777000, business shortcuts, welcome templates or
-suggested posts; messages with files are not hooked yet). The plugin may call
+suggested posts). The plugin may call
 `messages.set_outgoing` to replace the text or the send options, or
 `messages.drop_outgoing` to stop the message; other data calls are refused during
 this event. `contributes.outgoing.filter` limits the event to `chats` (a list of
@@ -218,11 +271,23 @@ plugins see a message one after another, each one the changes of those before. I
 happens when it fails or is late: `pass` sends the text unchanged, `block` stops
 the message and puts it back into the input field.
 
+With `contributes.outgoing.media: true` the event also comes for a send of files (photos, videos, music
+and documents chosen in the chat, albums too), with `media`, a list of `{kind, name, size}` (`kind` is `photo`,
+`video`, `audio` or `file`), and `text` is the caption (of the first file in an album). The plugin may
+`messages.set_outgoing` the caption (an empty `text` removes it), `silent`, `schedule`, `reply_to` or `topic`, or
+`messages.drop_outgoing`; it cannot change the files. Such a send that is stopped (`drop_outgoing`, or `block` with a
+plugin that fails or is late) is gone: there is no draft to put back. A plugin without `media` never sees a send
+of files and does not delay it. Voice messages, stickers, inline results and the sends of plugins themselves are not
+hooked.
+
 `message.incoming` comes to plugins with `messages.transform_incoming` and
 `contributes.incoming` for every new or edited message you receive: the fields of the
 message (`id, chat, from, date, text, entities, out, ...`, see `messages.history`) and
-`chat_type`, `edited`. It is never sent for secret chats, Saved Messages, 777000 or
-service messages, and not for the history the app loads when you scroll. The plugin may
+`chat_type`, `edited`. It is never sent for secret chats, Saved Messages or 777000, and
+not for the history the app loads when you scroll. Service messages (a pin, a joined
+member) come only to a plugin with `contributes.incoming.service: true`: `service` is
+true, `text` is the app's own text of the service message, and the plugin can only
+`messages.hide_incoming` it (`set_incoming` fails with `invalid`). The plugin may
 call `messages.set_incoming` to change the shown text or entities, or
 `messages.hide_incoming` to hide the message; other data calls are refused during this
 event, and the handler must answer before its first `await`. Only the display changes:
@@ -479,6 +544,7 @@ Activations come back as events:
 | `settings.click` | `id` of a button or of one of the page's `buttons` |
 | `dialog.change`, `dialog.click` | the same for a dialog shown with `ui.dialog.show` |
 | `dialog.close` | the user closed the dialog |
+| `settings.long_click`, `dialog.long_click`, `window.long_click` | `id` (and `window`) of a `button`, `list` entry or `page` row that was declared with `long_click: true`; a long press, or a right click on a computer; a short click still sends `click` |
 | `window.change`, `window.click`, `window.close` | the same for a window shown with `ui.window.show`, with its `window` id; a click on a `list` entry has the entry's `id`, a change of `tabs` the id of the chosen tab |
 
 The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items": [...], "buttons": [...]}` with up to
@@ -491,12 +557,12 @@ The settings page is a tree sent with `ui.settings.set`: `{"title": ..., "items"
 | `divider` | none |
 | `link` | `label`, `url` (`https://` only), `icon`; opens in the browser |
 | `progress` | `label`, `value` from 0 to 100 |
-| `toggle` | `id`, `label`, `value`, `icon` |
-| `button` | `id`, `label`, `style` (`default`, `primary`, `danger`), `icon` |
-| `input` | `id`, `label`, `value`, `placeholder`, `multiline`, `password`, `max` (up to 4096 bytes) |
-| `select` | `id`, `label`, `value`, `options: [{value, label}]` (up to 16), `icon` |
+| `toggle` | `id`, `label`, `value`, `icon`, `alias` |
+| `button` | `id`, `label`, `style` (`default`, `primary`, `danger`), `icon`, `alias`, `long_click` |
+| `input` | `id`, `label`, `value`, `placeholder`, `multiline`, `password`, `max` (up to 4096 characters), `mask` |
+| `select` | `id`, `label`, `value`, `options: [{value, label}]` (up to 16), `icon`, `alias` |
 | `slider` | `id`, `label`, `min`, `max`, `step`, `value` (at most 1000 steps) |
-| `chat` | `id`, `label`, `value` (a chat id or 0), `icon`: the user picks a chat |
+| `chat` | `id`, `label`, `value` (a chat id or 0), `icon`, `alias`: the user picks a chat |
 
 Pages can nest and show more than a settings list. These items also work in dialogs and
 windows (all ids stay unique across the whole page; at most 4 levels and 256 items in total):
@@ -507,14 +573,33 @@ windows (all ids stay unique across the whole page; at most 4 levels and 256 ite
 | `column` | `items`: a group of items |
 | `card` | `title`, `items`: a titled group set off from the rest of the page |
 | `tabs` | `id`, `value` (the chosen tab), `tabs: [{id, label, items}]` (up to 8); a change sends the tab id |
-| `list` | `items: [{id, title, subtitle, icon}]` (up to 64): rows that can be clicked |
+| `list` | `items: [{id, title, subtitle, icon, long_click}]` (up to 64): rows that can be clicked |
 | `table` | `columns` (up to 6 titles), `rows` (up to 32 lists of texts, one per column) |
-| `image` | `data` (a PNG up to 2048×2048 or a JPEG, up to 256 KiB), `width`, `height` (up to 512), `alt` |
+| `image` | `data` (a PNG up to 2048×2048, a JPEG, a plain SVG or a Lottie animation, up to 256 KiB), `width`, `height` (up to 512, needed for SVG and Lottie), `alt` |
 | `code` | `text`: monospaced text |
-| `page` | `id`, `label`, `icon`, `hint`, `disabled`, `items`: a row that opens a sub-page with these items in its own box; its ids are part of the same page, so events need no path |
+| `page` | `id`, `label`, `icon`, `hint`, `disabled`, `alias`, `long_click`, `items`: a row that opens a sub-page with these items in its own box; its ids are part of the same page, so events need no path |
 
 `text` also takes `style`: `title`, `subtitle`, `muted`, `accent` or `danger`; colors and fonts
 come from the app's theme.
+
+`mask` (an `input`) is a pattern for the value: `#` is a digit, `A` a letter, `*` any character and everything
+else stands for itself, so `+## (###) ###` writes the brackets and the spaces; the app fixes what the user types and
+the plugin gets values that fit (an empty value is always allowed). `max` defaults to the length of the mask and counts
+characters. A `mask` cannot be combined with `multiline` or `password`.
+
+`long_click: true` (a `button`, a `list` entry or a `page` row) sends `settings.long_click`, `dialog.long_click` or
+`window.long_click` with the item's `id` when the user right-clicks it. `alias` (a unique lowercase token of up to 32
+characters, on a `toggle`, `button`, `select`, `chat` or `page` row of the settings page) gives the item a link: a right
+click offers "Copy Link", and `tg://ayuplugin?id=<plugin id>&alias=<alias>` opens the plugin's settings scrolled to it.
+
+An SVG must draw only itself: it is refused with a script, `foreignObject` or `image`, an `href` that does not point to
+a `#id` of the file, a `url()` to anything else, `@import`, a doctype, an entity or an `on...` attribute. A Lottie file is
+drawn as its first frame and must have `w`, `h` up to 1024, a frame rate up to 120, at most 600 frames and no `assets` with
+pictures or files.
+
+The page of a dialog (or of a `layer` window) may have `closable: false`: the user cannot close it with Escape or a click outside, so it
+needs at least one of `buttons` (a progress dialog with a "Cancel" button); the app closes it after two minutes and the
+plugin hears `dialog.close`.
 
 Interactive items also take `hint` (a line of text under the item) and
 `disabled`. `buttons` (up to 3 of `{id, label, style}`) are drawn at the bottom
@@ -592,7 +677,7 @@ freshgram.run()
 `freshgram.on_timer(timer_id)` and `freshgram.on_chat_opened` register handlers
 for the settings page, dialogs, timers and opened chats; one failing handler is
 logged and does not stop the others. The namespaces follow the calls:
-`messages.send(chat, text, reply_to=..., markdown=True)`,
+`messages.send(chat, text, reply_to=..., markdown=True)` (`markdown="html"` for HTML),
 `messages.send_media(chat, data, name, caption=...)`, `media.list`,
 `media.get(..., download=True)`, `messages.edit`,
 `messages.delete`, `messages.react`, `messages.forward`, `messages.search`,

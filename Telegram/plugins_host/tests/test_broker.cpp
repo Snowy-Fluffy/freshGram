@@ -228,7 +228,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 6);
+	CHECK(Payload(info).find("api")->asInt() == 7);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -290,6 +290,8 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "messages.send", Request("messages.send_poll", { { "chat", Int(1) }, { "question", Text("q?") }, { "options", cbor::Value::FromArray({ Text("a"), Text("b") }) } }) },
 		{ "ghost.control", Request("ghost.get") },
 		{ "ghost.control", Request("ghost.set", { { "enabled", cbor::Value::FromBool(true) } }) },
+		{ "image.process", Request("image.info", { { "data", cbor::Value::FromBytes(cbor::Bytes(16, 1)) } }) },
+		{ "image.process", Request("image.resize", { { "data", cbor::Value::FromBytes(cbor::Bytes(16, 1)) }, { "width", Int(5) } }) },
 	};
 	for (const auto &item : calls) {
 		auto fixture = Fixture({});
@@ -815,6 +817,20 @@ void TestIncomingHook() {
 	CHECK(Code(broker.call(Request("messages.hide_incoming", { { "reason", Text(std::string(300, 'a')) } }))) == "invalid");
 	edit = broker.finishOutgoing();
 	CHECK(edit.drop && edit.dropReason == "spam");
+
+	broker.beginIncoming(true);
+	CHECK(Code(broker.call(Request("messages.set_incoming", { { "text", Text("x") } }))) == "invalid");
+	CHECK(IsOk(broker.call(Request("messages.hide_incoming", { { "reason", Text("pins") } }))));
+	edit = broker.finishOutgoing();
+	CHECK(edit.drop && !edit.text);
+
+	broker.beginOutgoing(true);
+	CHECK(IsOk(broker.call(Request("messages.set_outgoing", { { "text", Text("") } }))));
+	edit = broker.finishOutgoing();
+	CHECK(edit.text == std::optional<std::string>(""));
+	broker.beginOutgoing();
+	CHECK(Code(broker.call(Request("messages.set_outgoing", { { "text", Text("") } }))) == "invalid");
+	edit = broker.finishOutgoing();
 
 	broker.beginOutgoing();
 	CHECK(Code(broker.call(Request("messages.set_incoming", { { "text", Text("x") } }))) == "invalid");
@@ -1617,6 +1633,109 @@ void TestRichIconsAndSubPages() {
 	CHECK(call(Page({ subpage("one", { subpage("two", { toggle }) }) })) == "");
 }
 
+void TestUiExtensions() {
+	auto fixture = Fixture({ "ui.settings_page", "ui.dialog" });
+	auto received = std::vector<cbor::Value>();
+	fixture.services.ui = [&](std::string_view, const cbor::Value &page) {
+		received.push_back(page);
+		return true;
+	};
+	auto broker = fixture.make();
+	const auto call = [&](cbor::Value page) {
+		return Code(broker.call(Request("ui.settings.set", { { "page", std::move(page) } })));
+	};
+	const auto button = [](const char *id, cbor::Map more) {
+		more.push_back({ "type", Text("button") });
+		more.push_back({ "id", Text(id) });
+		more.push_back({ "label", Text("x") });
+		return cbor::Value::FromMap(std::move(more));
+	};
+	const auto input = [](cbor::Map more) {
+		more.push_back({ "type", Text("input") });
+		more.push_back({ "id", Text("phone") });
+		more.push_back({ "label", Text("Phone") });
+		return cbor::Value::FromMap(std::move(more));
+	};
+	const auto yes = cbor::Value::FromBool(true);
+
+	received.clear();
+	CHECK(call(Page({ button("a", { { "alias", Text("start") }, { "long_click", yes } }) })) == "");
+	const auto &first = received.back().find("items")->asArray()->front();
+	CHECK(*first.find("alias")->asText() == "start" && first.find("long_click")->asBool() == true);
+	CHECK(call(Page({ button("a", { { "alias", Text("start") } }), button("b", { { "alias", Text("start") } }) })) == "invalid");
+	CHECK(call(Page({ button("a", { { "alias", Text("Bad Alias") } }) })) == "invalid");
+	CHECK(call(Page({ button("a", { { "long_click", Text("yes") } }) })) == "invalid");
+
+	CHECK(call(Page({ input({ { "mask", Text("+## (###) ###") } }) })) == "");
+	CHECK(received.back().find("items")->asArray()->front().find("max")->asInt() == 13);
+	CHECK(call(Page({ input({ { "mask", Text("##-##") }, { "value", Text("12-34") } }) })) == "");
+	CHECK(call(Page({ input({ { "mask", Text("##-##") }, { "value", Text("12-3x") } }) })) == "invalid");
+	CHECK(call(Page({ input({ { "mask", Text("AA") }, { "value", Text("ab") } }) })) == "");
+	CHECK(call(Page({ input({ { "mask", Text("---") } }) })) == "invalid");
+	CHECK(call(Page({ input({ { "mask", Text("##") }, { "password", yes } }) })) == "invalid");
+	CHECK(call(Page({ input({ { "mask", Text(std::string(65, '#')) } }) })) == "invalid");
+
+	const auto image = [&](const std::string &data, int64_t side) {
+		return Item({
+			{ "type", Text("image") },
+			{ "data", cbor::Value::FromBytes(cbor::Bytes(data.begin(), data.end())) },
+			{ "width", Int(side) }, { "height", Int(side) },
+		});
+	};
+	const auto svg = std::string("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\">"
+		"<defs><linearGradient id=\"g\"/></defs><path fill=\"url(#g)\" d=\"M0 0h24v24H0z\"/></svg>");
+	received.clear();
+	CHECK(call(Page({ image(svg, 48) })) == "");
+	CHECK(*received.back().find("items")->asArray()->front().find("kind")->asText() == "svg");
+	CHECK(call(Page({ image(svg, 0) })) == "invalid");
+	for (const auto &bad : std::vector<std::string>{
+			"<svg><script>alert(1)</script></svg>",
+			"<svg><image href=\"x.png\"/></svg>",
+			"<svg><use href=\"https://evil.example/a.svg#b\"/></svg>",
+			"<svg><rect fill=\"url(https://evil.example/p)\"/></svg>",
+			"<svg onload=\"x()\"/>",
+			"<svg><style>@import 'x';</style></svg>",
+			"<!DOCTYPE svg><svg/>",
+			"<html><svg/></html>" }) {
+		CHECK(call(Page({ image(bad, 48) })) == "invalid");
+	}
+	CHECK(call(Page({ image("<svg><use href=\"#a\"/></svg>", 48) })) == "");
+
+	const auto lottie = std::string("{\"v\":\"5.7\",\"fr\":30,\"ip\":0,\"op\":60,\"w\":100,\"h\":100,\"layers\":[{}]}");
+	received.clear();
+	CHECK(call(Page({ image(lottie, 64) })) == "");
+	CHECK(*received.back().find("items")->asArray()->front().find("kind")->asText() == "lottie");
+	CHECK(call(Page({ image("{\"fr\":30,\"ip\":0,\"op\":99999,\"w\":100,\"h\":100,\"layers\":[{}]}", 64) })) == "invalid");
+	CHECK(call(Page({ image("{\"fr\":30,\"ip\":0,\"op\":60,\"w\":100,\"h\":100,\"layers\":[{}],\"assets\":[{\"p\":\"x.png\"}]}", 64) })) == "invalid");
+	CHECK(call(Page({ image("{\"nothing\":1}", 64) })) == "invalid");
+
+	const auto dialog = [&](cbor::Map page) {
+		return Code(broker.call(Request("ui.dialog.show", { { "page", cbor::Value::FromMap(std::move(page)) } })));
+	};
+	broker.noteUserAction("menu.click");
+	const auto progress = Item({ { "type", Text("progress") }, { "label", Text("Working") }, { "value", Int(-1) } });
+	CHECK(dialog({ { "title", Text("Wait") }, { "items", cbor::Value::FromArray({ progress }) },
+		{ "closable", cbor::Value::FromBool(false) } }) == "invalid");
+	received.clear();
+	CHECK(dialog({ { "title", Text("Wait") }, { "items", cbor::Value::FromArray({ progress }) },
+		{ "closable", cbor::Value::FromBool(false) },
+		{ "buttons", cbor::Value::FromArray({ Item({ { "id", Text("cancel") }, { "label", Text("Cancel") } }) }) } }) == "");
+	CHECK(received.back().find("closable")->asBool() == false);
+	CHECK(dialog({ { "title", Text("Wait") }, { "items", cbor::Value::FromArray({ progress }) },
+		{ "closable", Text("no") } }) == "invalid");
+
+	auto toasts = Fixture({ "ui.toast" });
+	auto toaster = toasts.make();
+	CHECK(IsOk(toaster.call(Request("ui.toast", { { "text", Text("Body") }, { "title", Text("Head") } }))));
+	CHECK(toasts.data.toastActions.size() == 1);
+	const auto &shown = toasts.data.toastActions.back();
+	CHECK(shown.title.find("Head") != std::string::npos && shown.text == "Body" && shown.id.empty());
+	toasts.time += 5000;
+	CHECK(Code(toaster.call(Request("ui.toast", { { "text", Text("Body") }, { "title", Text(std::string(65, 'x')) } }))) == "invalid");
+	toasts.time += 5000;
+	CHECK(Code(toaster.call(Request("ui.toast", { { "text", Text("Body") }, { "title", Text("a\nb") } }))) == "invalid");
+}
+
 void TestSettingsPage() {
 	auto fixture = Fixture({ "ui.settings_page" });
 	auto received = std::vector<cbor::Value>();
@@ -2141,9 +2260,9 @@ void TestTranslateReply() {
 	fixture.services.translateReply = [&](
 			int64_t ticket,
 			std::vector<std::string> items,
-			bool markdown,
+			std::vector<std::vector<TextEntity>> entities,
 			std::string error) -> std::string {
-		seen.emplace_back(ticket, items.size(), markdown, error);
+		seen.emplace_back(ticket, items.size(), !entities.empty() && !entities[0].empty(), error);
 		return (ticket == 7) ? std::string() : std::string(api::error::kNotFound);
 	};
 	auto broker = fixture.make();
@@ -2161,7 +2280,9 @@ void TestTranslateReply() {
 	CHECK(reply({ { "items", Texts({ "a" }) } }) == "invalid");
 	CHECK(reply({ { "ticket", Int(7) } }) == "invalid");
 	CHECK(reply({ { "ticket", Int(7) }, { "items", cbor::Value::FromArray({ Int(1) }) } }) == "invalid");
-	CHECK(reply({ { "ticket", Int(7) }, { "items", Texts({ "a" }) }, { "format", Text("html") } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "items", Texts({ "a" }) }, { "format", Text("bbcode") } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "items", Texts({ "<b>a" }) }, { "format", Text("html") } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "items", Texts({ "<b>a</b>" }) }, { "format", Text("html") } }) == "");
 	CHECK(reply({
 		{ "ticket", Int(7) },
 		{ "items", cbor::Value::FromArray({ Text(std::string((size_t(32) << 10) + 1, 'x')) }) } }) == "invalid");
@@ -2179,15 +2300,105 @@ void TestTranslateReply() {
 		{ "ticket", Int(7) }, { "items", Texts({ "a" }) } }))) == "denied");
 }
 
+void TestTextFormats() {
+	auto fixture = Fixture({ "messages.send", "messages.edit" });
+	fixture.grants.chats = std::set<int64_t>{ 1 };
+	auto broker = fixture.make();
+	auto &data = fixture.data;
+	CHECK(IsOk(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("<blockquote expandable>q &amp; a</blockquote>") },
+		{ "format", Text("html") } }))));
+	CHECK(data.outgoing.size() == 1);
+	CHECK(data.outgoing.back().text == "q & a" && data.outgoing.back().entities.size() == 1);
+	CHECK(data.outgoing.back().entities[0].collapsed);
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("<b>x") }, { "format", Text("html") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("****") }, { "format", Text("markdown") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("**x**") }, { "format", Text("markdown") },
+		{ "entities", cbor::Value::FromArray({ cbor::Value::FromMap({
+			{ "type", Text("bold") }, { "offset", Int(0) }, { "length", Int(1) } }) }) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.send", {
+		{ "chat", Int(1) }, { "text", Text("**x**") }, { "format", Text("markdown") },
+		{ "custom_emoji", cbor::Value::FromArray({ cbor::Value::FromMap({
+			{ "offset", Int(0) }, { "length", Int(1) }, { "id", Int(5) } }) }) } }))) == "invalid");
+	CHECK(data.outgoing.size() == 1);
+	CHECK(IsOk(broker.call(Request("messages.edit", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("**a**") }, { "format", Text("markdown") } }))));
+	CHECK(data.actions.back() == "edit 1 100 a e1");
+}
+
+void TestImageCalls() {
+	auto png = cbor::Bytes{ 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3 };
+	auto jpeg = cbor::Bytes{ 0xFF, 0xD8, 0xFF, 0xE0, 1 };
+	auto webp = cbor::Bytes{ 'R', 'I', 'F', 'F', 1, 2, 3, 4, 'W', 'E', 'B', 'P', 'V' };
+	const auto file = [](cbor::Bytes bytes) {
+		return cbor::Value::FromBytes(std::move(bytes));
+	};
+	auto fixture = Fixture({ "image.process" });
+	auto broker = fixture.make();
+	const auto call = [&](const char *op, cbor::Map args) {
+		fixture.time += 200;
+		return broker.call(Request(op, std::move(args)));
+	};
+
+	const auto info = call("image.info", { { "data", file(png) } });
+	CHECK(IsOk(info) && Payload(info).find("width")->asInt() == 10 && Payload(info).find("data") == nullptr);
+	CHECK(fixture.data.images.back().op == "info");
+
+	const auto resized = call("image.resize", { { "data", file(jpeg) }, { "width", Int(100) },
+		{ "format", Text("webp") }, { "quality", Int(70) } });
+	CHECK(IsOk(resized));
+	CHECK(Payload(resized).find("format")->asText() && *Payload(resized).find("format")->asText() == "webp");
+	CHECK(Payload(resized).find("data")->asBytes()->size() == 4);
+	const auto &seen = fixture.data.images.back();
+	CHECK(seen.op == "resize" && seen.width == 100 && seen.height == 0 && seen.fit == "contain" && seen.quality == 70);
+
+	CHECK(IsOk(call("image.resize", { { "data", file(webp) }, { "width", Int(10) }, { "height", Int(20) }, { "fit", Text("cover") } })));
+	CHECK(IsOk(call("image.convert", { { "data", file(png) }, { "format", Text("jpeg") } })));
+	CHECK(IsOk(call("image.crop", { { "data", file(png) }, { "x", Int(1) }, { "y", Int(2) }, { "width", Int(3) }, { "height", Int(4) } })));
+	CHECK(fixture.data.images.back().x == 1 && fixture.data.images.back().y == 2);
+
+	const auto invalid = [&](const char *op, cbor::Map args) {
+		return Code(call(op, std::move(args))) == "invalid";
+	};
+	CHECK(invalid("image.info", {}));
+	CHECK(invalid("image.info", { { "data", file({}) } }));
+	CHECK(invalid("image.info", { { "data", file(cbor::Bytes(32, 7)) } }));
+	CHECK(invalid("image.info", { { "data", file({ 'G', 'I', 'F', '8', '9', 'a', 1, 2, 3, 4 }) } }));
+	CHECK(invalid("image.resize", { { "data", file(png) } }));
+	CHECK(invalid("image.resize", { { "data", file(png) }, { "width", Int(10) }, { "fit", Text("cover") } }));
+	CHECK(invalid("image.resize", { { "data", file(png) }, { "width", Int(10) }, { "fit", Text("stretch") } }));
+	CHECK(invalid("image.resize", { { "data", file(png) }, { "width", Int(9000) } }));
+	CHECK(invalid("image.resize", { { "data", file(png) }, { "width", Int(-1) } }));
+	CHECK(invalid("image.resize", { { "data", file(png) }, { "width", Int(10) }, { "quality", Int(0) } }));
+	CHECK(invalid("image.resize", { { "data", file(png) }, { "width", Int(10) }, { "format", Text("gif") } }));
+	CHECK(invalid("image.convert", { { "data", file(png) } }));
+	CHECK(invalid("image.crop", { { "data", file(png) }, { "width", Int(3) } }));
+	CHECK(Code(call("image.info", { { "data", file(cbor::Bytes((size_t(16) << 20) + 1, 1)) } })) == "invalid"
+		|| Code(call("image.info", { { "data", file(cbor::Bytes((size_t(16) << 20) + 1, 1)) } })) == "limit");
+	auto failing = png;
+	failing.push_back(0xEE);
+	CHECK(Code(call("image.info", { { "data", file(failing) } })) == "failed");
+
+	fixture.time += 200;
+	const auto quick = broker.call(Request("image.info", { { "data", file(png) } }));
+	fixture.time += 1;
+	CHECK(IsOk(quick));
+	CHECK(Code(broker.call(Request("image.info", { { "data", file(png) } }))) == "limit");
+	CHECK(Code(Fixture({}).make().call(Request("image.info", { { "data", file(png) } }))) == "denied");
+}
+
 void TestAiReply() {
 	auto fixture = Fixture({ "ai.provide" });
 	auto seen = std::vector<std::tuple<int64_t, std::string, bool, std::string>>();
 	fixture.services.aiReply = [&](
 			int64_t ticket,
 			std::string text,
-			bool markdown,
+			std::vector<TextEntity> entities,
 			std::string error) -> std::string {
-		seen.emplace_back(ticket, text, markdown, error);
+		seen.emplace_back(ticket, text, !entities.empty(), error);
 		return (ticket == 7) ? std::string() : std::string(api::error::kNotFound);
 	};
 	auto broker = fixture.make();
@@ -2204,7 +2415,7 @@ void TestAiReply() {
 	CHECK(reply({ { "text", Text("a") } }) == "invalid");
 	CHECK(reply({ { "ticket", Int(7) } }) == "invalid");
 	CHECK(reply({ { "ticket", Int(7) }, { "text", Int(1) } }) == "invalid");
-	CHECK(reply({ { "ticket", Int(7) }, { "text", Text("a") }, { "format", Text("html") } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Text("a") }, { "format", Text("bbcode") } }) == "invalid");
 	CHECK(reply({ { "ticket", Int(7) }, { "text", Text(std::string((size_t(64) << 10) + 1, 'x')) } }) == "invalid");
 	CHECK(Code(Fixture({}).make().call(Request("ai.reply", {
 		{ "ticket", Int(7) }, { "text", Text("a") } }))) == "denied");
@@ -2224,10 +2435,17 @@ void TestActivityEvents() {
 	const auto plain = [](const char *type) {
 		return cbor::Value::FromMap({ { "type", Text(type) }, { "user", Int(7) } });
 	};
-	for (const auto type : { "chat.typing", "chat.read", "chat.member" }) {
+	for (const auto &[type, permission] : std::vector<std::pair<const char *, const char *>>{
+			{ "chat.typing", "chats.activity" },
+			{ "chat.read", "chats.activity" },
+			{ "chat.member", "chats.activity" },
+			{ "chat.title_changed", "chats.activity" },
+			{ "story.new", "stories.read" },
+			{ "call.incoming", "calls.activity" },
+			{ "call.ended", "calls.activity" } }) {
 		CHECK(!Fixture({}).make().filterEvent(chatEvent(type, 1)));
-		CHECK(!Fixture({ "messages.read" }).make().filterEvent(chatEvent(type, 1)));
-		auto fixture = Fixture({ "chats.activity" });
+		CHECK(!Fixture({ "messages.read", "app.activity" }).make().filterEvent(chatEvent(type, 1)));
+		auto fixture = Fixture({ permission });
 		auto broker = fixture.make();
 		const auto kept = broker.filterEvent(chatEvent(type, 1));
 		CHECK(kept && kept->find("secret") == nullptr && kept->find("user"));
@@ -2269,6 +2487,9 @@ void TestEvents() {
 	auto fixture = Fixture({ "messages.read" });
 	auto broker = fixture.make();
 	CHECK(broker.filterEvent(event("message.new", 1)).has_value());
+	CHECK(broker.filterEvent(event("message.pinned", 1)).has_value());
+	CHECK(!broker.filterEvent(event("message.pinned", 3, true)));
+	CHECK(!Fixture({ "chats.activity" }).make().filterEvent(event("message.pinned", 1)));
 	CHECK(!broker.filterEvent(event("message.new", api::kServiceChat)));
 	CHECK(!broker.filterEvent(event("message.new", 3, true)));
 	CHECK(!broker.filterEvent(cbor::Value::FromMap({ { "type", Text("message.new") } })));
@@ -2475,12 +2696,13 @@ void TestLevelTwoCalls() {
 	CHECK(IsOk(first));
 	CHECK(data.outgoing.size() == 1);
 	const auto &sent = data.outgoing.back();
-	CHECK(sent.markdown && sent.replyTo == 100 && sent.topic == 5 && sent.silent && sent.schedule == 2000000000);
+	CHECK(sent.text == "hi" && sent.entities.size() == 1 && sent.entities[0].type == "bold");
+	CHECK(sent.replyTo == 100 && sent.topic == 5 && sent.silent && sent.schedule == 2000000000);
 	CHECK(!sent.waitForServerId);
 	CHECK(Payload(first).find("local_id")->asInt() == -1);
 	CHECK(Payload(first).find("id") == nullptr);
 	CHECK(Code(broker.call(Request("messages.send", {
-		{ "chat", Int(1) }, { "text", Text("x") }, { "format", Text("html") } }))) == "invalid");
+		{ "chat", Int(1) }, { "text", Text("x") }, { "format", Text("bbcode") } }))) == "invalid");
 	CHECK(Code(broker.call(Request("messages.send", {
 		{ "chat", Int(5) }, { "text", Text("x") } }))) == "denied");
 
@@ -2681,8 +2903,8 @@ void TestMediaCalls() {
 	CHECK(data.sentMedia.size() == 1);
 	const auto &sent = data.sentMedia.back();
 	CHECK(sent.name == "cat.png" && sent.kind == "auto" && sent.bytes.size() == 64);
-	CHECK(sent.spoiler && sent.message.markdown && sent.message.replyTo == 100);
-	CHECK(sent.message.text == "**cat**");
+	CHECK(sent.spoiler && sent.message.entities.size() == 1 && sent.message.replyTo == 100);
+	CHECK(sent.message.text == "cat");
 	CHECK(Code(broker.call(Request("messages.send_media", {
 		{ "chat", Int(1) }, { "data", file }, { "name", Text("a/b.png") } }))) == "invalid");
 	CHECK(Code(broker.call(Request("messages.send_media", {
@@ -2725,8 +2947,8 @@ void TestMediaCalls() {
 	CHECK(editing.data.editedMedia.size() == 1);
 	const auto &edited = editing.data.editedMedia.back();
 	CHECK(edited.id == 100 && edited.name == "cat.png" && edited.kind == "auto");
-	CHECK(edited.bytes.size() == 64 && edited.markdown && edited.spoiler);
-	CHECK(edited.caption == "**cat**");
+	CHECK(edited.bytes.size() == 64 && edited.entities.size() == 1 && edited.spoiler);
+	CHECK(edited.caption == "cat");
 	CHECK(IsOk(editMedia({ { "id", Int(-7) }, { "data", file }, { "name", Text("a.bin") }, { "kind", Text("file") } })));
 	CHECK(editing.data.editedMedia.back().id == -7);
 	const auto refused = [&](cbor::Map args, int64_t chat = 1) {
@@ -3042,6 +3264,7 @@ int main() {
 	TestDataIsFilteredByTheBroker();
 	TestRichIconsAndSubPages();
 	TestSettingsPage();
+	TestUiExtensions();
 	TestBadges();
 	TestTemplateTree();
 	TestWindows();
@@ -3055,6 +3278,8 @@ int main() {
 	TestActivityEvents();
 	TestTranslateReply();
 	TestAiReply();
+	TestTextFormats();
+	TestImageCalls();
 	TestToastActions();
 	TestAwaitableCalls();
 	TestRateLimits();

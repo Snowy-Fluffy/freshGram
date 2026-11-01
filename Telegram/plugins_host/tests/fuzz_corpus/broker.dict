@@ -206,3 +206,6 @@
 "ports"
 "http://localhost:8080/"
 "ws://localhost:9001/"
+"stories.read"
+"calls.activity"
+"image.process"

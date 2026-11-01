@@ -107,6 +107,8 @@ struct OutgoingFilter {
 struct OutgoingHook {
 	bool declared = false;
 	bool block = false;
+	// Also sees the sends of files, where the text is the caption.
+	bool media = false;
 	OutgoingFilter filter;
 };
 
@@ -114,6 +116,8 @@ struct IncomingHook {
 	bool declared = false;
 	bool block = false;
 	bool hold = false;
+	// Also sees service messages (a pin, a joined member), which it can only hide.
+	bool service = false;
 	OutgoingFilter filter;
 };
 
@@ -124,9 +128,17 @@ struct IncomingInfo {
 	bool secret = false;
 	std::string chatType;
 	bool edited = false;
+	bool service = false;
 	std::string text;
 	std::vector<TextEntity> entities;
 	cbor::Map message;
+};
+
+// A file of a send: kind is photo, video, audio or file.
+struct OutgoingFile {
+	std::string kind;
+	std::string name;
+	int64_t size = 0;
 };
 
 // What the app knows about a message that is about to be sent.
@@ -140,10 +152,13 @@ struct OutgoingInfo {
 	int64_t scheduled = 0;
 	std::string text;
 	std::vector<TextEntity> entities;
+	// Not empty for a send of files.
+	std::vector<OutgoingFile> files;
 };
 
 // The permission an event type needs, or null for an unknown event.
 [[nodiscard]] const char *EventPermission(const std::string &event);
+[[nodiscard]] const std::vector<std::string> &KnownEvents();
 // Events of a chat follow the plugin's chat scope and never come from secret chats.
 [[nodiscard]] bool EventIsChatScoped(const std::string &event);
 
@@ -229,7 +244,7 @@ struct Manifest {
 
 struct HostEnvironment {
 	Version app;
-	int apiLevel = 6;
+	int apiLevel = 7;
 	std::set<std::string> features = HostFeatures();
 	bool premium = false;
 };

@@ -464,6 +464,17 @@ static int fg_set_outgoing_markdown(const char *text) {
 	return fg_send(&w, 0);
 }
 
+/* Like fg_set_outgoing; the text is HTML (<b>, <i>, <a href>, <blockquote expandable>, ...). */
+static int fg_set_outgoing_html(const char *text) {
+	fg_writer w;
+	fg_begin(&w, "messages.set_outgoing", 2);
+	fg_w_text(&w, "text");
+	fg_w_text(&w, text);
+	fg_w_text(&w, "format");
+	fg_w_text(&w, "html");
+	return fg_send(&w, 0);
+}
+
 /* Send the message being sent without sound. */
 static int fg_set_outgoing_silent(int silent) {
 	fg_writer w;
