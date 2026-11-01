@@ -499,7 +499,9 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 			wasCache = true;
 		}
 		if (perItemDeletedOpacity && part.item->isDeleted()) {
-			if (part.item->wasDeletedAnimated()
+			const auto takingShot = AyuFeatures::MessageShot::isTakingShot();
+			if (!takingShot
+				&& part.item->wasDeletedAnimated()
 				&& !part.deletedAnimation.animating()) {
 				part.deletedAnimation.start(
 					[parent = _parent] {
@@ -515,7 +517,9 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 					anim::easeOutCubic);
 				part.item->markDeletedAnimated();
 			}
-			const auto itemOpacity = part.deletedAnimation.value(0.7);
+			const auto itemOpacity = takingShot
+				? 0.7
+				: part.deletedAnimation.value(0.7);
 			const auto adjustedOpacity = (elementDeletedOpacity > 0.)
 				? (itemOpacity / elementDeletedOpacity)
 				: 0.;

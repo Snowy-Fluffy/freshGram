@@ -1518,7 +1518,8 @@ float64 Element::deletedOpacity() const {
 		_deletedOpacityAnimationTarget = nullptr;
 		return 1.;
 	}
-	if (_context == Context::AdminLog) { // render normally in "View Deleted"
+	const auto takingShot = AyuFeatures::MessageShot::isTakingShot();
+	if (_context == Context::AdminLog && !takingShot) { // render normally in "View Deleted"
 		return 1.;
 	}
 	if (_data->isDeleted()) {
@@ -1528,6 +1529,9 @@ float64 Element::deletedOpacity() const {
 				group->items,
 				&HistoryItem::isDeleted);
 			return allDeleted ? 0.7 : 1.;
+		}
+		if (takingShot) { // no fade animation in a shot
+			return 0.7;
 		}
 		const auto opacity = _deletedOpacityAnimation.value(0.7);
 		if (!_deletedOpacityAnimation.animating()) {
