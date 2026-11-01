@@ -5,6 +5,7 @@
 //
 // Copyright @Radolyn, 2026
 #include "ayu/ayu_url_handlers.h"
+#include "ayu/features/plugins/plugins_ui.h"
 
 #include "lang_auto.h"
 #include "mainwindow.h"
@@ -183,6 +184,25 @@ bool HandleAyuSettings(
 		controller->window().setHighlightControlId(resolved.controlId);
 		controller->showSettings(resolved.section);
 	}
+	controller->window().activate();
+	return true;
+}
+
+bool HandleAyuPlugin(
+	Window::SessionController *controller,
+	const Match &match,
+	const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto params = url_parse_params(
+		match->captured(1),
+		qthelp::UrlParamNameTransform::ToLower);
+	const auto id = params.value(u"id"_q);
+	if (id.isEmpty()) {
+		return false;
+	}
+	FreshPlugins::ShowPluginSettings(controller, id, params.value(u"alias"_q));
 	controller->window().activate();
 	return true;
 }

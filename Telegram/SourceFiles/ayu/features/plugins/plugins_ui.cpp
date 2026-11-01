@@ -25,6 +25,7 @@
 #include "boxes/peer_list_box.h"
 #include "ayu/ui/fagram/fagram_nav_drawer.h"
 #include "base/timer.h"
+#include "lottie/lottie_icon.h"
 #include "base/weak_ptr.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
@@ -110,6 +111,7 @@ namespace cbor = fgpl::cbor;
 
 constexpr auto kMaxPluginChats = 100;
 constexpr auto kSettingsWaitMs = crl::time(5000);
+constexpr auto kUncloseableDialogMs = crl::time(120000);
 
 [[nodiscard]] bool HiddenPeer(not_null<const PeerData*> peer) {
 	return FreshSecret::IsSecretPeerId(peer->id) || peer->isSelf();
@@ -676,6 +678,7 @@ struct Page {
 	QString structure;
 	std::vector<Fn<void(const cbor::Value &item)>> update;
 	std::vector<Fn<void()>> flush;
+	std::map<std::string, QPointer<QWidget>> aliases;
 	rpl::lifetime lifetime;
 
 	void apply(const cbor::Value &page) {
@@ -831,6 +834,50 @@ enum class Target {
 		: "window.click";
 }
 
+[[nodiscard]] const char *LongClickType(Target target) {
+	return (target == Target::Settings)
+		? "settings.long_click"
+		: (target == Target::Dialog)
+		? "dialog.long_click"
+		: "window.long_click";
+}
+
+// Keeps what fits the mask (# a digit, A a letter, * anything) and writes its fixed characters.
+[[nodiscard]] QString ApplyMask(const QString &mask, const QString &input) {
+	auto result = QString();
+	auto at = 0;
+	for (auto i = 0; i != mask.size(); ++i) {
+		const auto rule = mask[i];
+		if (rule != '#' && rule != 'A' && rule != '*') {
+			if (at >= input.size()) {
+				break;
+			} else if (input[at] == rule) {
+				++at;
+			}
+			result += rule;
+			continue;
+		}
+		auto found = false;
+		while (at < input.size()) {
+			const auto ch = input[at++];
+			const auto fits = (rule == '#')
+				? (ch >= '0' && ch <= '9')
+				: (rule == 'A')
+				? ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+				: !ch.isNull();
+			if (fits) {
+				result += ch;
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			break;
+		}
+	}
+	return result;
+}
+
 [[nodiscard]] const style::FlatLabel &TextLabelStyle(const QString &style) {
 	return (style == u"title"_q)
 		? st::boxTitle
@@ -849,8 +896,34 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 	}
 }
 
-[[nodiscard]] QImage DecodeImage(const QByteArray &bytes) {
+[[nodiscard]] QImage DecodeImage(
+		const QByteArray &bytes,
+		const QString &kind,
+		QSize want) {
 	constexpr auto kMaxPixels = 4 * 1024 * 1024;
+	if (kind == u"svg"_q || kind == u"lottie"_q) {
+		if (want.isEmpty() || want.width() > 512 || want.height() > 512) {
+			return QImage();
+		}
+		const auto ratio = style::DevicePixelRatio();
+		auto result = QImage(want * ratio, QImage::Format_ARGB32_Premultiplied);
+		result.setDevicePixelRatio(ratio);
+		result.fill(Qt::transparent);
+		if (kind == u"svg"_q) {
+			auto renderer = QSvgRenderer(bytes);
+			if (!renderer.isValid()) {
+				return QImage();
+			}
+			auto p = QPainter(&result);
+			renderer.render(&p, QRectF(QPointF(), QSizeF(want)));
+			return result;
+		}
+		const auto icon = Lottie::MakeIcon({ .json = bytes, .sizeOverride = want });
+		if (!icon || !icon->valid()) {
+			return QImage();
+		}
+		return icon->frame().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+	}
 	auto buffer = QBuffer();
 	buffer.setData(bytes);
 	buffer.open(QIODevice::ReadOnly);
@@ -942,6 +1015,38 @@ void FillSubPageBox(
 			AddButtonIcon(button, st, plugin, name);
 		}
 		return button;
+	};
+	// A right click sends long_click for an item that asked for it, and offers its link.
+	const auto attachMenu = [&](not_null<Ui::RpWidget*> widget, const cbor::Value &item) {
+		const auto entryId = TextOf(item, "id").toStdString();
+		const auto longClick = FlagOf(item, "long_click");
+		const auto alias = TextOf(item, "alias");
+		const auto linked = !alias.isEmpty() && (target == Target::Settings);
+		if (!longClick && !linked) {
+			return;
+		} else if (linked) {
+			raw->aliases[alias.toStdString()] = QPointer<QWidget>(widget.get());
+		}
+		const auto link = u"tg://ayuplugin?id="_q + Utf8(plugin) + u"&alias="_q + alias;
+		const auto menu = raw->lifetime.make_state<base::unique_qptr<Ui::PopupMenu>>();
+		widget->events(
+		) | rpl::filter([](not_null<QEvent*> event) {
+			return event->type() == QEvent::ContextMenu;
+		}) | rpl::on_next([=](not_null<QEvent*> event) {
+			event->accept();
+			if (longClick) {
+				if (const auto strong = weak.get()) {
+					SendSetting(strong, plugin, LongClickType(target), entryId, std::nullopt, window);
+				}
+			}
+			if (linked) {
+				*menu = base::make_unique_q<Ui::PopupMenu>(widget, st::popupMenuWithIcons);
+				(*menu)->addAction(tr::lng_context_copy_link(tr::now), [=] {
+					QGuiApplication::clipboard()->setText(link);
+				}, &st::menuIconCopy);
+				(*menu)->popup(QCursor::pos());
+			}
+		}, widget->lifetime());
 	};
 	const auto addHint = [&](
 			const cbor::Value &item,
@@ -1088,6 +1193,7 @@ void FillSubPageBox(
 				};
 			} else if (type == u"toggle"_q) {
 				const auto button = addRow(label->value(), icon, QString());
+				attachMenu(button, item);
 				const auto on = button->lifetime().make_state<rpl::variable<bool>>(
 					FlagOf(item, "value"));
 				button->toggleOn(on->value(), true);
@@ -1103,6 +1209,7 @@ void FillSubPageBox(
 				});
 			} else if (type == u"button"_q) {
 				const auto button = addRow(label->value(), icon, TextOf(item, "style"));
+				attachMenu(button, item);
 				button->setDisabled(FlagOf(item, "disabled"));
 				button->addClickHandler([=] {
 					send(click, std::nullopt);
@@ -1120,6 +1227,7 @@ void FillSubPageBox(
 					icon,
 					QString(),
 					name->value());
+				attachMenu(button, item);
 				button->setDisabled(FlagOf(item, "disabled"));
 				button->addClickHandler([=] {
 					Window::ShowChooseRecipientBox(
@@ -1188,6 +1296,7 @@ void FillSubPageBox(
 			} else if (type == u"input"_q) {
 				space(Last::Block);
 				const auto max = int(std::max<int64_t>(IntOf(item, "max"), 1));
+				const auto mask = TextOf(item, "mask");
 				const auto getText = std::make_shared<Fn<QString()>>();
 				auto setText = Fn<void(const QString &)>();
 				auto focused = Fn<bool()>();
@@ -1258,7 +1367,18 @@ void FillSubPageBox(
 							TextOf(item, "value")),
 						st::boxRowPadding);
 					field->setMaxLength(max);
-					field->changes() | rpl::on_next(edited, field->lifetime());
+					field->changes() | rpl::on_next([=] {
+						if (!mask.isEmpty() && !*suppress) {
+							const auto text = field->getLastText();
+							const auto fixed = ApplyMask(mask, text);
+							if (fixed != text) {
+								*suppress = true;
+								field->setText(fixed);
+								*suppress = false;
+							}
+						}
+						edited();
+					}, field->lifetime());
 					field->focusedChanges(
 					) | rpl::filter(!rpl::mappers::_1) | rpl::on_next([=] {
 						sendNow();
@@ -1319,6 +1439,7 @@ void FillSubPageBox(
 					continue;
 				}
 				const auto button = addRow(label->value(), icon, QString(), current->value());
+				attachMenu(button, item);
 				button->setDisabled(FlagOf(item, "disabled"));
 				button->addClickHandler([=] {
 					const auto values = choice->values;
@@ -1347,6 +1468,7 @@ void FillSubPageBox(
 				const auto sub = raw->lifetime.make_state<std::shared_ptr<SubPage>>(
 					std::make_shared<SubPage>(SubPage{ item }));
 				const auto button = addRow(label->value(), icon, QString());
+				attachMenu(button, item);
 				button->setDisabled(FlagOf(item, "disabled"));
 				button->addClickHandler([=] {
 					controller->show(Box(
@@ -1473,10 +1595,12 @@ void FillSubPageBox(
 			} else if (type == u"image"_q) {
 				space(Last::Block);
 				const auto bytes = raw->lifetime.make_state<QByteArray>(BytesOf(item, "data"));
-				const auto image = raw->lifetime.make_state<QImage>(DecodeImage(*bytes));
+				const auto kind = raw->lifetime.make_state<QString>(TextOf(item, "kind"));
 				const auto want = raw->lifetime.make_state<QSize>(
 					int(IntOf(item, "width")),
 					int(IntOf(item, "height")));
+				const auto image = raw->lifetime.make_state<QImage>(
+					DecodeImage(*bytes, *kind, *want));
 				const auto wrap = content->add(
 					object_ptr<Ui::RpWidget>(content),
 					TextPadding(st::settingsButtonNoIcon));
@@ -1510,10 +1634,14 @@ void FillSubPageBox(
 					}
 				});
 				update = crl::guard(wrap, [=](const cbor::Value &now) {
-					*want = QSize(int(IntOf(now, "width")), int(IntOf(now, "height")));
-					if (const auto data = BytesOf(now, "data"); data != *bytes) {
+					const auto size = QSize(int(IntOf(now, "width")), int(IntOf(now, "height")));
+					const auto data = BytesOf(now, "data");
+					const auto format = TextOf(now, "kind");
+					if (data != *bytes || format != *kind || size != *want) {
 						*bytes = data;
-						*image = DecodeImage(data);
+						*kind = format;
+						*want = size;
+						*image = DecodeImage(data, format, size);
 					}
 					relayout();
 				});
@@ -1528,12 +1656,13 @@ void FillSubPageBox(
 					state->title = TextOf(entry, "title");
 					state->subtitle = TextOf(entry, "subtitle");
 					const auto entryId = TextOf(entry, "id").toStdString();
-					addRow(
+					const auto row = addRow(
 						state->title.value(),
 						TextOf(entry, "icon"),
 						QString(),
-						state->subtitle.value()
-					)->addClickHandler([=] {
+						state->subtitle.value());
+					attachMenu(row, entry);
+					row->addClickHandler([=] {
 						if (const auto strong = weak.get()) {
 							SendSetting(strong, plugin, click, entryId, std::nullopt, window);
 						}
@@ -1719,7 +1848,8 @@ void FillSettingsBox(
 		not_null<Window::SessionController*> controller,
 		std::string plugin,
 		std::string account,
-		QString pluginName) {
+		QString pluginName,
+		QString alias) {
 	box->setWidth(st::boxWideWidth);
 	const auto title = box->lifetime().make_state<rpl::variable<QString>>();
 	box->setTitle(title->value() | rpl::map([=](const QString &text) {
@@ -1732,10 +1862,23 @@ void FillSettingsBox(
 	const auto shown = box->lifetime().make_state<std::shared_ptr<Page>>();
 	const auto weak = base::make_weak(&controller->session());
 	const auto waited = box->lifetime().make_state<bool>(false);
+	const auto revealed = box->lifetime().make_state<bool>(alias.isEmpty());
 	const auto rebuild = [=] {
 		const auto page = PageOf(plugin, account);
 		*title = page ? TextOf(*page, "title") : QString();
 		ShowPage(content, controller, weak, plugin, page, Target::Settings, std::string(), *shown);
+		if (!*revealed && *shown) {
+			const auto found = (*shown)->aliases.find(alias.toStdString());
+			if (found != (*shown)->aliases.end() && found->second) {
+				*revealed = true;
+				const auto target = found->second;
+				Ui::PostponeCall(box, [=] {
+					if (target) {
+						box->scrollToWidget(target.data());
+					}
+				});
+			}
+		}
 		if (!page) {
 			content->add(
 				object_ptr<Ui::FlatLabel>(
@@ -2473,6 +2616,7 @@ void FillDialogBox(
 	const auto closedByPlugin = box->lifetime().make_state<bool>(false);
 	const auto shown = box->lifetime().make_state<std::shared_ptr<Page>>();
 	const auto buttonsShown = box->lifetime().make_state<std::optional<QString>>();
+	const auto closable = box->lifetime().make_state<bool>(true);
 	const auto rebuild = [=] {
 		const auto &pages = GetDialogs().pages;
 		const auto i = pages.find(key);
@@ -2481,6 +2625,10 @@ void FillDialogBox(
 		}
 		const auto title = TextOf(i->second, "title");
 		box->setTitle(rpl::single(title.isEmpty() ? PluginName(plugin) : title));
+		const auto flag = i->second.find("closable");
+		*closable = !(flag && flag->asBool() == false);
+		box->setCloseByEscape(*closable);
+		box->setCloseByOutsideClick(*closable);
 		ShowPage(content, controller, weak, plugin, &i->second, target, window, *shown);
 		const auto signature = StructureOf(cbor::Value::FromMap({
 			{ "buttons", i->second.find("buttons") ? *i->second.find("buttons") : cbor::Value() },
@@ -2503,9 +2651,18 @@ void FillDialogBox(
 				},
 				(style == u"danger"_q) ? st::attentionBoxButton : st::defaultBoxButton);
 		}
-		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		if (*closable) {
+			box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		}
 	};
 	rebuild();
+	// WHY: a dialog that cannot be closed must not outlive a plugin that forgot to close it.
+	const auto limit = box->lifetime().make_state<base::Timer>([=] {
+		if (!*closable) {
+			box->closeBox();
+		}
+	});
+	limit->callEach(kUncloseableDialogMs);
 	const auto closeByPlugin = [=] {
 		*closedByPlugin = true;
 		box->closeBox();
@@ -2927,6 +3084,9 @@ namespace {
 		{ "messages.ids", &st::menuIconChatBubble },
 		{ "chats.activity", &st::menuIconShowInChat },
 		{ "users.presence", &st::menuIconProfile },
+		{ "stories.read", &st::menuIconStoriesSave },
+		{ "calls.activity", &st::menuIconPhone },
+		{ "image.process", &st::menuIconPhoto },
 		{ "app.activity", &st::menuIconInfo },
 		{ "translate.provide", &st::menuIconTranslate },
 		{ "bots.inline", &st::menuIconBot },
@@ -2945,7 +3105,8 @@ namespace {
 		"messages.send", "messages.transform_outgoing", "messages.transform_incoming", "chats.list",
 		"chat.info", "media.read", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
-		"messages.ids", "chats.activity", "chats.manage", "chats.moderate",
+		"messages.ids", "chats.activity", "stories.read", "calls.activity",
+		"chats.manage", "chats.moderate",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -3524,6 +3685,9 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "messages.ids", tr::fresh_PermMessagesIds },
 		{ "chats.activity", tr::fresh_PermChatsActivity },
 		{ "users.presence", tr::fresh_PermUsersPresence },
+		{ "stories.read", tr::fresh_PermStoriesRead },
+		{ "calls.activity", tr::fresh_PermCallsActivity },
+		{ "image.process", tr::fresh_PermImageProcess },
 		{ "app.activity", tr::fresh_PermAppActivity },
 		{ "translate.provide", tr::fresh_PermTranslateProvide },
 		{ "ai.provide", tr::fresh_PermAiProvide },
@@ -4623,7 +4787,8 @@ CommandResult RunCommand(
 
 void ShowPluginSettings(
 		not_null<Window::SessionController*> controller,
-		const QString &pluginId) {
+		const QString &pluginId,
+		const QString &alias) {
 	const auto snapshot = Snapshot();
 	const auto id = pluginId.toStdString();
 	const auto account = AccountOf(&controller->session());
@@ -4637,7 +4802,7 @@ void ShowPluginSettings(
 	}));
 	const auto parsed = snapshot->manifest(id);
 	const auto name = parsed ? Utf8(parsed->name.get(Language())) : pluginId;
-	controller->show(Box(FillSettingsBox, controller, id, account, name));
+	controller->show(Box(FillSettingsBox, controller, id, account, name, alias));
 }
 
 #else
@@ -4691,7 +4856,10 @@ std::vector<PluginCommand> CommandsFor(
 	return {};
 }
 
-void ShowPluginSettings(not_null<Window::SessionController*>, const QString &) {
+void ShowPluginSettings(
+	not_null<Window::SessionController*>,
+	const QString &,
+	const QString &) {
 }
 
 void OpenPluginSettings(const std::string &, const std::string &) {

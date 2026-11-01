@@ -205,8 +205,11 @@
 "fresh_PermUsersInfo" = "Vedere i profili e lo stato online degli utenti";
 "fresh_PermChatsActive" = "Sapere quale chat apri";
 "fresh_PermMessagesIds" = "Ricevere gli ID dei messaggi che invii";
-"fresh_PermChatsActivity" = "Vedere chi scrive, le conferme di lettura e chi entra o esce dalle chat";
+"fresh_PermChatsActivity" = "Vedere chi scrive, le conferme di lettura, chi entra o esce dalle chat e quando vengono rinominate";
 "fresh_PermUsersPresence" = "Vedere quando le persone sono online";
+"fresh_PermStoriesRead" = "Sapere quando qualcuno pubblica una nuova storia";
+"fresh_PermCallsActivity" = "Vedere le chiamate in arrivo e quando finiscono";
+"fresh_PermImageProcess" = "Ridimensionare e convertire immagini per sé";
 "fresh_PermAppActivity" = "Sapere se l’app è in primo piano";
 "fresh_PermTranslateProvide" = "Tradurre i testi per te";
 "fresh_PermBotsInline" = "Interrogare i bot e premere i loro pulsanti per te";

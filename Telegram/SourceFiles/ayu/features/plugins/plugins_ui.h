@@ -225,9 +225,11 @@ enum class CommandResult {
 	MsgId replyToId,
 	const QString &text);
 
+// With an alias the page scrolls to the item that has it.
 void ShowPluginSettings(
 	not_null<Window::SessionController*> controller,
-	const QString &pluginId);
+	const QString &pluginId,
+	const QString &alias = QString());
 
 void ShowPluginDetails(
 	not_null<Window::SessionController*> controller,

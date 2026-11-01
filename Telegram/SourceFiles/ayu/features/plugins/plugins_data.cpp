@@ -2,6 +2,7 @@
 #include "ayu/features/plugins/plugins_data.h"
 
 #include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_image.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/ui/toasts.h"
 #include "ayu/secret/secret_peer.h"
@@ -397,6 +398,8 @@ void ShowPluginToast(const std::string &account, QString text) {
 			item.id = int64_t(Data::ParseCustomEmojiData(entity.data()));
 		} else if (entity.type() == EntityType::MentionName) {
 			item.id = int64_t(TextUtilities::MentionNameDataToFields(entity.data()).userId);
+		} else if (entity.type() == EntityType::Blockquote) {
+			item.collapsed = !entity.data().isEmpty();
 		}
 		result.push_back(std::move(item));
 	}
@@ -432,6 +435,8 @@ void ShowPluginToast(const std::string &account, QString text) {
 			data = QString::fromStdString(item.language);
 		} else if (i->second == EntityType::CustomEmoji) {
 			data = Data::SerializeCustomEmojiId(DocumentId(item.id));
+		} else if (i->second == EntityType::Blockquote) {
+			data = item.collapsed ? u"1"_q : QString();
 		} else if (i->second == EntityType::MentionName) {
 			const auto user = session
 				? session->data().userLoaded(UserId(item.id))
@@ -752,11 +757,12 @@ void WaitSent(
 	});
 }
 
-[[nodiscard]] TextWithEntities Formatted(const std::string &text, bool markdown) {
+[[nodiscard]] TextWithEntities Formatted(
+		Main::Session *session,
+		const std::string &text,
+		const std::vector<fgpl::TextEntity> &entities) {
 	auto result = TextWithEntities{ QString::fromStdString(text) };
-	if (markdown) {
-		TextUtilities::ParseEntities(result, TextParseMarkdown);
-	}
+	result.entities = EntitiesToApp(session, result.text, entities);
 	return result;
 }
 
@@ -1238,7 +1244,6 @@ public:
 			int64_t chat,
 			int64_t id,
 			const std::string &text,
-			bool markdown,
 			const std::vector<fgpl::TextEntity> &entities) override {
 		return OnMainAsync<std::string>([=](Fn<void(std::string)> done) {
 			resolveMessage(chat, id, [=](HistoryItem *item, std::string error) {
@@ -1249,13 +1254,10 @@ public:
 					done(fgpl::api::error::kDenied);
 					return;
 				}
-				auto formatted = Formatted(text, markdown);
-				for (auto &entity : EntitiesToApp(
-						&item->history()->session(),
-						formatted.text,
-						entities)) {
-					formatted.entities.push_back(std::move(entity));
-				}
+				auto formatted = Formatted(
+					&item->history()->session(),
+					text,
+					entities);
 				Api::EditTextMessage(
 					item,
 					std::move(formatted),
@@ -2865,6 +2867,11 @@ public:
 		return resolved.channel;
 	}
 
+	fgpl::Result<fgpl::ImageResult, std::string> image(
+			const fgpl::ImageRequest &request) override {
+		return ProcessImage(request);
+	}
+
 	std::string notify(const std::string &title, const std::string &text) override {
 		return OnMain<std::string>([=]() -> std::string {
 			const auto session = FindSession(_account);
@@ -3000,10 +3007,19 @@ public:
 				}, false);
 			};
 			auto config = Ui::Toast::Config{
+				.title = QString::fromStdString(toast.title),
 				.text = TextWithEntities{ QString::fromStdString(toast.text) },
 				.adaptive = true,
 				.duration = crl::time(toast.seconds) * 1000,
 			};
+			if (toast.id.empty()) {
+				if (const auto parent = ToastParentFor(account)) {
+					Ui::Toast::Show(parent, std::move(config));
+				} else {
+					Ui::Toast::Show(std::move(config));
+				}
+				return true;
+			}
 			const auto label = toast.label.empty()
 				? tr::lng_translate_undo(tr::now)
 				: QString::fromStdString(toast.label);
@@ -3231,7 +3247,7 @@ private:
 		action.options.scheduled = TimeId(outgoing.schedule);
 		action.options.sendAs = ChosenSendAs(history);
 		ApplyTarget(action, target);
-		auto text = Formatted(outgoing.text, outgoing.markdown);
+		auto text = Formatted(session, outgoing.text, outgoing.entities);
 		const auto size = int(text.text.size());
 		for (const auto &emoji : outgoing.customEmoji) {
 			if (emoji.offset + emoji.length > size) {
@@ -3242,9 +3258,6 @@ private:
 				int(emoji.offset),
 				int(emoji.length),
 				Data::SerializeCustomEmojiId(DocumentId(emoji.id))));
-		}
-		for (auto &entity : EntitiesToApp(session, text.text, outgoing.entities)) {
-			text.entities.push_back(std::move(entity));
 		}
 		auto message = Api::MessageToSend(action);
 		message.textWithTags = TextWithTags{
@@ -3344,7 +3357,7 @@ private:
 		if (!restriction || !Data::CanSend(thread, *restriction)) {
 			return { .error = fgpl::api::error::kDenied };
 		}
-		const auto caption = Formatted(message.text, message.markdown);
+		const auto caption = Formatted(session, message.text, message.entities);
 		file.caption = TextWithTags{
 			caption.text,
 			TextUtilities::ConvertEntitiesToTextTags(caption.entities),
@@ -3405,7 +3418,7 @@ private:
 			done(fgpl::api::error::kDenied);
 			return;
 		}
-		const auto caption = Formatted(edit.caption, edit.markdown);
+		const auto caption = Formatted(session, edit.caption, edit.entities);
 		file.spoiler = edit.spoiler;
 		const auto type = (asFile || file.type == Ui::PreparedFile::Type::File)
 			? SendMediaType::File
@@ -3755,6 +3768,11 @@ fgpl::IncomingInfo IncomingInfoOf(not_null<HistoryItem*> item, bool edited) {
 	result.secret = FreshSecret::IsSecretPeerId(peer->id);
 	result.chatType = PeerKind(peer);
 	result.edited = edited;
+	result.service = item->isService();
+	if (result.service) {
+		message.text = Utf8(item->notificationText().text);
+		message.entities.clear();
+	}
 	result.text = message.text;
 	result.entities = message.entities;
 	const auto value = fgpl::MessageValue(message);
@@ -3886,6 +3904,9 @@ void SendMessageEvent(
 	}
 	if (byPlugin) {
 		map.push_back({ "by_plugin", Value::FromBool(true) });
+	}
+	if (std::string_view(type) == "message.pinned") {
+		map.push_back({ "pinned", Value::FromBool(item->isPinned()) });
 	}
 	if (message.sticker) {
 		map.push_back({ "sticker", Value::FromMap({

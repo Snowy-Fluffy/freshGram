@@ -4470,6 +4470,8 @@ void ApiWrap::sendFiles(
 		SendAction action) {
 	if (FreshSecret::SendFiles(list, action)) {
 		return;
+	} else if (FreshPlugins::ApplyOutgoingFiles(list, type, album, action)) {
+		return;
 	}
 	const auto &ephemeral = _session->ephemeralMessages();
 	if (album && !ephemeral.isEphemeralBotReply(action.replyTo.messageId)) {

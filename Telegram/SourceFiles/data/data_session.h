@@ -429,6 +429,8 @@ public:
 	[[nodiscard]] rpl::producer<not_null<const History*>> historyUnloaded() const;
 	void notifyItemDataChange(not_null<HistoryItem*> item);
 	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> itemDataChanges() const;
+	void notifyItemPinnedChange(not_null<HistoryItem*> item);
+	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> itemPinnedChanges() const;
 	void notifyReactionsRemoved(ReactionsRemoved update);
 	[[nodiscard]] rpl::producer<ReactionsRemoved> reactionsRemoved() const;
 
@@ -1248,6 +1250,7 @@ private:
 	rpl::event_stream<not_null<HistoryItem*>> _itemTextRefreshRequest;
 	rpl::event_stream<DrawToReplyRequest> _drawToReplyRequests;
 	rpl::event_stream<not_null<HistoryItem*>> _itemDataChanges;
+	rpl::event_stream<not_null<HistoryItem*>> _itemPinnedChanges;
 	rpl::event_stream<ReactionsRemoved> _reactionsRemoved;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemRemoved;
 	rpl::event_stream<> _sessionDataAboutToBeCleared;

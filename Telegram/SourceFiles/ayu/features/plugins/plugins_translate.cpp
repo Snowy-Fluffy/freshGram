@@ -1,6 +1,7 @@
 // This is the source code of freshGram.
 #include "ayu/features/plugins/plugins_translate.h"
 
+#include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "base/weak_ptr.h"
 #include "crl/crl_on_main.h"
@@ -127,13 +128,14 @@ public:
 						.error = Ui::TranslateProviderError::Unknown,
 					};
 					if (good && !result.items[k].empty()) {
-						auto text = TextWithEntities{
-							QString::fromStdString(result.items[k]),
+						one = Ui::TranslateProviderResult{
+							.text = DisplayTextOf(
+								nullptr,
+								QString::fromStdString(result.items[k]),
+								(k < int(result.entities.size())
+									? result.entities[k]
+									: std::vector<fgpl::TextEntity>())),
 						};
-						if (result.markdown) {
-							TextUtilities::ParseEntities(text, TextParseMarkdown);
-						}
-						one = Ui::TranslateProviderResult{ .text = std::move(text) };
 					}
 					state->doneOne(indices[k], std::move(one));
 				}
