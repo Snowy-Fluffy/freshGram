@@ -1496,7 +1496,11 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		for (const auto &msgId : d.vmessages().v) {
 			const auto item = session().data().message(peerId, msgId.v);
 			if (item) {
+				const auto was = item->isPinned();
 				item->setIsPinned(d.is_pinned());
+				if (was != item->isPinned()) {
+					session().data().notifyItemPinnedChange(item);
+				}
 			} else if (d.is_pinned()) {
 				if (const auto peer = session().data().channelLoaded(
 						d.vchannel_id())) {
@@ -1533,7 +1537,11 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		for (const auto &msgId : d.vmessages().v) {
 			const auto item = session().data().message(peerId, msgId.v);
 			if (item) {
+				const auto was = item->isPinned();
 				item->setIsPinned(d.is_pinned());
+				if (was != item->isPinned()) {
+					session().data().notifyItemPinnedChange(item);
+				}
 			} else if (d.is_pinned()) {
 				if (const auto peer = session().data().peerLoaded(peerId)) {
 					session().api().requestPinnedMessagesIfNeeded(

@@ -205,8 +205,11 @@
 "fresh_PermUsersInfo" = "查看用户资料和在线状态";
 "fresh_PermChatsActive" = "知道你打开了哪个聊天";
 "fresh_PermMessagesIds" = "获取你所发送消息的 ID";
-"fresh_PermChatsActivity" = "查看正在输入、已读状态以及谁加入或离开聊天";
+"fresh_PermChatsActivity" = "查看正在输入、已读状态、谁加入或离开聊天以及聊天改名";
 "fresh_PermUsersPresence" = "查看用户是否在线";
+"fresh_PermStoriesRead" = "得知有人发布了新动态";
+"fresh_PermCallsActivity" = "查看来电以及通话结束";
+"fresh_PermImageProcess" = "为自身缩放和转换图片";
 "fresh_PermAppActivity" = "知道应用是否处于前台";
 "fresh_PermTranslateProvide" = "为你翻译文本";
 "fresh_PermBotsInline" = "代你查询机器人并点击其按钮";

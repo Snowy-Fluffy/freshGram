@@ -4,6 +4,7 @@
 #include "base/basic_types.h"
 
 #include <filesystem>
+#include <memory>
 
 namespace Main {
 class Session;
@@ -16,9 +17,16 @@ struct ManagerSnapshot;
 
 namespace Api {
 struct MessageToSend;
+struct SendAction;
 } // namespace Api
 
+namespace Ui {
+struct PreparedList;
+} // namespace Ui
+
 class History;
+struct SendingAlbum;
+enum class SendMediaType;
 
 namespace Window {
 class SessionController;
@@ -42,6 +50,13 @@ void Stop();
 [[nodiscard]] bool ApplyOutgoing(
 	Api::MessageToSend &message,
 	std::optional<MsgId> localMessageId);
+// Plugins may change the caption and the options of a send of files, or stop it.
+// True when they took the send and it goes on later: the list and the album are moved away.
+[[nodiscard]] bool ApplyOutgoingFiles(
+	Ui::PreparedList &list,
+	SendMediaType type,
+	std::shared_ptr<SendingAlbum> &album,
+	const Api::SendAction &action);
 [[nodiscard]] bool HasPendingOutgoing(not_null<History*> history);
 [[nodiscard]] State CurrentState();
 [[nodiscard]] rpl::producer<State> StateValue();

@@ -186,6 +186,7 @@ public:
 	[[nodiscard]] rpl::producer<> sourcesChanged(
 		StorySourcesList list) const;
 	[[nodiscard]] rpl::producer<PeerId> sourceChanged() const;
+	[[nodiscard]] rpl::producer<FullStoryId> newStories() const;
 	[[nodiscard]] rpl::producer<PeerId> itemsChanged() const;
 
 	[[nodiscard]] base::expected<not_null<Story*>, NoStory> lookup(
@@ -437,6 +438,7 @@ private:
 	mtpRequestId _loadMoreRequestId[kStorySourcesListCount] = { 0 };
 
 	rpl::event_stream<PeerId> _sourceChanged;
+	rpl::event_stream<FullStoryId> _newStories;
 	rpl::event_stream<PeerId> _itemsChanged;
 
 	std::unordered_map<PeerId, Set> _archive;

@@ -35,6 +35,12 @@ bool HandleAyuSettings(
 	const Match &match,
 	const QVariant &context);
 
+// tg://ayuplugin?id=<plugin>&alias=<item>: a plugin's settings, scrolled to one item.
+bool HandleAyuPlugin(
+	Window::SessionController *controller,
+	const Match &match,
+	const QVariant &context);
+
 bool TryHandleSpotify(const QString &url);
 
 [[nodiscard]] bool IsWebUrl(const QUrl &url);

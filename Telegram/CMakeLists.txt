@@ -158,6 +158,8 @@ set(ayugram_files
         ayu/features/plugins/plugins_control.h
         ayu/features/plugins/plugins_data.cpp
         ayu/features/plugins/plugins_data.h
+        ayu/features/plugins/plugins_image.cpp
+        ayu/features/plugins/plugins_image.h
         ayu/features/plugins/plugins_log_view.cpp
         ayu/features/plugins/plugins_log_view.h
         ayu/features/plugins/plugins_runtime.cpp

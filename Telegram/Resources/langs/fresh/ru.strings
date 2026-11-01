@@ -205,8 +205,11 @@
 "fresh_PermUsersInfo" = "Видеть профили пользователей и статус в сети";
 "fresh_PermChatsActive" = "Знать, какой чат вы открыли";
 "fresh_PermMessagesIds" = "Получать идентификаторы отправляемых вами сообщений";
-"fresh_PermChatsActivity" = "Видеть набор текста, отметки о прочтении и кто входит в чаты или выходит из них";
+"fresh_PermChatsActivity" = "Видеть набор текста, отметки о прочтении, кто входит в чаты или выходит из них и переименования чатов";
 "fresh_PermUsersPresence" = "Видеть, когда люди в сети";
+"fresh_PermStoriesRead" = "Знать, когда кто-то публикует новую историю";
+"fresh_PermCallsActivity" = "Видеть входящие звонки и их завершение";
+"fresh_PermImageProcess" = "Менять размер и формат картинок для себя";
 "fresh_PermAppActivity" = "Знать, находится ли приложение в фокусе";
 "fresh_PermTranslateProvide" = "Переводить тексты для вас";
 "fresh_PermBotsInline" = "Обращаться к ботам и нажимать их кнопки за вас";

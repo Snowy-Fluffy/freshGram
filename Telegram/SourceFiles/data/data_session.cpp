@@ -2372,6 +2372,14 @@ rpl::producer<not_null<HistoryItem*>> Session::itemDataChanges() const {
 	return _itemDataChanges.events();
 }
 
+void Session::notifyItemPinnedChange(not_null<HistoryItem*> item) {
+	_itemPinnedChanges.fire_copy(item);
+}
+
+rpl::producer<not_null<HistoryItem*>> Session::itemPinnedChanges() const {
+	return _itemPinnedChanges.events();
+}
+
 void Session::notifyReactionsRemoved(ReactionsRemoved update) {
 	_reactionsRemoved.fire(std::move(update));
 }

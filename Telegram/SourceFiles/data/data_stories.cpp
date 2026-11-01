@@ -263,6 +263,7 @@ void Stories::apply(const MTPDupdateStory &data) {
 	const auto wasInfo = i->second.info();
 	i->second.ids.emplace(idDates);
 	const auto nowInfo = i->second.info();
+	_newStories.fire({ peerId, idDates.id });
 	if (peer->isSelf() && i->second.readTill < idDates.id) {
 		_readTill[peerId] = i->second.readTill = idDates.id;
 	}
@@ -1148,6 +1149,10 @@ rpl::producer<> Stories::sourcesChanged(StorySourcesList list) const {
 
 rpl::producer<PeerId> Stories::sourceChanged() const {
 	return _sourceChanged.events();
+}
+
+rpl::producer<FullStoryId> Stories::newStories() const {
+	return _newStories.events();
 }
 
 rpl::producer<PeerId> Stories::itemsChanged() const {

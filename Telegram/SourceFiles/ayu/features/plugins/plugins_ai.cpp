@@ -1,6 +1,7 @@
 // This is the source code of freshGram.
 #include "ayu/features/plugins/plugins_ai.h"
 
+#include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "crl/crl_on_main.h"
 #include "main/main_session.h"
@@ -107,11 +108,10 @@ int RequestAi(
 				: result.error));
 			return;
 		}
-		auto text = TextWithEntities{ QString::fromStdString(result.text) };
-		if (result.markdown) {
-			TextUtilities::ParseEntities(text, TextParseMarkdown);
-		}
-		done(std::move(text));
+		done(DisplayTextOf(
+			session,
+			QString::fromStdString(result.text),
+			result.entities));
 	};
 	const auto unavailable = [=] {
 		crl::on_main([=] {

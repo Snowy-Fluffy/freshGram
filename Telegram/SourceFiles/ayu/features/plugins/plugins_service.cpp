@@ -26,7 +26,12 @@
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
+#include "storage/localimageloader.h"
+#include "ui/chat/attach/attach_prepare.h"
 #include "base/unixtime.h"
+#include "calls/calls_call.h"
+#include "calls/calls_instance.h"
+#include "data/data_stories.h"
 #include "lang/lang_keys.h"
 #include "ui/toast/toast.h"
 #include "base/flat_set.h"
@@ -85,6 +90,7 @@ struct Events {
 	std::map<std::tuple<PeerId, PeerId, QString, bool>, crl::time> typing;
 	std::map<std::pair<PeerId, bool>, MsgId> readTill;
 	std::map<PeerId, std::pair<std::string, int64_t>> statuses;
+	std::map<PeerId, QString> titles;
 };
 
 struct Watched {
@@ -93,10 +99,18 @@ struct Watched {
 	rpl::lifetime events;
 };
 
+// A send of files waits in the same queue as the texts, with its caption in the message.
+struct OutgoingFiles {
+	Ui::PreparedList list;
+	SendMediaType type = SendMediaType();
+	std::shared_ptr<SendingAlbum> album;
+};
+
 struct Outgoing {
 	Api::MessageToSend message;
 	std::optional<MsgId> localMessageId;
 	bool byPlugin = false;
+	std::unique_ptr<OutgoingFiles> files;
 };
 
 struct Service {
@@ -209,7 +223,7 @@ struct Service {
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
-	config.environment.apiLevel = 6;
+	config.environment.apiLevel = 7;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}
@@ -304,6 +318,13 @@ void ForgetAccount(Service &service, Main::Account *account) {
 		&& !item->history()->peer->isSelf();
 }
 
+[[nodiscard]] bool ReportableService(not_null<const HistoryItem*> item) {
+	return item->isRegular()
+		&& IsServerMsgId(item->id)
+		&& item->isService()
+		&& !item->history()->peer->isSelf();
+}
+
 [[nodiscard]] Seen SeenOf(not_null<const HistoryItem*> item) {
 	const auto edited = item->Get<HistoryMessageEdited>();
 	return {
@@ -378,19 +399,12 @@ void ApplyIncoming(
 		item->setPluginDisplay(std::nullopt);
 		return;
 	}
-	auto display = TextWithEntities();
-	if (result.text && result.markdown) {
-		display = TextWithEntities{ QString::fromStdString(*result.text) };
-		TextUtilities::ParseEntities(display, TextParseMarkdown);
-	} else {
-		display = DisplayTextOf(
-			session,
-			result.text
-				? QString::fromStdString(*result.text)
-				: item->originalText().text,
-			result.entities.value_or(std::vector<fgpl::TextEntity>()));
-	}
-	item->setPluginDisplay(std::move(display));
+	item->setPluginDisplay(DisplayTextOf(
+		session,
+		result.text
+			? QString::fromStdString(*result.text)
+			: item->originalText().text,
+		result.entities.value_or(std::vector<fgpl::TextEntity>())));
 }
 
 void RunIncoming(
@@ -398,7 +412,12 @@ void RunIncoming(
 		const std::string &account,
 		not_null<HistoryItem*> item,
 		not_null<Events*> events) {
-	if (item->out() || !Reportable(item) || Hidden(item->history()->peer)) {
+	const auto service = item->isService();
+	if (service
+		? !ReportableService(item)
+		: (item->out() || !Reportable(item))) {
+		return;
+	} else if (Hidden(item->history()->peer)) {
 		return;
 	}
 	const auto snapshot = Snapshot();
@@ -587,6 +606,109 @@ void WatchActivity(
 		DispatchActivity(id, "user.status", std::move(fields));
 	}, lifetime);
 
+	session->changes().peerUpdates(
+		Data::PeerUpdate::Flag::Name
+	) | rpl::on_next([=](const Data::PeerUpdate &update) {
+		const auto peer = update.peer;
+		if (!WantsEvent("chat.title_changed")
+			|| peer->isUser()
+			|| Hidden(peer)) {
+			return;
+		}
+		const auto title = peer->name();
+		const auto i = events->titles.find(peer->id);
+		const auto known = (i != end(events->titles));
+		if (known && i->second == title) {
+			return;
+		}
+		const auto old = known ? i->second : QString();
+		events->titles[peer->id] = title;
+		Trim(events->titles);
+		auto fields = fgpl::cbor::Map{
+			{ "chat", Value::FromInt(int64_t(peer->id.value)) },
+			{ "title", Value::FromText(title.toStdString()) },
+		};
+		if (known) {
+			fields.push_back({ "old_title", Value::FromText(old.toStdString()) });
+		}
+		DispatchActivity(id, "chat.title_changed", std::move(fields));
+	}, lifetime);
+
+	session->data().stories().newStories(
+	) | rpl::on_next([=](FullStoryId story) {
+		if (!WantsEvent("story.new")) {
+			return;
+		}
+		const auto peer = session->data().peerLoaded(story.peer);
+		if (!peer || peer->isSelf() || Hidden(peer)) {
+			return;
+		}
+		DispatchActivity(id, "story.new", {
+			{ "chat", Value::FromInt(int64_t(peer->id.value)) },
+			{ "story_id", Value::FromInt(int64_t(story.story)) },
+			{ "date", Value::FromInt(int64_t(base::unixtime::now())) },
+		});
+	}, lifetime);
+
+	const auto callLifetime = lifetime.make_state<rpl::lifetime>();
+	Core::App().calls().currentCallValue(
+	) | rpl::on_next([=](Calls::Call *call) {
+		callLifetime->destroy();
+		if (!call || &call->user()->session() != session.get()) {
+			return;
+		}
+		const auto user = call->user();
+		if (Hidden(user)) {
+			return;
+		}
+		const auto fields = [=](fgpl::cbor::Map more = {}) {
+			auto result = fgpl::cbor::Map{
+				{ "chat", Value::FromInt(int64_t(user->id.value)) },
+				{ "user", Value::FromInt(int64_t(user->id.value)) },
+				{ "incoming", Value::FromBool(
+					call->type() == Calls::CallType::Incoming) },
+			};
+			for (auto &field : more) {
+				result.push_back(std::move(field));
+			}
+			return result;
+		};
+		if (call->type() == Calls::CallType::Incoming
+			&& WantsEvent("call.incoming")) {
+			DispatchActivity(id, "call.incoming", fields());
+		}
+		const auto started = std::make_shared<crl::time>(0);
+		const auto finished = std::make_shared<bool>(false);
+		call->stateValue(
+		) | rpl::on_next([=](Calls::Call::State state) {
+			using State = Calls::Call::State;
+			if (state == State::Established && !*started) {
+				*started = crl::now();
+				return;
+			}
+			const auto reason = [&]() -> const char* {
+				switch (state) {
+				case State::Ended: return "ended";
+				case State::EndedByOtherDevice: return "other_device";
+				case State::Busy: return "busy";
+				case State::Failed:
+				case State::FailedHangingUp: return "failed";
+				default: return nullptr;
+				}
+			}();
+			if (!reason || *finished || !WantsEvent("call.ended")) {
+				return;
+			}
+			*finished = true;
+			DispatchActivity(id, "call.ended", fields({
+				{ "reason", Value::FromText(reason) },
+				{ "duration", Value::FromInt(*started
+					? (crl::now() - *started) / 1000
+					: 0) },
+			}));
+		}, *callLifetime);
+	}, lifetime);
+
 	Core::App().appDeactivatedValue(
 	) | rpl::skip(1) | rpl::on_next([=](bool deactivated) {
 		const auto type = deactivated ? "app.blur" : "app.focus";
@@ -664,6 +786,12 @@ void WatchEvents(
 		if (changed) {
 			Note(*events, item);
 			SendMessageEvent("message.edited", item, id);
+		}
+	}, lifetime);
+	data->itemPinnedChanges(
+	) | rpl::on_next([=](not_null<HistoryItem*> item) {
+		if (WantsEvent("message.pinned") && Reportable(item)) {
+			SendMessageEvent("message.pinned", item, id);
 		}
 	}, lifetime);
 	data->itemRemoved(
@@ -823,7 +951,7 @@ void Stop() {
 	ReleasePendingHidden();
 	for (auto &[history, queue] : base::take(service.outgoing)) {
 		for (const auto &outgoing : queue) {
-			if (!outgoing.byPlugin) {
+			if (!outgoing.byPlugin && !outgoing.files) {
 				RestoreDraft(outgoing.message);
 			}
 		}
@@ -838,7 +966,9 @@ void Stop() {
 
 namespace {
 
-[[nodiscard]] fgpl::OutgoingInfo InfoOf(const Api::MessageToSend &message) {
+[[nodiscard]] fgpl::OutgoingInfo InfoOf(
+		const Api::MessageToSend &message,
+		const OutgoingFiles *files = nullptr) {
 	const auto &action = message.action;
 	const auto peer = action.history->peer;
 	auto result = fgpl::OutgoingInfo();
@@ -853,19 +983,42 @@ namespace {
 	result.scheduled = action.options.scheduled;
 	result.text = message.textWithTags.text.toStdString();
 	result.entities = EntitiesOf(message.textWithTags);
+	if (files) {
+		using Type = Ui::PreparedFile::Type;
+		for (const auto &file : files->list.files) {
+			const auto kind = (files->type == SendMediaType::File)
+				? "file"
+				: (file.type == Type::Photo)
+				? "photo"
+				: (file.type == Type::Video)
+				? "video"
+				: (file.type == Type::Music)
+				? "audio"
+				: "file";
+			result.files.push_back({
+				.kind = kind,
+				.name = (file.displayName.isEmpty()
+					? QFileInfo(file.path).fileName()
+					: file.displayName).toStdString(),
+				.size = file.size,
+			});
+		}
+	}
 	return result;
 }
 
-[[nodiscard]] bool Transforms(const Api::MessageToSend &message) {
+[[nodiscard]] bool Transforms(
+		const Api::MessageToSend &message,
+		const OutgoingFiles *files = nullptr) {
 	const auto snapshot = Snapshot();
 	const auto &options = message.action.options;
 	return snapshot
-		&& !message.textWithTags.text.isEmpty()
+		&& (files ? !files->list.files.empty() : !message.textWithTags.text.isEmpty())
 		&& !options.shortcutId
 		&& !options.welcomeTemplate
 		&& !options.suggest.exists
 		&& (!snapshot->loaded
-			|| snapshot->transformsOutgoing(InfoOf(message)));
+			|| snapshot->transformsOutgoing(InfoOf(message, files)));
 }
 
 void ApplyChanges(
@@ -923,9 +1076,20 @@ void SendNow(Outgoing &&outgoing) {
 	auto &service = GetService();
 	const auto history = outgoing.message.action.history;
 	service.sending = true;
-	history->session().api().sendMessage(
-		std::move(outgoing.message),
-		outgoing.localMessageId);
+	if (const auto files = outgoing.files.get()) {
+		if (!files->list.files.empty()) {
+			files->list.files.front().caption = outgoing.message.textWithTags;
+		}
+		history->session().api().sendFiles(
+			std::move(files->list),
+			files->type,
+			std::move(files->album),
+			outgoing.message.action);
+	} else {
+		history->session().api().sendMessage(
+			std::move(outgoing.message),
+			outgoing.localMessageId);
+	}
 	service.sending = false;
 }
 
@@ -962,7 +1126,7 @@ void Refuse(const Outgoing &outgoing, const fgpl::OutgoingResult &result) {
 	const auto name = parsed
 		? QString::fromStdString(parsed->name.get(Lang::Id().toStdString()))
 		: QString::fromStdString(result.plugin);
-	if (!outgoing.byPlugin) {
+	if (!outgoing.byPlugin && !outgoing.files) {
 		RestoreDraft(outgoing.message);
 	}
 	Ui::Toast::Show(tr::fresh_PluginOutgoingBlocked(
@@ -1013,14 +1177,7 @@ void Finish(
 	} else {
 		ApplyChanges(outgoing.message, result);
 		const auto changed = QString::fromStdString(result.text);
-		if (result.markdown) {
-			auto parsed = TextWithEntities{ changed };
-			TextUtilities::ParseEntities(parsed, TextParseMarkdown);
-			outgoing.message.textWithTags = TextWithTags{
-				parsed.text,
-				TextUtilities::ConvertEntitiesToTextTags(parsed.entities),
-			};
-		} else if (result.entities) {
+		if (result.entities) {
 			outgoing.message.textWithTags = TextWithEntitiesOf(
 				&history->session(),
 				changed,
@@ -1037,7 +1194,7 @@ void Next(not_null<History*> history) {
 	auto &service = GetService();
 	auto i = service.outgoing.find(history);
 	while (i != end(service.outgoing) && !i->second.empty()) {
-		if (!Transforms(i->second.front().message)) {
+		if (!Transforms(i->second.front().message, i->second.front().files.get())) {
 			auto outgoing = std::move(i->second.front());
 			i->second.pop_front();
 			SendNow(std::move(outgoing));
@@ -1046,7 +1203,7 @@ void Next(not_null<History*> history) {
 		}
 		const auto &message = i->second.front().message;
 		const auto account = AccountId(&history->session()).toStdString();
-		const auto info = InfoOf(message);
+		const auto info = InfoOf(message, i->second.front().files.get());
 		const auto weak = base::make_weak(&history->session());
 		const auto posted = Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->transformOutgoingAsync(
@@ -1098,6 +1255,47 @@ bool ApplyOutgoing(
 				&history->session(),
 				FullMsgId(history->peer->id, *localMessageId)));
 	queue.push_back({ std::move(message), localMessageId, byPlugin });
+	if (!waiting) {
+		Next(history);
+	}
+	return true;
+#else
+	return false;
+#endif
+}
+
+bool ApplyOutgoingFiles(
+		Ui::PreparedList &list,
+		SendMediaType type,
+		std::shared_ptr<SendingAlbum> &album,
+		const Api::SendAction &action) {
+#ifdef FRESHGRAM_PLUGINS
+	auto &service = GetService();
+	if (service.sending
+		|| !service.control
+		|| PluginSending()
+		|| list.files.empty()
+		|| !action.history) {
+		return false;
+	}
+	const auto history = action.history;
+	auto message = Api::MessageToSend(action);
+	message.textWithTags = list.files.front().caption;
+	auto files = std::make_unique<OutgoingFiles>(OutgoingFiles{
+		std::move(list),
+		type,
+		std::move(album),
+	});
+	const auto queued = service.outgoing.find(history);
+	const auto waiting = (queued != end(service.outgoing))
+		&& !queued->second.empty();
+	if (!waiting && !Transforms(message, files.get())) {
+		list = std::move(files->list);
+		album = std::move(files->album);
+		return false;
+	}
+	auto &queue = service.outgoing[history];
+	queue.push_back({ std::move(message), std::nullopt, false, std::move(files) });
 	if (!waiting) {
 		Next(history);
 	}
