@@ -1,4 +1,6 @@
 #include "fgpl/base64.h"
+#include "fgpl/dev_runner.h"
+#include "fgpl/directory_package.h"
 #include "fgpl/json.h"
 #include "fgpl/package.h"
 #include "fgpl/permissions.h"
@@ -12,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <string>
 
 namespace {
@@ -111,47 +114,12 @@ int Verify(const std::string &path) {
 }
 
 int Pack(const fs::path &directory, const std::string &output, const std::string &keyPath) {
-	const auto manifestBytes = ReadFile(directory / "manifest.json");
-	if (!manifestBytes) {
-		std::fprintf(stderr, "no manifest.json in %s\n", directory.string().c_str());
+	auto read = ReadDirectoryPackage(directory);
+	if (!read.ok()) {
+		std::fprintf(stderr, "%s\n", read.error().c_str());
 		return 1;
 	}
-	auto document = json::Parse(std::string(manifestBytes->begin(), manifestBytes->end()));
-	if (!document.ok() || !document.value().asMap()) {
-		std::fprintf(stderr, "manifest.json: %s\n", document.ok() ? "not an object" : document.error().c_str());
-		return 1;
-	}
-	auto files = std::vector<std::pair<std::string, cbor::Bytes>>();
-	for (const auto &entry : fs::recursive_directory_iterator(directory)) {
-		if (!entry.is_regular_file()) {
-			continue;
-		}
-		const auto relative = fs::relative(entry.path(), directory).generic_string();
-		if (relative == "manifest.json") {
-			continue;
-		}
-		auto content = ReadFile(entry.path());
-		if (!content) {
-			std::fprintf(stderr, "cannot read %s\n", relative.c_str());
-			return 1;
-		}
-		files.emplace_back(relative, std::move(*content));
-	}
-	std::sort(files.begin(), files.end(), [](const auto &a, const auto &b) {
-		return a.first < b.first;
-	});
-	auto hashes = cbor::Map();
-	for (const auto &file : files) {
-		hashes.push_back({ file.first, cbor::Value::FromText(HashText(file.second)) });
-	}
-	auto map = cbor::Map();
-	for (auto &entry : *document.value().asMap()) {
-		if (entry.key != "files" && entry.key != "signature") {
-			map.push_back(std::move(entry));
-		}
-	}
-	map.push_back({ "files", cbor::Value::FromMap(std::move(hashes)) });
-	auto signedDocument = cbor::Value::FromMap(std::move(map));
+	auto signedDocument = std::move(read.value().document);
 	if (!keyPath.empty()) {
 		const auto seed = ReadSeed(keyPath);
 		const auto key = seed ? Ed25519PublicKey(*seed) : std::nullopt;
@@ -168,15 +136,7 @@ int Pack(const fs::path &directory, const std::string &output, const std::string
 			{ "value", cbor::Value::FromText(Base64Encode(*signature)) },
 		}) });
 	}
-	const auto manifestText = json::Canonical(signedDocument);
-	auto archiveFiles = std::vector<std::pair<std::string, cbor::Bytes>>();
-	archiveFiles.emplace_back(
-		"manifest.json",
-		cbor::Bytes(manifestText.begin(), manifestText.end()));
-	for (auto &file : files) {
-		archiveFiles.push_back(std::move(file));
-	}
-	const auto archive = WriteZip(archiveFiles);
+	const auto archive = WriteArchive(signedDocument, std::move(read.value().files));
 	const auto checked = OpenPackage(archive);
 	if (!checked.ok()) {
 		std::fprintf(stderr, "the package would not be accepted:\n");
@@ -287,6 +247,79 @@ int HashFile(const std::string &path) {
 	return 0;
 }
 
+[[nodiscard]] std::string ToolDirectory(const char *argv0) {
+#ifdef __linux__
+	auto error = std::error_code();
+	const auto self = fs::read_symlink("/proc/self/exe", error);
+	if (!error) {
+		return self.parent_path().string();
+	}
+#endif
+	const auto parent = fs::path(argv0).parent_path();
+	return parent.empty() ? std::string(".") : parent.string();
+}
+
+[[nodiscard]] std::set<std::string> SplitList(const std::string &text) {
+	auto result = std::set<std::string>();
+	auto start = size_t(0);
+	while (start <= text.size()) {
+		const auto comma = std::min(text.find(',', start), text.size());
+		if (comma > start) {
+			result.insert(text.substr(start, comma - start));
+		}
+		start = comma + 1;
+	}
+	return result;
+}
+
+int Run(int argc, char **argv) {
+	auto options = dev::RunOptions();
+	options.hostDirectory = ToolDirectory(argv[0]);
+	for (auto i = 2; i != argc; ++i) {
+		const auto argument = std::string(argv[i]);
+		const auto next = [&]() -> const char* {
+			return (i + 1 < argc) ? argv[++i] : nullptr;
+		};
+		auto *value = (const char*)nullptr;
+		if (argument == "--no-sandbox") {
+			options.noSandbox = true;
+		} else if (argument.rfind("--", 0) != 0) {
+			if (!options.target.empty()) {
+				return 64;
+			}
+			options.target = argument;
+		} else if ((value = next()) == nullptr) {
+			std::fprintf(stderr, "%s needs a value\n", argument.c_str());
+			return 64;
+		} else if (argument == "--script") {
+			options.script = value;
+		} else if (argument == "--runtime") {
+			options.runtime = value;
+		} else if (argument == "--host") {
+			options.host = value;
+		} else if (argument == "--state") {
+			options.state = value;
+		} else if (argument == "--folder") {
+			options.folder = value;
+		} else if (argument == "--app") {
+			options.app = value;
+		} else if (argument == "--account") {
+			options.account = value;
+		} else if (argument == "--grant") {
+			options.grant = SplitList(value);
+		} else if (argument == "--deny") {
+			options.deny = SplitList(value);
+		} else {
+			std::fprintf(stderr, "unknown option %s\n", argument.c_str());
+			return 64;
+		}
+	}
+	if (options.target.empty()) {
+		return 64;
+	}
+	return dev::Run(options);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -296,6 +329,8 @@ int main(int argc, char **argv) {
 			"  fgpl_tool keygen <name>\n"
 			"  fgpl_tool pack <directory> <output.fgpl> [--key <name>.key]\n"
 			"  fgpl_tool verify <package.fgpl>\n"
+			"  fgpl_tool run <directory|package.fgpl> [--script <file>] [--runtime <dir>] [--no-sandbox]\n"
+			"               [--state <dir>] [--folder <dir>] [--grant a,b] [--deny a,b] [--app X.Y.Z]\n"
 			"  fgpl_tool sign-runtime <index.json> <name>.key <output.json>\n"
 			"  fgpl_tool hash <file>\n"
 			"  fgpl_tool pack-runtime <directory> <output.zip>\n");
@@ -305,7 +340,10 @@ int main(int argc, char **argv) {
 		return usage();
 	}
 	const auto command = std::string(argv[1]);
-	if (command == "keygen") {
+	if (command == "run") {
+		const auto result = Run(argc, argv);
+		return (result == 64) ? usage() : result;
+	} else if (command == "keygen") {
 		return KeyGen(argv[2]);
 	} else if (command == "pack-runtime" && argc == 4) {
 		return PackRuntime(argv[2], argv[3]);

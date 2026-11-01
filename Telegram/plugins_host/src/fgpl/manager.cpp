@@ -522,6 +522,8 @@ void PluginManager::loadState() {
 				record.grants.emplace(kAllAccounts, std::move(*merged));
 			}
 		}
+		record.log->plugin = record.id;
+		record.log->sink = _config.services.logSink;
 		_records.emplace(record.id, std::move(record));
 	}
 }
@@ -535,10 +537,16 @@ namespace {
 void AppendLog(LogRing &ring, size_t maxLines, std::string_view line, bool fromApp) {
 	const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(
 		std::chrono::system_clock::now().time_since_epoch()).count();
-	const auto lock = std::scoped_lock(ring.mutex);
-	ring.lines.push_back({ int64_t(time), std::string(line.substr(0, 500)), fromApp });
-	while (ring.lines.size() > maxLines) {
-		ring.lines.pop_front();
+	auto added = LogLine{ int64_t(time), std::string(line.substr(0, 500)), fromApp };
+	{
+		const auto lock = std::scoped_lock(ring.mutex);
+		ring.lines.push_back(added);
+		while (ring.lines.size() > maxLines) {
+			ring.lines.pop_front();
+		}
+	}
+	if (ring.sink) {
+		ring.sink(ring.plugin, added);
 	}
 }
 
@@ -765,6 +773,8 @@ Result<InstallReport, InstallFailure> PluginManager::install(
 		record.current = report.version;
 		record.publisher = package.publisher;
 		record.archiveHash = HashText(archive);
+		record.log->plugin = record.id;
+		record.log->sink = _config.services.logSink;
 		_records.emplace(record.id, std::move(record));
 	} else {
 		auto &record = existing->second;
@@ -1054,11 +1064,8 @@ ManagerSnapshot PluginManager::snapshot() const {
 	result.environment = _config.environment;
 	result.wantsEvents = wantsEvents();
 	if (result.wantsEvents) {
-		for (const auto event : {
-				"message.new", "message.edited", "message.deleted",
-				"message.reaction", "chat.opened", "chat.typing", "chat.read",
-				"chat.member", "user.status", "app.focus", "app.blur" }) {
-			if (wantsEvents(event)) {
+		for (const auto &event : KnownEvents()) {
+			if (wantsEvents(event.c_str())) {
 				result.wantedEvents.insert(event);
 			}
 		}
@@ -1224,6 +1231,7 @@ IncomingMode ManagerSnapshot::transformsIncoming(const IncomingInfo &info) const
 			&& grant->second.granted.contains("messages.transform_incoming")
 			&& parsed
 			&& parsed->incoming.declared
+			&& (!info.service || parsed->incoming.service)
 			&& Matches(parsed->incoming.filter, info)
 			&& (!grant->second.chats || grant->second.chats->contains(chat))) {
 			if (parsed->incoming.hold) {
@@ -1252,6 +1260,7 @@ bool ManagerSnapshot::transformsOutgoing(const OutgoingInfo &info) const {
 			&& grant->second.granted.contains("messages.transform_outgoing")
 			&& parsed
 			&& parsed->outgoing.declared
+			&& (info.files.empty() || parsed->outgoing.media)
 			&& Matches(parsed->outgoing.filter, info)
 			&& (!grant->second.chats || grant->second.chats->contains(chat))) {
 			return true;
@@ -1312,6 +1321,7 @@ bool PluginManager::send(
 		}
 	} else if (*type == "settings.change"
 		|| *type == "settings.click"
+		|| *type == "settings.long_click"
 		|| *type == "settings.open") {
 		if (!has("ui.settings_page") || !parsed->settingsPage) {
 			return false;
@@ -1337,9 +1347,11 @@ bool PluginManager::send(
 		}
 	} else if (*type == "dialog.click"
 		|| *type == "dialog.change"
+		|| *type == "dialog.long_click"
 		|| *type == "dialog.close"
 		|| *type == "window.click"
 		|| *type == "window.change"
+		|| *type == "window.long_click"
 		|| *type == "window.close") {
 		if (!has("ui.dialog")) {
 			return false;
@@ -1601,22 +1613,22 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	services.translateReply = [this, pluginId, account](
 			int64_t ticket,
 			std::vector<std::string> items,
-			bool markdown,
+			std::vector<std::vector<TextEntity>> entities,
 			std::string error) {
 		return acceptTranslation(
 			pluginId,
 			account,
 			ticket,
 			std::move(items),
-			markdown,
+			std::move(entities),
 			std::move(error));
 	};
 	services.aiReply = [this, pluginId, account](
 			int64_t ticket,
 			std::string text,
-			bool markdown,
+			std::vector<TextEntity> entities,
 			std::string error) {
-		return acceptAi(pluginId, account, ticket, std::move(text), markdown, std::move(error));
+		return acceptAi(pluginId, account, ticket, std::move(text), std::move(entities), std::move(error));
 	};
 	services.setTimer = [this, key](const std::string &id, int64_t delayMs, bool repeat) {
 		return setTimer(key, id, delayMs, repeat);
@@ -1844,9 +1856,9 @@ void PluginManager::run(Instance &instance) {
 		auto serial = std::unique_lock(*instance.serial);
 		if (outgoing) {
 			if (outgoing->kind == HookKind::Incoming) {
-				instance.broker->beginIncoming();
+				instance.broker->beginIncoming(outgoing->service);
 			} else {
-				instance.broker->beginOutgoing();
+				instance.broker->beginOutgoing(outgoing->media);
 			}
 		}
 		const auto result = instance.client->deliver(event, *instance.broker);
@@ -2505,11 +2517,10 @@ bool PluginManager::advanceIncoming(
 					return true;
 				}
 				if (edit.text) {
-					if (*edit.text != info.text || edit.markdown) {
+					if (*edit.text != info.text) {
 						result.entities = info.entities = std::vector<TextEntity>();
 					}
 					result.text = *edit.text;
-					result.markdown = edit.markdown;
 					info.text = *edit.text;
 				}
 				if (edit.entities) {
@@ -2538,6 +2549,7 @@ bool PluginManager::advanceIncoming(
 			|| !grant->second.granted.contains("messages.transform_incoming")
 			|| !parsed
 			|| !parsed->incoming.declared
+			|| (chain.incoming.service && !parsed->incoming.service)
 			|| !Matches(parsed->incoming.filter, chain.incoming)
 			|| (grant->second.chats && !grant->second.chats->contains(chain.incoming.chat))) {
 			continue;
@@ -2559,11 +2571,15 @@ bool PluginManager::advanceIncoming(
 		}
 		auto pending = std::make_shared<Outgoing>();
 		pending->kind = HookKind::Incoming;
+		pending->service = chain.incoming.service;
 		const auto &info = chain.incoming;
 		auto event = info.message;
 		event.push_back({ "type", Text("message.incoming") });
 		event.push_back({ "chat_type", Text(info.chatType) });
 		event.push_back({ "edited", cbor::Value::FromBool(info.edited) });
+		if (info.service) {
+			event.push_back({ "service", cbor::Value::FromBool(true) });
+		}
 		std::erase_if(event, [](const auto &entry) {
 			return entry.key == "text" || entry.key == "entities";
 		});
@@ -2616,11 +2632,10 @@ bool PluginManager::advance(
 					return true;
 				}
 				if (edit.text) {
-					if (*edit.text != info.text || edit.markdown) {
+					if (*edit.text != info.text) {
 						result.entities = info.entities = std::vector<TextEntity>();
 					}
 					result.text = *edit.text;
-					result.markdown = edit.markdown;
 					info.text = *edit.text;
 				}
 				if (edit.entities) {
@@ -2661,6 +2676,7 @@ bool PluginManager::advance(
 			|| !grant->second.granted.contains("messages.transform_outgoing")
 			|| !parsed
 			|| !parsed->outgoing.declared
+			|| (!chain.info.files.empty() && !parsed->outgoing.media)
 			|| !Matches(parsed->outgoing.filter, chain.info)
 			|| (grant->second.chats && !grant->second.chats->contains(chain.info.chat))) {
 			continue;
@@ -2696,6 +2712,18 @@ bool PluginManager::advance(
 		optional("topic", info.topic);
 		optional("reply_to", info.replyTo);
 		optional("scheduled", info.scheduled);
+		if (!info.files.empty()) {
+			auto files = cbor::Array();
+			for (const auto &file : info.files) {
+				files.push_back(cbor::Value::FromMap({
+					{ "kind", Text(file.kind) },
+					{ "name", Text(file.name) },
+					{ "size", cbor::Value::FromInt(file.size) },
+				}));
+			}
+			event.push_back({ "media", cbor::Value::FromArray(std::move(files)) });
+			pending->media = true;
+		}
 		pending->event = cbor::Value::FromMap(std::move(event));
 		{
 			const auto lock = std::scoped_lock(instance->mutex);
@@ -2940,7 +2968,7 @@ std::string PluginManager::acceptTranslation(
 		const std::string &account,
 		int64_t ticket,
 		std::vector<std::string> items,
-		bool markdown,
+		std::vector<std::vector<TextEntity>> entities,
 		std::string error) {
 	auto pending = std::optional<PendingTranslation>();
 	{
@@ -2959,7 +2987,7 @@ std::string PluginManager::acceptTranslation(
 	auto result = TranslateResult();
 	if (error.empty()) {
 		result.items = std::move(items);
-		result.markdown = markdown;
+		result.entities = std::move(entities);
 	} else {
 		result.error = std::move(error);
 	}
@@ -3121,7 +3149,7 @@ std::string PluginManager::acceptAi(
 		const std::string &account,
 		int64_t ticket,
 		std::string text,
-		bool markdown,
+		std::vector<TextEntity> entities,
 		std::string error) {
 	auto pending = std::optional<PendingAi>();
 	{
@@ -3138,7 +3166,7 @@ std::string PluginManager::acceptAi(
 	auto result = AiResult();
 	if (error.empty()) {
 		result.text = std::move(text);
-		result.markdown = markdown;
+		result.entities = std::move(entities);
 	} else {
 		result.error = std::move(error);
 	}

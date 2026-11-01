@@ -25,6 +25,7 @@ from . import (
     _Files,
     _Fs,
     _Folders,
+    _Image,
     _Ghost,
     _Media,
     _Messages,
@@ -60,6 +61,7 @@ folders = _Folders(_async_call)
 settings = _Settings(_async_call)
 media = _Media(_async_call)
 users = _Users(_async_call)
+image = _Image(_async_call)
 bots = _Bots(_async_call)
 ghost = _Ghost(_async_call)
 channels = _Channels(_async_call)

@@ -279,9 +279,24 @@ public:
 		sent.emplace_back(message.chat, message.text);
 		return { .error = {}, .localId = nextLocalId--, .serverId = 500 };
 	}
-	std::string edit(int64_t chat, int64_t id, const std::string &text, bool markdown, const std::vector<TextEntity> &entities) override {
+	Result<ImageResult, std::string> image(const ImageRequest &request) override {
+		images.push_back(request);
+		if (request.data.back() == 0xEE) {
+			return std::string(api::error::kFailed);
+		}
+		auto result = ImageResult{
+			.format = request.format.empty() ? "png" : request.format,
+			.width = request.width ? request.width : 10,
+			.height = request.height ? request.height : 10,
+		};
+		if (request.op != "info") {
+			result.data = cbor::Bytes(4, 1);
+		}
+		return result;
+	}
+	std::string edit(int64_t chat, int64_t id, const std::string &text, const std::vector<TextEntity> &entities) override {
 		actions.push_back("edit " + std::to_string(chat) + " " + std::to_string(id)
-			+ " " + text + (markdown ? " md" : "")
+			+ " " + text
 			+ (entities.empty() ? "" : " e" + std::to_string(entities.size())));
 		return (id == 100 || id < 0) ? std::string() : std::string(api::error::kDenied);
 	}
@@ -415,6 +430,7 @@ public:
 	std::vector<OutgoingMediaEdit> editedMedia;
 	std::vector<std::string> toasts;
 	std::vector<ToastAction> toastActions;
+	std::vector<ImageRequest> images;
 	std::vector<std::string> actions;
 	std::string clipboard;
 	bool cancelPick = false;

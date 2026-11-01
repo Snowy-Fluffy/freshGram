@@ -18,6 +18,8 @@ struct TextEntity {
 	std::string url;
 	std::string language;
 	int64_t id = 0;
+	// For a blockquote: the user has to expand it to read it all.
+	bool collapsed = false;
 };
 
 constexpr auto kMaxTextEntities = size_t(256);
@@ -92,6 +94,12 @@ constexpr auto kMaxEntityLanguage = size_t(64);
 			}
 			entity.id = *id->asInt();
 		}
+		if (const auto collapsed = item.find("collapsed")) {
+			if (!collapsed->asBool() || (*collapsed->asBool() && entity.type != "blockquote")) {
+				return std::nullopt;
+			}
+			entity.collapsed = *collapsed->asBool();
+		}
 		if ((entity.type == "text_url" && entity.url.empty())
 			|| ((entity.type == "custom_emoji" || entity.type == "mention_name") && !entity.id)) {
 			return std::nullopt;
@@ -118,6 +126,9 @@ constexpr auto kMaxEntityLanguage = size_t(64);
 		}
 		if (entity.id) {
 			map.push_back({ "id", cbor::Value::FromInt(entity.id) });
+		}
+		if (entity.collapsed) {
+			map.push_back({ "collapsed", cbor::Value::FromBool(true) });
 		}
 		list.push_back(cbor::Value::FromMap(std::move(map)));
 	}

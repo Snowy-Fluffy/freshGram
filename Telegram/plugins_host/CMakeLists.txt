@@ -104,7 +104,7 @@ if (FGPL_HOST_ONLY)
 else()
 	add_library(fgpl_core STATIC src/fgpl/sha256.cpp src/fgpl/module_cache.cpp
 		src/fgpl/base64.cpp src/fgpl/json.cpp src/fgpl/semver.cpp src/fgpl/zip_reader.cpp src/fgpl/signature.cpp src/fgpl/net_policy.cpp src/fgpl/manifest.cpp
-		src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/broker.cpp
+		src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/text_markup.cpp src/fgpl/directory_package.cpp src/fgpl/broker.cpp
 		${fgpl_folder_sources} src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/runtime_bundle.cpp src/fgpl/ui_tree.cpp)
 	target_link_libraries(fgpl_core PUBLIC fgpl_base ZLIB::ZLIB OpenSSL::Crypto)
 	fgpl_options(fgpl_core)
@@ -151,8 +151,15 @@ target_link_libraries(fgpl_runtime PUBLIC ${fgpl_common} wasmtime)
 fgpl_options(fgpl_runtime)
 
 if (NOT FGPL_HOST_ONLY)
+	add_library(fgpl_dev STATIC src/fgpl/dev_data.cpp src/fgpl/dev_runner.cpp)
+	target_link_libraries(fgpl_dev PUBLIC fgpl_client fgpl_runtime)
+	target_compile_definitions(fgpl_dev PRIVATE
+		FGPL_DEV_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
+		FGPL_DEV_SDK_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/python")
+	fgpl_options(fgpl_dev)
+
 	add_executable(fgpl_tool src/fgpl/tool_main.cpp)
-	target_link_libraries(fgpl_tool PRIVATE fgpl_runtime)
+	target_link_libraries(fgpl_tool PRIVATE fgpl_dev)
 	fgpl_options(fgpl_tool)
 endif()
 
@@ -186,7 +193,7 @@ if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 		endif()
 	endif()
 
-	foreach (name test_cbor test_vfs test_cache test_storage test_formats test_zip test_manifest test_package test_runtime test_broker test_folder test_runtime_bundle)
+	foreach (name test_cbor test_vfs test_cache test_storage test_formats test_zip test_manifest test_package test_runtime test_broker test_folder test_runtime_bundle test_markup)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
 		if (name STREQUAL "test_runtime" OR name STREQUAL "test_broker"
@@ -301,6 +308,16 @@ if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 		fgpl_warnings(test_tool)
 		add_test(NAME test_tool COMMAND test_tool)
 
+		add_executable(test_run tests/test_run.cpp)
+		target_link_libraries(test_run PRIVATE fgpl_runtime)
+		target_compile_definitions(test_run PRIVATE
+			FGPL_TOOL="$<TARGET_FILE:fgpl_tool>"
+			FGPL_CPYTHON_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpython-wasi"
+			FGPL_EXAMPLE_HELLO="${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/examples/hello")
+		add_dependencies(test_run fgpl_tool fgpl_plugin_host)
+		fgpl_warnings(test_run)
+		add_test(NAME test_run COMMAND test_run)
+
 		add_executable(test_install tests/test_install.cpp)
 		target_link_libraries(test_install PRIVATE fgpl_client fgpl_runtime)
 		target_compile_definitions(test_install PRIVATE
@@ -373,7 +390,7 @@ if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 endif()
 
 if (FGPL_FUZZ)
-	foreach (name fuzz_cbor fuzz_vfs fuzz_frame fuzz_wasi fuzz_package fuzz_ui fuzz_broker)
+	foreach (name fuzz_cbor fuzz_vfs fuzz_frame fuzz_wasi fuzz_package fuzz_ui fuzz_broker fuzz_markup)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
 		if (name STREQUAL "fuzz_frame")

@@ -1,5 +1,7 @@
 #include "fgpl/ui_tree.h"
 
+#include "fgpl/json.h"
+
 #include <algorithm>
 #include <functional>
 #include <limits>
@@ -127,6 +129,193 @@ private:
 		return std::nullopt;
 	}
 	return std::make_pair(width, height);
+}
+
+[[nodiscard]] std::string Lowered(const std::string &text) {
+	auto result = text;
+	for (auto &ch : result) {
+		if (ch >= 'A' && ch <= 'Z') {
+			ch = char(ch - 'A' + 'a');
+		}
+	}
+	return result;
+}
+
+// Whether the text at `at` (right after a keyword) is `="#...` or `=#...`: a local reference.
+[[nodiscard]] bool LocalReference(const std::string &text, size_t at, bool parenthesis) {
+	auto i = at;
+	const auto skip = [&](auto &&matches) {
+		while (i < text.size() && matches(text[i])) {
+			++i;
+		}
+	};
+	skip([](char ch) { return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'; });
+	if (parenthesis) {
+		if (i >= text.size() || text[i] != '(') {
+			return false;
+		}
+		++i;
+	} else {
+		if (i >= text.size() || text[i] != '=') {
+			return false;
+		}
+		++i;
+	}
+	skip([](char ch) { return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'; });
+	if (i < text.size() && (text[i] == '"' || text[i] == '\'')) {
+		++i;
+	}
+	return i < text.size() && text[i] == '#';
+}
+
+// An SVG that draws only itself: no scripts, no other files, no styles that load things.
+[[nodiscard]] bool SafeSvg(const std::string &source) {
+	if (!ValidUtf8(source)) {
+		return false;
+	}
+	const auto text = Lowered(source);
+	auto start = text.find_first_not_of(" \t\r\n");
+	if (start != std::string::npos && text.compare(start, 5, "<?xml") == 0) {
+		const auto close = text.find("?>", start);
+		if (close == std::string::npos) {
+			return false;
+		}
+		start = text.find_first_not_of(" \t\r\n", close + 2);
+	}
+	if (start == std::string::npos || text.compare(start, 4, "<svg") != 0) {
+		return false;
+	}
+	static const auto forbidden = std::vector<std::string_view>{
+		"<script", "<foreignobject", "<image", "<iframe", "<embed", "<audio", "<video",
+		"<animate", "<set", "<!entity", "<!doctype", "javascript:", "@import", "<?xml-stylesheet",
+		"data:", "file:",
+	};
+	for (const auto word : forbidden) {
+		if (text.find(word) != std::string::npos) {
+			return false;
+		}
+	}
+	for (auto at = text.find("href"); at != std::string::npos; at = text.find("href", at + 4)) {
+		if (!LocalReference(text, at + 4, false)) {
+			return false;
+		}
+	}
+	for (auto at = text.find("url"); at != std::string::npos; at = text.find("url", at + 3)) {
+		if (at + 3 < text.size() && text[at + 3] == '(' && !LocalReference(text, at + 3, true)) {
+			return false;
+		}
+	}
+	for (auto at = text.find(" on"); at != std::string::npos; at = text.find(" on", at + 3)) {
+		auto i = at + 3;
+		while (i < text.size() && text[i] >= 'a' && text[i] <= 'z') {
+			++i;
+		}
+		while (i < text.size() && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n')) {
+			++i;
+		}
+		if (i > at + 3 && i < text.size() && text[i] == '=') {
+			return false;
+		}
+	}
+	return true;
+}
+
+[[nodiscard]] std::optional<double> Number(const cbor::Value *value) {
+	if (!value) {
+		return std::nullopt;
+	} else if (const auto integer = value->asInt()) {
+		return double(*integer);
+	}
+	return value->asFloat();
+}
+
+// A Lottie animation of a bounded size that draws only itself (no pictures or files).
+[[nodiscard]] bool SafeLottie(const std::string &source) {
+	if (!ValidUtf8(source)) {
+		return false;
+	}
+	const auto parsed = json::Parse(source);
+	if (!parsed.ok() || !parsed.value().asMap()) {
+		return false;
+	}
+	const auto &root = parsed.value();
+	const auto layers = root.find("layers");
+	const auto width = Number(root.find("w"));
+	const auto height = Number(root.find("h"));
+	const auto rate = Number(root.find("fr"));
+	const auto in = Number(root.find("ip"));
+	const auto out = Number(root.find("op"));
+	if (!layers || !layers->asArray() || layers->asArray()->empty()
+		|| !width || !height || !rate || !in || !out
+		|| *width < 1 || *width > double(kMaxLottieSide)
+		|| *height < 1 || *height > double(kMaxLottieSide)
+		|| *rate < 1 || *rate > 120
+		|| *out <= *in || *out - *in > double(kMaxLottieFrames)) {
+		return false;
+	}
+	if (const auto assets = root.find("assets")) {
+		if (!assets->asArray()) {
+			return false;
+		}
+		for (const auto &asset : *assets->asArray()) {
+			if (!asset.asMap() || asset.find("p") || asset.find("u") || asset.find("e")) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// "png", "jpeg", "svg" or "lottie" for data the app may draw, else an empty string.
+[[nodiscard]] std::string ImageKind(const cbor::Bytes &bytes) {
+	if (ImageSize(bytes)) {
+		return (bytes.size() >= 3 && bytes[0] == 0xFF) ? "jpeg" : "png";
+	}
+	auto first = size_t(0);
+	while (first < bytes.size()
+		&& (bytes[first] == ' ' || bytes[first] == '\t' || bytes[first] == '\r' || bytes[first] == '\n')) {
+		++first;
+	}
+	if (first >= bytes.size()) {
+		return {};
+	}
+	const auto source = std::string(bytes.begin(), bytes.end());
+	if (bytes[first] == '<') {
+		return SafeSvg(source) ? "svg" : std::string();
+	} else if (bytes[first] == '{') {
+		return SafeLottie(source) ? "lottie" : std::string();
+	}
+	return {};
+}
+
+// A mask is #: a digit, A: a letter, *: any character, anything else stands for itself.
+[[nodiscard]] bool ValidMask(const std::string &mask) {
+	return !mask.empty()
+		&& mask.size() <= kMaxMask
+		&& SafeText(mask, kMaxMask, false)
+		&& mask.find_first_of("#A*") != std::string::npos;
+}
+
+[[nodiscard]] bool MatchesMask(const std::string &mask, const std::string &value) {
+	if (value.empty()) {
+		return true;
+	} else if (value.size() != mask.size()) {
+		return false;
+	}
+	for (auto i = size_t(0); i != mask.size(); ++i) {
+		const auto ch = value[i];
+		const auto ok = (mask[i] == '#')
+			? (ch >= '0' && ch <= '9')
+			: (mask[i] == 'A')
+			? ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))
+			: (mask[i] == '*')
+			? (uint8_t(ch) >= 0x20)
+			: (ch == mask[i]);
+		if (!ok) {
+			return false;
+		}
+	}
+	return true;
 }
 
 } // namespace
@@ -260,7 +449,7 @@ Result<cbor::Value, std::string> ValidateBadges(const cbor::Value &items) {
 
 Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 	auto check = Checker();
-	if (!page.asMap() || !check.keys(page, { "title", "items", "buttons" })) {
+	if (!page.asMap() || !check.keys(page, { "title", "items", "buttons", "closable" })) {
 		return check.failed() ? check.error() : std::string("the page must be an object");
 	}
 	const auto title = check.text(page, "title", kMaxLabel, true);
@@ -286,6 +475,30 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			return false;
 		}
 		entry.push_back({ name, cbor::Value::FromBool(field && *field->asBool()) });
+		return true;
+	};
+	auto aliases = std::set<std::string>();
+	const auto takeAlias = [&](const cbor::Value &item, cbor::Map &entry) {
+		const auto field = item.find("alias");
+		if (!field) {
+			return true;
+		}
+		const auto name = field->asText();
+		if (!name || name->size() > 32 || !ValidId(*name) || !aliases.insert(*name).second) {
+			check.fail("alias must be a unique lowercase token of up to 32 characters");
+			return false;
+		}
+		entry.push_back({ "alias", Text(*name) });
+		return true;
+	};
+	const auto takeLongClick = [&](const cbor::Value &item, cbor::Map &entry) {
+		const auto field = item.find("long_click");
+		if (field && !field->asBool()) {
+			check.fail("long_click must be true or false");
+			return false;
+		} else if (field && *field->asBool()) {
+			entry.push_back({ "long_click", cbor::Value::FromBool(true) });
+		}
 		return true;
 	};
 	const auto takeInt = [&](
@@ -422,9 +635,10 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				entry.push_back({ "label", Text(label.value_or("")) });
 				entry.push_back({ "value", cbor::Value::FromInt(*value) });
 			} else if (*type == "toggle") {
-				if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled", "icon" })
+				if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled", "icon", "alias" })
 					|| !takeId(item, entry)
-					|| !takeIcon(item, entry)) {
+					|| !takeIcon(item, entry)
+					|| !takeAlias(item, entry)) {
 					return check.error();
 				}
 				const auto label = check.text(item, "label", kMaxLabel, true);
@@ -433,9 +647,11 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				}
 				entry.push_back({ "label", Text(*label) });
 			} else if (*type == "button") {
-				if (!check.keys(item, { "type", "id", "label", "hint", "disabled", "style", "icon" })
+				if (!check.keys(item, { "type", "id", "label", "hint", "disabled", "style", "icon", "alias", "long_click" })
 					|| !takeId(item, entry)
-					|| !takeIcon(item, entry)) {
+					|| !takeIcon(item, entry)
+					|| !takeAlias(item, entry)
+					|| !takeLongClick(item, entry)) {
 					return check.error();
 				}
 				const auto label = check.text(item, "label", kMaxLabel, true);
@@ -450,11 +666,22 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			} else if (*type == "input") {
 				if (!check.keys(item, {
 						"type", "id", "label", "value", "placeholder",
-						"multiline", "password", "max", "hint", "disabled" })
+						"multiline", "password", "max", "hint", "disabled", "mask" })
 					|| !takeId(item, entry)) {
 					return check.error();
 				}
-				const auto max = takeInt(item, "max", 1, int64_t(kMaxLongValue), int64_t(kMaxValue));
+				const auto mask = check.text(item, "mask", kMaxMask, false);
+				if (check.failed()) {
+					return check.error();
+				} else if (mask && (!ValidMask(*mask) || item.find("multiline") || item.find("password"))) {
+					return std::string("mask needs # (a digit), A (a letter) or *, and no multiline or password");
+				}
+				const auto max = takeInt(
+					item,
+					"max",
+					1,
+					int64_t(kMaxLongValue),
+					mask ? int64_t(mask->size()) : int64_t(kMaxValue));
 				const auto label = max ? check.text(item, "label", kMaxLabel, true) : std::nullopt;
 				const auto multiline = item.find("multiline");
 				const auto lines = multiline && multiline->asBool().value_or(false);
@@ -470,10 +697,16 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 					|| !takeCommon(item, entry)) {
 					return check.error();
 				}
+				if (mask && value && !MatchesMask(*mask, *value)) {
+					return std::string("the value does not fit the mask");
+				}
 				entry.push_back({ "label", Text(*label) });
 				entry.push_back({ "value", Text(value.value_or("")) });
 				entry.push_back({ "placeholder", Text(placeholder.value_or("")) });
 				entry.push_back({ "max", cbor::Value::FromInt(*max) });
+				if (mask) {
+					entry.push_back({ "mask", Text(*mask) });
+				}
 			} else if (*type == "slider") {
 				if (!check.keys(item, {
 						"type", "id", "label", "min", "max", "step", "value", "hint", "disabled" })
@@ -499,9 +732,10 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				entry.push_back({ "step", cbor::Value::FromInt(*step) });
 				entry.push_back({ "value", cbor::Value::FromInt(*min + (*value - *min) / *step * *step) });
 			} else if (*type == "chat") {
-				if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled", "icon" })
+				if (!check.keys(item, { "type", "id", "label", "value", "hint", "disabled", "icon", "alias" })
 					|| !takeId(item, entry)
-					|| !takeIcon(item, entry)) {
+					|| !takeIcon(item, entry)
+					|| !takeAlias(item, entry)) {
 					return check.error();
 				}
 				const auto label = check.text(item, "label", kMaxLabel, true);
@@ -514,9 +748,10 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				entry.push_back({ "label", Text(*label) });
 				entry.push_back({ "value", cbor::Value::FromInt(*value) });
 			} else if (*type == "select") {
-				if (!check.keys(item, { "type", "id", "label", "value", "options", "hint", "disabled", "icon" })
+				if (!check.keys(item, { "type", "id", "label", "value", "options", "hint", "disabled", "icon", "alias" })
 					|| !takeId(item, entry)
-					|| !takeIcon(item, entry)) {
+					|| !takeIcon(item, entry)
+					|| !takeAlias(item, entry)) {
 					return check.error();
 				}
 				const auto label = check.text(item, "label", kMaxLabel, true);
@@ -568,9 +803,11 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				}
 				entry.push_back({ "items", cbor::Value::FromArray(std::move(children)) });
 			} else if (*type == "page") {
-				if (!check.keys(item, { "type", "id", "label", "icon", "hint", "disabled", "items" })
+				if (!check.keys(item, { "type", "id", "label", "icon", "hint", "disabled", "items", "alias", "long_click" })
 					|| !takeId(item, entry)
-					|| !takeIcon(item, entry)) {
+					|| !takeIcon(item, entry)
+					|| !takeAlias(item, entry)
+					|| !takeLongClick(item, entry)) {
 					return check.error();
 				}
 				const auto label = check.text(item, "label", kMaxLabel, true);
@@ -650,15 +887,19 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				if (!bytes || bytes->empty() || bytes->size() > kMaxImageBytes) {
 					return std::string("an image needs data of up to 256 KiB");
 				}
-				if (!ImageSize(*bytes)) {
-					return std::string("an image must be a PNG up to 2048x2048 or a JPEG");
+				const auto kind = ImageKind(*bytes);
+				if (kind.empty()) {
+					return std::string("an image must be a PNG up to 2048x2048, a JPEG, a plain SVG or a bounded Lottie animation");
 				}
 				const auto width = takeInt(item, "width", 0, kMaxImageSide, 0);
 				const auto height = width ? takeInt(item, "height", 0, kMaxImageSide, 0) : std::nullopt;
 				const auto alt = height ? check.text(item, "alt", kMaxLabel, false) : std::nullopt;
 				if (!height || check.failed()) {
 					return check.error();
+				} else if ((kind == "svg" || kind == "lottie") && (!*width || !*height)) {
+					return std::string("an SVG or Lottie image needs a width and a height");
 				}
+				entry.push_back({ "kind", Text(kind) });
 				entry.push_back({ "data", *data });
 				entry.push_back({ "width", cbor::Value::FromInt(*width) });
 				entry.push_back({ "height", cbor::Value::FromInt(*height) });
@@ -677,9 +918,10 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				for (const auto &row : *entries->asArray()) {
 					auto rowEntry = cbor::Map();
 					if (!row.asMap()
-						|| !check.keys(row, { "id", "title", "subtitle", "icon" })
+						|| !check.keys(row, { "id", "title", "subtitle", "icon", "long_click" })
 						|| !takeId(row, rowEntry)
-						|| !takeIcon(row, rowEntry)) {
+						|| !takeIcon(row, rowEntry)
+						|| !takeLongClick(row, rowEntry)) {
 						return check.failed() ? check.error() : std::string("bad list entry");
 					}
 					const auto rowTitle = check.text(row, "title", kMaxLabel, true);
@@ -766,6 +1008,16 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 	};
 	if (!buttons.empty()) {
 		result.push_back({ "buttons", cbor::Value::FromArray(std::move(buttons)) });
+	}
+	if (const auto closable = page.find("closable")) {
+		if (!closable->asBool()) {
+			return std::string("closable must be true or false");
+		} else if (!*closable->asBool()) {
+			if (result.size() == 2) {
+				return std::string("a page that cannot be closed needs a button");
+			}
+			result.push_back({ "closable", cbor::Value::FromBool(false) });
+		}
 	}
 	return cbor::Value::FromMap(std::move(result));
 }

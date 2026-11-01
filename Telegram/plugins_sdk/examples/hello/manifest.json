@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "com.example.hello",
+  "name": "Hello",
+  "version": "1.0.0",
+  "description": "Greets, counts messages and shows a settings page.",
+  "author": { "name": "Example Dev" },
+  "license": "MIT",
+  "compat": { "freshgram": ">=7.0.0 <8.0.0", "api": 6 },
+  "runtime": { "kind": "python", "entry": "main.py" },
+  "permissions": {
+    "required": [
+      { "id": "messages.read", "reason": "Counts the messages it sees." },
+      { "id": "messages.send", "reason": "Answers the /hello command." },
+      { "id": "storage.private", "reason": "Remembers the count." },
+      { "id": "ui.command", "reason": "Adds the /hello command." },
+      { "id": "ui.toast", "reason": "Shows short notices." }
+    ]
+  },
+  "contributes": {
+    "events": ["message.new"],
+    "commands": [{ "name": "hello", "description": "Says hello" }]
+  }
+}

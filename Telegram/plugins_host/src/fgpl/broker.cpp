@@ -1,4 +1,5 @@
 #include "fgpl/broker.h"
+#include "fgpl/text_markup.h"
 #include "fgpl/folder.h"
 #include "fgpl/manifest.h"
 #include "fgpl/ui_tree.h"
@@ -43,6 +44,7 @@ constexpr auto kMaxResponseBody = size_t(100) << 20;
 constexpr auto kMaxHeaders = size_t(32);
 constexpr auto kMaxHeaderValue = size_t(4096);
 constexpr auto kMaxToast = size_t(200);
+constexpr auto kMaxToastTitle = size_t(64);
 constexpr auto kMaxSleepMs = int64_t(60000);
 constexpr auto kMaxChatsScanned = size_t(5000);
 constexpr auto kSendBurst = 5.;
@@ -79,6 +81,10 @@ constexpr auto kMaxNotifyTitle = size_t(64);
 constexpr auto kMaxNotifyText = size_t(256);
 constexpr auto kNotifyEachMs = int64_t(5000);
 constexpr auto kResolveEachMs = int64_t(1000);
+constexpr auto kImageEachMs = int64_t(100);
+constexpr auto kMaxImageInput = size_t(16) << 20;
+constexpr auto kMaxImageOutput = size_t(32) << 20;
+constexpr auto kMaxImageSide = int64_t(8192);
 constexpr auto kInlineEachMs = int64_t(1000);
 constexpr auto kMaxInlineResults = size_t(50);
 constexpr auto kMaxReplyChain = int64_t(20);
@@ -172,16 +178,34 @@ constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 	return result;
 }
 
-[[nodiscard]] std::optional<bool> MarkdownArg(const cbor::Value *args) {
+[[nodiscard]] std::optional<TextFormat> FormatArg(const cbor::Value *args) {
 	const auto value = Arg(args, "format");
 	if (!value) {
-		return false;
+		return TextFormat::Plain;
 	}
 	const auto text = value->asText();
-	if (!text || (*text != "plain" && *text != "markdown")) {
-		return std::nullopt;
+	return text ? TextFormatNamed(*text) : std::nullopt;
+}
+
+// Turns markup into plain text and entities, so that the app only ever sees those.
+[[nodiscard]] std::string FormatText(
+		TextFormat format,
+		std::string &text,
+		std::vector<TextEntity> &entities) {
+	if (format == TextFormat::Plain) {
+		return {};
+	} else if (!entities.empty()) {
+		return "entities cannot be combined with a format";
 	}
-	return (*text == "markdown");
+	auto parsed = ParseMarkup(format, text);
+	if (!parsed.ok()) {
+		return parsed.error();
+	} else if (parsed.value().text.empty()) {
+		return "the text is empty without its markup";
+	}
+	text = std::move(parsed.value().text);
+	entities = std::move(parsed.value().entities);
+	return {};
 }
 
 [[nodiscard]] cbor::Value Done(const std::string &error, std::string_view what) {
@@ -614,13 +638,15 @@ void Broker::releaseSockets() {
 	});
 }
 
-void Broker::beginIncoming() {
+void Broker::beginIncoming(bool service) {
 	_hook = HookKind::Incoming;
+	_serviceHook = service;
 	_outgoingEdit = OutgoingEdit();
 }
 
-void Broker::beginOutgoing() {
+void Broker::beginOutgoing(bool media) {
 	_hook = HookKind::Outgoing;
+	_mediaHook = media;
 	_outgoingEdit = OutgoingEdit();
 }
 
@@ -821,6 +847,11 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			return api::Fail(api::error::kLimit, "notifications are shown too often");
 		}
 		_lastNotify = now;
+	} else if (op.rfind("image.", 0) == 0) {
+		if (_lastImage && now - _lastImage < kImageEachMs) {
+			return api::Fail(api::error::kLimit, "pictures are processed too often");
+		}
+		_lastImage = now;
 	} else if (op == "users.resolve" || op == "channels.resolve") {
 		if (_lastResolve && now - _lastResolve < kResolveEachMs) {
 			return api::Fail(api::error::kLimit, "usernames are resolved too often");
@@ -869,7 +900,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		const auto text = Arg(args, "text")
 			? TextArg(args, "text", kMaxMessage)
 			: std::optional<std::string>();
-		const auto markdown = MarkdownArg(args);
+		const auto format = FormatArg(args);
 		const auto entities = Arg(args, "entities")
 			? ParseTextEntities(*Arg(args, "entities"))
 			: std::optional<std::vector<TextEntity>>();
@@ -882,11 +913,11 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		const auto given = [&](const char *key) {
 			return Arg(args, key) != nullptr;
 		};
-		if (given("entities") && (!entities || (markdown && *markdown))) {
+		if (given("entities") && (!entities || (format && *format != TextFormat::Plain))) {
 			return api::Fail(api::error::kInvalid, "entities");
 		}
-		if (!markdown
-			|| (given("text") && (!text || text->empty()))
+		if (!format
+			|| (given("text") && (!text || (text->empty() && !_mediaHook)))
 			|| (given("silent") && !silent)
 			|| (given("schedule") && (!schedule || *schedule < 0))
 			|| (given("reply_to") && (!replyTo || *replyTo < 0))
@@ -897,8 +928,15 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kInvalid, "nothing to change");
 		}
 		if (text) {
-			_outgoingEdit.text = *text;
-			_outgoingEdit.markdown = *markdown;
+			auto edited = *text;
+			auto marked = std::vector<TextEntity>();
+			if (const auto error = FormatText(*format, edited, marked); !error.empty()) {
+				return api::Fail(api::error::kInvalid, error);
+			}
+			_outgoingEdit.text = std::move(edited);
+			if (*format != TextFormat::Plain) {
+				_outgoingEdit.entities = std::move(marked);
+			}
 		}
 		if (entities) {
 			_outgoingEdit.entities = *entities;
@@ -936,27 +974,36 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kDenied, "messages.transform_incoming");
 		} else if (_hook != HookKind::Incoming) {
 			return api::Fail(api::error::kInvalid, "only while handling message.incoming");
+		} else if (_serviceHook) {
+			return api::Fail(api::error::kInvalid, "a service message can only be hidden");
 		}
 		const auto text = Arg(args, "text")
 			? TextArg(args, "text", kMaxMessage)
 			: std::optional<std::string>();
-		const auto markdown = MarkdownArg(args);
+		const auto format = FormatArg(args);
 		const auto entities = Arg(args, "entities")
 			? ParseTextEntities(*Arg(args, "entities"))
 			: std::optional<std::vector<TextEntity>>();
 		const auto given = [&](const char *key) {
 			return Arg(args, key) != nullptr;
 		};
-		if (!markdown
+		if (!format
 			|| (given("text") && (!text || text->empty()))
-			|| (given("entities") && (!entities || *markdown))) {
+			|| (given("entities") && (!entities || *format != TextFormat::Plain))) {
 			return api::Fail(api::error::kInvalid, "text, format or entities");
 		} else if (!given("text") && !given("entities")) {
 			return api::Fail(api::error::kInvalid, "nothing to change");
 		}
 		if (text) {
-			_outgoingEdit.text = *text;
-			_outgoingEdit.markdown = *markdown;
+			auto edited = *text;
+			auto marked = std::vector<TextEntity>();
+			if (const auto error = FormatText(*format, edited, marked); !error.empty()) {
+				return api::Fail(api::error::kInvalid, error);
+			}
+			_outgoingEdit.text = std::move(edited);
+			if (*format != TextFormat::Plain) {
+				_outgoingEdit.entities = std::move(marked);
+			}
 		}
 		if (entities) {
 			_outgoingEdit.entities = *entities;
@@ -984,15 +1031,16 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kUnavailable, "translation");
 		}
 		const auto ticket = IntArg(args, "ticket");
-		const auto markdown = MarkdownArg(args);
+		const auto format = FormatArg(args);
 		const auto error = Arg(args, "error")
 			? TextArg(args, "error", 200)
 			: std::optional<std::string>(std::string());
 		const auto list = Arg(args, "items") ? Arg(args, "items")->asArray() : nullptr;
-		if (!ticket || !markdown || !error || (error->empty() && !list)) {
+		if (!ticket || !format || !error || (error->empty() && !list)) {
 			return api::Fail(api::error::kInvalid, "ticket, items, format or error");
 		}
 		auto items = std::vector<std::string>();
+		auto formatting = std::vector<std::vector<TextEntity>>();
 		auto total = size_t(0);
 		for (const auto &entry : list ? *list : cbor::Array()) {
 			const auto text = entry.asText();
@@ -1003,12 +1051,18 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			if (items.size() >= kMaxTranslateItems || total > kMaxTranslatedTotal) {
 				return api::Fail(api::error::kLimit, "the answer is too large");
 			}
-			items.push_back(*text);
+			auto item = *text;
+			auto marked = std::vector<TextEntity>();
+			if (const auto problem = FormatText(*format, item, marked); !problem.empty()) {
+				return api::Fail(api::error::kInvalid, problem);
+			}
+			items.push_back(std::move(item));
+			formatting.push_back(std::move(marked));
 		}
 		const auto refused = _services.translateReply(
 			*ticket,
 			std::move(items),
-			*markdown,
+			std::move(formatting),
 			*error);
 		return Done(refused, "no such translation");
 	} else if (op == "ai.reply") {
@@ -1018,17 +1072,24 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kUnavailable, "the AI provider");
 		}
 		const auto ticket = IntArg(args, "ticket");
-		const auto markdown = MarkdownArg(args);
+		const auto format = FormatArg(args);
 		const auto error = Arg(args, "error")
 			? TextArg(args, "error", 200)
 			: std::optional<std::string>(std::string());
 		const auto text = Arg(args, "text")
 			? TextArg(args, "text", kMaxAiAnswer)
 			: std::optional<std::string>(std::string());
-		if (!ticket || !markdown || !error || !text || (error->empty() && text->empty())) {
+		if (!ticket || !format || !error || !text || (error->empty() && text->empty())) {
 			return api::Fail(api::error::kInvalid, "ticket, text, format or error");
 		}
-		const auto refused = _services.aiReply(*ticket, *text, *markdown, *error);
+		auto answer = *text;
+		auto marked = std::vector<TextEntity>();
+		if (!answer.empty()) {
+			if (const auto problem = FormatText(*format, answer, marked); !problem.empty()) {
+				return api::Fail(api::error::kInvalid, problem);
+			}
+		}
+		const auto refused = _services.aiReply(*ticket, std::move(answer), std::move(marked), *error);
 		return Done(refused, "no such request");
 	} else if (op == "plugins.send" || op == "plugins.peers") {
 		if (!has("plugins.message")) {
@@ -2121,25 +2182,30 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		}
 		const auto id = IntArg(args, "chat");
 		const auto text = TextArg(args, "text", kMaxMessage);
-		const auto markdown = MarkdownArg(args);
+		const auto format = FormatArg(args);
 		const auto silent = BoolArg(args, "silent", false);
 		const auto replyTo = IntArg(args, "reply_to").value_or(0);
 		const auto topic = IntArg(args, "topic").value_or(0);
 		const auto when = IntArg(args, "schedule").value_or(0);
 		const auto customEmoji = TextEmojiArg(args);
-		const auto entities = Arg(args, "entities")
+		auto entities = Arg(args, "entities")
 			? ParseTextEntities(*Arg(args, "entities"))
 			: std::optional<std::vector<TextEntity>>(std::vector<TextEntity>());
 		if (!id || !text || text->empty()) {
 			return api::Fail(api::error::kInvalid, "chat or text");
-		} else if (!customEmoji) {
-			return api::Fail(api::error::kInvalid, "custom_emoji");
-		} else if (!entities || (markdown && *markdown && !entities->empty())) {
+		} else if (!customEmoji
+			|| (format && *format != TextFormat::Plain && !customEmoji->empty())) {
+			return api::Fail(api::error::kInvalid, "custom_emoji (with a format use ![alt](tg://emoji?id=N) or <emoji id=N>)");
+		} else if (!entities) {
 			return api::Fail(api::error::kInvalid, "entities");
-		} else if (!markdown || !silent || replyTo < 0 || topic < 0 || when < 0) {
+		} else if (!format || !silent || replyTo < 0 || topic < 0 || when < 0) {
 			return api::Fail(api::error::kInvalid, "format, silent, reply_to, topic or schedule");
 		} else if (!chatInScope(*id) || *id == api::kServiceChat) {
 			return api::Fail(api::error::kDenied, "this chat");
+		}
+		auto formatted = *text;
+		if (const auto problem = FormatText(*format, formatted, *entities); !problem.empty()) {
+			return api::Fail(api::error::kInvalid, problem);
 		}
 		const auto chat = data->chat(*id);
 		if (!chat || chat->restricted()) {
@@ -2147,8 +2213,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		}
 		return Sent(data->sendMessage({
 			.chat = *id,
-			.text = *text,
-			.markdown = *markdown,
+			.text = std::move(formatted),
 			.replyTo = replyTo,
 			.topic = topic,
 			.silent = *silent,
@@ -2339,19 +2404,25 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			return api::Fail(api::error::kInvalid, "text");
 		}
 		const auto action = Arg(args, "action");
+		const auto title = Arg(args, "title")
+			? TextArg(args, "title", kMaxToastTitle)
+			: std::optional<std::string>(std::string());
 		const auto style = TextArg(args, "style", 8).value_or("default");
 		const auto seconds = Arg(args, "duration") ? IntArg(args, "duration") : std::optional<int64_t>(5);
 		if (style != "default" && style != "undo") {
 			return api::Fail(api::error::kInvalid, "style");
 		} else if (!seconds || *seconds < 1 || *seconds > 8) {
 			return api::Fail(api::error::kInvalid, "duration");
-		} else if (!action && style == "default" && !Arg(args, "duration")) {
+		} else if (!title || (!title->empty() && title->find('\n') != std::string::npos)) {
+			return api::Fail(api::error::kInvalid, "title");
+		} else if (!action && style == "default" && !Arg(args, "duration") && title->empty()) {
 			data->toast(_grants.pluginId + ": " + *text);
 			return api::Ok();
 		}
 		auto toast = ToastAction{
 			.plugin = _grants.pluginId,
-			.text = _grants.pluginId + ": " + *text,
+			.title = title->empty() ? std::string() : _grants.pluginId + ": " + *title,
+			.text = title->empty() ? _grants.pluginId + ": " + *text : *text,
 			.undo = (style == "undo"),
 			.seconds = int(*seconds),
 		};
@@ -2420,7 +2491,10 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		const auto caption = Arg(args, "caption")
 			? TextArg(args, "caption", kMaxCaption)
 			: std::optional<std::string>(std::string());
-		const auto markdown = MarkdownArg(args);
+		const auto format = FormatArg(args);
+		auto captionEntities = Arg(args, "entities")
+			? ParseTextEntities(*Arg(args, "entities"))
+			: std::optional<std::vector<TextEntity>>(std::vector<TextEntity>());
 		const auto silent = BoolArg(args, "silent", false);
 		const auto spoiler = BoolArg(args, "spoiler", false);
 		const auto replyTo = IntArg(args, "reply_to").value_or(0);
@@ -2436,7 +2510,8 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			|| name->find_first_of("/\\") != std::string::npos
 			|| !kinds.contains(kind)
 			|| !caption
-			|| !markdown
+			|| !format
+			|| !captionEntities
 			|| !silent
 			|| !spoiler
 			|| replyTo < 0 || topic < 0 || when < 0
@@ -2444,16 +2519,20 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			|| (kind == "voice" && !duration)) {
 			return api::Fail(api::error::kInvalid, "name, kind, caption or options");
 		}
+		auto formattedCaption = *caption;
+		if (const auto problem = FormatText(*format, formattedCaption, *captionEntities); !problem.empty()) {
+			return api::Fail(api::error::kInvalid, problem);
+		}
 		return Sent(data->sendMedia({
 			.message = {
 				.chat = chat.value(),
-				.text = *caption,
-				.markdown = *markdown,
+				.text = std::move(formattedCaption),
 				.replyTo = replyTo,
 				.topic = topic,
 				.silent = *silent,
 				.schedule = when,
 				.waitForServerId = has("messages.ids"),
+				.entities = std::move(*captionEntities),
 			},
 			.name = *name,
 			.kind = kind,
@@ -2471,17 +2550,21 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		}
 		const auto id = IntArg(args, "id");
 		const auto text = TextArg(args, "text", kMaxMessage);
-		const auto markdown = MarkdownArg(args);
-		const auto entities = Arg(args, "entities")
+		const auto format = FormatArg(args);
+		auto entities = Arg(args, "entities")
 			? ParseTextEntities(*Arg(args, "entities"))
 			: std::optional<std::vector<TextEntity>>(std::vector<TextEntity>());
-		if (!id || *id == 0 || !text || text->empty() || !markdown) {
+		if (!id || *id == 0 || !text || text->empty() || !format) {
 			return api::Fail(api::error::kInvalid, "id, text or format");
-		} else if (!entities || (*markdown && !entities->empty())) {
+		} else if (!entities) {
 			return api::Fail(api::error::kInvalid, "entities");
 		}
+		auto formatted = *text;
+		if (const auto problem = FormatText(*format, formatted, *entities); !problem.empty()) {
+			return api::Fail(api::error::kInvalid, problem);
+		}
 		return Done(
-			data->edit(chat.value(), *id, *text, *markdown, *entities),
+			data->edit(chat.value(), *id, formatted, *entities),
 			"the message was not edited");
 	} else if (op == "messages.edit_media") {
 		if (const auto refused = need({ "messages.edit" })) {
@@ -2500,7 +2583,10 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		const auto caption = Arg(args, "caption")
 			? TextArg(args, "caption", kMaxCaption)
 			: std::optional<std::string>(std::string());
-		const auto markdown = MarkdownArg(args);
+		const auto format = FormatArg(args);
+		auto captionEntities = Arg(args, "entities")
+			? ParseTextEntities(*Arg(args, "entities"))
+			: std::optional<std::vector<TextEntity>>(std::vector<TextEntity>());
 		const auto spoiler = BoolArg(args, "spoiler", false);
 		if (!raw || raw->empty()) {
 			return api::Fail(api::error::kInvalid, "data");
@@ -2513,9 +2599,14 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			|| name->find_first_of("/\\") != std::string::npos
 			|| !kinds.contains(kind)
 			|| !caption
-			|| !markdown
+			|| !format
+			|| !captionEntities
 			|| !spoiler) {
 			return api::Fail(api::error::kInvalid, "id, name, kind, caption or options");
+		}
+		auto formattedCaption = *caption;
+		if (const auto problem = FormatText(*format, formattedCaption, *captionEntities); !problem.empty()) {
+			return api::Fail(api::error::kInvalid, problem);
 		}
 		return Done(data->editMedia({
 			.chat = chat.value(),
@@ -2523,9 +2614,9 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			.name = *name,
 			.kind = kind,
 			.bytes = *raw,
-			.caption = *caption,
-			.markdown = *markdown,
+			.caption = std::move(formattedCaption),
 			.spoiler = *spoiler,
+			.entities = std::move(*captionEntities),
 		}), "the media was not replaced");
 	} else if (op == "messages.delete") {
 		if (const auto refused = need({ "messages.delete" })) {
@@ -3114,6 +3205,85 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			return api::Fail(api::error::kDenied, "this user");
 		}
 		return api::Ok(UserValue(user.value()));
+	} else if (op == "image.info"
+		|| op == "image.resize"
+		|| op == "image.convert"
+		|| op == "image.crop") {
+		if (const auto refused = need({ "image.process" })) {
+			return *refused;
+		}
+		const auto bytes = Arg(args, "data");
+		const auto raw = bytes ? bytes->asBytes() : nullptr;
+		if (!raw || raw->empty()) {
+			return api::Fail(api::error::kInvalid, "data");
+		} else if (raw->size() > kMaxImageInput) {
+			return api::Fail(api::error::kLimit, "the picture is too large");
+		}
+		const auto isPng = raw->size() > 8 && (*raw)[0] == 0x89 && (*raw)[1] == 'P' && (*raw)[2] == 'N' && (*raw)[3] == 'G';
+		const auto isJpeg = raw->size() > 3 && (*raw)[0] == 0xFF && (*raw)[1] == 0xD8 && (*raw)[2] == 0xFF;
+		const auto isWebp = raw->size() > 12 && std::equal(raw->begin(), raw->begin() + 4, "RIFF")
+			&& std::equal(raw->begin() + 8, raw->begin() + 12, "WEBP");
+		if (!isPng && !isJpeg && !isWebp) {
+			return api::Fail(api::error::kInvalid, "a picture is a PNG, a JPEG or a WebP");
+		}
+		auto request = ImageRequest();
+		request.op = op.substr(6);
+		request.data = *raw;
+		const auto format = TextArg(args, "format", 8);
+		const auto fit = TextArg(args, "fit", 8).value_or("contain");
+		const auto quality = Arg(args, "quality") ? IntArg(args, "quality") : std::optional<int64_t>(90);
+		const auto number = [&](const char *key) {
+			return Arg(args, key) ? IntArg(args, key) : std::optional<int64_t>(0);
+		};
+		const auto width = number("width");
+		const auto height = number("height");
+		const auto x = number("x");
+		const auto y = number("y");
+		const auto wanted = [&](const std::string &name) {
+			return name == "png" || name == "jpeg" || name == "webp";
+		};
+		if (Arg(args, "format") && (!format || !wanted(*format))) {
+			return api::Fail(api::error::kInvalid, "format is png, jpeg or webp");
+		} else if (!quality || *quality < 1 || *quality > 100) {
+			return api::Fail(api::error::kInvalid, "quality is 1 to 100");
+		} else if (!width || !height || !x || !y
+			|| *width < 0 || *width > kMaxImageSide
+			|| *height < 0 || *height > kMaxImageSide
+			|| *x < 0 || *y < 0 || *x > kMaxImageSide || *y > kMaxImageSide) {
+			return api::Fail(api::error::kInvalid, "width, height, x or y");
+		} else if (fit != "contain" && fit != "cover" && fit != "exact") {
+			return api::Fail(api::error::kInvalid, "fit is contain, cover or exact");
+		} else if (op == "image.resize" && !*width && !*height) {
+			return api::Fail(api::error::kInvalid, "resize needs width or height");
+		} else if (op == "image.resize" && fit != "contain" && (!*width || !*height)) {
+			return api::Fail(api::error::kInvalid, "cover and exact need both width and height");
+		} else if (op == "image.crop" && (!*width || !*height)) {
+			return api::Fail(api::error::kInvalid, "crop needs width and height");
+		} else if (op == "image.convert" && !format) {
+			return api::Fail(api::error::kInvalid, "convert needs a format");
+		}
+		request.width = *width;
+		request.height = *height;
+		request.x = *x;
+		request.y = *y;
+		request.fit = fit;
+		request.format = format.value_or(std::string());
+		request.quality = *quality;
+		const auto done = data->image(request);
+		if (!done.ok()) {
+			return api::Fail(done.error(), "the picture");
+		} else if (done.value().data.size() > kMaxImageOutput) {
+			return api::Fail(api::error::kLimit, "the result is too large");
+		}
+		auto answer = cbor::Map{
+			{ "format", Text(done.value().format) },
+			{ "width", Int(done.value().width) },
+			{ "height", Int(done.value().height) },
+		};
+		if (op != "image.info") {
+			answer.push_back({ "data", cbor::Value::FromBytes(done.value().data) });
+		}
+		return api::Ok(cbor::Value::FromMap(std::move(answer)));
 	} else if (op == "users.photo") {
 		if (const auto refused = need({ "users.info" })) {
 			return *refused;

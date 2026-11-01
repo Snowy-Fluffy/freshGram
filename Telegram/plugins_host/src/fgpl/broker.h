@@ -22,7 +22,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(6);
+constexpr auto kVersion = int64_t(7);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -227,7 +227,6 @@ struct Media {
 struct OutgoingMessage {
 	int64_t chat = 0;
 	std::string text;
-	bool markdown = false;
 	int64_t replyTo = 0;
 	int64_t topic = 0;
 	bool silent = false;
@@ -247,7 +246,6 @@ enum class HookKind {
 // What a plugin asked for while handling message.outgoing or message.incoming.
 struct OutgoingEdit {
 	std::optional<std::string> text;
-	bool markdown = false;
 	std::optional<std::vector<TextEntity>> entities;
 	std::optional<bool> silent;
 	std::optional<int64_t> schedule;
@@ -259,6 +257,7 @@ struct OutgoingEdit {
 
 struct ToastAction {
 	std::string plugin;
+	std::string title;
 	std::string text;
 	std::string id;
 	std::string label;
@@ -288,8 +287,8 @@ struct OutgoingMediaEdit {
 	std::string kind;
 	cbor::Bytes bytes;
 	std::string caption;
-	bool markdown = false;
 	bool spoiler = false;
+	std::vector<TextEntity> entities;
 };
 
 struct InlineResult {
@@ -377,9 +376,39 @@ struct PickedFile {
 	cbor::Bytes bytes;
 };
 
+// A picture to look at or to change; the app decodes and encodes it.
+struct ImageRequest {
+	// info, resize, convert or crop.
+	std::string op;
+	cbor::Bytes data;
+	// resize: the box to fit (0 keeps the ratio from the other side); crop: the part to keep.
+	int64_t width = 0;
+	int64_t height = 0;
+	int64_t x = 0;
+	int64_t y = 0;
+	// resize: contain, cover or exact.
+	std::string fit;
+	// png, jpeg or webp; empty keeps the format of the input.
+	std::string format;
+	int64_t quality = 90;
+};
+
+struct ImageResult {
+	std::string format;
+	int64_t width = 0;
+	int64_t height = 0;
+	// Empty for info.
+	cbor::Bytes data;
+};
+
 class DataProvider {
 public:
 	virtual ~DataProvider() = default;
+
+	[[nodiscard]] virtual Result<ImageResult, std::string> image(const ImageRequest &request) {
+		(void)request;
+		return std::string(api::error::kUnavailable);
+	}
 
 	[[nodiscard]] virtual std::vector<Chat> chats(size_t limit) = 0;
 	[[nodiscard]] virtual std::optional<Chat> chat(int64_t id) = 0;
@@ -459,8 +488,8 @@ public:
 	// The sends answer an error code, or an empty one on success.
 	// A message id may be a server id or a local one (negative).
 	[[nodiscard]] virtual SendResult sendMessage(const OutgoingMessage &message) {
-		if (message.markdown || message.replyTo || message.topic
-			|| message.silent || message.schedule) {
+		if (message.replyTo || message.topic
+			|| message.silent || message.schedule || !message.entities.empty()) {
 			return { .error = api::error::kUnavailable };
 		}
 		return {
@@ -479,12 +508,10 @@ public:
 			int64_t chat,
 			int64_t id,
 			const std::string &text,
-			bool markdown,
 			const std::vector<TextEntity> &entities) {
 		(void)chat;
 		(void)id;
 		(void)text;
-		(void)markdown;
 		(void)entities;
 		return api::error::kUnavailable;
 	}
@@ -895,13 +922,13 @@ struct BrokerServices {
 	std::function<std::string(
 		int64_t ticket,
 		std::vector<std::string> items,
-		bool markdown,
+		std::vector<std::vector<TextEntity>> entities,
 		std::string error)> translateReply;
 	// Answers an empty string, or an error code (not_found, invalid).
 	std::function<std::string(
 		int64_t ticket,
 		std::string text,
-		bool markdown,
+		std::vector<TextEntity> entities,
 		std::string error)> aiReply;
 
 	std::function<void(std::function<void()> work)> post;
@@ -934,8 +961,8 @@ public:
 		return _grants;
 	}
 
-	void beginOutgoing();
-	void beginIncoming();
+	void beginOutgoing(bool media = false);
+	void beginIncoming(bool service = false);
 	[[nodiscard]] OutgoingEdit finishOutgoing();
 	void releaseSockets();
 
@@ -1020,6 +1047,7 @@ private:
 	uint64_t _folderWritten = 0;
 	int64_t _lastNotify = 0;
 	int64_t _lastResolve = 0;
+	int64_t _lastImage = 0;
 	int64_t _lastInline = 0;
 	int64_t _lastMembers = 0;
 	int64_t _lastModerate = 0;
@@ -1032,6 +1060,8 @@ private:
 	std::map<std::string, int64_t> _windowUpdated;
 	int64_t _nextTicket = 1;
 	HookKind _hook = HookKind::None;
+	bool _serviceHook = false;
+	bool _mediaHook = false;
 	OutgoingEdit _outgoingEdit;
 
 };
