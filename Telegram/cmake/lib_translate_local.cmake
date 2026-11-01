@@ -5,6 +5,11 @@
 
 option(FRESHGRAM_DISABLE_TRANSLATION "Build without the local translation" OFF)
 
+# WHY: the cpuinfo inside Ruy uses C syntax the MSVC compiler rejects, so there is no CTranslate2 on Windows arm64.
+if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+    set(FRESHGRAM_DISABLE_TRANSLATION ON)
+endif()
+
 add_library(lib_translate_local INTERFACE)
 add_library(tdesktop::lib_translate_local ALIAS lib_translate_local)
 
@@ -17,10 +22,6 @@ if (NOT FRESHGRAM_DISABLE_RECOGNITION AND NOT FRESHGRAM_DISABLE_TRANSLATION)
         # build on an arm64 Mac must get the x86_64 ones.
         if (APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
             set(CMAKE_SYSTEM_PROCESSOR x86_64)
-        endif()
-        # Windows reports ARM64 in capitals, which its match for arm64 misses.
-        if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64)$")
-            set(CMAKE_SYSTEM_PROCESSOR arm64)
         endif()
 
         set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
