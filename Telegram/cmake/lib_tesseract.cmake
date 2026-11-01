@@ -137,10 +137,13 @@ if (NOT FRESHGRAM_DISABLE_RECOGNITION)
             HAVE_SSE4_1)
     elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$"
         OR (APPLE AND CMAKE_OSX_ARCHITECTURES MATCHES "arm64"))
-        list(APPEND tess_sources
-            ${tess_dir}/src/arch/dotproductneon.cpp
-            ${tess_dir}/src/arch/intsimdmatrixneon.cpp)
-        list(APPEND tess_arch_defines HAVE_NEON)
+        # WHY: MSVC does not define __ARM_NEON, so the NEON files compile empty while simddetect still references them.
+        if (NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+            list(APPEND tess_sources
+                ${tess_dir}/src/arch/dotproductneon.cpp
+                ${tess_dir}/src/arch/intsimdmatrixneon.cpp)
+            list(APPEND tess_arch_defines HAVE_NEON)
+        endif()
     endif()
 
     add_library(freshgram_tesseract STATIC ${tess_sources})
