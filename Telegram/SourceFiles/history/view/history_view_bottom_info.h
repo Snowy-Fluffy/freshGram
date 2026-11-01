@@ -32,7 +32,7 @@ struct TextState;
 class BottomInfo final : public Object {
 public:
 	struct Data {
-		enum class Flag : uint16 {
+		enum class Flag : uint32 {
 			Edited         = 0x001,
 			OutLayout      = 0x002,
 			Sending        = 0x004,
