@@ -4,6 +4,9 @@
 #include <cwctype>
 #include <span>
 #include <utility>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 
 namespace fgpl::folder {

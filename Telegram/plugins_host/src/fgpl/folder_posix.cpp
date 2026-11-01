@@ -152,11 +152,11 @@ Result<std::string, Fail> CheckRoot(const std::string &path) {
 	}
 	static const auto kExact = {
 		"/", "/home", "/Users", "/mnt", "/media", "/Volumes", "/tmp", "/var", "/opt",
-		"/private", "/Applications", "/srv",
+		"/private", "/private/var", "/private/tmp", "/Applications", "/srv",
 	};
 	static const auto kTrees = {
 		"/bin", "/boot", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/proc", "/root",
-		"/run", "/sbin", "/sys", "/usr", "/System", "/Library",
+		"/run", "/sbin", "/sys", "/usr", "/System", "/Library", "/private/etc",
 	};
 	const auto inside = [](std::string_view path, std::string_view base) {
 		return (path.size() > base.size())
