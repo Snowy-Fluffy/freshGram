@@ -1,3 +1,19 @@
+7.5.11 beta (02.11.26)
+
+- Run plugins on Windows and macOS, and add a Plugins item to the drawer.
+- Add a much bigger plugin API: stickers, reactions, chat management, bots and polls.
+- Let plugins filter outgoing messages, download media, provide AI and use folders.
+- Add secure WebSockets, local network access and a proxy list for plugins.
+- Add plugin name badges, icons, sub-pages, console logs and info blocks.
+- Add a Rust SDK for Wasm plugins and a plugin dev runner.
+- Add saving, sending and wallpaper options to the message shot.
+- Add a translate button to the media caption field.
+- Blur names, avatars and premium badges in streamer mode and shots.
+- Add more app icon choices and start new profiles in the dark theme.
+- Harden the plugin sandbox, permission checks and storage.
+- Fix opening comments of a deleted channel post.
+- Fix the crash in the profile status, the message field text and scaling.
+
 7.5.10 beta (25.10.26)
 
 - Add plugins in Python and C running in a sandbox with granted permissions.
