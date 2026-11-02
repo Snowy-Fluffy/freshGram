@@ -34,7 +34,7 @@ jobs:
           - group: codecs
             targets: zlib xz lcms2 brotli highway mozjpeg opus dav1d openh264 vpx webp avif heif jxl rnnoise
           - group: system
-            targets: xcb xcb-wm xcb-util xcb-image xcb-keysyms xcb-render-util xcb-cursor xext xfixes xv xtst xrandr xrender xdamage xcomposite openal openssl xkbcommon boost breakpad ada tde2e tlottie
+            targets: xcb xcb-wm xcb-util xcb-image xcb-keysyms xcb-render-util xcb-cursor xext xfixes xv xtst xrandr xrender xdamage xcomposite openal openssl xkbcommon boost breakpad ada tde2e tdesktop_rust
           - arch: x86_64
             suffix: ''
           - arch: aarch64
@@ -128,7 +128,7 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           cache="ghcr.io/$owner/freshgram-build-cache"
           cache_from=""
-          for target in qt webrtc ffmpeg zlib xz lcms2 brotli highway mozjpeg opus dav1d openh264 vpx webp avif heif jxl rnnoise xcb xcb-wm xcb-util xcb-image xcb-keysyms xcb-render-util xcb-cursor xext xfixes xv xtst xrandr xrender xdamage xcomposite openal openssl xkbcommon boost breakpad ada tde2e tlottie; do
+          for target in qt webrtc ffmpeg zlib xz lcms2 brotli highway mozjpeg opus dav1d openh264 vpx webp avif heif jxl rnnoise xcb xcb-wm xcb-util xcb-image xcb-keysyms xcb-render-util xcb-cursor xext xfixes xv xtst xrandr xrender xdamage xcomposite openal openssl xkbcommon boost breakpad ada tde2e tdesktop_rust; do
             cache_from="$cache_from --cache-from type=registry,ref=$cache:$target${{ matrix.suffix }}"
           done
           cd "$DOCKER_DIR"
