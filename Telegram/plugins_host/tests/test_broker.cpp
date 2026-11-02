@@ -2864,13 +2864,17 @@ void TestLevelTwoCalls() {
 }
 
 void TestMediaCalls() {
-	auto fixture = Fixture({ "media.read", "messages.send" });
+	auto fixture = Fixture({ "media.read", "media.download", "messages.send" });
 	fixture.time = 100000;
 	fixture.grants.chats = std::set<int64_t>{ 1, 2 };
 	auto broker = fixture.make();
 	auto &data = fixture.data;
 
 	CHECK(Code(broker.call(Request("media.get", { { "chat", Int(1) }, { "message", Int(101) } }))) == "not_found");
+	auto readOnly = Fixture({ "media.read" });
+	readOnly.grants.chats = std::set<int64_t>{ 1, 2 };
+	CHECK(Code(readOnly.make().call(Request("media.get", {
+		{ "chat", Int(1) }, { "message", Int(101) }, { "download", cbor::Value::FromBool(true) } }))) == "denied");
 	const auto loaded = broker.call(Request("media.get", {
 		{ "chat", Int(1) }, { "message", Int(101) }, { "download", cbor::Value::FromBool(true) } }));
 	CHECK(IsOk(loaded) && *Payload(loaded).find("name")->asText() == "a.pdf");

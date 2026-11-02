@@ -265,6 +265,7 @@
 "fresh_PermMessagesTransform" = "Изменять отправляемые сообщения";
 "fresh_PermMessagesTransformIncoming" = "Изменять или скрывать получаемые сообщения";
 "fresh_PermMediaRead" = "Читать скачанные медиафайлы";
+"fresh_PermMediaDownload" = "Скачивать медиафайлы из ваших чатов";
 "fresh_PermChatsList" = "Видеть список чатов";
 "fresh_PermChatInfo" = "Видеть сведения о чатах";
 "fresh_PermMessagesHistory" = "Читать историю чатов";

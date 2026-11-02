@@ -265,6 +265,7 @@
 "fresh_PermMessagesTransform" = "Modifier les messages que vous envoyez";
 "fresh_PermMessagesTransformIncoming" = "Modifier ou masquer les messages que vous recevez";
 "fresh_PermMediaRead" = "Lire les médias téléchargés";
+"fresh_PermMediaDownload" = "Télécharger les fichiers multimédias de vos discussions";
 "fresh_PermChatsList" = "Voir la liste des discussions";
 "fresh_PermChatInfo" = "Voir les détails des discussions";
 "fresh_PermMessagesHistory" = "Lire l’historique des discussions";

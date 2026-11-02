@@ -912,7 +912,8 @@ class _Media(_Namespace):
         """The file of a message: kind, mime, name and data (up to 100 MiB).
 
         With download=True a file that is not on this device yet is downloaded
-        first (up to five minutes; prefer freshgram.aio for that).
+        first (up to five minutes; prefer freshgram.aio for that). That needs
+        the media.download permission besides media.read.
         """
         return self._call(
             "media.get",

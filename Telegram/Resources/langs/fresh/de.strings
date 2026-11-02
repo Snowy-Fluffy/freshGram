@@ -265,6 +265,7 @@
 "fresh_PermMessagesTransform" = "Gesendete Nachrichten ändern";
 "fresh_PermMessagesTransformIncoming" = "Empfangene Nachrichten ändern oder ausblenden";
 "fresh_PermMediaRead" = "Heruntergeladene Medien lesen";
+"fresh_PermMediaDownload" = "Mediendateien aus deinen Chats herunterladen";
 "fresh_PermChatsList" = "Deine Chatliste sehen";
 "fresh_PermChatInfo" = "Chatdetails sehen";
 "fresh_PermMessagesHistory" = "Chatverlauf lesen";

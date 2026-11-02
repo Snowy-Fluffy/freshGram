@@ -2341,6 +2341,9 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		}
 		auto media = data->media(*chat, *message, *thumbnail, kMaxMedia);
 		if (!media && *download) {
+			if (!has("media.download")) {
+				return api::Fail(api::error::kDenied, "media.download");
+			}
 			auto loaded = data->downloadMedia(*chat, *message, *thumbnail, kMaxMedia);
 			if (!loaded.ok()) {
 				return api::Fail(loaded.error(), "the media was not downloaded");

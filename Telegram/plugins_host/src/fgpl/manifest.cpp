@@ -528,7 +528,7 @@ const std::set<std::string> &HostFeatures() {
 const std::set<std::string> &KnownPermissions() {
 	static const auto known = std::set<std::string>{
 		"messages.read", "messages.read_deleted", "messages.send",
-		"messages.transform_outgoing", "media.read", "chats.list", "chat.info",
+		"messages.transform_outgoing", "media.read", "media.download", "chats.list", "chat.info",
 		"messages.history", "account.info", "stars.balance", "composer.draft",
 		"contacts.list", "settings.read", "folders.list", "ui.menu",
 		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",

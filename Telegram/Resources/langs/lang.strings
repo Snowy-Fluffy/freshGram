@@ -9049,6 +9049,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermMessagesTransform" = "Change the messages you send";
 "fresh_PermMessagesTransformIncoming" = "Change or hide the messages you receive";
 "fresh_PermMediaRead" = "Read downloaded media";
+"fresh_PermMediaDownload" = "Download media files from your chats";
 "fresh_PermChatsList" = "See your chat list";
 "fresh_PermChatInfo" = "See chat details";
 "fresh_PermMessagesHistory" = "Read chat history";
