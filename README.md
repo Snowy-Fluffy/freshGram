@@ -31,7 +31,7 @@ and the [MTProto][telegram_proto] secure protocol. It includes everything from
 
 **Plugins can do almost anything. Filter messages, manage chats, draw your own windows and much more.**
 
-**[Plugin documentation](#)**
+**[Plugin documentation](https://freshgram.suckmost.org)**
 
 ## Features
 
