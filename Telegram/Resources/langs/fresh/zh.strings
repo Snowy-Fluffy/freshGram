@@ -257,6 +257,7 @@
 "fresh_PluginLogNothingFound" = "未找到结果。";
 "fresh_PluginLogCopy" = "复制";
 "fresh_PluginLogClear" = "清空";
+"fresh_PluginLogCopyLine" = "复制行";
 "fresh_PermMessagesRead" = "读取消息";
 "fresh_PermMessagesReadAll" = "读取所有聊天中的消息";
 "fresh_PermMessagesReadSelected" = "读取你选择的聊天中的消息";

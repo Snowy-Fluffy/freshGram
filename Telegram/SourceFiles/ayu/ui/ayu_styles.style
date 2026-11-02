@@ -266,8 +266,9 @@ pluginPermissionButtonStyleHigh: DetailedSettingsButtonStyle(detailedSettingsBut
 pluginLogBoxWidth: 760px;
 pluginLogBoxHeight: 520px;
 pluginLogTabsPadding: margins(12px, 0px, 12px, 0px);
-pluginLogPadding: margins(16px, 8px, 16px, 8px);
 pluginLogBottomSkip: 16px;
+pluginLogGutterSkip: 10px;
+pluginLogTextSkip: 12px;
 pluginLogConsole: FlatLabel(defaultFlatLabel) {
 	minWidth: 200px;
 	style: TextStyle(defaultTextStyle) {
@@ -275,6 +276,9 @@ pluginLogConsole: FlatLabel(defaultFlatLabel) {
 		lineHeight: 17px;
 	}
 }
+
+pluginInfoBlockPadding: margins(14px, 8px, 14px, 8px);
+pluginInfoRowDividerMargins: margins(14px, 0px, 14px, 0px);
 
 pluginHeaderIconSize: 56px;
 pluginHeaderIconRadius: 14px;

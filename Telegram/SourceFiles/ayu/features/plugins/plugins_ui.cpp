@@ -54,6 +54,7 @@
 #include "ui/toast/toast.h"
 #include "ui/layers/generic_box.h"
 #include "ui/painter.h"
+#include "ui/rp_widget.h"
 #include "ui/text/text_utilities.h"
 #include "ui/ui_utility.h"
 #include "ui/vertical_list.h"
@@ -71,6 +72,7 @@
 #include "data/data_thread.h"
 #include "styles/style_chat_helpers.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/shadow.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
@@ -2233,7 +2235,41 @@ void FillMenuItemsBox(
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
-[[nodiscard]] QString AboutText(
+void AddInfoBlock(
+		not_null<Ui::VerticalLayout*> container,
+		rpl::producer<QStringList> rows) {
+	const auto block = container->add(
+		object_ptr<Ui::RpWidget>(container),
+		st::boxRowPadding);
+	const auto inner = Ui::CreateChild<Ui::VerticalLayout>(block);
+	Ui::ResizeFitChild(block, inner);
+	block->paintRequest(
+	) | rpl::on_next([=] {
+		auto p = QPainter(block);
+		auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowBgOver);
+		p.drawRoundedRect(block->rect(), st::boxRadius, st::boxRadius);
+	}, block->lifetime());
+	std::move(rows) | rpl::on_next([=](const QStringList &list) {
+		inner->clear();
+		for (auto i = 0, count = int(list.size()); i != count; ++i) {
+			if (i) {
+				inner->add(
+					object_ptr<Ui::PlainShadow>(inner),
+					st::pluginInfoRowDividerMargins);
+			}
+			inner->add(
+				object_ptr<Ui::FlatLabel>(
+					inner,
+					list[i],
+					st::boxDividerLabel),
+				st::pluginInfoBlockPadding);
+		}
+	}, block->lifetime());
+}
+
+[[nodiscard]] QStringList AboutLines(
 		const fgpl::ManagerSnapshot &snapshot,
 		const fgpl::PluginInfo &info,
 		const fgpl::Manifest *parsed,
@@ -2269,7 +2305,7 @@ void FillMenuItemsBox(
 			QString::number(info.stats.unloads)));
 	}
 	lines.push_back(tr::fresh_PluginId(tr::now, lt_id, Utf8(info.id)));
-	return lines.join('\n');
+	return lines;
 }
 
 void BuildDetails(
@@ -2458,9 +2494,9 @@ void BuildDetails(
 		});
 	}
 	Ui::AddSkip(content);
-	Ui::AddDividerText(
+	AddInfoBlock(
 		content,
-		rpl::single(AboutText(*snapshot, *info, parsed.get(), account)));
+		rpl::single(AboutLines(*snapshot, *info, parsed.get(), account)));
 	Ui::AddSkip(content);
 
 	const auto weak = base::make_weak(box);
@@ -2963,6 +2999,9 @@ void FillNetworkBox(
 		state->rows.clear();
 		for (const auto info : shownPlugins) {
 			const auto id = Utf8(info->id);
+			if (info != shownPlugins.front()) {
+				Ui::AddDivider(content);
+			}
 			Ui::AddSubsectionTitle(content, rpl::single(PluginName(info->id)));
 			auto &total = state->totals[id];
 			total = std::make_unique<rpl::variable<QString>>(NetworkTotalText(*info));
@@ -3263,6 +3302,10 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		}
 	}
 	if (!optional.empty()) {
+		if (!required.empty()) {
+			Ui::AddSkip(container);
+			Ui::AddDivider(container);
+		}
 		Ui::AddSkip(container);
 		Ui::AddSubsectionTitle(
 			container,
@@ -3285,6 +3328,10 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 		(current && current->chats) ? *current->chats : std::set<int64_t>());
 	const auto chatsShown = SeesChats(manifest);
 	if (chatsShown) {
+		if (!manifest.permissions.empty()) {
+			Ui::AddSkip(container);
+			Ui::AddDivider(container);
+		}
 		Ui::AddSkip(container);
 		Ui::AddSubsectionTitle(container, tr::fresh_PluginChats());
 		const auto all = box->addRow(object_ptr<Ui::Radiobutton>(
@@ -3391,17 +3438,20 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 	}
 
 	Ui::AddSkip(container);
-	Ui::AddDividerText(
+	AddInfoBlock(
 		container,
 		granted->value() | rpl::map([](const std::set<std::string> &now) {
 			auto lines = QStringList();
 			for (const auto &note : fgpl::RiskNotes(now)) {
 				lines.push_back(u"• "_q + RiskText(note.risk));
 			}
-			return lines.isEmpty()
-				? tr::fresh_PluginRisksNone(tr::now)
-				: (tr::fresh_PluginRisks(tr::now) + '\n' + lines.join('\n'));
+			if (lines.isEmpty()) {
+				return QStringList{ tr::fresh_PluginRisksNone(tr::now) };
+			}
+			lines.push_front(tr::fresh_PluginRisks(tr::now));
+			return lines;
 		}));
+	Ui::AddSkip(container);
 
 	return [=]() -> std::optional<fgpl::GrantDecision> {
 		auto result = fgpl::GrantDecision();
@@ -3617,7 +3667,9 @@ QString AcceptsFrom(const std::vector<std::string> &senders) {
 
 QString LimitsText(const fgpl::Manifest &manifest) {
 	const auto size = [](int megabytes) {
-		return Ui::FormatSizeText(qint64(megabytes) << 20);
+		return Ui::FormatSizeText(qint64(megabytes) << 20).replace(
+			QChar(' '),
+			QChar(QChar::Nbsp));
 	};
 	const auto timeout = manifest.eventTimeoutMs;
 	return tr::fresh_PluginLimits(

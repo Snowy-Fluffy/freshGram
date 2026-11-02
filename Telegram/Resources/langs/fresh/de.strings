@@ -257,6 +257,7 @@
 "fresh_PluginLogNothingFound" = "Nichts gefunden.";
 "fresh_PluginLogCopy" = "Kopieren";
 "fresh_PluginLogClear" = "Leeren";
+"fresh_PluginLogCopyLine" = "Zeile kopieren";
 "fresh_PermMessagesRead" = "Nachrichten lesen";
 "fresh_PermMessagesReadAll" = "Nachrichten in allen Chats lesen";
 "fresh_PermMessagesReadSelected" = "Nachrichten in von dir gewählten Chats lesen";

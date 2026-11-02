@@ -257,6 +257,7 @@
 "fresh_PluginLogNothingFound" = "Ничего не найдено.";
 "fresh_PluginLogCopy" = "Копировать";
 "fresh_PluginLogClear" = "Очистить";
+"fresh_PluginLogCopyLine" = "Копировать строку";
 "fresh_PermMessagesRead" = "Читать сообщения";
 "fresh_PermMessagesReadAll" = "Читать сообщения во всех чатах";
 "fresh_PermMessagesReadSelected" = "Читать сообщения в выбранных вами чатах";

@@ -257,6 +257,7 @@
 "fresh_PluginLogNothingFound" = "Aucun résultat.";
 "fresh_PluginLogCopy" = "Copier";
 "fresh_PluginLogClear" = "Effacer";
+"fresh_PluginLogCopyLine" = "Copier la ligne";
 "fresh_PermMessagesRead" = "Lire les messages";
 "fresh_PermMessagesReadAll" = "Lire les messages de toutes les discussions";
 "fresh_PermMessagesReadSelected" = "Lire les messages des discussions choisies";

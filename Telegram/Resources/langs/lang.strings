@@ -9041,6 +9041,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginLogNothingFound" = "Nothing found.";
 "fresh_PluginLogCopy" = "Copy";
 "fresh_PluginLogClear" = "Clear";
+"fresh_PluginLogCopyLine" = "Copy line";
 "fresh_PermMessagesRead" = "Read messages";
 "fresh_PermMessagesReadAll" = "Read messages in all chats";
 "fresh_PermMessagesReadSelected" = "Read messages in the chats you choose";
