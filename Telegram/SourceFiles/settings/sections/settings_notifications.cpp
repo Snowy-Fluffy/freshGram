@@ -65,6 +65,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QSvgRenderer>
 
 #include "ayu/ui/ayu_userpic.h"
+#include "ayu/ui/fagram/fagram_design.h"
+#include "styles/style_ayu_styles.h"
 
 
 namespace Settings {
@@ -144,7 +146,9 @@ SplitToggle SetupSplitToggle(
 	const auto separatorHeight = st.height - 2 * st.toggle.border;
 	button->geometryValue(
 	) | rpl::on_next([=](const QRect &r) {
-		const auto w = st::rightsButtonToggleWidth;
+		const auto w = FA::Ui::Enabled()
+			? st::fagramSplitToggleWidth
+			: st::rightsButtonToggleWidth;
 		toggle->setGeometry(
 			r.x() + r.width() - w,
 			r.y(),

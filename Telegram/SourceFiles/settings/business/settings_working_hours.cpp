@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/business/settings_working_hours.h"
 
+#include "ayu/ui/fagram/fagram_design.h"
 #include "base/event_filter.h"
 #include "base/unixtime.h"
 #include "core/application.h"
@@ -27,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/vertical_list.h"
 #include "ui/ui_utility.h"
 #include "window/window_session_controller.h"
+#include "styles/style_ayu_styles.h"
 #include "styles/style_edit_peer_members.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
@@ -530,7 +532,9 @@ void AddWeekButton(
 	const auto separatorHeight = st.height - 2 * st.toggle.border;
 	button->geometryValue(
 	) | rpl::on_next([=](const QRect &r) {
-		const auto w = st::rightsButtonToggleWidth;
+		const auto w = FA::Ui::Enabled()
+			? st::fagramSplitToggleWidth
+			: st::rightsButtonToggleWidth;
 		toggleButton->setGeometry(
 			r.x() + r.width() - w,
 			r.y(),

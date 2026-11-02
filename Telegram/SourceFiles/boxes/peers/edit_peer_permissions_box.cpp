@@ -40,6 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_config.h" // megagroupSizeMax
 #include "apiwrap.h"
 #include "settings/settings_common.h"
+#include "ayu/ui/fagram/fagram_design.h"
 #include "styles/style_background_preview_box.h"
 #include "styles/style_edit_peer_members.h"
 #include "styles/style_layers.h"
@@ -48,6 +49,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
+#include "styles/style_ayu_styles.h"
 
 namespace {
 
@@ -454,11 +456,14 @@ not_null<Ui::RpWidget*> AddInnerToggle(
 			auto p = QPainter(separator);
 			p.fillRect(separator->rect(), bg);
 		}, separator->lifetime());
-		const auto separatorHeight = 2 * st.toggle.border
-			+ st.toggle.diameter;
+		const auto separatorHeight = FA::Ui::Enabled()
+			? checkView->getSize().height()
+			: (2 * st.toggle.border + st.toggle.diameter);
 		button->geometryValue(
 		) | rpl::on_next([=](const QRect &r) {
-			const auto w = st::rightsButtonToggleWidth;
+			const auto w = FA::Ui::Enabled()
+				? st::fagramSplitToggleWidth
+				: st::rightsButtonToggleWidth;
 			toggleButton->setGeometry(
 				r.x() + r.width() - w,
 				r.y(),

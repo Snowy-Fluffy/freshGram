@@ -135,10 +135,20 @@ void DetailedSettingsButton::onStateChanged(
 void DetailedSettingsButton::paintEvent(QPaintEvent *e) {
 	auto p = Painter(this);
 	const auto over = isOver() || isDown();
-	if (cardSegment() == AyuUiSettings::CardSegment::None) {
+	if (const auto segment = cardSegment()
+			; segment == AyuUiSettings::CardSegment::None) {
 		p.fillRect(
 			e->rect(),
 			over ? _style.button.textBgOver : _style.button.textBg);
+	} else if (over && !isDisabled()) {
+		PainterHighQualityEnabler hq(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(_style.button.ripple.color);
+		p.setOpacity(0.5);
+		p.drawPath(AyuUiSettings::CardSegmentPath(
+			AyuUiSettings::CardSegmentRect(size(), segment),
+			segment));
+		p.setOpacity(1.);
 	}
 	paintRipple(p, 0, 0);
 

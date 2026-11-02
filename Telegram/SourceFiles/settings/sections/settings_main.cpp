@@ -271,6 +271,8 @@ Cover::Cover(
 	) | rpl::on_next([=](const auto &usernames) {
 		_qrButton->setVisible(!usernames.empty());
 		refreshNameGeometry(width());
+		refreshIdGeometry(width());
+		refreshUsernameGeometry(width());
 		refreshQrButtonGeometry(width());
 	}, _qrButton->lifetime());
 }
@@ -307,6 +309,10 @@ void Cover::paintEvent(QPaintEvent *e) {
 	}
 	auto p = QPainter(this);
 	auto hq = PainterHighQualityEnabler(p);
+	if (style::RightToLeft()) {
+		p.translate(width(), 0);
+		p.scale(-1., 1.);
+	}
 	const auto rect = QRectF(card.left, card.top, card.width, card.height);
 	const auto left = float64(style::ConvertScale(24));
 	const auto right = rect.height() / 2.;
@@ -419,7 +425,7 @@ void Cover::refreshNameGeometry(int newWidth) {
 	if (const auto width = _badge.widget() ? _badge.widget()->width() : 0) {
 		nameWidth -= st::infoVerifiedCheckPosition.x() + width;
 	}
-	_name->resizeToNaturalWidth(nameWidth);
+	_name->resizeToNaturalWidth(std::max(nameWidth, 0));
 	_name->moveToLeft(nameLeft, nameTop, newWidth);
 	const auto badgeLeft = nameLeft + _name->width();
 	const auto badgeTop = nameTop;

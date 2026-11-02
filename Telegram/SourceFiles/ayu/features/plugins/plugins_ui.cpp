@@ -118,7 +118,6 @@ constexpr auto kUncloseableDialogMs = crl::time(120000);
 }
 
 constexpr auto kMaxComposerButtons = 3;
-constexpr auto kNavDrawerIconLeft = 28;
 
 struct Entry {
 	std::string plugin;
@@ -4642,7 +4641,9 @@ void AddMainMenuItems(
 					st::mainMenuButton,
 					entry.plugin,
 					entry.icon,
-					FA::Ui::Enabled() ? std::make_optional(kNavDrawerIconLeft) : std::nullopt);
+					(FA::Ui::Enabled()
+						? std::make_optional(FA::Ui::NavDrawerButton::IconLeft())
+						: std::nullopt));
 			}
 			button->setClickedCallback([=] {
 				if (const auto again = weak.get()) {

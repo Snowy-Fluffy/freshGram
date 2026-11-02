@@ -12,8 +12,8 @@ https://github.com/fagramdesktop/fadesktop/blob/dev/LEGAL
 #include "ui/style/style_core_direction.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/fade_wrap.h"
+#include "styles/style_ayu_styles.h"
 #include "styles/style_basic.h"
-#include "styles/style_settings.h"
 
 #include <QtSvg/QSvgRenderer>
 
@@ -22,21 +22,14 @@ https://github.com/fagramdesktop/fadesktop/blob/dev/LEGAL
 namespace FA::Ui {
 namespace {
 
-constexpr auto kPillMarginRight = 12;
-constexpr auto kPillMarginLeft = 12;
-constexpr auto kPillPadding = 4;
-constexpr auto kButtonWidth = 36;
-constexpr auto kPillHeight = 36;
-constexpr auto kContentSpacing = 12;
-
 bool IsButtonVisible(const ::Ui::RpWidget *button) {
 	if (!button || button->isHidden()) {
 		return false;
 	}
 	if (const auto fade = dynamic_cast<const ::Ui::FadeWrap<::Ui::RpWidget>*>(button)) {
-		return fade->toggled() || (fade->animating() && fade->width() > 0);
+		return fade->toggled();
 	}
-	return button->width() > 0;
+	return true;
 }
 
 QImage PrepareMaterialShapeImage(int size, QColor color, int ratio) {
@@ -101,30 +94,36 @@ void PaintMaterialShape(
 // The icon buttons keep the icon position of their own wide style, so the
 // button is moved to put the icon in the middle of its place in the pill.
 void PlaceInSlot(not_null<::Ui::RpWidget*> wrapped) {
+	const auto buttonWidth = st::fagramTopBarButtonWidth;
+	const auto pillHeight = st::fagramTopBarPillHeight;
 	const auto button = dynamic_cast<::Ui::IconButton*>(wrapped.get());
 	if (!button) {
-		wrapped->setGeometry(0, 0, kButtonWidth, kPillHeight);
+		wrapped->setGeometry(0, 0, buttonWidth, pillHeight);
 		return;
 	}
+	// The default ripple has the color of the pill itself.
+	button->setRippleColorOverride(&st::fagramTopBarRippleBg);
 	const auto &st = button->st();
 	const auto position = st.iconPosition;
 	const auto left = (position.x() < 0)
 		? 0
-		: ((kButtonWidth - st.icon.width()) / 2 - position.x());
+		: ((buttonWidth - st.icon.width()) / 2 - position.x());
 	const auto top = (position.y() < 0)
 		? 0
-		: ((kPillHeight - st.icon.height()) / 2 - position.y());
+		: ((pillHeight - st.icon.height()) / 2 - position.y());
 	wrapped->setGeometry(
 		left,
 		top,
-		kButtonWidth - left,
-		kPillHeight - top);
+		buttonWidth - left,
+		pillHeight - top);
 }
 
 } // namespace
 
 int TopBarBackPillSkip() {
-	return kPillMarginLeft + kButtonWidth + kContentSpacing;
+	return st::fagramTopBarPillMargin
+		+ st::fagramTopBarButtonWidth
+		+ st::fagramTopBarContentSpacing;
 }
 
 int LayoutTopBarBackButton(
@@ -132,23 +131,18 @@ int LayoutTopBarBackButton(
 		int topBarHeight,
 		::Ui::RpWidget *backButton) {
 	if (!IsButtonVisible(backButton)) {
-		if (backButton) {
-			backButton->setGeometryToLeft(
-				kPillMarginLeft,
-				(topBarHeight - kPillHeight) / 2,
-				0,
-				kPillHeight,
-				newWidth);
-		}
 		return 0;
 	}
-	const auto pillTop = (topBarHeight - kPillHeight) / 2;
+	const auto pillMargin = st::fagramTopBarPillMargin;
+	const auto buttonWidth = st::fagramTopBarButtonWidth;
+	const auto pillHeight = st::fagramTopBarPillHeight;
+	const auto pillTop = (topBarHeight - pillHeight) / 2;
 
 	backButton->setGeometryToLeft(
-		kPillMarginLeft,
+		pillMargin,
 		pillTop,
-		kButtonWidth,
-		kPillHeight,
+		buttonWidth,
+		pillHeight,
 		newWidth);
 	if (const auto wrap = dynamic_cast<::Ui::Wrap<::Ui::RpWidget>*>(backButton)) {
 		if (const auto wrapped = wrap->wrapped()) {
@@ -162,46 +156,41 @@ int LayoutTopBarPillButtons(
 		int newWidth,
 		int topBarHeight,
 		const std::vector<base::unique_qptr<::Ui::RpWidget>> &buttons) {
+	const auto pillMargin = st::fagramTopBarPillMargin;
+	const auto pillPadding = st::fagramTopBarPillPadding;
+	const auto buttonWidth = st::fagramTopBarButtonWidth;
+	const auto pillHeight = st::fagramTopBarPillHeight;
+	const auto contentSpacing = st::fagramTopBarContentSpacing;
 	auto visibleButtonsCount = 0;
 	for (const auto &button : buttons) {
 		if (IsButtonVisible(button.get())) {
 			++visibleButtonsCount;
 		}
 	}
-	const auto pillTop = (topBarHeight - kPillHeight) / 2;
+	const auto pillTop = (topBarHeight - pillHeight) / 2;
 	const auto totalPillWidth = (visibleButtonsCount > 0)
-		? (visibleButtonsCount * kButtonWidth + kPillPadding * 2)
+		? (visibleButtonsCount * buttonWidth + pillPadding * 2)
 		: 0;
 
-	auto currentRight = kPillMarginRight + kPillPadding;
+	auto currentRight = pillMargin + pillPadding;
 	for (const auto &button : buttons) {
-		if (!button) {
-			continue;
-		}
 		if (IsButtonVisible(button.get())) {
 			button->setGeometryToRight(
 				currentRight,
 				pillTop,
-				kButtonWidth,
-				kPillHeight,
+				buttonWidth,
+				pillHeight,
 				newWidth);
 			if (const auto wrap = dynamic_cast<::Ui::Wrap<::Ui::RpWidget>*>(button.get())) {
 				if (const auto wrapped = wrap->wrapped()) {
 					PlaceInSlot(wrapped);
 				}
 			}
-			currentRight += kButtonWidth;
-		} else {
-			button->setGeometryToRight(
-				kPillMarginRight,
-				pillTop,
-				0,
-				kPillHeight,
-				newWidth);
+			currentRight += buttonWidth;
 		}
 	}
 	return (visibleButtonsCount > 0)
-		? (kPillMarginRight + totalPillWidth + kContentSpacing)
+		? (pillMargin + totalPillWidth + contentSpacing)
 		: 0;
 }
 
@@ -217,26 +206,30 @@ void PaintTopBarPill(
 		return;
 	}
 
+	const auto pillMargin = st::fagramTopBarPillMargin;
+	const auto pillPadding = st::fagramTopBarPillPadding;
+	const auto buttonWidth = st::fagramTopBarButtonWidth;
+	const auto pillHeight = st::fagramTopBarPillHeight;
 	const auto rtl = style::RightToLeft();
-	const auto pillTop = (topBarHeight - kPillHeight) / 2;
+	const auto pillTop = (topBarHeight - pillHeight) / 2;
 
 	if (IsButtonVisible(backButton)) {
 		const auto fade = dynamic_cast<const ::Ui::FadeWrap<::Ui::RpWidget>*>(backButton);
 		const auto opacity = fade ? fade->shownProgress() : 1.0;
 		if (opacity > 0.) {
 			const auto backLeft = rtl
-				? (widgetWidth - kPillMarginLeft - kButtonWidth)
-				: kPillMarginLeft;
+				? (widgetWidth - pillMargin - buttonWidth)
+				: pillMargin;
 			const auto backRect = QRectF(
 				backLeft,
 				pillTop,
-				kButtonWidth,
-				kPillHeight);
+				buttonWidth,
+				pillHeight);
 
 			PaintMaterialShape(
 				p,
 				backRect,
-				st::settingsThemeNotSupportedBg->c,
+				st::fagramTopBarPillBg->c,
 				opacity);
 		}
 	}
@@ -249,20 +242,20 @@ void PaintTopBarPill(
 			}
 		}
 		if (visibleButtonsCount > 0) {
-			const auto totalPillWidth = visibleButtonsCount * kButtonWidth + kPillPadding * 2;
+			const auto totalPillWidth = visibleButtonsCount * buttonWidth + pillPadding * 2;
 			const auto rightPillLeft = rtl
-				? kPillMarginRight
-				: (widgetWidth - kPillMarginRight - totalPillWidth);
+				? pillMargin
+				: (widgetWidth - pillMargin - totalPillWidth);
 			const auto rightPillRect = QRectF(
 				rightPillLeft,
 				pillTop,
 				totalPillWidth,
-				kPillHeight);
+				pillHeight);
 
 			PainterHighQualityEnabler hq(p);
 			p.setPen(Qt::NoPen);
-			p.setBrush(st::settingsThemeNotSupportedBg);
-			p.drawRoundedRect(rightPillRect, kPillHeight / 2.0, kPillHeight / 2.0);
+			p.setBrush(st::fagramTopBarPillBg);
+			p.drawRoundedRect(rightPillRect, pillHeight / 2.0, pillHeight / 2.0);
 		}
 	}
 }

@@ -7,12 +7,12 @@ https://github.com/fagramdesktop/fadesktop/blob/dev/LEGAL
 */
 #include "ayu/ui/fagram/fagram_nav_drawer.h"
 #include "ayu/ui/fagram/fagram_design.h"
-#include "ayu/ui/fagram/fagram_switch.h"
 
+#include "base/flat_map.h"
 #include "ui/painter.h"
 #include "ui/widgets/shadow.h"
 #include "ui/effects/ripple_animation.h"
-#include "ui/effects/animation_value_f.h"
+#include "styles/style_ayu_styles.h"
 #include "styles/style_basic.h"
 #include "styles/style_window.h"
 #include "styles/style_widgets.h"
@@ -23,13 +23,28 @@ https://github.com/fagramdesktop/fadesktop/blob/dev/LEGAL
 namespace FA::Ui {
 namespace {
 
-constexpr auto kNavDrawerItemHeight = 50;
-constexpr auto kPillMargin = 12.0;
-constexpr auto kPillPaddingY = 2.0;
+// The badges and the toggle animation read the row geometry from the style.
+[[nodiscard]] const style::SettingsButton &NavDrawerStyle(
+		const style::SettingsButton &st) {
+	static auto cache = base::flat_map<
+		const style::SettingsButton*,
+		std::unique_ptr<style::SettingsButton>>();
+	auto &result = cache[&st];
+	if (!result) {
+		result = std::make_unique<style::SettingsButton>(st);
+		const auto top = (st::fagramNavItemHeight - st.style.font->height) / 2;
+		result->padding = style::margins(
+			st::fagramNavTextLeft,
+			top,
+			st::fagramNavTextRight,
+			st::fagramNavItemHeight - top - st.height);
+		result->toggleSkip = st::fagramNavToggleSkip;
+	}
+	return *result;
+}
 
-[[nodiscard]] style::margins ComputeNavDrawerPadding(const style::SettingsButton &st) {
-	const auto topPadding = (kNavDrawerItemHeight - st.style.font->height) / 2;
-	return style::margins(58, topPadding, 28, topPadding);
+[[nodiscard]] QRect PillRect(QSize size) {
+	return QRect(QPoint(), size).marginsRemoved(st::fagramNavPillMargins);
 }
 
 } // namespace
@@ -39,10 +54,9 @@ NavDrawerButton::NavDrawerButton(
 	rpl::producer<QString> text,
 	const style::SettingsButton &st,
 	Settings::IconDescriptor &&descriptor)
-: SettingsButton(parent, std::move(text), st)
+: SettingsButton(parent, std::move(text), NavDrawerStyle(st))
 , _descriptor(std::move(descriptor))
 , _icon(_descriptor.icon) {
-	setPaddingOverride(ComputeNavDrawerPadding(st));
 }
 
 NavDrawerButton::NavDrawerButton(
@@ -50,10 +64,9 @@ NavDrawerButton::NavDrawerButton(
 	rpl::producer<TextWithEntities> text,
 	const style::SettingsButton &st,
 	Settings::IconDescriptor &&descriptor)
-: SettingsButton(parent, std::move(text), st)
+: SettingsButton(parent, std::move(text), NavDrawerStyle(st))
 , _descriptor(std::move(descriptor))
 , _icon(_descriptor.icon) {
-	setPaddingOverride(ComputeNavDrawerPadding(st));
 }
 
 void NavDrawerButton::setIcon(const style::icon *icon) {
@@ -67,8 +80,8 @@ void NavDrawerButton::setDescriptor(Settings::IconDescriptor &&descriptor) {
 	update();
 }
 
-int NavDrawerButton::resizeGetHeight(int newWidth) {
-	return kNavDrawerItemHeight;
+int NavDrawerButton::IconLeft() {
+	return st::fagramNavIconLeft;
 }
 
 void NavDrawerButton::paintEvent(QPaintEvent *e) {
@@ -76,11 +89,7 @@ void NavDrawerButton::paintEvent(QPaintEvent *e) {
 	const auto outerw = width();
 	const auto outerh = height();
 
-	const auto pillRect = QRectF(
-		kPillMargin,
-		kPillPaddingY,
-		outerw - 2.0 * kPillMargin,
-		outerh - 2.0 * kPillPaddingY);
+	const auto pillRect = PillRect(size());
 	const auto radius = pillRect.height() / 2.0;
 
 	const auto paintOver = (isOver() || isDown()) && !isDisabled();
@@ -91,17 +100,10 @@ void NavDrawerButton::paintEvent(QPaintEvent *e) {
 		p.drawRoundedRect(pillRect, radius, radius);
 	}
 
-	{
-		p.save();
-		auto clip = QPainterPath();
-		clip.addRoundedRect(pillRect, radius, radius);
-		p.setClipPath(clip);
-		paintRipple(p, 0, 0);
-		p.restore();
-	}
+	paintRipple(p, 0, 0);
 
 	if (_icon) {
-		const auto iconLeft = int(pillRect.x() + 16.0);
+		const auto iconLeft = IconLeft();
 		const auto iconTop = (outerh - _icon->height()) / 2;
 		if (paintOver) {
 			_icon->paint(p, QPoint(iconLeft, iconTop), outerw, st::windowBoldFgOver->c);
@@ -111,62 +113,25 @@ void NavDrawerButton::paintEvent(QPaintEvent *e) {
 	}
 
 	paintText(p, paintOver, outerw);
-
-	if (maybeToggleRect().width() > 0) {
-		const auto isChecked = toggled();
-		if (!_hasToggled) {
-			_hasToggled = true;
-			_lastToggled = isChecked;
-		} else if (_lastToggled != isChecked) {
-			_lastToggled = isChecked;
-			_toggleAnimation.start(
-				[this] { update(); },
-				isChecked ? 0.0 : 1.0,
-				isChecked ? 1.0 : 0.0,
-				200,
-				anim::easeOutCubic);
-		}
-		const auto toggledProgress = _toggleAnimation.value(isChecked ? 1.0 : 0.0);
-		const auto switchWidth = 46.0;
-		const auto switchHeight = 26.0;
-		const auto toggleX = pillRect.right() - 14.0 - switchWidth;
-		const auto toggleY = (outerh - switchHeight) / 2.0;
-
-		PaintMd3Switch(p, toggleX, toggleY, toggledProgress, switchWidth, switchHeight);
-	} else {
-		paintToggle(p, outerw);
-	}
+	paintToggle(p, outerw);
 }
 
 QImage NavDrawerButton::prepareRippleMask() const {
-	const auto pillRect = QRectF(
-		kPillMargin,
-		kPillPaddingY,
-		width() - 2.0 * kPillMargin,
-		height() - 2.0 * kPillPaddingY);
+	const auto pillRect = PillRect(size());
 	const auto radius = pillRect.height() / 2.0;
-
-	auto result = QImage(size(), QImage::Format_ARGB32_Premultiplied);
-	result.fill(Qt::transparent);
-	{
-		QPainter p(&result);
+	return ::Ui::RippleAnimation::MaskByDrawer(size(), false, [&](QPainter &p) {
 		PainterHighQualityEnabler hq(p);
 		p.setPen(Qt::NoPen);
 		p.setBrush(Qt::white);
 		p.drawRoundedRect(pillRect, radius, radius);
-	}
-	return result;
+	});
 }
 
 QPoint NavDrawerButton::prepareRippleStartPosition() const {
-	const auto global = QCursor::pos();
-	const auto local = mapFromGlobal(global);
-	const auto pillRect = QRect(
-		int(kPillMargin),
-		int(kPillPaddingY),
-		int(width() - 2.0 * kPillMargin),
-		int(height() - 2.0 * kPillPaddingY));
-	return pillRect.contains(local) ? local : DisabledRippleStartPosition();
+	const auto local = mapFromGlobal(QCursor::pos());
+	return PillRect(size()).contains(local)
+		? local
+		: DisabledRippleStartPosition();
 }
 
 object_ptr<NavDrawerButton> CreateNavDrawerButton(
@@ -198,7 +163,7 @@ not_null<::Ui::RpWidget*> AddNavDrawerDivider(
 		not_null<::Ui::VerticalLayout*> container) {
 	const auto divider = container->add(
 		object_ptr<::Ui::RpWidget>(container),
-		style::margins(16, 6, 16, 6));
+		st::fagramNavDividerMargins);
 	divider->resize(divider->width(), st::lineWidth);
 	divider->paintRequest(
 	) | rpl::on_next([divider] {

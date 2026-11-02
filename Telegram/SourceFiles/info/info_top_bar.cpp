@@ -217,6 +217,13 @@ void TopBar::forceButtonVisibility(
 		rpl::producer<bool> shown) {
 	_updateControlCallbacks.erase(button);
 	button->toggleOn(std::move(shown));
+	if (UseFagram()) {
+		button->toggledValue(
+		) | rpl::skip(1) | rpl::on_next([=] {
+			updateControlsGeometry(width());
+			update();
+		}, button->lifetime());
+	}
 }
 
 void TopBar::setSearchField(
@@ -374,6 +381,10 @@ void TopBar::removeButton(not_null<Ui::RpWidget*> button) {
 	_buttons.erase(
 		std::remove(_buttons.begin(), _buttons.end(), button),
 		_buttons.end());
+	if (UseFagram()) {
+		updateControlsGeometry(width());
+		update();
+	}
 }
 
 int TopBar::resizeGetHeight(int newWidth) {
@@ -565,6 +576,10 @@ void TopBar::updateControlsVisibility(anim::type animated) {
 		} else {
 			++i;
 		}
+	}
+	if (UseFagram()) {
+		updateControlsGeometry(width());
+		update();
 	}
 }
 

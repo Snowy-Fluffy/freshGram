@@ -195,9 +195,10 @@ void TopBarActionButton::paintEvent(QPaintEvent *e) {
 	p.scale(textScale, textScale);
 	p.translate(-textCenter);
 
+	const auto sides = FA::Ui::Enabled() ? cornerRadius() : 0;
 	const auto elidedText = st::infoProfileTopBarActionButtonFont->elided(
 		_text,
-		textRect.width(),
+		std::max(textRect.width() - sides, 0),
 		Qt::ElideMiddle);
 	p.drawText(textRect, elidedText, style::al_top);
 }

@@ -170,11 +170,43 @@ fagramSliderHeight: 32px;
 fagramCardInset: 16px;
 fagramProfileCardInset: 8px;
 fagramProfileTopSkip: 11px;
-fagramMembersButtonWidth: 32px;
+fagramMembersButton: IconButton(infoMembersButton) {
+	width: 32px;
+	rippleAreaPosition: point(0px, 3px);
+	rippleAreaSize: 32px;
+}
+fagramMembersAddMember: IconButton(fagramMembersButton) {
+	icon: icon {{ "info/info_add_member", windowBoldFg }};
+}
+fagramMembersSearch: IconButton(fagramMembersButton) {
+	icon: icon {{ "menu/search", windowBoldFg }};
+}
+fagramMembersAdmins: IconButton(fagramMembersButton) {
+	icon: icon {{ "menu/admin", windowBoldFg }};
+}
+fagramMembersLog: IconButton(fagramMembersButton) {
+	icon: icon {{ "menu/group_log", windowBoldFg }};
+}
 fagramMembersButtonsRight: 4px;
 fagramDividerGap: 4px;
 fagramDescriptionPadding: margins(22px, 4px, 22px, 8px);
-fagramProfileCardSkip: 6px;
+fagramTopBarPillMargin: 12px;
+fagramTopBarPillPadding: 4px;
+fagramTopBarButtonWidth: 36px;
+fagramTopBarPillHeight: 36px;
+fagramTopBarContentSpacing: 12px;
+fagramTopBarPillBg: windowBgOver;
+fagramTopBarRippleBg: windowBgRipple;
+
+fagramSplitToggleWidth: 86px;
+
+fagramNavItemHeight: 50px;
+fagramNavPillMargins: margins(12px, 2px, 12px, 2px);
+fagramNavIconLeft: 28px;
+fagramNavTextLeft: 58px;
+fagramNavTextRight: 28px;
+fagramNavToggleSkip: 26px;
+fagramNavDividerMargins: margins(16px, 6px, 16px, 6px);
 
 historyPluginsToggle: IconButton(historyAttach) {
 	icon: icon {{ "menu/bot", historyComposeIconFg }};

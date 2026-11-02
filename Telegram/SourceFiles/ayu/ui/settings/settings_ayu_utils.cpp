@@ -7,6 +7,7 @@
 #include "ayu/ui/settings/settings_ayu_utils.h"
 
 #include "lang_auto.h"
+#include "ayu/ui/fagram/fagram_design.h"
 #include "base/event_filter.h"
 #include "core/application.h"
 #include "lang/lang_text_entity.h"
@@ -211,12 +212,15 @@ not_null<Ui::RpWidget*> AddInnerToggle(not_null<Ui::VerticalLayout*> container,
 								p.fillRect(separator->rect(), bg);
 							},
 							separator->lifetime());
-		const auto separatorHeight = 2 * st.toggle.border
-			+ st.toggle.diameter;
+		const auto separatorHeight = FA::Ui::Enabled()
+			? checkView->getSize().height()
+			: (2 * st.toggle.border + st.toggle.diameter);
 		button->geometryValue(
 		) | on_next([=](const QRect &r)
 							{
-								const auto w = st::rightsButtonToggleWidth;
+								const auto w = FA::Ui::Enabled()
+									? st::fagramSplitToggleWidth
+									: st::rightsButtonToggleWidth;
 								constexpr auto kLineWidth = 1;
 								toggleButton->setGeometry(
 									r.x() + r.width() - w,

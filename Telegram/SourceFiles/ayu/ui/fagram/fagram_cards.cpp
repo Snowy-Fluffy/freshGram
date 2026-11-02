@@ -151,7 +151,21 @@ void Collect(
 			});
 		} else if (const auto nested = dynamic_cast<::Ui::VerticalLayout*>(
 				inner)) {
+			// WHY: a sliding wrap is shorter than the layout inside it while
+			// it animates, the rows below its bottom must not get a card.
+			const auto from = items.size();
 			Collect(root, nested, items, overlays);
+			const auto clipBottom = y + widget->height();
+			for (auto k = from; k < items.size();) {
+				auto &item = items[k];
+				item.top = std::max(item.top, y);
+				item.bottom = std::min(item.bottom, clipBottom);
+				if (item.bottom <= item.top) {
+					items.erase(begin(items) + k);
+				} else {
+					++k;
+				}
+			}
 		} else {
 			items.push_back({
 				.top = y,
@@ -181,6 +195,15 @@ public:
 		container->sizeValue(
 		) | rpl::on_next([=](QSize size) {
 			setGeometry(0, 0, size.width(), size.height());
+			update();
+		}, lifetime());
+		container->events(
+		) | rpl::filter([](not_null<QEvent*> e) {
+			const auto type = e->type();
+			return (type == QEvent::ChildAdded)
+				|| (type == QEvent::ChildRemoved)
+				|| (type == QEvent::LayoutRequest);
+		}) | rpl::on_next([=] {
 			update();
 		}, lifetime());
 		lower();

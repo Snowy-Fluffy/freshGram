@@ -105,7 +105,7 @@ ToggleView::ToggleView(
 }
 
 QSize ToggleView::getSize() const {
-	if (Md3Switch() && !_locked) {
+	if (Md3Switch()) {
 		return QSize(style::ConvertScale(48), style::ConvertScale(28));
 	}
 	return QSize(2 * _st->border + SwitchDiameter(_st) + _st->width, 2 * _st->border + SwitchDiameter(_st));
@@ -116,7 +116,7 @@ void ToggleView::setStyle(const style::Toggle &st) {
 }
 
 void ToggleView::paint(QPainter &p, int left, int top, int outerWidth) {
-	if (Md3Switch() && !_locked) {
+	if (Md3Switch()) {
 		const auto size = getSize();
 		const auto rect = style::rtlrect(
 			left,
@@ -130,7 +130,8 @@ void ToggleView::paint(QPainter &p, int left, int top, int outerWidth) {
 			rect.y(),
 			currentAnimationValue(),
 			rect.width(),
-			rect.height());
+			rect.height(),
+			_locked ? &_st->lockIcon : nullptr);
 		return;
 	}
 	left += _st->border;

@@ -13,6 +13,8 @@
 #include "ui/effects/animation_value_f.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/painter.h"
+#include "ui/style/style_core_direction.h"
+#include "ui/style/style_core_icon.h"
 #include "ui/style/style_core_scale.h"
 #include "styles/palette.h"
 
@@ -104,13 +106,16 @@ void PaintMd3Switch(
 		double y,
 		double toggled,
 		double switchWidth,
-		double switchHeight) {
+		double switchHeight,
+		const style::internal::Icon *lockIcon) {
 	PainterHighQualityEnabler hq(p);
 
+	const auto opacity = p.opacity();
 	const auto trackRadius = switchHeight / 2.0;
+	const auto border = style::ConvertScaleExact(2.0);
 
 	if (toggled > 0.0) {
-		p.setOpacity(toggled);
+		p.setOpacity(opacity * toggled);
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::windowActiveTextFg);
 		p.drawRoundedRect(
@@ -120,22 +125,28 @@ void PaintMd3Switch(
 	}
 
 	if (toggled < 1.0) {
-		p.setOpacity(1.0 - toggled);
-		p.setPen(QPen(st::windowSubTextFg->c, 2.0));
+		const auto half = border / 2.0;
+		p.setOpacity(opacity * (1.0 - toggled));
+		p.setPen(QPen(st::windowSubTextFg->c, border));
 		p.setBrush(Qt::NoBrush);
 		p.drawRoundedRect(
-			QRectF(x + 1.0, y + 1.0, switchWidth - 2.0, switchHeight - 2.0),
-			(switchHeight - 2.0) / 2.0,
-			(switchHeight - 2.0) / 2.0);
+			QRectF(
+				x + half,
+				y + half,
+				switchWidth - border,
+				switchHeight - border),
+			trackRadius - half,
+			trackRadius - half);
 	}
-	p.setOpacity(1.0);
+	p.setOpacity(opacity);
 
 	const auto thumbDiameter = std::round(switchHeight * 0.72);
 	const auto margin = (switchHeight - thumbDiameter) / 2.0;
-	const auto thumbX = anim::interpolateF(
-		x + margin,
-		x + switchWidth - margin - thumbDiameter,
-		toggled);
+	const auto offLeft = x + margin;
+	const auto onLeft = x + switchWidth - margin - thumbDiameter;
+	const auto thumbX = style::RightToLeft()
+		? anim::interpolateF(onLeft, offLeft, toggled)
+		: anim::interpolateF(offLeft, onLeft, toggled);
 	const auto thumbY = y + margin;
 	const auto thumbColor = anim::color(
 		st::windowSubTextFg->c,
@@ -150,8 +161,23 @@ void PaintMd3Switch(
 	const auto cy = thumbY + thumbDiameter / 2.0;
 	const auto scale = thumbDiameter / 20.0;
 
+	if (lockIcon) {
+		const auto color = anim::color(
+			st::windowBg->c,
+			st::windowActiveTextFg->c,
+			toggled);
+		lockIcon->paint(
+			p,
+			QPoint(
+				int(std::round(cx - lockIcon->width() / 2.0)),
+				int(std::round(cy - lockIcon->height() / 2.0))),
+			int(std::round(2 * cx)),
+			color);
+		return;
+	}
+
 	if (toggled < 0.95) {
-		p.setOpacity(1.0 - toggled);
+		p.setOpacity(opacity * (1.0 - toggled));
 		p.setPen(QPen(
 			st::windowBg->c,
 			1.8 * scale,
@@ -170,7 +196,7 @@ void PaintMd3Switch(
 	}
 
 	if (toggled > 0.05) {
-		p.setOpacity(toggled);
+		p.setOpacity(opacity * toggled);
 		p.setPen(QPen(
 			st::windowActiveTextFg->c,
 			1.8 * scale,
@@ -183,9 +209,12 @@ void PaintMd3Switch(
 		check.moveTo(cx - 3.5 * scale, cy - 0.2 * scale);
 		check.lineTo(cx - 1.0 * scale, cy + 2.5 * scale);
 		check.lineTo(cx + 4.0 * scale, cy - 2.5 * scale);
+		if (style::RightToLeft()) {
+			check = QTransform(-1, 0, 0, 1, 2 * cx, 0).map(check);
+		}
 		p.drawPath(check);
 	}
-	p.setOpacity(1.0);
+	p.setOpacity(opacity);
 }
 
 } // namespace AyuUiSettings

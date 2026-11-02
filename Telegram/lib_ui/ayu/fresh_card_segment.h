@@ -17,6 +17,12 @@
 class QPainter;
 class QWidget;
 
+namespace style {
+namespace internal {
+class Icon;
+} // namespace internal
+} // namespace style
+
 namespace AyuUiSettings {
 
 enum class CardSegment : unsigned char {
@@ -57,6 +63,7 @@ void PaintMd3Switch(
 	double y,
 	double toggled,
 	double width,
-	double height);
+	double height,
+	const style::internal::Icon *lockIcon = nullptr);
 
 } // namespace AyuUiSettings

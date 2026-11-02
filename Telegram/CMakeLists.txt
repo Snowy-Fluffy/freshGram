@@ -226,8 +226,6 @@ set(ayugram_files
         ayu/ui/fagram/fagram_nav_drawer.h
         ayu/ui/fagram/fagram_cards.cpp
         ayu/ui/fagram/fagram_cards.h
-        ayu/ui/fagram/fagram_switch.cpp
-        ayu/ui/fagram/fagram_switch.h
         ayu/ui/fagram/fagram_design.h
         ayu/ui/fagram/fagram_top_bar.cpp
         ayu/ui/fagram/fagram_top_bar.h

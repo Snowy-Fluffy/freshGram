@@ -20,11 +20,26 @@ namespace Ui {
 namespace {
 
 constexpr auto kByWheelFinishedTimeout = 1000;
-constexpr auto kMd3Track = 16;
-constexpr auto kMd3HandleThickness = 4.;
-constexpr auto kMd3HandleLength = 28.;
-constexpr auto kMd3Gap = 4.;
-constexpr auto kMd3DotRadius = 2.;
+
+[[nodiscard]] int Md3Track() {
+	return style::ConvertScale(16);
+}
+
+[[nodiscard]] float64 Md3HandleThickness() {
+	return style::ConvertScaleExact(4.);
+}
+
+[[nodiscard]] float64 Md3HandleLength() {
+	return style::ConvertScaleExact(28.);
+}
+
+[[nodiscard]] float64 Md3Gap() {
+	return style::ConvertScaleExact(4.);
+}
+
+[[nodiscard]] float64 Md3DotRadius() {
+	return style::ConvertScaleExact(2.);
+}
 
 [[nodiscard]] QPainterPath Md3TrackPath(
 		const QRectF &r,
@@ -317,7 +332,7 @@ MediaSlider::MediaSlider(QWidget *parent, const style::MediaSlider &st) : Contin
 
 QSize MediaSlider::getSeekDecreaseSize() const {
 	if (_md3) {
-		return _alwaysDisplayMarker ? QSize(kMd3Track, kMd3Track) : QSize();
+		return _alwaysDisplayMarker ? QSize(Md3Track(), Md3Track()) : QSize();
 	}
 	return _alwaysDisplayMarker ? _st.seekSize : QSize();
 }
@@ -396,7 +411,7 @@ void MediaSlider::setColorOverrides(ColorOverrides overrides) {
 
 void MediaSlider::paintMd3(QPainter &p) {
 	const auto horizontal = isHorizontal();
-	const auto thickness = float64(kMd3Track);
+	const auto thickness = float64(Md3Track());
 	const auto radius = thickness / 2.;
 	const auto disabled = isDisabled();
 	const auto over = getCurrentOverFactor();
@@ -416,8 +431,8 @@ void MediaSlider::paintMd3(QPainter &p) {
 		? st::windowBg->c
 		: st::sliderBgInactive->c;
 	const auto marker = disabled ? 0. : (_alwaysDisplayMarker ? 1. : over);
-	const auto gap = kMd3Gap * marker;
-	const auto handle = kMd3HandleThickness * marker;
+	const auto gap = Md3Gap() * marker;
+	const auto handle = Md3HandleThickness() * marker;
 	const auto activeEnd = mid - handle / 2. - gap;
 	const auto inactiveStart = mid + handle / 2. + gap;
 
@@ -466,28 +481,28 @@ void MediaSlider::paintMd3(QPainter &p) {
 		p.setBrush(color);
 		p.drawEllipse(
 			horizontal ? QPointF(at, center) : QPointF(center, at),
-			kMd3DotRadius,
-			kMd3DotRadius);
+			Md3DotRadius(),
+			Md3DotRadius());
 	};
 	if (horizontal) {
-		if (value < 0.95 && inactiveStart + 4. < length - radius - kMd3DotRadius) {
+		if (value < 0.95 && inactiveStart + 4. < length - radius - Md3DotRadius()) {
 			dot(length - radius, activeFg);
 		}
-		if (value > 0.05 && radius + kMd3DotRadius < activeEnd - 4.) {
+		if (value > 0.05 && radius + Md3DotRadius() < activeEnd - 4.) {
 			dot(radius, inactiveFg);
 		}
 	} else {
-		if (value < 0.95 && activeEnd - 4. > radius + kMd3DotRadius) {
+		if (value < 0.95 && activeEnd - 4. > radius + Md3DotRadius()) {
 			dot(radius, activeFg);
 		}
-		if (value > 0.05 && length - radius - kMd3DotRadius > inactiveStart + 4.) {
+		if (value > 0.05 && length - radius - Md3DotRadius() > inactiveStart + 4.) {
 			dot(length - radius, inactiveFg);
 		}
 	}
 
 	if (marker > 0.) {
 		const auto thick = std::max(handle, 1.);
-		const auto longer = kMd3HandleLength * marker;
+		const auto longer = Md3HandleLength() * marker;
 		p.setBrush(activeFg);
 		const auto rounded = thick / 2.;
 		p.drawRoundedRect(
@@ -503,7 +518,7 @@ void MediaSlider::paintMd3(QPainter &p) {
 			? divider.atValue
 			: (1. - divider.atValue);
 		const auto position = at * length;
-		if (std::abs(position - mid) <= handle / 2. + gap + kMd3DotRadius) {
+		if (std::abs(position - mid) <= handle / 2. + gap + Md3DotRadius()) {
 			continue;
 		}
 		const auto passed = horizontal ? (at <= value) : (at >= value);

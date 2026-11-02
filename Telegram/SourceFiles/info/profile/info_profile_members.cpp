@@ -158,22 +158,25 @@ void Members::setupHeader() {
 
 	_titleWrap = Ui::CreateChild<Ui::RpWidget>(parent);
 	_title = setupTitle();
+	// The Fagram card takes the sides, so the buttons get narrower and
+	// the title still fits next to them.
+	const auto fagram = FA::Ui::Enabled();
 	_addMember = Ui::CreateChild<Ui::IconButton>(
 		_openMembers,
-		st::infoMembersAddMember);
+		fagram ? st::fagramMembersAddMember : st::infoMembersAddMember);
 	_addMember->setAccessibleName(tr::lng_channel_add_members(tr::now));
 	//_searchField = _controller->searchFieldController()->createField(
 	//	parent,
 	//	st::infoMembersSearchField);
 	_admins = Ui::CreateChild<Ui::IconButton>(
 		_openMembers,
-		st::infoMembersAdmins);
+		fagram ? st::fagramMembersAdmins : st::infoMembersAdmins);
 	_logHistory = Ui::CreateChild<Ui::IconButton>(
 		_openMembers,
-		st::infoMembersLog);
+		fagram ? st::fagramMembersLog : st::infoMembersLog);
 	_search = Ui::CreateChild<Ui::IconButton>(
 		_openMembers,
-		st::infoMembersSearch);
+		fagram ? st::fagramMembersSearch : st::infoMembersSearch);
 	_search->setAccessibleName(tr::lng_participant_filter(tr::now));
 	//_cancelSearch = Ui::CreateChild<Ui::CrossButton>(
 	//	parent,
@@ -323,19 +326,10 @@ int Members::resizeGetHeight(int newWidth) {
 void Members::updateHeaderControlsGeometry(int newWidth) {
 	_openMembers->setGeometry(0, st::infoProfileSkip, newWidth, st::infoMembersButton.height);
 
-	// The Fagram card takes the sides, so the buttons get narrower and
-	// the title still fits next to them.
 	const auto fagram = FA::Ui::Enabled();
 	const auto buttonWidth = fagram
-		? st::fagramMembersButtonWidth
+		? st::fagramMembersButton.width
 		: st::infoMembersButton.width;
-	if (fagram) {
-		for (const auto button : { _addMember, _admins, _logHistory, _search }) {
-			if (button) {
-				button->resize(buttonWidth, button->height());
-			}
-		}
-	}
 	auto availableWidth = newWidth
 		- (fagram
 			? st::fagramMembersButtonsRight

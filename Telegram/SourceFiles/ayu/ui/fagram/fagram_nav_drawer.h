@@ -30,7 +30,7 @@ public:
 	void setIcon(const style::icon *icon);
 	void setDescriptor(Settings::IconDescriptor &&descriptor);
 
-	int resizeGetHeight(int newWidth) override;
+	[[nodiscard]] static int IconLeft();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -40,9 +40,6 @@ protected:
 private:
 	Settings::IconDescriptor _descriptor;
 	const style::icon *_icon = nullptr;
-	::Ui::Animations::Simple _toggleAnimation;
-	bool _hasToggled = false;
-	bool _lastToggled = false;
 
 };
 

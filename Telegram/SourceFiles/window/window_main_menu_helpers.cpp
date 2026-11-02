@@ -328,7 +328,7 @@ void SetupMenuBots(
 			) | rpl::on_next([=](int height) {
 				icon->move(
 					FA::Ui::Enabled()
-						? (12 + 16)
+						? FA::Ui::NavDrawerButton::IconLeft()
 						: st::mainMenuButton.iconLeft,
 					(height - icon->height()) / 2);
 			}, button->lifetime());

@@ -559,10 +559,14 @@ SeparatedToggle AddSeparatedToggle(
 		auto p = QPainter(separator);
 		p.fillRect(separator->rect(), bg);
 	}, separator->lifetime());
-	const auto separatorHeight = 2 * st.toggle.border + st.toggle.diameter;
+	const auto separatorHeight = FA::Ui::Enabled()
+		? checkView->getSize().height()
+		: (2 * st.toggle.border + st.toggle.diameter);
 	button->geometryValue(
 	) | rpl::on_next([=](const QRect &r) {
-		const auto width = st::rightsButtonToggleWidth;
+		const auto width = FA::Ui::Enabled()
+			? st::fagramSplitToggleWidth
+			: st::rightsButtonToggleWidth;
 		toggle->setGeometry(
 			r.x() + r.width() - width,
 			r.y(),
