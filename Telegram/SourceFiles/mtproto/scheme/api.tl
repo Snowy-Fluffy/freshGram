@@ -752,6 +752,7 @@ messageEntityFormattedDate#904ac7c7 flags:# relative:flags.0?true short_time:fla
 messageEntityDiffInsert#71777116 offset:int length:int = MessageEntity;
 messageEntityDiffReplace#c6c1e5a7 offset:int length:int old_text:string = MessageEntity;
 messageEntityDiffDelete#652c1c5 offset:int length:int = MessageEntity;
+messageEntityTonAddress#fdabbfcd offset:int length:int = MessageEntity;
 
 inputChannelEmpty#ee8c1e86 = InputChannel;
 inputChannel#f35aec28 channel_id:long access_hash:long = InputChannel;
@@ -2165,7 +2166,6 @@ inputPasskeyResponseRegister#3e63935c client_data:DataJSON attestation_data:byte
 inputPasskeyResponseLogin#c31fc14a client_data:DataJSON authenticator_data:bytes signature:bytes user_handle:string = InputPasskeyResponse;
 
 inputPasskeyCredentialPublicKey#3c27b78f id:string raw_id:string response:InputPasskeyResponse = InputPasskeyCredential;
-inputPasskeyCredentialFirebasePNV#5b1ccb28 pnv_token:string = InputPasskeyCredential;
 
 starGiftBackground#aff56398 center_color:int edge_color:int text_color:int = StarGiftBackground;
 
@@ -2280,8 +2280,6 @@ pageButton#692a5488 flags:# text:RichText type:InlineButtonType style:flags.0?Ri
 ephemeral.welcomeMessagesNotModified#59ffdb31 = ephemeral.WelcomeMessages;
 ephemeral.welcomeMessages#104fc872 hash:long messages:Vector<EphemeralMessage> = ephemeral.WelcomeMessages;
 
-auth.firebasePnvIntent#df5ac00c nonce:string digital_credential_payload:string = auth.FirebasePnvIntent;
-
 currencyRate#30d9743c currency:string rate:double = CurrencyRate;
 
 payments.currencyRates#bbcce4c2 rates:Vector<CurrencyRate> = payments.CurrencyRates;
@@ -2311,6 +2309,7 @@ wallet.userAddresses#928e7b55 addresses:Vector<WalletUserAddress> users:Vector<U
 
 walletTransactionPeerUser#d4ea706d flags:# user_id:long address:string domain:flags.0?string = WalletTransactionPeer;
 walletTransactionPeerAddress#62cc1bc flags:# address:string domain:flags.0?string = WalletTransactionPeer;
+walletTransactionPeerOnramp#e595186e flags:# address:string domain:flags.0?string provider_name:string = WalletTransactionPeer;
 walletTransactionPeerUnsupported#728bed5a = WalletTransactionPeer;
 walletTransactionPeerChannel#54e70c31 flags:# channel_id:long address:string domain:flags.0?string = WalletTransactionPeer;
 walletTransactionPeerTelegramGift#f4729499 flags:# own_profile:flags.0?true = WalletTransactionPeer;
@@ -2330,7 +2329,7 @@ wallet.proofChallenge#99e41707 payload:string expires:int domain:string = wallet
 walletOwnershipProof#60bccb0d timestamp:int signature:bytes = WalletOwnershipProof;
 
 inputWalletNew#63a440dc = InputWalletReplacement;
-inputWalletImported#2959057c public_key:bytes proof:WalletOwnershipProof = InputWalletReplacement;
+inputWalletImported#66a66a3b flags:# public_key:bytes anchor_public_key:flags.0?bytes proof:WalletOwnershipProof = InputWalletReplacement;
 
 tonConnectManifest#12229264 flags:# url:string name:string icon:flags.0?WebDocument = TonConnectManifest;
 
@@ -3241,7 +3240,7 @@ toncenter.performApiRequest#8d7bdd61 flags:# post:flags.0?true endpoint:string q
 toncenter.getStreamingUrl#cdaf63c7 = toncenter.StreamingUrl;
 
 wallet.getState#ab83b33a = WalletState;
-wallet.getUserAddresses#1ddd6c11 flags:# force:flags.0?true id:Vector<InputUser> = Vector<WalletUserAddress>;
+wallet.getUserAddresses#5275dfdd flags:# force:flags.0?true id:Vector<InputUser> addresses:Vector<string> = wallet.UserAddresses;
 wallet.getTransactions#a8830a83 flags:# inbound:flags.0?true outbound:flags.1?true offset:string limit:int = wallet.Transactions;
 wallet.getTransactionsByIDs#811ceab6 id:Vector<string> = wallet.Transactions;
 wallet.getTransactionsByMsgHash#a6bb795d msg_hash:Vector<string> = wallet.Transactions;
@@ -3263,7 +3262,7 @@ wallet.tonConnectGetPending#11aee065 flags:# dapp_client_id:flags.0?string sessi
 wallet.tonConnectClaimRequest#66b57b41 flags:# declined:flags.1?true session_id:long msg_id:int app_request_id:string challenge_answer:flags.0?bytes = Bool;
 wallet.tonConnectSubmitResponse#fac67d3c flags:# session_id:long msg_id:int body:bytes trace_id:flags.0?string = Bool;
 wallet.tonConnectNextEventId#775d7244 session_id:long = TonConnectNextEventId;
-wallet.tonConnectCloseSession#99c1ca3b session_id:long body:bytes = Bool;
+wallet.tonConnectCloseSession#d63f61ce flags:# session_id:long body:flags.0?bytes = Bool;
 wallet.tonConnectGetSessions#a7ffb56e = wallet.TonConnectSessions;
 wallet.setCardStickers#68509ac flags:# stickers:Vector<InputWalletCardSticker> bg_nft_address:flags.0?string = wallet.Card;
 
