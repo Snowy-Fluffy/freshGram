@@ -42,6 +42,9 @@ public:
 
 	void refreshGlobalProxy();
 
+	// Syncs the pixmap ratio when the main window moves to another screen.
+	void screenChangedFor(not_null<QScreen*> screen, float64 windowRatio);
+
 	void postponeCall(FnMut<void()> &&callable);
 
 	// Test-agent-only seam: runs every pending postponed call, and any

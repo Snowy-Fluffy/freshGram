@@ -329,13 +329,13 @@ void PaintPluginIcon(
 		return;
 	}
 	auto tinted = QImage(mask.size(), QImage::Format_ARGB32_Premultiplied);
+	tinted.setDevicePixelRatio(mask.devicePixelRatio());
 	tinted.fill(color);
 	{
 		auto q = QPainter(&tinted);
 		q.setCompositionMode(QPainter::CompositionMode_DestinationIn);
 		q.drawImage(0, 0, mask);
 	}
-	tinted.setDevicePixelRatio(mask.devicePixelRatio());
 	p.drawImage(style::rtlrect(QRect(position, fallback.size()), outerWidth).topLeft(), tinted);
 }
 

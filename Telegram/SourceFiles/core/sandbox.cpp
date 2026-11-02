@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_regex.h"
 #include "ui/ui_utility.h"
 #include "ui/effects/animations.h"
+#include "ui/style/style_core_icon.h"
 
 #ifdef Q_OS_MAC
 #include "platform/mac/global_menu_mac.h"
@@ -369,6 +370,23 @@ void Sandbox::setupScreenScale() {
 	}
 	LOG(("DevicePixelRatio: %1").arg(useRatio));
 	LOG(("ScreenScale: %1").arg(cScreenScale()));
+}
+
+void Sandbox::screenChangedFor(
+		not_null<QScreen*> screen,
+		float64 windowRatio) {
+	const auto useRatio = std::clamp(int(std::ceil(windowRatio)), 1, 3);
+	LOG(("Screen changed: %1, DPI: %2, screen ratio: %3, window ratio: %4."
+		).arg(screen->name()
+		).arg(screen->logicalDotsPerInch()
+		).arg(screen->devicePixelRatio()
+		).arg(windowRatio));
+	if (useRatio == style::DevicePixelRatio()) {
+		return;
+	}
+	style::SetDevicePixelRatio(useRatio);
+	style::internal::ResetIcons();
+	LOG(("DevicePixelRatio: %1").arg(useRatio));
 }
 
 Sandbox::~Sandbox() {

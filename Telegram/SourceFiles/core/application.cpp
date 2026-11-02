@@ -422,6 +422,16 @@ void Application::run() {
 	setLastActiveWindow(_windows.front().second.get());
 	_windowInSettings = _lastActivePrimaryWindow = _lastActiveWindow;
 
+	{
+		const auto widget = _lastActiveWindow->widget();
+		widget->screenValue(
+		) | rpl::on_next([=](not_null<QScreen*> screen) {
+			Sandbox::Instance().screenChangedFor(
+				screen,
+				widget->devicePixelRatioF());
+		}, _lifetime);
+	}
+
 	_domain->activeChanges(
 	) | rpl::on_next([=](not_null<Main::Account*> account) {
 		showAccount(account);
