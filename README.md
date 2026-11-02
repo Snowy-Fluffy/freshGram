@@ -155,6 +155,10 @@ The source code is published under GPLv3 with OpenSSL exception, the license is 
 - [SQLite](https://github.com/sqlite/sqlite)
 - [sqlite_orm](https://github.com/fnc12/sqlite_orm)
 - [androidx sources](https://github.com/androidx/androidx)
+- [Tesseract](https://github.com/tesseract-ocr/tesseract) and [Leptonica](https://github.com/DanBloomberg/leptonica) for text recognition
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for speech recognition
+- [CTranslate2](https://github.com/OpenNMT/CTranslate2) and [SentencePiece](https://github.com/google/sentencepiece) for offline translation, with [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT) models
+- [fastText](https://github.com/facebookresearch/fastText) for language detection, with its [language identification model](https://fasttext.cc/docs/en/language-identification.html) ([CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/))
 - **Qt 6**, **OpenSSL**, **WebRTC**, **FFmpeg**, **Opus**, **OpenAL Soft** and the other libraries listed in the Telegram Desktop repository
 - **Vazirmatn font** ([SIL Open Font License 1.1](https://github.com/rastikerdar/vazirmatn/blob/master/OFL.txt))
 

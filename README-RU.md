@@ -155,6 +155,10 @@ nix profile install 'git+https://relay.ngit.dev/npub18eectrgnhcmmp6e0ec6sp3scf4m
 - [SQLite](https://github.com/sqlite/sqlite)
 - [sqlite_orm](https://github.com/fnc12/sqlite_orm)
 - [androidx sources](https://github.com/androidx/androidx)
+- [Tesseract](https://github.com/tesseract-ocr/tesseract) и [Leptonica](https://github.com/DanBloomberg/leptonica) для распознавания текста
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) для распознавания речи
+- [CTranslate2](https://github.com/OpenNMT/CTranslate2) и [SentencePiece](https://github.com/google/sentencepiece) для офлайн-перевода, с моделями [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT)
+- [fastText](https://github.com/facebookresearch/fastText) для определения языка, с [моделью определения языка](https://fasttext.cc/docs/en/language-identification.html) ([CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/))
 - **Qt 6**, **OpenSSL**, **WebRTC**, **FFmpeg**, **Opus**, **OpenAL Soft** и другие библиотеки из репозитория Telegram Desktop
 - Шрифт **Vazirmatn** ([SIL Open Font License 1.1](https://github.com/rastikerdar/vazirmatn/blob/master/OFL.txt))
 
