@@ -22,7 +22,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(7);
+constexpr auto kVersion = int64_t(8);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -453,6 +453,19 @@ public:
 			size_t maxBytes) {
 		(void)chat;
 		(void)message;
+		(void)thumbnail;
+		(void)maxBytes;
+		return std::nullopt;
+	}
+
+	// A file the user is sending, while its message.outgoing hook runs.
+	[[nodiscard]] virtual std::optional<Media> outgoingFile(
+			int64_t chat,
+			size_t index,
+			bool thumbnail,
+			size_t maxBytes) {
+		(void)chat;
+		(void)index;
 		(void)thumbnail;
 		(void)maxBytes;
 		return std::nullopt;
@@ -961,7 +974,7 @@ public:
 		return _grants;
 	}
 
-	void beginOutgoing(bool media = false);
+	void beginOutgoing(bool media = false, int64_t chat = 0, size_t memoryBytes = 0);
 	void beginIncoming(bool service = false);
 	[[nodiscard]] OutgoingEdit finishOutgoing();
 	void releaseSockets();
@@ -1062,6 +1075,8 @@ private:
 	HookKind _hook = HookKind::None;
 	bool _serviceHook = false;
 	bool _mediaHook = false;
+	int64_t _hookChat = 0;
+	size_t _hookMemoryBytes = 0;
 	OutgoingEdit _outgoingEdit;
 
 };

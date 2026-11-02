@@ -115,6 +115,26 @@ pub fn drop_outgoing(reason: &str) -> Result<(), Error> {
     done(call("messages.drop_outgoing", arguments))
 }
 
+/// A file of the send being made, as a map with kind, mime, name and data
+/// (message.outgoing only; needs media.read_outgoing). `index` is the position in the event's media list.
+pub fn outgoing_file(index: i64, thumbnail: bool) -> Result<Value, Error> {
+    call("messages.outgoing_file", Some(map! { "index" => index, "thumbnail" => thumbnail }))
+}
+
+/// The file of a message, as a map with kind, mime, name and data (up to 100 MiB).
+/// With `download` a file that is not on this device is downloaded first; that needs media.download.
+pub fn media_get(chat: i64, message: i64, thumbnail: bool, download: bool) -> Result<Value, Error> {
+    call(
+        "media.get",
+        Some(map! { "chat" => chat, "message" => message, "thumbnail" => thumbnail, "download" => download }),
+    )
+}
+
+/// Messages with media, newest first. `kind` is photo, video, photo_video, file, voice, round, audio, gif or any.
+pub fn media_list(chat: i64, kind: &str, limit: i64, before: i64) -> Result<Value, Error> {
+    call("media.list", Some(map! { "chat" => chat, "kind" => kind, "limit" => limit, "before" => before }))
+}
+
 pub fn chat_info(chat: i64) -> Result<Value, Error> {
     call("chat.info", Some(map! { "chat" => chat }))
 }

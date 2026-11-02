@@ -648,6 +648,17 @@ class _SyncMessages(_Messages):
         """
         _request("messages.drop_outgoing", **_given(reason=reason))
 
+    def outgoing_file(self, index, thumbnail=False):
+        """A file of the send being made: kind, mime, name and data (message.outgoing only).
+
+        index is the position in the event's "media" list. thumbnail=True gives
+        the small preview (a JPEG) instead, when there is one. The data is up to
+        100 MiB and no more than half of the plugin's memory. Needs
+        media.read_outgoing besides messages.transform_outgoing; chats outside
+        the plugin's scope and secret chats are refused.
+        """
+        return _request("messages.outgoing_file", index=index, thumbnail=thumbnail)
+
 
 class _Bots(_Namespace):
     def inline_query(self, bot, query="", chat=None):

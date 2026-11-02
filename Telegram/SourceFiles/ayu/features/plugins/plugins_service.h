@@ -5,6 +5,11 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <string>
+
+#include <QtCore/QByteArray>
+#include <QtCore/QString>
 
 namespace Main {
 class Session;
@@ -58,6 +63,20 @@ void Stop();
 	std::shared_ptr<SendingAlbum> &album,
 	const Api::SendAction &action);
 [[nodiscard]] bool HasPendingOutgoing(not_null<History*> history);
+
+// A file of the send that plugins are looking at: bytes if they are in memory, else a path to read.
+struct OutgoingFileSource {
+	std::string kind;
+	std::string name;
+	std::string mime;
+	QString path;
+	QByteArray bytes;
+};
+// Main thread only: the file number index of the send that is at the front of the history queue.
+[[nodiscard]] std::optional<OutgoingFileSource> PendingOutgoingFile(
+	not_null<History*> history,
+	size_t index,
+	bool thumbnail);
 [[nodiscard]] State CurrentState();
 [[nodiscard]] rpl::producer<State> StateValue();
 

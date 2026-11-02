@@ -1858,7 +1858,10 @@ void PluginManager::run(Instance &instance) {
 			if (outgoing->kind == HookKind::Incoming) {
 				instance.broker->beginIncoming(outgoing->service);
 			} else {
-				instance.broker->beginOutgoing(outgoing->media);
+				instance.broker->beginOutgoing(
+					outgoing->media,
+					outgoing->chat,
+					outgoing->memoryBytes);
 			}
 		}
 		const auto result = instance.client->deliver(event, *instance.broker);
@@ -2696,6 +2699,8 @@ bool PluginManager::advance(
 		}
 		auto pending = std::make_shared<Outgoing>();
 		const auto &info = chain.info;
+		pending->chat = info.chat;
+		pending->memoryBytes = size_t(parsed->memoryMb) << 20;
 		auto event = cbor::Map{
 			{ "type", Text("message.outgoing") },
 			{ "chat", cbor::Value::FromInt(info.chat) },

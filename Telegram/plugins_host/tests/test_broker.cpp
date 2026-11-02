@@ -228,7 +228,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 7);
+	CHECK(Payload(info).find("api")->asInt() == 8);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -849,6 +849,65 @@ void TestIncomingHook() {
 	incomingBroker.beginOutgoing();
 	CHECK(Code(incomingBroker.call(Request("messages.set_outgoing", { { "text", Text("x") } }))) == "denied");
 	(void)incomingBroker.finishOutgoing();
+}
+
+void TestOutgoingFileRead() {
+	const auto file = [](int64_t index, bool thumbnail = false) {
+		return Request("messages.outgoing_file", {
+			{ "index", Int(index) },
+			{ "thumbnail", cbor::Value::FromBool(thumbnail) },
+		});
+	};
+	auto fixture = Fixture({ "messages.transform_outgoing", "media.read_outgoing" });
+	fixture.grants.chats = std::set<int64_t>{ 1, 2 };
+	auto broker = fixture.make();
+	CHECK(Code(broker.call(file(0))) == "invalid");
+
+	broker.beginOutgoing(false, 1);
+	CHECK(Code(broker.call(file(0))) == "invalid");
+	(void)broker.finishOutgoing();
+
+	broker.beginOutgoing(true, 1, 100);
+	const auto photo = broker.call(file(0));
+	CHECK(IsOk(photo));
+	CHECK(*Payload(photo).find("name")->asText() == "p.png");
+	CHECK(*Payload(photo).find("mime")->asText() == "image/png");
+	CHECK(*Payload(photo).find("kind")->asText() == "photo");
+	CHECK(Payload(photo).find("data")->asBytes()->size() == 12);
+	const auto thumbnail = broker.call(file(0, true));
+	CHECK(IsOk(thumbnail) && *Payload(thumbnail).find("kind")->asText() == "thumbnail");
+	CHECK(Code(broker.call(file(1))) == "limit");
+	CHECK(Code(broker.call(file(2))) == "not_found");
+	CHECK(Code(broker.call(file(-1))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.outgoing_file"))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.outgoing_file", {
+		{ "index", Int(0) }, { "thumbnail", Int(1) } }))) == "invalid");
+	(void)broker.finishOutgoing();
+	CHECK(Code(broker.call(file(0))) == "invalid");
+
+	broker.beginOutgoing(true, 5);
+	CHECK(Code(broker.call(file(0))) == "denied");
+	(void)broker.finishOutgoing();
+	broker.beginOutgoing(true, api::kServiceChat);
+	CHECK(Code(broker.call(file(0))) == "denied");
+	(void)broker.finishOutgoing();
+
+	auto restricted = Fixture({ "messages.transform_outgoing", "media.read_outgoing" });
+	auto restrictedBroker = restricted.make();
+	restrictedBroker.beginOutgoing(true, 3);
+	CHECK(Code(restrictedBroker.call(file(0))) == "not_found");
+	(void)restrictedBroker.finishOutgoing();
+
+	auto readOnly = Fixture({ "messages.transform_outgoing", "media.read" });
+	auto readOnlyBroker = readOnly.make();
+	readOnlyBroker.beginOutgoing(true, 1);
+	CHECK(Code(readOnlyBroker.call(file(0))) == "denied");
+	(void)readOnlyBroker.finishOutgoing();
+	auto noHook = Fixture({ "media.read_outgoing" });
+	auto noHookBroker = noHook.make();
+	noHookBroker.beginOutgoing(true, 1);
+	CHECK(Code(noHookBroker.call(file(0))) == "denied");
+	(void)noHookBroker.finishOutgoing();
 }
 
 void TestMessageLookups() {
@@ -3290,6 +3349,7 @@ int main() {
 	TestClosedBrokerDropsAwaitedWork();
 	TestLevelTwoCalls();
 	TestMediaCalls();
+	TestOutgoingFileRead();
 	TestSentIds();
 	TestFilesAndTimers();
 	TestFolderCalls();

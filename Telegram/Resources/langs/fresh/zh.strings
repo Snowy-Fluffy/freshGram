@@ -266,6 +266,7 @@
 "fresh_PermMessagesTransformIncoming" = "更改或隐藏你收到的消息";
 "fresh_PermMediaRead" = "读取已下载的媒体";
 "fresh_PermMediaDownload" = "从你的聊天中下载媒体文件";
+"fresh_PermMediaReadOutgoing" = "读取你正在发送的文件";
 "fresh_PermChatsList" = "查看聊天列表";
 "fresh_PermChatInfo" = "查看聊天详情";
 "fresh_PermMessagesHistory" = "读取聊天记录";

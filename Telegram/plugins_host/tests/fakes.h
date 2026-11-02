@@ -255,6 +255,17 @@ public:
 		return std::nullopt;
 	}
 
+	std::optional<Media> outgoingFile(int64_t chat, size_t index, bool thumbnail, size_t maxBytes) override {
+		if (chat != 1 && chat != 3) {
+			return std::nullopt;
+		} else if (index == 0) {
+			return Media{ thumbnail ? "thumbnail" : "photo", "image/png", "p.png", cbor::Bytes(12, 3) };
+		} else if (index == 1) {
+			return Media{ "file", "text/plain", "b.txt", cbor::Bytes(maxBytes + 1, 4) };
+		}
+		return std::nullopt;
+	}
+
 	Result<Media, std::string> downloadMedia(int64_t chat, int64_t message, bool, size_t) override {
 		if (chat == 1 && message == 101) {
 			return Media{ "file", "application/pdf", "a.pdf", cbor::Bytes(20, 2) };

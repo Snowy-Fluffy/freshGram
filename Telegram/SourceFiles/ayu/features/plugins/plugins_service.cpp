@@ -47,6 +47,7 @@
 #include "storage/storage_account.h"
 #include "storage/storage_domain.h"
 
+#include <QtCore/QBuffer>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 
@@ -223,7 +224,7 @@ struct Service {
 	}
 
 	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
-	config.environment.apiLevel = 7;
+	config.environment.apiLevel = 8;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
 	}
@@ -966,6 +967,27 @@ void Stop() {
 
 namespace {
 
+[[nodiscard]] std::string OutgoingKindOf(
+		SendMediaType type,
+		const Ui::PreparedFile &file) {
+	using Type = Ui::PreparedFile::Type;
+	return (type == SendMediaType::File)
+		? "file"
+		: (file.type == Type::Photo)
+		? "photo"
+		: (file.type == Type::Video)
+		? "video"
+		: (file.type == Type::Music)
+		? "audio"
+		: "file";
+}
+
+[[nodiscard]] std::string OutgoingNameOf(const Ui::PreparedFile &file) {
+	return (file.displayName.isEmpty()
+		? QFileInfo(file.path).fileName()
+		: file.displayName).toStdString();
+}
+
 [[nodiscard]] fgpl::OutgoingInfo InfoOf(
 		const Api::MessageToSend &message,
 		const OutgoingFiles *files = nullptr) {
@@ -984,22 +1006,10 @@ namespace {
 	result.text = message.textWithTags.text.toStdString();
 	result.entities = EntitiesOf(message.textWithTags);
 	if (files) {
-		using Type = Ui::PreparedFile::Type;
 		for (const auto &file : files->list.files) {
-			const auto kind = (files->type == SendMediaType::File)
-				? "file"
-				: (file.type == Type::Photo)
-				? "photo"
-				: (file.type == Type::Video)
-				? "video"
-				: (file.type == Type::Music)
-				? "audio"
-				: "file";
 			result.files.push_back({
-				.kind = kind,
-				.name = (file.displayName.isEmpty()
-					? QFileInfo(file.path).fileName()
-					: file.displayName).toStdString(),
+				.kind = OutgoingKindOf(files->type, file),
+				.name = OutgoingNameOf(file),
 				.size = file.size,
 			});
 		}
@@ -1302,6 +1312,47 @@ bool ApplyOutgoingFiles(
 	return true;
 #else
 	return false;
+#endif
+}
+
+std::optional<OutgoingFileSource> PendingOutgoingFile(
+		not_null<History*> history,
+		size_t index,
+		bool thumbnail) {
+#ifdef FRESHGRAM_PLUGINS
+	const auto &outgoing = GetService().outgoing;
+	const auto i = outgoing.find(history);
+	if (i == end(outgoing) || i->second.empty()) {
+		return std::nullopt;
+	}
+	const auto &files = i->second.front().files;
+	if (!files || index >= files->list.files.size()) {
+		return std::nullopt;
+	}
+	const auto &file = files->list.files[index];
+	auto result = OutgoingFileSource{
+		.kind = OutgoingKindOf(files->type, file),
+		.name = OutgoingNameOf(file),
+	};
+	if (thumbnail) {
+		if (file.preview.isNull()) {
+			return std::nullopt;
+		}
+		auto buffer = QBuffer(&result.bytes);
+		buffer.open(QIODevice::WriteOnly);
+		file.preview.save(&buffer, "JPEG", 87);
+		result.kind = "thumbnail";
+		result.mime = "image/jpeg";
+	} else if (!file.content.isEmpty()) {
+		result.bytes = file.content;
+	} else if (!file.path.isEmpty()) {
+		result.path = file.path;
+	} else {
+		return std::nullopt;
+	}
+	return result;
+#else
+	return std::nullopt;
 #endif
 }
 

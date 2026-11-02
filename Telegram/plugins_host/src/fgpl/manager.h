@@ -491,6 +491,8 @@ private:
 		HookKind kind = HookKind::Outgoing;
 		bool service = false;
 		bool media = false;
+		int64_t chat = 0;
+		size_t memoryBytes = 0;
 		cbor::Value event;
 		std::mutex mutex;
 		std::condition_variable done;

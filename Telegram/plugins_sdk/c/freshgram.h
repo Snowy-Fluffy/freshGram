@@ -496,6 +496,19 @@ static int fg_drop_outgoing(const char *reason) {
 	return fg_send(&w, 0);
 }
 
+/* A file of the send being made (message.outgoing only; needs media.read_outgoing).
+   index is the position in the event's media list. The result is a map with
+   kind, mime, name and data. */
+static int fg_outgoing_file(fg_i64 index, int thumbnail, fg_value *result) {
+	fg_writer w;
+	fg_begin(&w, "messages.outgoing_file", 2);
+	fg_w_text(&w, "index");
+	fg_w_int(&w, index);
+	fg_w_text(&w, "thumbnail");
+	fg_w_bool(&w, thumbnail);
+	return fg_send(&w, result);
+}
+
 static int fg_socket_connect(const char *op, const char *host, fg_i64 port, int tls, fg_i64 *id) {
 	fg_writer w;
 	fg_value result = fg_none();

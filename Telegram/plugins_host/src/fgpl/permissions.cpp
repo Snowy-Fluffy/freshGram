@@ -8,6 +8,7 @@ namespace {
 const auto kReadingPermissions = std::set<std::string>{
 	"messages.read", "messages.read_deleted", "messages.history", "chats.list",
 	"chat.info", "account.info", "contacts.list", "composer.draft", "media.read",
+	"media.read_outgoing",
 	"folders.list", "settings.read", "stars.balance", "users.info", "chats.active",
 	"chats.activity", "users.presence", "app.activity", "translate.provide", "ai.provide",
 	"stories.read", "calls.activity",
@@ -23,7 +24,7 @@ const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
 	"net.tcp", "net.udp", "net.local", "background", "fs.user_selected", "fs.folder", "clipboard",
 	"messages.edit", "messages.delete", "ghost.control", "messages.transform_incoming",
-	"chats.moderate", "ai.provide",
+	"chats.moderate", "ai.provide", "media.read_outgoing",
 };
 
 const auto kLowPermissions = std::set<std::string>{

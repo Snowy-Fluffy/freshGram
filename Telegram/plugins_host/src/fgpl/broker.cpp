@@ -644,9 +644,11 @@ void Broker::beginIncoming(bool service) {
 	_outgoingEdit = OutgoingEdit();
 }
 
-void Broker::beginOutgoing(bool media) {
+void Broker::beginOutgoing(bool media, int64_t chat, size_t memoryBytes) {
 	_hook = HookKind::Outgoing;
 	_mediaHook = media;
+	_hookChat = chat;
+	_hookMemoryBytes = memoryBytes;
 	_outgoingEdit = OutgoingEdit();
 }
 
@@ -707,6 +709,7 @@ cbor::Value Broker::call(const cbor::Value &request) {
 		&& *name != "time.now"
 		&& *name != "messages.set_outgoing"
 		&& *name != "messages.drop_outgoing"
+		&& *name != "messages.outgoing_file"
 		&& *name != "messages.set_incoming"
 		&& *name != "messages.hide_incoming") {
 		response = api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
@@ -969,6 +972,47 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		_outgoingEdit.drop = true;
 		_outgoingEdit.dropReason = *reason;
 		return api::Ok();
+	} else if (op == "messages.outgoing_file") {
+		if (!has("messages.transform_outgoing")) {
+			return api::Fail(api::error::kDenied, "messages.transform_outgoing");
+		} else if (!has("media.read_outgoing")) {
+			return api::Fail(api::error::kDenied, "media.read_outgoing");
+		} else if (_hook != HookKind::Outgoing || !_mediaHook) {
+			return api::Fail(api::error::kInvalid, "only while handling message.outgoing with files");
+		} else if (!_services.data) {
+			return api::Fail(api::error::kUnavailable, "data");
+		}
+		const auto index = IntArg(args, "index");
+		const auto thumbnail = BoolArg(args, "thumbnail", false);
+		if (!index || *index < 0 || !thumbnail) {
+			return api::Fail(api::error::kInvalid, "index or thumbnail");
+		} else if (_hookChat == api::kServiceChat || !chatInScope(_hookChat)) {
+			return api::Fail(api::error::kDenied, "this chat");
+		}
+		const auto info = _services.data->chat(_hookChat);
+		if (!info || info->restricted()) {
+			return api::Fail(api::error::kNotFound, "chat");
+		}
+		// The file and its copy in the plugin both have to fit its memory.
+		const auto limit = _hookMemoryBytes
+			? std::min(kMaxMedia, _hookMemoryBytes / 2)
+			: kMaxMedia;
+		const auto file = _services.data->outgoingFile(
+			_hookChat,
+			size_t(*index),
+			*thumbnail,
+			limit);
+		if (!file) {
+			return api::Fail(api::error::kNotFound, "the file");
+		} else if (file->bytes.size() > limit) {
+			return api::Fail(api::error::kLimit, "the file is too large");
+		}
+		return api::Ok(cbor::Value::FromMap({
+			{ "kind", Text(file->kind) },
+			{ "mime", Text(file->mime) },
+			{ "name", Text(file->name) },
+			{ "data", cbor::Value::FromBytes(file->bytes) },
+		}));
 	} else if (op == "messages.set_incoming") {
 		if (!has("messages.transform_incoming")) {
 			return api::Fail(api::error::kDenied, "messages.transform_incoming");

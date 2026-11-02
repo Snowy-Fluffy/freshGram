@@ -3191,6 +3191,47 @@ public:
 		return result;
 	}
 
+	std::optional<fgpl::Media> outgoingFile(
+			int64_t chat,
+			size_t index,
+			bool thumbnail,
+			size_t maxBytes) override {
+		// Only the queue is read on the main thread, the file itself is read here.
+		const auto source = OnMain<std::optional<OutgoingFileSource>>([=]()
+				-> std::optional<OutgoingFileSource> {
+			const auto history = historyOf(chat);
+			if (!history || HiddenPeer(history->peer)) {
+				return std::nullopt;
+			}
+			return PendingOutgoingFile(history, index, thumbnail);
+		}, std::nullopt);
+		if (!source) {
+			return std::nullopt;
+		}
+		auto bytes = source->bytes;
+		auto mime = QString::fromStdString(source->mime);
+		if (bytes.isEmpty()) {
+			auto file = QFile(source->path);
+			if (!file.open(QIODevice::ReadOnly)) {
+				return std::nullopt;
+			}
+			bytes = file.read(qint64(maxBytes) + 1);
+			mime = Core::MimeTypeForFile(QFileInfo(source->path)).name();
+		} else if (mime.isEmpty()) {
+			mime = Core::MimeTypeForData(bytes).name();
+		}
+		if (bytes.isEmpty()) {
+			return std::nullopt;
+		}
+		auto result = fgpl::Media();
+		result.kind = source->kind;
+		result.name = source->name;
+		result.mime = Utf8(mime);
+		bytes.truncate(qsizetype(std::min<size_t>(size_t(bytes.size()), maxBytes + 1)));
+		result.bytes.assign(bytes.constData(), bytes.constData() + bytes.size());
+		return result;
+	}
+
 private:
 	[[nodiscard]] DocumentData *findSticker(
 			Main::Session *session,
