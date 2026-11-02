@@ -228,7 +228,7 @@ void TestMetaAndLog() {
 	auto broker = fixture.make();
 	const auto info = broker.call(Request("meta.info"));
 	CHECK(IsOk(info));
-	CHECK(Payload(info).find("api")->asInt() == 8);
+	CHECK(Payload(info).find("api")->asInt() == 9);
 	CHECK(*Payload(info).find("plugin")->asText() == "com.example.test");
 	CHECK(Payload(info).find("granted")->asArray()->size() == 1);
 	CHECK(IsOk(broker.call(Request("log", { { "text", Text("hello") } }))));
@@ -3294,6 +3294,84 @@ void TestSavedMessagesAreHidden() {
 	CHECK(!reduced.find("chat") && !reduced.find("text") && !reduced.find("self"));
 }
 
+void TestSilenceIncoming() {
+	auto fixture = Fixture({ "messages.transform_incoming", "notifications.suppress" });
+	auto broker = fixture.make();
+	CHECK(Code(broker.call(Request("messages.silence_incoming"))) == "invalid");
+	broker.beginIncoming();
+	CHECK(IsOk(broker.call(Request("messages.silence_incoming"))));
+	auto edit = broker.finishOutgoing();
+	CHECK(edit.silence && !edit.drop && !edit.text);
+	broker.beginOutgoing();
+	CHECK(Code(broker.call(Request("messages.silence_incoming"))) == "invalid");
+	(void)broker.finishOutgoing();
+
+	auto noPermission = Fixture({ "messages.transform_incoming" });
+	auto denied = noPermission.make();
+	denied.beginIncoming();
+	CHECK(Code(denied.call(Request("messages.silence_incoming"))) == "denied");
+	(void)denied.finishOutgoing();
+	auto noHook = Fixture({ "notifications.suppress" });
+	auto alone = noHook.make();
+	alone.beginIncoming();
+	CHECK(Code(alone.call(Request("messages.silence_incoming"))) == "denied");
+	(void)alone.finishOutgoing();
+}
+
+void TestComposerFormatting() {
+	auto fixture = Fixture({ "composer.draft" });
+	auto broker = fixture.make();
+	const auto bold = cbor::Value::FromMap({ { "type", Text("bold") }, { "offset", Int(0) }, { "length", Int(2) } });
+	const auto entities = cbor::Value::FromArray({ bold });
+	CHECK(IsOk(broker.call(Request("composer.set_draft", { { "chat", Int(1) }, { "text", Text("hi") }, { "entities", entities } }))));
+	CHECK(IsOk(broker.call(Request("composer.insert", { { "chat", Int(1) }, { "text", Text("yo") }, { "entities", entities } }))));
+	CHECK(Code(broker.call(Request("composer.set_draft", {
+		{ "chat", Int(1) }, { "text", Text("x") }, { "replace", cbor::Value::FromBool(true) },
+		{ "format", Text("markdown") }, { "entities", entities },
+	}))) == "invalid");
+	CHECK(IsOk(broker.call(Request("composer.set_draft", {
+		{ "chat", Int(1) }, { "text", Text("**x**") }, { "replace", cbor::Value::FromBool(true) },
+		{ "format", Text("markdown") },
+	}))));
+	CHECK(Code(broker.call(Request("composer.set_draft", { { "chat", Int(1) }, { "text", Text("y") } }))) == "invalid");
+	const auto plain = broker.call(Request("composer.draft", { { "chat", Int(1) } }));
+	CHECK(IsOk(plain) && Payload(plain).asText());
+	const auto withEntities = broker.call(Request("composer.draft", {
+		{ "chat", Int(1) }, { "entities", cbor::Value::FromBool(true) },
+	}));
+	CHECK(IsOk(withEntities)
+		&& Payload(withEntities).find("text")
+		&& Payload(withEntities).find("entities")
+		&& Payload(withEntities).find("entities")->asArray());
+}
+
+void TestMediaProgress() {
+	auto fixture = Fixture({ "media.read", "media.download" });
+	auto events = std::vector<cbor::Value>();
+	fixture.services.emit = [&](cbor::Value event) {
+		events.push_back(std::move(event));
+	};
+	auto broker = fixture.make();
+	const auto yes = cbor::Value::FromBool(true);
+	CHECK(IsOk(broker.call(Request("media.get", {
+		{ "chat", Int(1) }, { "message", Int(101) }, { "download", yes },
+	}))));
+	CHECK(events.empty());
+	CHECK(IsOk(broker.call(Request("media.get", {
+		{ "chat", Int(1) }, { "message", Int(101) }, { "download", yes }, { "progress", yes },
+	}))));
+	CHECK(events.size() == 2);
+	if (events.size() == 2) {
+		CHECK(*events[0].find("type")->asText() == "media.progress");
+		CHECK(events[1].find("loaded")->asInt() == std::optional<int64_t>(10));
+		CHECK(events[1].find("total")->asInt() == std::optional<int64_t>(10));
+		CHECK(events[1].find("message")->asInt() == std::optional<int64_t>(101));
+	}
+	CHECK(Code(broker.call(Request("media.get", {
+		{ "chat", Int(1) }, { "message", Int(101) }, { "progress", Text("yes") },
+	}))) == "invalid");
+}
+
 int main() {
 	TestUrlParsing();
 	TestEndpoints();
@@ -3302,6 +3380,9 @@ int main() {
 	TestHeaderRules();
 	TestMetaAndLog();
 	TestEveryOperationNeedsItsPermission();
+	TestSilenceIncoming();
+	TestComposerFormatting();
+	TestMediaProgress();
 	TestStorage();
 	TestKeyCountLimit();
 	TestNetwork();

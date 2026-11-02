@@ -37,6 +37,7 @@
 "max"
 "media.download"
 "media.read_outgoing"
+"notifications.suppress"
 "media.get"
 "media.list"
 "media.read"

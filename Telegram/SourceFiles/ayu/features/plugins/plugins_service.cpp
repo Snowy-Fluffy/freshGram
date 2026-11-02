@@ -393,6 +393,7 @@ void ApplyIncoming(
 	}
 	SetHiddenByPlugin(item, result.hidden, true);
 	SetHiddenByPlugin(item, result.hidden, false);
+	SetSilencedByPlugin(item, result.silenced);
 	if (result.hidden) {
 		return;
 	}

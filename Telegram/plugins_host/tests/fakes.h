@@ -266,7 +266,11 @@ public:
 		return std::nullopt;
 	}
 
-	Result<Media, std::string> downloadMedia(int64_t chat, int64_t message, bool, size_t) override {
+	Result<Media, std::string> downloadMedia(int64_t chat, int64_t message, bool, size_t, std::function<void(uint64_t, uint64_t)> progress) override {
+		if (progress) {
+			progress(5, 10);
+			progress(10, 10);
+		}
 		if (chat == 1 && message == 101) {
 			return Media{ "file", "application/pdf", "a.pdf", cbor::Bytes(20, 2) };
 		} else if (message == 102) {

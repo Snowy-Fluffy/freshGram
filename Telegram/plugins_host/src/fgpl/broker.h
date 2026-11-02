@@ -22,7 +22,7 @@ namespace fgpl {
 
 namespace api {
 
-constexpr auto kVersion = int64_t(8);
+constexpr auto kVersion = int64_t(9);
 constexpr auto kServiceChat = int64_t(777000);
 
 namespace error {
@@ -253,6 +253,7 @@ struct OutgoingEdit {
 	std::optional<int64_t> topic;
 	bool drop = false;
 	std::string dropReason;
+	bool silence = false;
 };
 
 struct ToastAction {
@@ -430,6 +431,17 @@ public:
 	[[nodiscard]] virtual int64_t stars() = 0;
 	[[nodiscard]] virtual std::string draft(int64_t chat) = 0;
 	virtual bool setDraft(int64_t chat, const std::string &text) = 0;
+	[[nodiscard]] virtual std::vector<TextEntity> draftEntities(int64_t chat) {
+		(void)chat;
+		return {};
+	}
+	virtual bool setDraftFormatted(
+			int64_t chat,
+			const std::string &text,
+			const std::vector<TextEntity> &entities) {
+		(void)entities;
+		return setDraft(chat, text);
+	}
 	virtual bool send(int64_t chat, const std::string &text) = 0;
 	virtual void toast(const std::string &text) = 0;
 	// A toast with a button; the app tells the plugin about the click and the end.
@@ -475,11 +487,13 @@ public:
 			int64_t chat,
 			int64_t message,
 			bool thumbnail,
-			size_t maxBytes) {
+			size_t maxBytes,
+			std::function<void(uint64_t loaded, uint64_t total)> progress) {
 		(void)chat;
 		(void)message;
 		(void)thumbnail;
 		(void)maxBytes;
+		(void)progress;
 		return std::string(api::error::kUnavailable);
 	}
 	[[nodiscard]] virtual std::vector<Message> mediaMessages(
@@ -754,6 +768,13 @@ public:
 		(void)text;
 		return api::error::kUnavailable;
 	}
+	[[nodiscard]] virtual std::string composerInsertFormatted(
+			int64_t chat,
+			const std::string &text,
+			const std::vector<TextEntity> &entities) {
+		(void)entities;
+		return composerInsert(chat, text);
+	}
 	[[nodiscard]] virtual Result<Media, std::string> peerPhoto(
 			int64_t id,
 			bool channel,
@@ -947,6 +968,7 @@ struct BrokerServices {
 	std::function<void(std::function<void()> work)> post;
 	std::function<void(int64_t delayMs, std::function<void()> work)> after;
 	std::function<void(int64_t ticket, cbor::Value result)> complete;
+	std::function<void(cbor::Value event)> emit;
 	std::shared_ptr<void> keepAlive;
 };
 

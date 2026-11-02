@@ -9069,6 +9069,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermUiToast" = "Show pop-up notices";
 "fresh_PermUiBadges" = "Show icons next to names";
 "fresh_PermNotifications" = "Show system notifications";
+"fresh_PermNotificationsSuppress" = "Hide notifications for messages you choose";
 "fresh_PermNetHttps" = "Make HTTPS requests";
 "fresh_PermNetTcp" = "Open TCP connections";
 "fresh_PermNetUdp" = "Open UDP connections";

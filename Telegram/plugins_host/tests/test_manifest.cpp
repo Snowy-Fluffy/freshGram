@@ -752,6 +752,90 @@ void TestOutgoingFilter() {
 	CHECK(!Parse(document).ok());
 }
 
+void TestPrioritiesAndEventFilters() {
+	const auto permit = [](cbor::Value &d, std::initializer_list<const char*> ids) {
+		auto list = cbor::Array();
+		for (const auto id : ids) {
+			list.push_back(cbor::Value::FromMap({ { "id", Text(id) }, { "reason", Text("x") } }));
+		}
+		Set(d, "permissions.optional", cbor::Value::FromArray(std::move(list)));
+	};
+	auto document = ValidDocument();
+	permit(document, { "messages.transform_outgoing", "messages.transform_incoming" });
+	Set(document, "contributes.outgoing.priority", Int(50));
+	Set(document, "contributes.outgoing.final", cbor::Value::FromBool(true));
+	Set(document, "contributes.incoming.priority", Int(-3));
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (parsed.ok()) {
+		CHECK(parsed.value().outgoing.priority == 50 && parsed.value().outgoing.final);
+		CHECK(parsed.value().incoming.priority == -3);
+	}
+	Set(document, "contributes.outgoing.priority", Int(5000));
+	CHECK(!Parse(document).ok());
+	Set(document, "contributes.outgoing.priority", Int(1));
+	Set(document, "contributes.incoming.final", cbor::Value::FromBool(true));
+	CHECK(!Parse(document).ok());
+
+	auto menus = ValidDocument();
+	Set(menus, "permissions.optional", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "id", Text("ui.menu") }, { "reason", Text("x") } }),
+	}));
+	Set(menus, "contributes.menus", cbor::Value::FromArray({
+		cbor::Value::FromMap({
+			{ "surface", Text("message") }, { "id", Text("a") }, { "title", Text("A") }, { "priority", Int(7) },
+		}),
+	}));
+	const auto withMenu = Parse(menus);
+	CHECK(withMenu.ok() && withMenu.value().menus.size() == 1 && withMenu.value().menus[0].priority == 7);
+
+	auto filtered = ValidDocument();
+	permit(filtered, { "chats.activity" });
+	Set(filtered, "contributes.events", Array({ "message.new", "chat.typing" }));
+	Set(filtered, "contributes.eventFilters", cbor::Value::FromMap({
+		{ "message.new", cbor::Value::FromMap({
+			{ "chat_types", Array({ "group" }) },
+			{ "out", cbor::Value::FromBool(false) },
+			{ "media", Array({ "photo" }) },
+		}) },
+		{ "chat.typing", cbor::Value::FromMap({ { "chats", cbor::Value::FromArray({ Int(5) }) } }) },
+	}));
+	const auto withFilters = Parse(filtered);
+	CHECK(withFilters.ok());
+	if (withFilters.ok()) {
+		const auto &filters = withFilters.value().eventFilters;
+		CHECK(filters.size() == 2);
+		const auto message = [](const char *chatType, bool out, const char *media) {
+			return cbor::Value::FromMap({
+				{ "type", Text("message.new") },
+				{ "chat", Int(1) },
+				{ "chat_type", Text(chatType) },
+				{ "out", cbor::Value::FromBool(out) },
+				{ "media", Text(media) },
+			});
+		};
+		const auto &filter = filters.at("message.new");
+		CHECK(MatchesEvent(filter, message("group", false, "photo")));
+		CHECK(!MatchesEvent(filter, message("user", false, "photo")));
+		CHECK(!MatchesEvent(filter, message("group", true, "photo")));
+		CHECK(!MatchesEvent(filter, message("group", false, "video")));
+		const auto typing = [](int64_t chat) {
+			return cbor::Value::FromMap({ { "type", Text("chat.typing") }, { "chat", Int(chat) } });
+		};
+		CHECK(MatchesEvent(filters.at("chat.typing"), typing(5)));
+		CHECK(!MatchesEvent(filters.at("chat.typing"), typing(6)));
+	}
+	auto bad = filtered;
+	Set(bad, "contributes.eventFilters", cbor::Value::FromMap({
+		{ "chat.typing", cbor::Value::FromMap({ { "out", cbor::Value::FromBool(true) } }) },
+	}));
+	CHECK(!Parse(bad).ok());
+	Set(bad, "contributes.eventFilters", cbor::Value::FromMap({
+		{ "story.new", cbor::Value::FromMap({ { "chats", cbor::Value::FromArray({ Int(5) }) } }) },
+	}));
+	CHECK(!Parse(bad).ok());
+}
+
 void TestSignedTextIgnoresTheSignature() {
 	auto document = ValidDocument();
 	const auto before = SignedText(document);
@@ -810,6 +894,7 @@ int main() {
 	TestSignedTextIgnoresTheSignature();
 	TestIcons();
 	TestOutgoingFilter();
+	TestPrioritiesAndEventFilters();
 	TestIncomingHook();
 	TestLocalPorts();
 	TestFolderPermission();

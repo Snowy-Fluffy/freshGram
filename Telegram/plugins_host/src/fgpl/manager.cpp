@@ -28,6 +28,7 @@ constexpr auto kMaxMail = size_t(1024);
 constexpr auto kAllAccounts = "*";
 constexpr auto kAsyncThreads = 8;
 constexpr auto kResultOverhead = size_t(1024);
+constexpr auto kMaxEmittedEvents = size_t(256);
 constexpr auto kMaxTimers = size_t(32);
 constexpr auto kMaxIconBytes = size_t(64) << 10;
 constexpr auto kUnknownEventBytes = size_t(64) << 10;
@@ -1171,6 +1172,7 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 					menu.title.get(language),
 					menu.icon,
 					menu.when,
+					menu.priority,
 				});
 			}
 		}
@@ -1677,6 +1679,21 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 				return;
 			}
 			strong->results.push_back(cbor::Value::FromMap(std::move(event)));
+		}
+		strong->wake.notify_one();
+	};
+	services.emit = [weak = std::weak_ptr<Instance>(instance)](cbor::Value event) {
+		const auto strong = weak.lock();
+		if (!strong) {
+			return;
+		}
+		{
+			const auto lock = std::scoped_lock(strong->mutex);
+			if (strong->closing || strong->finished
+				|| strong->results.size() >= kMaxEmittedEvents) {
+				return;
+			}
+			strong->results.push_back(std::move(event));
 		}
 		strong->wake.notify_one();
 	};
@@ -2325,6 +2342,12 @@ DispatchReport PluginManager::dispatch(
 			++report.skipped;
 			continue;
 		}
+		const auto narrowed = parsed->eventFilters.find(*type);
+		if (narrowed != parsed->eventFilters.end()
+			&& !MatchesEvent(narrowed->second, event)) {
+			++report.skipped;
+			continue;
+		}
 		const auto before = _instances.size();
 		auto *instance = ensure(record, account, "event");
 		if (!instance) {
@@ -2426,6 +2449,27 @@ OutgoingResult PluginManager::transformOutgoing(
 	return std::move(*result);
 }
 
+std::vector<std::string> PluginManager::hookOrder(bool incoming) {
+	auto order = std::vector<std::pair<int, std::string>>();
+	for (const auto &item : _records) {
+		const auto parsed = manifest(item.first);
+		const auto priority = !parsed
+			? 0
+			: incoming
+			? parsed->incoming.priority
+			: parsed->outgoing.priority;
+		order.emplace_back(priority, item.first);
+	}
+	std::stable_sort(order.begin(), order.end(), [](const auto &a, const auto &b) {
+		return a.first > b.first;
+	});
+	auto result = std::vector<std::string>();
+	for (const auto &item : order) {
+		result.push_back(item.second);
+	}
+	return result;
+}
+
 void PluginManager::transformOutgoingAsync(
 		const std::string &account,
 		int64_t chat,
@@ -2455,9 +2499,7 @@ void PluginManager::transformOutgoingAsync(
 	chain->info = std::move(info);
 	chain->done = std::move(done);
 	if (ValidAccount(account) && mayRun() && allowed) {
-		for (const auto &item : _records) {
-			chain->plugins.push_back(item.first);
-		}
+		chain->plugins = hookOrder(false);
 	}
 	_chains.push_back(std::move(chain));
 	advanceOutgoing();
@@ -2478,9 +2520,7 @@ void PluginManager::transformIncomingAsync(
 	chain->incoming = std::move(info);
 	chain->incomingDone = std::move(done);
 	if (ValidAccount(account) && mayRun() && allowed) {
-		for (const auto &item : _records) {
-			chain->plugins.push_back(item.first);
-		}
+		chain->plugins = hookOrder(true);
 	}
 	_chains.push_back(std::move(chain));
 	advanceOutgoing();
@@ -2513,6 +2553,9 @@ bool PluginManager::advanceIncoming(
 			chain.current = nullptr;
 			if (finished && ok) {
 				auto &info = chain.incoming;
+				if (edit.silence) {
+					result.silenced = true;
+				}
 				if (edit.drop) {
 					result.hidden = true;
 					result.plugin = chain.plugins[chain.next - 1];
@@ -2655,6 +2698,14 @@ bool PluginManager::advance(
 				}
 				if (edit.topic) {
 					result.topic = info.topic = *edit.topic;
+				}
+				const auto changed = edit.text || edit.entities || edit.silent
+					|| edit.schedule || edit.replyTo || edit.topic;
+				const auto parsed = changed
+					? manifest(chain.plugins[chain.next - 1])
+					: nullptr;
+				if (parsed && parsed->outgoing.final) {
+					chain.next = chain.plugins.size();
 				}
 			} else if (chain.blocking) {
 				return refuse(

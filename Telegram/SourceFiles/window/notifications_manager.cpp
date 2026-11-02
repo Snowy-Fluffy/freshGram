@@ -56,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #endif // __has_include(<gio/gio.hpp>)
 
 #include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_data.h"
 #include "ayu/utils/telegram_helpers.h"
 
 
@@ -453,7 +454,7 @@ void System::schedule(Data::ItemNotification notification) {
 		thread->popNotification(notification);
 		return;
 	}
-	if (isMessageHidden(item)) {
+	if (isMessageHidden(item) || FreshPlugins::IsSilencedByPlugin(item)) {
 		thread->popNotification(notification);
 		return;
 	}
@@ -987,7 +988,8 @@ void System::showNext() {
 				: notify->item->specialNotificationPeer();
 			if ((!reactionNotification || !reaction.empty())
 				&& (!pollVoteNotification || !pollVoteOption.isEmpty())
-				&& !isMessageHidden(notify->item)) {
+				&& !isMessageHidden(notify->item)
+				&& !FreshPlugins::IsSilencedByPlugin(notify->item)) {
 				_manager->showNotification({
 					.item = notify->item,
 					.forwardedCount = forwardedCount,

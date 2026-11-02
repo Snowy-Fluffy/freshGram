@@ -484,6 +484,14 @@ static int fg_set_outgoing_silent(int silent) {
 	return fg_send(&w, 0);
 }
 
+/* Show the message being received without a notification or sound
+ * (message.incoming only; needs notifications.suppress). */
+static int fg_silence_incoming(void) {
+	fg_writer w;
+	fg_begin(&w, "messages.silence_incoming", 0);
+	return fg_send(&w, 0);
+}
+
 /* Do not send the message being sent; a non-empty reason is shown as a toast. */
 static int fg_drop_outgoing(const char *reason) {
 	fg_writer w;

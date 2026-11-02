@@ -711,7 +711,8 @@ cbor::Value Broker::call(const cbor::Value &request) {
 		&& *name != "messages.drop_outgoing"
 		&& *name != "messages.outgoing_file"
 		&& *name != "messages.set_incoming"
-		&& *name != "messages.hide_incoming") {
+		&& *name != "messages.hide_incoming"
+		&& *name != "messages.silence_incoming") {
 		response = api::Fail(api::error::kUnavailable, "not while changing an outgoing message");
 	} else if (*name == "time.sleep"
 		|| *name == "files.pick"
@@ -744,6 +745,7 @@ cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
 		|| op == "messages.drop_outgoing"
 		|| op == "messages.set_incoming"
 		|| op == "messages.hide_incoming"
+		|| op == "messages.silence_incoming"
 		|| op == "plugin.unload") {
 		return api::Fail(api::error::kInvalid, "this call cannot be awaited");
 	} else if (!_services.post || !_services.after || !_services.complete) {
@@ -1067,6 +1069,16 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		}
 		_outgoingEdit.drop = true;
 		_outgoingEdit.dropReason = *reason;
+		return api::Ok();
+	} else if (op == "messages.silence_incoming") {
+		if (!has("messages.transform_incoming")) {
+			return api::Fail(api::error::kDenied, "messages.transform_incoming");
+		} else if (!has("notifications.suppress")) {
+			return api::Fail(api::error::kDenied, "notifications.suppress");
+		} else if (_hook != HookKind::Incoming) {
+			return api::Fail(api::error::kInvalid, "only while handling message.incoming");
+		}
+		_outgoingEdit.silence = true;
 		return api::Ok();
 	} else if (op == "translate.reply") {
 		if (!has("translate.provide")) {
@@ -2202,14 +2214,38 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		if (!chat || chat->restricted()) {
 			return api::Fail(api::error::kNotFound, "chat");
 		} else if (op == "composer.draft") {
-			return api::Ok(Text(data->draft(*id)));
+			const auto withEntities = BoolArg(args, "entities", false);
+			if (!withEntities) {
+				return api::Fail(api::error::kInvalid, "entities");
+			} else if (!*withEntities) {
+				return api::Ok(Text(data->draft(*id)));
+			}
+			return api::Ok(cbor::Value::FromMap({
+				{ "text", Text(data->draft(*id)) },
+				{ "entities", TextEntitiesValue(data->draftEntities(*id)) },
+			}));
 		}
 		const auto text = TextArg(args, "text", kMaxMessage);
+		const auto format = FormatArg(args);
+		auto entities = Arg(args, "entities")
+			? ParseTextEntities(*Arg(args, "entities"))
+			: std::optional<std::vector<TextEntity>>(std::vector<TextEntity>());
+		if (!format || !entities) {
+			return api::Fail(api::error::kInvalid, "format or entities");
+		}
+		auto formatted = text.value_or(std::string());
+		if (text) {
+			if (const auto problem = FormatText(*format, formatted, *entities); !problem.empty()) {
+				return api::Fail(api::error::kInvalid, problem);
+			}
+		}
 		if (op == "composer.insert") {
 			if (!text || text->empty()) {
 				return api::Fail(api::error::kInvalid, "text");
 			}
-			return Done(data->composerInsert(*id, *text), "the text was not inserted");
+			return Done(
+				data->composerInsertFormatted(*id, formatted, *entities),
+				"the text was not inserted");
 		}
 		const auto replace = Arg(args, "replace");
 		if (!text || (replace && !replace->asBool())) {
@@ -2217,7 +2253,7 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		} else if (!(replace && *replace->asBool()) && !data->draft(*id).empty()) {
 			return api::Fail(api::error::kInvalid, "the draft is not empty, pass replace");
 		}
-		return data->setDraft(*id, *text)
+		return data->setDraftFormatted(*id, formatted, *entities)
 			? api::Ok()
 			: api::Fail(api::error::kFailed, "the draft was not set");
 	} else if (op == "messages.send") {
@@ -2374,8 +2410,9 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 		const auto message = IntArg(args, "message");
 		const auto thumbnail = BoolArg(args, "thumbnail", false);
 		const auto download = BoolArg(args, "download", false);
-		if (!chat || !message || !thumbnail || !download) {
-			return api::Fail(api::error::kInvalid, "chat, message, thumbnail or download");
+		const auto progress = BoolArg(args, "progress", false);
+		if (!chat || !message || !thumbnail || !download || !progress) {
+			return api::Fail(api::error::kInvalid, "chat, message, thumbnail, download or progress");
 		} else if (*chat == api::kServiceChat || !chatInScope(*chat)) {
 			return api::Fail(api::error::kDenied, "this chat");
 		}
@@ -2388,7 +2425,24 @@ cbor::Value Broker::dataAnswer(const std::string &op, const cbor::Value *args) {
 			if (!has("media.download")) {
 				return api::Fail(api::error::kDenied, "media.download");
 			}
-			auto loaded = data->downloadMedia(*chat, *message, *thumbnail, kMaxMedia);
+			auto report = std::function<void(uint64_t, uint64_t)>();
+			if (*progress && _services.emit) {
+				report = [=, emit = _services.emit](uint64_t done, uint64_t total) {
+					emit(cbor::Value::FromMap({
+						{ "type", Text("media.progress") },
+						{ "chat", Int(*chat) },
+						{ "message", Int(*message) },
+						{ "loaded", Int(int64_t(done)) },
+						{ "total", Int(int64_t(total)) },
+					}));
+				};
+			}
+			auto loaded = data->downloadMedia(
+				*chat,
+				*message,
+				*thumbnail,
+				kMaxMedia,
+				std::move(report));
 			if (!loaded.ok()) {
 				return api::Fail(loaded.error(), "the media was not downloaded");
 			}

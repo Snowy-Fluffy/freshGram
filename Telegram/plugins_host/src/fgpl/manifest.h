@@ -65,6 +65,7 @@ struct MenuItem {
 	Localized title;
 	std::string icon;
 	MenuWhen when;
+	int priority = 0;
 };
 
 [[nodiscard]] const std::set<std::string> &MenuSurfaces();
@@ -109,6 +110,9 @@ struct OutgoingHook {
 	bool block = false;
 	// Also sees the sends of files, where the text is the caption.
 	bool media = false;
+	int priority = 0;
+	// Once this hook has changed a send, the later hooks do not see it.
+	bool final = false;
 	OutgoingFilter filter;
 };
 
@@ -118,7 +122,13 @@ struct IncomingHook {
 	bool hold = false;
 	// Also sees service messages (a pin, a joined member), which it can only hide.
 	bool service = false;
+	int priority = 0;
 	OutgoingFilter filter;
+};
+
+struct EventFilter {
+	OutgoingFilter where;
+	MenuWhen when;
 };
 
 // What the app knows about an incoming message that is about to be shown:
@@ -161,6 +171,7 @@ struct OutgoingInfo {
 [[nodiscard]] const std::vector<std::string> &KnownEvents();
 // Events of a chat follow the plugin's chat scope and never come from secret chats.
 [[nodiscard]] bool EventIsChatScoped(const std::string &event);
+[[nodiscard]] bool MatchesEvent(const EventFilter &filter, const cbor::Value &event);
 
 [[nodiscard]] const std::set<std::string> &OutgoingChatTypes();
 [[nodiscard]] bool Matches(
@@ -220,6 +231,7 @@ struct Manifest {
 
 	std::vector<PermissionRequest> permissions;
 	std::vector<std::string> events;
+	std::map<std::string, EventFilter> eventFilters;
 	std::vector<MenuItem> menus;
 	std::map<std::string, std::string> icons;
 	std::vector<Command> commands;
@@ -244,7 +256,7 @@ struct Manifest {
 
 struct HostEnvironment {
 	Version app;
-	int apiLevel = 8;
+	int apiLevel = 9;
 	std::set<std::string> features = HostFeatures();
 	bool premium = false;
 };

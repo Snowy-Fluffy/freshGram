@@ -285,6 +285,7 @@
 "fresh_PermUiToast" = "Mostrare brevi avvisi";
 "fresh_PermUiBadges" = "Mostrare icone accanto ai nomi";
 "fresh_PermNotifications" = "Mostrare notifiche di sistema";
+"fresh_PermNotificationsSuppress" = "Nascondere le notifiche di alcuni messaggi";
 "fresh_PermNetHttps" = "Inviare richieste HTTPS";
 "fresh_PermNetTcp" = "Aprire connessioni TCP";
 "fresh_PermNetUdp" = "Aprire connessioni UDP";

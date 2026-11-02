@@ -115,6 +115,10 @@ pub fn drop_outgoing(reason: &str) -> Result<(), Error> {
     done(call("messages.drop_outgoing", arguments))
 }
 
+pub fn silence_incoming() -> Result<(), Error> {
+    done(call("messages.silence_incoming", None))
+}
+
 /// A file of the send being made, as a map with kind, mime, name and data
 /// (message.outgoing only; needs media.read_outgoing). `index` is the position in the event's media list.
 pub fn outgoing_file(index: i64, thumbnail: bool) -> Result<Value, Error> {
@@ -131,6 +135,13 @@ pub fn media_get(chat: i64, message: i64, thumbnail: bool, download: bool) -> Re
 }
 
 /// Messages with media, newest first. `kind` is photo, video, photo_video, file, voice, round, audio, gif or any.
+pub fn media_get_with_progress(chat: i64, message: i64, thumbnail: bool) -> Result<Value, Error> {
+    call(
+        "media.get",
+        Some(map! { "chat" => chat, "message" => message, "thumbnail" => thumbnail, "download" => true, "progress" => true }),
+    )
+}
+
 pub fn media_list(chat: i64, kind: &str, limit: i64, before: i64) -> Result<Value, Error> {
     call("media.list", Some(map! { "chat" => chat, "kind" => kind, "limit" => limit, "before" => before }))
 }

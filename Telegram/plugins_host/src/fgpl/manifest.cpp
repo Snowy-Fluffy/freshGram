@@ -427,6 +427,36 @@ bool Matches(const MenuWhen &when, const MenuContext &context) {
 	return true;
 }
 
+bool MatchesEvent(const EventFilter &filter, const cbor::Value &event) {
+	const auto text = [&](const char *key) {
+		const auto value = event.find(key);
+		const auto result = value ? value->asText() : nullptr;
+		return result ? *result : std::string();
+	};
+	const auto flag = [&](const char *key) {
+		const auto value = event.find(key);
+		return value && value->asBool().value_or(false);
+	};
+	if (!filter.where.chats.empty()) {
+		const auto chat = event.find("chat");
+		const auto id = chat ? chat->asInt() : std::nullopt;
+		if (!id || !filter.where.chats.contains(*id)) {
+			return false;
+		}
+	}
+	if (!filter.where.chatTypes.empty()
+		&& !filter.where.chatTypes.contains(text("chat_type"))) {
+		return false;
+	}
+	return Matches(filter.when, MenuContext{
+		.chatType = text("chat_type"),
+		.out = flag("out"),
+		.media = text("media"),
+		.hasText = !text("text").empty(),
+		.forwarded = flag("forwarded"),
+	});
+}
+
 namespace {
 
 const std::map<std::string, const char*> &EventPermissions() {
@@ -532,7 +562,7 @@ const std::set<std::string> &KnownPermissions() {
 		"messages.history", "account.info", "stars.balance", "composer.draft",
 		"contacts.list", "settings.read", "folders.list", "ui.menu",
 		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",
-		"ui.toast", "ui.badges", "notifications", "net.https", "net.tcp", "net.udp", "net.ws", "net.local", "storage.private",
+		"ui.toast", "ui.badges", "notifications", "notifications.suppress", "net.https", "net.tcp", "net.udp", "net.ws", "net.local", "storage.private",
 		"plugins.message",
 		"fs.user_selected", "fs.folder", "clipboard", "background",
 		"messages.edit", "messages.delete", "messages.react", "users.info",
@@ -795,7 +825,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
-			"events", "menus", "commands", "settingsPage", "outgoing", "incoming", "messages", "icons",
+			"events", "eventFilters", "menus", "commands", "settingsPage", "outgoing", "incoming", "messages", "icons",
 			"translator", "aiProvider" })) {
 		if (const auto icons = contributes->find("icons"); icons && !icons->asMap()) {
 			reader.error("contributes.icons", "must be an object");
@@ -824,13 +854,72 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				manifest.events.push_back(*name);
 			}
 		}
+		if (const auto filters = contributes->find("eventFilters")) {
+			if (!filters->asMap()) {
+				reader.error("contributes.eventFilters", "must be an object");
+			} else {
+				for (const auto &entry : *filters->asMap()) {
+					const auto where = std::string("contributes.eventFilters.") + entry.key;
+					if (std::find(manifest.events.begin(), manifest.events.end(), entry.key)
+						== manifest.events.end()) {
+						reader.error("contributes.eventFilters", "filters an event that is not listed in events");
+						continue;
+					} else if (!entry.value.asMap()) {
+						reader.error(where, "must be an object");
+						continue;
+					}
+					const auto messages = (entry.key.rfind("message.", 0) == 0);
+					auto allowed = std::set<std::string>{ "chats", "chat_types" };
+					if (messages) {
+						allowed.insert({ "out", "has_media", "has_text", "media", "forwarded" });
+					}
+					reader.checkKeys(entry.value, where, allowed);
+					if (!EventIsChatScoped(entry.key)) {
+						for (const auto &key : *entry.value.asMap()) {
+							reader.error(where, key.key + " does not apply to " + entry.key);
+						}
+						continue;
+					}
+					auto parsed = EventFilter();
+					const auto chats = reader.array(entry.value, "chats", where, 256);
+					for (const auto &item : chats ? *chats : cbor::Array()) {
+						const auto chat = item.asInt();
+						if (!chat || !*chat) {
+							reader.error(where + ".chats", "has a bad entry");
+						} else {
+							parsed.where.chats.insert(*chat);
+						}
+					}
+					const auto readKinds = [&](const char *key, const std::set<std::string> &known, std::set<std::string> &into) {
+						const auto list = reader.array(entry.value, key, where, 16);
+						for (const auto &kind : list ? *list : cbor::Array()) {
+							const auto text = kind.asText();
+							if (!text || !known.contains(*text)) {
+								reader.error(where + "." + key, "has an unknown entry");
+							} else {
+								into.insert(*text);
+							}
+						}
+					};
+					readKinds("chat_types", OutgoingChatTypes(), parsed.where.chatTypes);
+					if (messages) {
+						readKinds("media", MenuMediaKinds(), parsed.when.media);
+						parsed.when.out = reader.boolean(entry.value, "out", where);
+						parsed.when.hasMedia = reader.boolean(entry.value, "has_media", where);
+						parsed.when.hasText = reader.boolean(entry.value, "has_text", where);
+						parsed.when.forwarded = reader.boolean(entry.value, "forwarded", where);
+					}
+					manifest.eventFilters.emplace(entry.key, std::move(parsed));
+				}
+			}
+		}
 		const auto menus = reader.array(*contributes, "menus", "contributes", 32);
 		for (const auto &item : menus ? *menus : cbor::Array()) {
 			if (!item.asMap()) {
 				reader.error("contributes.menus", "entries must be objects");
 				continue;
 			}
-			reader.checkKeys(item, "contributes.menus", { "surface", "id", "title", "icon", "when" });
+			reader.checkKeys(item, "contributes.menus", { "surface", "id", "title", "icon", "when", "priority" });
 			auto menu = MenuItem();
 			if (const auto icon = item.find("icon")) {
 				const auto name = icon->asText();
@@ -842,6 +931,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			}
 			menu.surface = reader.text(item, "surface", "contributes.menus", true, 32).value_or("");
 			menu.id = reader.text(item, "id", "contributes.menus", true, 64).value_or("");
+			menu.priority = int(reader.integer(item, "priority", "contributes.menus", -1000, 1000).value_or(0));
 			if (const auto title = reader.localized(item, "title", "contributes.menus", true, 80)) {
 				menu.title = *title;
 			}
@@ -945,10 +1035,15 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				bool &block,
 				bool *hold,
 				OutgoingFilter &parsed,
+				int &priority,
 				bool *service = nullptr,
-				bool *media = nullptr) {
+				bool *media = nullptr,
+				bool *final = nullptr) {
 			const auto where = std::string("contributes.") + key;
-			auto allowed = std::set<std::string>{ "onFailure", "filter" };
+			auto allowed = std::set<std::string>{ "onFailure", "filter", "priority" };
+			if (final) {
+				allowed.insert("final");
+			}
 			if (hold) {
 				allowed.insert("mode");
 			}
@@ -968,6 +1063,10 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				reader.error(where, "onFailure must be 'pass' or 'block'");
 			}
 			block = (policy == "block");
+			priority = int(reader.integer(*hook, "priority", where, -1000, 1000).value_or(0));
+			if (final) {
+				*final = reader.boolean(*hook, "final", where).value_or(false);
+			}
 			if (hold) {
 				const auto mode = reader.text(*hook, "mode", where, false, 8).value_or("swap");
 				if (mode != "swap" && mode != "hold") {
@@ -1004,8 +1103,8 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				}
 			}
 		};
-		readHook("outgoing", manifest.outgoing.declared, manifest.outgoing.block, nullptr, manifest.outgoing.filter, nullptr, &manifest.outgoing.media);
-		readHook("incoming", manifest.incoming.declared, manifest.incoming.block, &manifest.incoming.hold, manifest.incoming.filter, &manifest.incoming.service);
+		readHook("outgoing", manifest.outgoing.declared, manifest.outgoing.block, nullptr, manifest.outgoing.filter, manifest.outgoing.priority, nullptr, &manifest.outgoing.media, &manifest.outgoing.final);
+		readHook("incoming", manifest.incoming.declared, manifest.incoming.block, &manifest.incoming.hold, manifest.incoming.filter, manifest.incoming.priority, &manifest.incoming.service);
 	}
 
 	ReadDependencies(reader, document, "dependencies", true, manifest.id, manifest.dependencies);

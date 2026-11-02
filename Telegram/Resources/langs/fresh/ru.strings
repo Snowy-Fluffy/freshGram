@@ -285,6 +285,7 @@
 "fresh_PermUiToast" = "Показывать всплывающие подсказки";
 "fresh_PermUiBadges" = "Показывать значки рядом с именами";
 "fresh_PermNotifications" = "Показывать системные уведомления";
+"fresh_PermNotificationsSuppress" = "Скрывать уведомления о выбранных сообщениях";
 "fresh_PermNetHttps" = "Отправлять HTTPS-запросы";
 "fresh_PermNetTcp" = "Открывать TCP-соединения";
 "fresh_PermNetUdp" = "Открывать UDP-соединения";

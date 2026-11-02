@@ -194,6 +194,7 @@ struct OutgoingResult {
 
 struct IncomingResult {
 	bool hidden = false;
+	bool silenced = false;
 	std::optional<std::string> text;
 	std::optional<std::vector<TextEntity>> entities;
 	std::string plugin;
@@ -262,6 +263,7 @@ struct ContributedMenu {
 	std::string title;
 	std::string icon;
 	MenuWhen when;
+	int priority = 0;
 };
 
 struct ContributedTranslator {
@@ -644,6 +646,7 @@ private:
 		int64_t delayMs,
 		bool repeat);
 	void advanceOutgoing();
+	[[nodiscard]] std::vector<std::string> hookOrder(bool incoming);
 	[[nodiscard]] std::string acceptTranslation(
 		const std::string &plugin,
 		const std::string &account,

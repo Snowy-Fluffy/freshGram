@@ -1034,6 +1034,56 @@ void TestOutgoingTransform() {
 	return std::string(bytes.begin(), bytes.end());
 }
 
+void TestOutgoingPriorityAndFinal() {
+	auto lab = Lab("fgpl-manager-outgoing-priority");
+	auto manager = PluginManager(lab.config());
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "messages.read", {} },
+		{ "messages.transform_outgoing", {} },
+	};
+	const auto hook = [](int priority, bool final) {
+		return [=](cbor::Value &document) {
+			Set(document, "contributes.outgoing.onFailure", Text("pass"));
+			Set(document, "contributes.outgoing.priority", Int(priority));
+			if (final) {
+				Set(document, "contributes.outgoing.final", cbor::Value::FromBool(true));
+			}
+		};
+	};
+	const auto late = std::string("com.example.a-late");
+	const auto last = std::string("com.example.m-final");
+	const auto first = std::string("com.example.z-first");
+	CHECK(manager.install(CustomArchive(late, CallingModule(EncodedRequest(
+		"messages.set_outgoing", { { "reply_to", Int(5) } })), permissions, hook(0, false))).ok());
+	CHECK(manager.install(CustomArchive(last, CallingModule(EncodedRequest(
+		"messages.set_outgoing", { { "text", Text("final") } })), permissions, hook(5, true))).ok());
+	CHECK(manager.install(CustomArchive(first, CallingModule(EncodedRequest(
+		"messages.set_outgoing", { { "silent", cbor::Value::FromBool(true) } })), permissions, hook(10, false))).ok());
+	for (const auto &id : { late, last, first }) {
+		CHECK(manager.setEnabled(id, true));
+		CHECK(manager.grant(id, "A", { { "messages.read", "messages.transform_outgoing" }, std::nullopt }));
+	}
+	CHECK(manager.startEnabled("A").started == 3);
+	CHECK(manager.drain(20000));
+
+	auto info = OutgoingInfo();
+	info.chat = 1;
+	info.chatType = "user";
+	info.text = "hi";
+	auto result = std::optional<OutgoingResult>();
+	manager.transformOutgoingAsync("A", info, 5000, [&](OutgoingResult value) {
+		result = std::move(value);
+	});
+	while (!result) {
+		manager.pump();
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+	CHECK(!result->blocked && !result->dropped);
+	CHECK(result->silent == std::optional<bool>(true));
+	CHECK(result->text == "final");
+	CHECK(!result->replyTo);
+}
+
 void TestOutgoingFilterDropAndOptions() {
 	auto lab = Lab("fgpl-manager-outgoing-options");
 	auto manager = PluginManager(lab.config());
@@ -2002,6 +2052,7 @@ int main(int argc, char **argv) {
 	run("unload", TestSelfUnloadAndLazyStart);
 	run("outgoing", TestOutgoingTransform);
 	run("outgoing-options", TestOutgoingFilterDropAndOptions);
+	run("outgoing-priority", TestOutgoingPriorityAndFinal);
 	run("outgoing-entities", TestOutgoingEntities);
 	run("incoming", TestIncomingTransform);
 	run("translator", TestTranslator);

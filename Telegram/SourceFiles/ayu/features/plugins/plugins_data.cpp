@@ -30,6 +30,7 @@
 #include "window/window_separate_id.h"
 #include "apiwrap.h"
 #include "core/application.h"
+#include "base/timer.h"
 #include "crl/crl_on_main.h"
 #include "data/data_changes.h"
 #include "data/data_chat_filters.h"
@@ -110,6 +111,7 @@ constexpr auto kWaitServer = std::chrono::milliseconds(10000);
 constexpr auto kWaitPhoto = std::chrono::milliseconds(30000);
 constexpr auto kWaitUser = std::chrono::minutes(5);
 constexpr auto kWaitDownload = std::chrono::minutes(5);
+constexpr auto kProgressEvery = crl::time(250);
 constexpr auto kWaitSend = std::chrono::seconds(100);
 constexpr auto kSendTimeout = crl::time(90 * 1000);
 constexpr auto kEditMediaTimeout = crl::time(270 * 1000);
@@ -1174,13 +1176,36 @@ public:
 		}, std::string());
 	}
 
+	std::vector<fgpl::TextEntity> draftEntities(int64_t chat) override {
+		return OnMain<std::vector<fgpl::TextEntity>>([=] {
+			const auto history = historyOf(chat);
+			if (!history || HiddenPeer(history->peer)) {
+				return std::vector<fgpl::TextEntity>();
+			}
+			const auto draft = history->localDraft({}, {});
+			return draft
+				? EntitiesOf(draft->textWithTags)
+				: std::vector<fgpl::TextEntity>();
+		}, std::vector<fgpl::TextEntity>());
+	}
+
 	bool setDraft(int64_t chat, const std::string &text) override {
+		return setDraftFormatted(chat, text, {});
+	}
+
+	bool setDraftFormatted(
+			int64_t chat,
+			const std::string &text,
+			const std::vector<fgpl::TextEntity> &entities) override {
 		return OnMain<bool>([=] {
 			const auto history = historyOf(chat);
 			if (!history || HiddenPeer(history->peer)) {
 				return false;
 			}
-			const auto textWithTags = TextWithTags{ QString::fromStdString(text) };
+			const auto textWithTags = TextWithEntitiesOf(
+				&history->session(),
+				QString::fromStdString(text),
+				entities);
 			const auto cursor = MessageCursor{
 				int(textWithTags.text.size()),
 				int(textWithTags.text.size()),
@@ -1937,6 +1962,13 @@ public:
 	}
 
 	std::string composerInsert(int64_t chat, const std::string &text) override {
+		return composerInsertFormatted(chat, text, {});
+	}
+
+	std::string composerInsertFormatted(
+			int64_t chat,
+			const std::string &text,
+			const std::vector<fgpl::TextEntity> &entities) override {
 		return OnMain<std::string>([=] {
 			const auto history = historyOf(chat);
 			if (!history || HiddenPeer(history->peer)) {
@@ -1944,7 +1976,11 @@ public:
 			}
 			const auto previous = history->localDraft({}, {});
 			auto current = previous ? previous->textWithTags : TextWithTags();
-			const auto inserted = QString::fromStdString(text);
+			const auto insertedTags = TextWithEntitiesOf(
+				&history->session(),
+				QString::fromStdString(text),
+				entities);
+			const auto inserted = insertedTags.text;
 			const auto at = previous
 				? std::clamp(int(previous->cursor.position), 0, int(current.text.size()))
 				: int(current.text.size());
@@ -1956,6 +1992,14 @@ public:
 					tag.length += int(inserted.size());
 				}
 			}
+			for (auto tag : insertedTags.tags) {
+				tag.offset += at;
+				current.tags.push_back(std::move(tag));
+			}
+			std::stable_sort(
+				current.tags.begin(),
+				current.tags.end(),
+				[](const auto &a, const auto &b) { return a.offset < b.offset; });
 			const auto position = at + int(inserted.size());
 			const auto cursor = MessageCursor{ position, position, Ui::kQFixedMax };
 			history->setLocalDraft(std::make_unique<Data::Draft>(
@@ -2286,7 +2330,8 @@ public:
 			int64_t chat,
 			int64_t message,
 			bool thumbnail,
-			size_t maxBytes) override {
+			size_t maxBytes,
+			std::function<void(uint64_t, uint64_t)> progress) override {
 		struct Loaded {
 			std::string error;
 			fgpl::Media media;
@@ -2304,12 +2349,16 @@ public:
 			base->deleted = item->isDeleted();
 			base->kind = thumbnail ? "thumbnail" : MediaKindOf(item);
 			const auto origin = Data::FileOrigin(item->fullId());
+			const auto finished = std::make_shared<bool>(false);
 			const auto finish = [=](QByteArray bytes) {
+				*finished = true;
 				done({ .media = *base, .bytes = std::move(bytes) });
 			};
 			const auto fail = [=](const char *error) {
+				*finished = true;
 				done({ .error = error });
 			};
+			auto measure = Fn<std::pair<uint64, uint64>()>();
 			auto check = Fn<bool()>();
 			if (const auto photo = media->photo()) {
 				const auto view = photo->createMediaView();
@@ -2317,6 +2366,12 @@ public:
 					? Data::PhotoSize::Thumbnail
 					: Data::PhotoSize::Large;
 				base->mime = "image/jpeg";
+				measure = [=] {
+					const auto total = uint64(std::max(photo->imageByteSize(size), 0));
+					return std::make_pair(
+						uint64(photo->progress() * float64(total)),
+						total);
+				};
 				check = [=] {
 					if (const auto image = view->image(size)) {
 						auto bytes = view->imageBytes(size);
@@ -2339,6 +2394,12 @@ public:
 				base->mime = thumbnail ? "image/jpeg" : Utf8(document->mimeString());
 				base->name = thumbnail ? std::string() : Utf8(document->filename());
 				const auto view = document->createMediaView();
+				measure = [=] {
+					const auto total = uint64(std::max<int64>(document->size, 0));
+					return std::make_pair(
+						uint64(document->progress() * float64(total)),
+						total);
+				};
 				check = [=] {
 					if (thumbnail) {
 						if (const auto image = view->thumbnail()) {
@@ -2380,6 +2441,24 @@ public:
 					lifetime->destroy();
 				}
 			}, *lifetime);
+			if (progress && measure && !*finished) {
+				const auto timer = std::make_shared<base::Timer>();
+				const auto raw = timer.get();
+				const auto last = std::make_shared<uint64>(~uint64(0));
+				timer->setCallback([=] {
+					if (*finished) {
+						raw->cancel();
+						return;
+					}
+					const auto [loaded, total] = measure();
+					if (loaded != *last) {
+						*last = loaded;
+						progress(loaded, total);
+					}
+				});
+				timer->callEach(kProgressEvery);
+				lifetime->add([=] { timer->cancel(); });
+			}
 			base::call_delayed(
 				std::chrono::duration_cast<std::chrono::milliseconds>(kWaitDownload).count(),
 				[=] { lifetime->destroy(); });
@@ -3746,6 +3825,7 @@ namespace {
 struct PluginHidden {
 	base::flat_set<FullMsgId> hidden;
 	base::flat_set<FullMsgId> pending;
+	base::flat_set<FullMsgId> silenced;
 };
 
 [[nodiscard]] PluginHidden &PluginHiddenState() {
@@ -3759,6 +3839,19 @@ bool IsHiddenByPlugin(not_null<const HistoryItem*> item) {
 	const auto &state = PluginHiddenState();
 	const auto id = item->fullId();
 	return state.hidden.contains(id) || state.pending.contains(id);
+}
+
+bool IsSilencedByPlugin(not_null<const HistoryItem*> item) {
+	return PluginHiddenState().silenced.contains(item->fullId());
+}
+
+void SetSilencedByPlugin(not_null<const HistoryItem*> item, bool silenced) {
+	auto &set = PluginHiddenState().silenced;
+	if (silenced) {
+		set.emplace(item->fullId());
+	} else {
+		set.remove(item->fullId());
+	}
 }
 
 void SetHiddenByPlugin(not_null<HistoryItem*> item, bool hidden, bool pending) {
@@ -3790,6 +3883,7 @@ void ForgetHiddenByPlugin(FullMsgId id) {
 	auto &state = PluginHiddenState();
 	state.hidden.remove(id);
 	state.pending.remove(id);
+	state.silenced.remove(id);
 }
 
 void ReleasePendingHidden() {
@@ -4007,6 +4101,13 @@ bool IsHiddenByPlugin(not_null<const HistoryItem*>) {
 }
 
 void SetHiddenByPlugin(not_null<HistoryItem*>, bool, bool) {
+}
+
+bool IsSilencedByPlugin(not_null<const HistoryItem*>) {
+	return false;
+}
+
+void SetSilencedByPlugin(not_null<const HistoryItem*>, bool) {
 }
 
 void ForgetHiddenByPlugin(FullMsgId) {

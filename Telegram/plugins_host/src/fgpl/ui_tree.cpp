@@ -666,8 +666,9 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 			} else if (*type == "input") {
 				if (!check.keys(item, {
 						"type", "id", "label", "value", "placeholder",
-						"multiline", "password", "max", "hint", "disabled", "mask" })
-					|| !takeId(item, entry)) {
+						"multiline", "password", "max", "hint", "disabled", "mask", "alias" })
+					|| !takeId(item, entry)
+					|| !takeAlias(item, entry)) {
 					return check.error();
 				}
 				const auto mask = check.text(item, "mask", kMaxMask, false);
@@ -709,8 +710,9 @@ Result<cbor::Value, std::string> ValidatePage(const cbor::Value &page) {
 				}
 			} else if (*type == "slider") {
 				if (!check.keys(item, {
-						"type", "id", "label", "min", "max", "step", "value", "hint", "disabled" })
-					|| !takeId(item, entry)) {
+						"type", "id", "label", "min", "max", "step", "value", "hint", "disabled", "alias" })
+					|| !takeId(item, entry)
+					|| !takeAlias(item, entry)) {
 					return check.error();
 				}
 				const auto label = check.text(item, "label", kMaxLabel, true);

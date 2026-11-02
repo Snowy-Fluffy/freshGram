@@ -126,6 +126,7 @@ struct Entry {
 	std::string menuId;
 	QString text;
 	std::string icon;
+	int priority = 0;
 };
 
 struct Pages {
@@ -541,9 +542,13 @@ void AddButtonIcon(
 					lt_plugin,
 					Utf8(plugin.name)),
 				menu.icon,
+				menu.priority,
 			});
 		}
 	}
+	std::stable_sort(result.begin(), result.end(), [](const Entry &a, const Entry &b) {
+		return a.priority > b.priority;
+	});
 	if (const auto &order = settings.pluginMenuOrder(); !order.empty()) {
 		const auto rank = [&](const Entry &entry) {
 			return std::find(
@@ -950,7 +955,29 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 struct SubPage {
 	cbor::Value item;
 	rpl::event_stream<> changed;
+	QString reveal;
 };
+
+[[nodiscard]] const cbor::Value *SubPageWithAlias(
+		const cbor::Value &page,
+		const QString &alias) {
+	const auto has = [&](const cbor::Value &item, const auto &self) -> bool {
+		for (const auto flat : Flattened(item)) {
+			if (TextOf(*flat, "alias") == alias) {
+				return true;
+			} else if (TextOf(*flat, "type") == u"page"_q && self(*flat, self)) {
+				return true;
+			}
+		}
+		return false;
+	};
+	for (const auto flat : Flattened(page)) {
+		if (TextOf(*flat, "type") == u"page"_q && has(*flat, has)) {
+			return flat;
+		}
+	}
+	return nullptr;
+}
 
 void FillSubPageBox(
 	not_null<Ui::GenericBox*> box,
@@ -1271,6 +1298,7 @@ void FillSubPageBox(
 				const auto slider = made.slider;
 				const auto value = made.label;
 				content->add(std::move(made.widget), st::recentStickersLimitPadding);
+				attachMenu(slider, item);
 				const auto show = [=](int64_t number) {
 					value->setText(QString::number(number));
 				};
@@ -1335,6 +1363,7 @@ void FillSubPageBox(
 					const auto wrap = content->add(
 						object_ptr<Ui::RpWidget>(content),
 						st::boxRowPadding);
+					attachMenu(wrap, item);
 					const auto field = Ui::CreateChild<Ui::PasswordInput>(
 						wrap,
 						st::defaultInputField,
@@ -1367,6 +1396,7 @@ void FillSubPageBox(
 							std::move(fieldPlaceholder),
 							TextOf(item, "value")),
 						st::boxRowPadding);
+					attachMenu(field, item);
 					field->setMaxLength(max);
 					field->changes() | rpl::on_next([=] {
 						if (!mask.isEmpty() && !*suppress) {
@@ -1809,6 +1839,33 @@ void FillSubPageBox(
 			{ "items", cbor::Value::FromArray(cbor::Array(ArrayOf(sub->item, "items"))) },
 		});
 		ShowPage(content, controller, weak, plugin, &page, target, window, *shown);
+		if (!sub->reveal.isEmpty() && *shown) {
+			const auto found = (*shown)->aliases.find(sub->reveal.toStdString());
+			if (found != (*shown)->aliases.end() && found->second) {
+				sub->reveal = QString();
+				const auto widget = found->second;
+				Ui::PostponeCall(box, [=] {
+					if (widget) {
+						box->scrollToWidget(widget.data());
+					}
+				});
+			} else if (const auto deeper = SubPageWithAlias(page, sub->reveal)) {
+				const auto next = std::make_shared<SubPage>(SubPage{
+					.item = *deeper,
+					.reveal = std::exchange(sub->reveal, QString()),
+				});
+				Ui::PostponeCall(box, [=] {
+					controller->show(Box(
+						FillSubPageBox,
+						controller,
+						weak,
+						plugin,
+						next,
+						target,
+						window));
+				});
+			}
+		}
 	};
 	rebuild();
 	sub->changed.events(
@@ -1844,6 +1901,14 @@ void AddSourceRow(
 		SourcePadding());
 }
 
+void ExportPluginSettings(
+	not_null<Window::SessionController*> controller,
+	const std::string &plugin);
+void ImportPluginSettings(
+	not_null<Window::SessionController*> controller,
+	const std::string &plugin,
+	const QString &name);
+
 void FillSettingsBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller,
@@ -1878,6 +1943,24 @@ void FillSettingsBox(
 						box->scrollToWidget(target.data());
 					}
 				});
+			} else if (page) {
+				if (const auto inside = SubPageWithAlias(*page, alias)) {
+					*revealed = true;
+					const auto next = std::make_shared<SubPage>(SubPage{
+						.item = *inside,
+						.reveal = alias,
+					});
+					Ui::PostponeCall(box, [=] {
+						controller->show(Box(
+							FillSubPageBox,
+							controller,
+							weak,
+							plugin,
+							next,
+							Target::Settings,
+							std::string()));
+					});
+				}
 			}
 		}
 		if (!page) {
@@ -1910,6 +1993,26 @@ void FillSettingsBox(
 			(*shown)->flushAll();
 		}
 	}, box->lifetime());
+	const auto snapshot = Snapshot();
+	const auto parsed = snapshot ? snapshot->manifest(plugin) : nullptr;
+	if (parsed && parsed->storageExport.declared) {
+		Settings::AddButtonWithIcon(
+			box->verticalLayout(),
+			tr::fresh_PluginSettingsExport(),
+			st::settingsButton,
+			{ &st::menuIconExport }
+		)->addClickHandler([=] {
+			ExportPluginSettings(controller, plugin);
+		});
+		Settings::AddButtonWithIcon(
+			box->verticalLayout(),
+			tr::fresh_PluginSettingsImport(),
+			st::settingsButton,
+			{ &st::menuIconDownload }
+		)->addClickHandler([=] {
+			ImportPluginSettings(controller, plugin, pluginName);
+		});
+	}
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
@@ -3105,6 +3208,7 @@ namespace {
 		{ "ui.toast", &st::menuIconInfo },
 		{ "ui.badges", &st::menuIconInfo },
 		{ "notifications", &st::menuIconNotifications },
+		{ "notifications.suppress", &st::menuIconMute },
 		{ "net.https", &st::menuIconNetwork },
 		{ "net.tcp", &st::menuIconNetwork },
 		{ "net.udp", &st::menuIconNetwork },
@@ -3722,6 +3826,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "ui.toast", tr::fresh_PermUiToast },
 		{ "ui.badges", tr::fresh_PermUiBadges },
 		{ "notifications", tr::fresh_PermNotifications },
+		{ "notifications.suppress", tr::fresh_PermNotificationsSuppress },
 		{ "net.https", tr::fresh_PermNetHttps },
 		{ "net.tcp", tr::fresh_PermNetTcp },
 		{ "net.udp", tr::fresh_PermNetUdp },

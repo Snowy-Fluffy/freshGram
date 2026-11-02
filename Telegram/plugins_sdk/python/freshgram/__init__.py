@@ -14,7 +14,7 @@ from . import _channel
 from . import _cbor
 from . import _errors
 
-API_VERSION = 5
+API_VERSION = 9
 
 _output = _channel._output
 call = _channel.raw_call
@@ -641,6 +641,14 @@ class _SyncMessages(_Messages):
         """Hide the message being received (message.incoming only)."""
         _request("messages.hide_incoming", **_given(reason=reason))
 
+    def silence_incoming(self):
+        """Show the message being received, but without a notification or sound.
+
+        message.incoming only; needs notifications.suppress and
+        contributes.incoming. Use mode "hold" so the notification waits for the answer.
+        """
+        _request("messages.silence_incoming")
+
     def drop_outgoing(self, reason=""):
         """Do not send the message being sent (message.outgoing only).
 
@@ -919,19 +927,20 @@ class _Settings(_Namespace):
 
 
 class _Media(_Namespace):
-    def get(self, chat, message, thumbnail=False, download=False):
+    def get(self, chat, message, thumbnail=False, download=False, progress=False):
         """The file of a message: kind, mime, name and data (up to 100 MiB).
 
         With download=True a file that is not on this device yet is downloaded
         first (up to five minutes; prefer freshgram.aio for that). That needs
-        the media.download permission besides media.read.
+        the media.download permission besides media.read. With progress=True the
+        plugin gets media.progress events (see on_media_progress) while it loads.
         """
         return self._call(
             "media.get",
             chat=chat,
             message=message,
             thumbnail=thumbnail,
-            **_given(download=download))
+            **_given(download=download, progress=progress))
 
     def list(self, chat, kind="any", limit=20, before=0):
         """Messages with media, newest first: photo, video, photo_video, file,
@@ -962,15 +971,36 @@ class _Ghost(_Namespace):
 
 
 class _Composer(_Namespace):
-    def draft(self, chat):
-        return self._call("composer.draft", chat=chat)
+    def draft(self, chat, entities=False):
+        """The draft text; with entities=True a dict {"text", "entities"} instead."""
+        return self._call("composer.draft", chat=chat, **_given(entities=entities))
 
-    def set_draft(self, chat, text):
-        return self._call("composer.set_draft", _nothing, chat=chat, text=text)
+    def set_draft(self, chat, text, replace=False, markdown=False, entities=None):
+        """Set the draft; a non-empty draft is kept unless replace=True.
 
-    def insert(self, chat, text):
-        """Insert text into the draft at its saved cursor, or at the end (composer.draft)."""
-        return self._call("composer.insert", _nothing, chat=chat, text=text)
+        markdown and entities format the text as in messages.send().
+        """
+        return self._call(
+            "composer.set_draft",
+            _nothing,
+            chat=chat,
+            text=text,
+            **_given(replace=replace),
+            **_format(markdown),
+            **_entities(entities))
+
+    def insert(self, chat, text, markdown=False, entities=None):
+        """Insert text into the draft at its saved cursor, or at the end (composer.draft).
+
+        markdown and entities format the text as in messages.send().
+        """
+        return self._call(
+            "composer.insert",
+            _nothing,
+            chat=chat,
+            text=text,
+            **_format(markdown),
+            **_entities(entities))
 
 
 storage = _Storage(_sync_call)
@@ -1353,6 +1383,15 @@ def on_user_status(function):
     that a user hides, bots and your own are not reported.
     """
     _event_handlers.append(("user.status", function))
+    return function
+
+
+def on_media_progress(function):
+    """Run while media.get(download=True, progress=True) loads a file.
+
+    The event has chat, message, loaded and total (bytes; total is 0 while unknown).
+    """
+    _event_handlers.append(("media.progress", function))
     return function
 
 
