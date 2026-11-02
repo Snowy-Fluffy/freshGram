@@ -3,7 +3,7 @@
 
 #include <QtCore/QString>
 
-#include <string>
+#include "ayu/utils/fresh_storage_path.h"
 
 namespace FreshStorage {
 
@@ -15,6 +15,5 @@ void MigrateLegacyNames();
 
 // Paths stored before the move still point into the old folders.
 [[nodiscard]] QString CurrentPath(const QString &path);
-[[nodiscard]] std::string CurrentPath(const std::string &path);
 
 } // namespace FreshStorage

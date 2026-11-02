@@ -1,7 +1,7 @@
 #include "ayu/secret/secret_model.h"
 
 #include "ayu/secret/secret_tl.h"
-#include "ayu/utils/fresh_storage_migration.h"
+#include "ayu/utils/fresh_storage_path.h"
 
 namespace FreshSecret {
 namespace {
