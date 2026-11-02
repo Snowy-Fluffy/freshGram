@@ -346,12 +346,9 @@ void MessageField::createControls(PeerData *peer) {
 		Ui::InputField::Mode::MultiLine,
 		tr::lng_message_ph());
 	_field->setMaxLength(_limit + kErrorLimit);
-	_field->setMinHeight(st.attach.height
-		- st.padding.top()
-		- st.padding.bottom());
-	_field->setMaxHeight(st::historyComposeFieldMaxHeight);
-	_field->setDocumentMargin(4.);
-	_field->setAdditionalMargin(style::ConvertScale(4) - 4);
+	InitMessageFieldGeometry(
+		_field,
+		st.attach.height - st.padding.top() - st.padding.bottom());
 
 	_reactionPanel = std::make_unique<ReactionPanel>(
 		_parent,

@@ -105,6 +105,12 @@ std::shared_ptr<Ui::ChatStyle> InitMessageField(
 	not_null<Window::SessionController*> controller,
 	not_null<Ui::InputField*> field,
 	Fn<bool(not_null<DocumentData*>)> allowPremiumEmoji);
+void InitMessageFieldGeometry(
+	not_null<Ui::InputField*> field,
+	int minHeight);
+
+// From the top of a st::historyComposeField set up by InitMessageField.
+[[nodiscard]] int MessageFieldPlaceholderBaseline();
 
 void InitSpellchecker(
 	std::shared_ptr<Main::SessionShow> show,

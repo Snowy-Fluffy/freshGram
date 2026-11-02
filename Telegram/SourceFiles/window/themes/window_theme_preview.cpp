@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/themes/window_theme_preview.h"
 
+#include "chat_helpers/message_field.h"
 #include "dialogs/dialogs_three_state_icon.h"
 #include "lang/lang_keys.h"
 #include "lottie/lottie_icon.h"
@@ -619,12 +620,11 @@ void Generator::paintComposeArea() {
 	_p->setFont(st::historyComposeField.style.font);
 	_p->setPen(st::historyComposeField.placeholderFg[_palette]);
 
-	auto placeholderRect = QRect(
-		field.x() + st::historyComposeField.textMargins.left() + st::historyComposeField.placeholderMargins.left(),
-		field.y() + st::historyComposeField.textMargins.top() + st::historyComposeField.placeholderMargins.top(),
-		field.width() - st::historyComposeField.textMargins.left() - st::historyComposeField.textMargins.right(),
-		field.height() - st::historyComposeField.textMargins.top() - st::historyComposeField.textMargins.bottom());
-	_p->drawText(placeholderRect, tr::lng_message_ph(tr::now), QTextOption(st::historyComposeField.placeholderAlign));
+	_p->drawText(
+		QPoint(
+			field.x() + st::historyComposeField.textMargins.left() + st::historyComposeField.placeholderMargins.left(),
+			field.y() + MessageFieldPlaceholderBaseline()),
+		tr::lng_message_ph(tr::now));
 
 	_p->restore();
 	_p->setClipping(false);

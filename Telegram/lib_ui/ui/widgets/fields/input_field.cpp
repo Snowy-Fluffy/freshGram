@@ -2930,8 +2930,11 @@ void InputField::paintEvent(QPaintEvent *e) {
 
 		auto placeholderTop = anim::interpolate(0, _st.placeholderShift, placeholderShiftDegree);
 
+		// WHY: the path starts at the font ascent, Qt puts the baseline at
+		// 4/5 of the fixed line height and the skip bridges the two; the
+		// non-scaled baseline already starts at 4/5, so it skips nothing.
 		QRect r(rect().marginsRemoved(margins));
-		r.moveTop(r.top() + placeholderTop);
+		r.moveTop(r.top() + _placeholderCustomFontSkip + placeholderTop);
 		if (style::RightToLeft()) r.moveLeft(width() - r.left() - r.width());
 
 		auto placeholderScale = 1. - (1. - _st.placeholderScale) * placeholderShiftDegree;
@@ -4159,9 +4162,7 @@ QMargins InputField::fullTextMargins() const {
 }
 
 QMargins InputField::placeholderPaintMargins() const {
-	return fullTextMargins()
-		+ QMargins(0, _placeholderCustomFontSkip, 0, 0)
-		+ _st.placeholderMargins;
+	return fullTextMargins() + _st.placeholderMargins;
 }
 
 float64 InputField::nonScaledPlaceholderBaseline() const {

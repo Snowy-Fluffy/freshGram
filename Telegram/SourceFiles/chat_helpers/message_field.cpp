@@ -380,6 +380,29 @@ TextWithEntities StripSupportHashtag(TextWithEntities text) {
 	return text;
 }
 
+// st::messageSendingAnimationTextFromOffset.
+constexpr auto kMessageFieldDocumentMargin = 4;
+
+[[nodiscard]] int MessageFieldMinHeight() {
+	return st::historySendSize.height() - 2 * st::historySendPadding;
+}
+
+[[nodiscard]] int MessageFieldLineHeight(const style::InputField &st) {
+	return std::max(st.style.lineHeight, st.style.font->height);
+}
+
+[[nodiscard]] QMargins MessageFieldMargins(
+		const style::InputField &st,
+		int minHeight) {
+	const auto side = style::ConvertScale(4) - kMessageFieldDocumentMargin;
+	// A fixed margin leaves the line higher the larger the scale and font.
+	const auto vertical = std::max(
+		(minHeight - MessageFieldLineHeight(st)) / 2
+			- kMessageFieldDocumentMargin,
+		side);
+	return { side, vertical, side, vertical };
+}
+
 } // namespace
 
 QString PrepareMentionTag(not_null<UserData*> user) {
@@ -704,23 +727,29 @@ void InitMessageFieldHandlers(
 	});
 }
 
-void InitMessageFieldGeometry(not_null<Ui::InputField*> field) {
-	const auto minHeight = st::historySendSize.height()
-		- 2 * st::historySendPadding;
+void InitMessageFieldGeometry(
+		not_null<Ui::InputField*> field,
+		int minHeight) {
 	field->setMinHeight(minHeight);
 	field->setMaxHeight(st::historyComposeFieldMaxHeight);
+	field->setDocumentMargin(kMessageFieldDocumentMargin);
+	field->setAdditionalMargins(MessageFieldMargins(field->st(), minHeight));
+}
 
-	// st::messageSendingAnimationTextFromOffset.
-	constexpr auto kDocumentMargin = 4;
-	field->setDocumentMargin(kDocumentMargin);
-	const auto side = style::ConvertScale(4) - kDocumentMargin;
-	// A fixed margin leaves the line higher the larger the scale and font.
-	const auto &text = field->st().style;
-	const auto lineHeight = std::max(text.lineHeight, text.font->height);
-	const auto vertical = std::max(
-		(minHeight - lineHeight) / 2 - kDocumentMargin,
-		side);
-	field->setAdditionalMargins({ side, vertical, side, vertical });
+int MessageFieldPlaceholderBaseline() {
+	const auto &st = st::historyComposeField;
+	const auto realAscent = int(base::SafeRound(
+		QFontMetricsF(st.style.font->f).ascent()));
+	const auto customFontMarginTop = st.style.font->ascent - realAscent;
+	const auto leading = std::max(st.placeholderFont->fleading.toReal(), 0.);
+	// Qt puts a fixed height line baseline at 4/5, whatever the ascent.
+	const auto lineAscent = MessageFieldLineHeight(st) * 4 / 5. - leading;
+	return st.textMargins.top()
+		+ kMessageFieldDocumentMargin
+		+ MessageFieldMargins(st, MessageFieldMinHeight()).top()
+		+ customFontMarginTop
+		+ st.placeholderMargins.top()
+		+ int(base::SafeRound(lineAscent));
 }
 
 std::shared_ptr<Ui::ChatStyle> InitMessageField(
@@ -736,7 +765,7 @@ std::shared_ptr<Ui::ChatStyle> InitMessageField(
 		},
 		.allowPremiumEmoji = std::move(allowPremiumEmoji),
 	});
-	InitMessageFieldGeometry(field);
+	InitMessageFieldGeometry(field, MessageFieldMinHeight());
 	return style;
 }
 
@@ -1261,21 +1290,12 @@ base::unique_qptr<Ui::RpWidget> CreateDisabledFieldView(
 	raw->setPointerCursor(false);
 
 	const auto &st = st::historyComposeField;
-
-	const auto metrics = QFontMetricsF(st.style.font->f);
-	const auto realAscent = int(base::SafeRound(metrics.ascent()));
-	const auto ascentAdd = st.style.font->ascent - realAscent;
-	const auto customFontMarginTop = ascentAdd;
-	const auto leading = std::max(metrics.leading(), qreal(0.0));
-	const auto adjustment = (metrics.ascent() + leading)
-		- ((st.style.font->height * 4) / 5);
-	const auto placeholderCustomFontSkip = int(base::SafeRound(-adjustment));
-
-	const auto margins = st.textMargins
-		+ st.placeholderMargins
-		+ QMargins(0, style::ConvertScale(4)
-			+ placeholderCustomFontSkip
-			+ customFontMarginTop, 0, 0);
+	const auto margins = QMargins(
+		st.textMargins.left() + st.placeholderMargins.left(),
+		(MessageFieldPlaceholderBaseline()
+			- st::historySendDisabled.style.font->ascent),
+		st.textMargins.right() + st.placeholderMargins.right(),
+		0);
 
 	raw->widthValue(
 	) | rpl::on_next([=](int width) {
