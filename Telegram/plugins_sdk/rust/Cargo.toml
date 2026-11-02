@@ -1,0 +1,19 @@
+[package]
+name = "freshgram"
+version = "0.1.0"
+edition = "2021"
+description = "SDK for freshGram plugins written in Rust and built as Wasm"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[workspace]
+members = ["examples/counter"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true

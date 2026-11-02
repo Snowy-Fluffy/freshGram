@@ -290,6 +290,19 @@ if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 			add_dependencies(test_sdk counter_wasm_target)
 			target_compile_definitions(test_sdk PRIVATE FGPL_COUNTER_WASM="${counter_wasm}")
 		endif()
+		find_program(FGPL_CARGO cargo)
+		set(rust_sdk ${CMAKE_CURRENT_SOURCE_DIR}/../plugins_sdk/rust)
+		if (FGPL_CARGO)
+			execute_process(
+				COMMAND ${FGPL_CARGO} build --offline --release --target wasm32-unknown-unknown
+					--manifest-path ${rust_sdk}/Cargo.toml -p counter --target-dir ${CMAKE_CURRENT_BINARY_DIR}/rust-sdk
+				RESULT_VARIABLE rust_wasm_result
+				OUTPUT_QUIET ERROR_QUIET)
+			if (rust_wasm_result EQUAL 0)
+				target_compile_definitions(test_sdk PRIVATE
+					FGPL_RUST_COUNTER_WASM="${CMAKE_CURRENT_BINARY_DIR}/rust-sdk/wasm32-unknown-unknown/release/counter.wasm")
+			endif()
+		endif()
 		add_dependencies(test_sdk fgpl_plugin_host)
 		fgpl_warnings(test_sdk)
 		add_test(NAME test_sdk COMMAND test_sdk)

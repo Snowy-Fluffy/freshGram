@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "com.example.counter",
+  "name": "Counter",
+  "version": "1.0.0",
+  "description": "Counts the messages it sees.",
+  "author": { "name": "Example Dev" },
+  "license": "MIT",
+  "compat": { "freshgram": ">=7.0.0 <8.0.0", "api": 7 },
+  "runtime": { "kind": "wasm", "module": "counter.wasm", "language": "rust" },
+  "permissions": {
+    "required": [
+      { "id": "messages.read", "reason": "Counts the messages it sees." },
+      { "id": "storage.private", "reason": "Remembers the count." }
+    ]
+  },
+  "contributes": { "events": ["message.new"] }
+}

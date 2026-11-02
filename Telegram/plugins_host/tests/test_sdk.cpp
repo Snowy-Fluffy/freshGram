@@ -180,14 +180,14 @@ void TestPythonSdkWithoutPermissions() {
 	CHECK(world.data.sent.empty());
 }
 
-#ifdef FGPL_COUNTER_WASM
+#if defined(FGPL_COUNTER_WASM) || defined(FGPL_RUST_COUNTER_WASM)
 
 [[nodiscard]] cbor::Bytes ReadFile(const char *path) {
 	auto stream = std::ifstream(path, std::ios::binary);
 	return { std::istreambuf_iterator<char>(stream), {} };
 }
 
-void TestCSdk() {
+void TestCounterSdk(const char *path) {
 	auto world = World({ "storage.private", "messages.read" });
 	auto broker = Broker(world.grants, world.services);
 	auto client = Start();
@@ -195,7 +195,7 @@ void TestCSdk() {
 		return;
 	}
 	auto request = LoadRequest();
-	request.wasm = ReadFile(FGPL_COUNTER_WASM);
+	request.wasm = ReadFile(path);
 	CHECK(!request.wasm.empty());
 	CHECK(client->load(request).ok());
 	CHECK(client->init(cbor::Value::FromMap({}), broker).ok());
@@ -210,7 +210,7 @@ void TestCSdk() {
 	CHECK(!world.logs.empty() && world.logs.front() == "counter ready");
 }
 
-void TestCSdkDenied() {
+void TestCounterSdkDenied(const char *path) {
 	auto world = World({ "messages.read" });
 	auto broker = Broker(world.grants, world.services);
 	auto client = Start();
@@ -218,7 +218,7 @@ void TestCSdkDenied() {
 		return;
 	}
 	auto request = LoadRequest();
-	request.wasm = ReadFile(FGPL_COUNTER_WASM);
+	request.wasm = ReadFile(path);
 	CHECK(client->load(request).ok());
 	const auto result = client->deliver(*broker.filterEvent(Event(7)), broker);
 	CHECK(result.ok() && result.value() == 100 + 1);
@@ -238,8 +238,12 @@ int main() {
 	TestPythonSdk();
 	TestPythonSdkWithoutPermissions();
 #ifdef FGPL_COUNTER_WASM
-	TestCSdk();
-	TestCSdkDenied();
+	TestCounterSdk(FGPL_COUNTER_WASM);
+	TestCounterSdkDenied(FGPL_COUNTER_WASM);
+#endif
+#ifdef FGPL_RUST_COUNTER_WASM
+	TestCounterSdk(FGPL_RUST_COUNTER_WASM);
+	TestCounterSdkDenied(FGPL_RUST_COUNTER_WASM);
 #endif
 	return Failures() ? 1 : 0;
 }
