@@ -182,6 +182,7 @@ public:
 
 private:
 	void ensureLoaded() const;
+	void ensureColorized() const;
 	void createCachedPixmap() const;
 	void ensureColorizedImage(QColor color) const;
 	[[nodiscard]] QSize inner() const;
@@ -192,6 +193,9 @@ private:
 	mutable QImage _maskImage, _colorizedImage;
 	mutable QPixmap _pixmap; // for pixmaps
 	mutable QSize _size; // for rects
+	mutable uint32 _pixmapColorKey = 0;
+	// withPalette() copies colorize privately, off the shared pixmap cache.
+	bool _ownPixmap = false;
 
 };
 

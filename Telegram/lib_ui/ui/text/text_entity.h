@@ -15,6 +15,8 @@
 #include <QtCore/QVector>
 #include <QtGui/QClipboard>
 
+#include <vector>
+
 struct TextWithEntities;
 
 namespace style {
@@ -43,6 +45,7 @@ enum class EntityType : uchar {
 	Colorized, // Senders in chat list, attachments in chat list, etc.
 	Phone,
 	BankCard,
+	TonAddress,
 
 	Bold,
 	Semibold,
@@ -181,6 +184,23 @@ private:
 	int _offset = 0;
 	int _length = 0;
 	QString _data;
+
+};
+
+[[nodiscard]] bool EntityReplacesText(const EntityInText &entity);
+
+class ReplacedTextRanges final {
+public:
+	void add(int from, int till);
+	void prepare();
+	[[nodiscard]] bool overlaps(int from, int till) const;
+
+private:
+	struct Range {
+		int from = 0;
+		int till = 0;
+	};
+	std::vector<Range> _ranges;
 
 };
 
@@ -331,7 +351,8 @@ enum {
 	TextParseBotCommands = 0x010,
 	TextParseMarkdown = 0x020,
 	TextParseColorized = 0x040,
-	TextParseHideName = 0x080,
+	TextParseKeepLeadingSpaces = 0x080,
+	TextParseHideName = 0x100,
 };
 
 struct TextWithTags {

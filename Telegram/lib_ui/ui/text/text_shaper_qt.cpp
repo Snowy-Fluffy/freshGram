@@ -12,6 +12,9 @@
 
 #include <private/qfontengine_p.h>
 
+#include <new>
+#include <type_traits>
+
 namespace Ui::Text {
 namespace {
 
@@ -68,18 +71,12 @@ void InitTextItemWithScriptItem(QTextItemInt &ti, const QScriptItem &si) {
 		ti.flags |= QTextItem::StrikeOut;
 }
 
-} // namespace
-
-// Everything a shaped item is, kept where only this backend can see it.
-struct ShapeEntry {
+// WHY: taken when an item is handed out and kept with it: by then the line
+// is shaped and its attributes are computed, which is all that moves the
+// memory of the engine - and the glyphs with it.
+struct ItemView {
 	QTextEngine *engine = nullptr;
 	const QScriptItem *si = nullptr;
-
-	// The one this item was shaped with, kept because the engine moves its
-	// font on to the next block and would hand out a different one later.
-	// A glyph of a font that merges fallbacks carries the index of the one it
-	// came from, and that index means nothing to any other font's engine.
-	QExplicitlySharedDataPointer<QFontEngine> fontEngine;
 
 	// Both are shifted so that index zero is the first character of the item.
 	const unsigned short *logClusters = nullptr;
@@ -87,6 +84,55 @@ struct ShapeEntry {
 
 	QGlyphLayout glyphs;
 	int length = 0;
+};
+
+[[nodiscard]] const ItemView &View(const std::byte *storage) {
+	return *std::launder(reinterpret_cast<const ItemView*>(storage));
+}
+
+} // namespace
+
+// Counted from the bytes Paragraph has room for: QScriptAnalysis is 8 in MSVC
+constexpr auto kInlineAnalysis = (16 * 1024) / sizeof(QScriptAnalysis);
+
+struct Paragraph::State {
+	QVarLengthArray<QScriptAnalysis, kInlineAnalysis> analysis;
+	int position = 0;
+};
+
+struct LineShaper::Backend {
+	Backend(
+		not_null<const String*> t,
+		Paragraph &paragraph,
+		int offset,
+		const QString &text,
+		int blockIndexHint,
+		int blockIndexLimit)
+	: engine(
+		t,
+		offset,
+		text,
+		gsl::span(paragraph.state().analysis).subspan(
+			offset - paragraph.state().position),
+		blockIndexHint,
+		blockIndexLimit) {
+	}
+
+	[[nodiscard]] int itemLength(int item) const;
+	[[nodiscard]] ItemView view(int index);
+
+	StackEngine engine;
+	int first = 0;
+	int count = 0;
+	QVarLengthArray<int> visualOrder;
+	QVarLengthArray<int> blockIndices;
+	const QCharAttributes *attributes = nullptr;
+
+	// The one this item was shaped with, kept because the engine moves its
+	// font on to the next block and would hand out a different one later.
+	// A glyph of a font that merges fallbacks carries the index of the one it
+	// came from, and that index means nothing to any other font's engine.
+	QVarLengthArray<QExplicitlySharedDataPointer<QFontEngine>> fontEngines;
 };
 
 Fixed ShapedItem::width() const {
@@ -99,7 +145,7 @@ Fixed ShapedItem::width(int fromOffset, int tillOffset) const {
 		// the rest of the item - which is what the end of it maps to.
 		return {};
 	}
-	const auto &entry = *_entry;
+	const auto &entry = View(_view);
 	const auto from = entry.logClusters[fromOffset];
 	const auto till = (tillOffset < entry.length)
 		? entry.logClusters[tillOffset]
@@ -108,7 +154,7 @@ Fixed ShapedItem::width(int fromOffset, int tillOffset) const {
 }
 
 int ShapedItem::clusterEnd(int offset, int tillOffset) const {
-	const auto &entry = *_entry;
+	const auto &entry = View(_view);
 	for (auto i = offset + 1; i < tillOffset; ++i) {
 		if (entry.logClusters[i] != entry.logClusters[offset]) {
 			return i;
@@ -118,7 +164,9 @@ int ShapedItem::clusterEnd(int offset, int tillOffset) const {
 }
 
 int ShapedItem::cutEnd(int offset, int tillOffset) const {
-	const auto &entry = *_entry;
+	Expects(View(_view).attributes != nullptr);
+
+	const auto &entry = View(_view);
 	auto result = GraphemeEnd(entry.attributes, offset, tillOffset);
 	while (result < tillOffset
 		&& entry.logClusters[result] == entry.logClusters[offset]) {
@@ -131,8 +179,10 @@ ShapedItem::Hit ShapedItem::hitTest(
 		Fixed xFixed,
 		int fromOffset,
 		int tillOffset) const {
+	Expects(View(_view).attributes != nullptr);
+
 	const auto x = QFixed::fromFixed(xFixed.raw());
-	const auto &entry = *_entry;
+	const auto &entry = View(_view);
 	const auto glyphsEnd = (tillOffset < entry.length)
 		? entry.logClusters[tillOffset]
 		: entry.si->num_glyphs;
@@ -196,10 +246,10 @@ void ShapedItem::draw(
 		int fromOffset,
 		int tillOffset,
 		const QFont &font) const {
-	const auto &entry = *_entry;
 	if (fromOffset >= tillOffset) {
 		return;
 	}
+	const auto &entry = View(_view);
 	const auto glyphsStart = entry.logClusters[fromOffset];
 	const auto glyphsEnd = (tillOffset < entry.length)
 		? entry.logClusters[tillOffset]
@@ -235,7 +285,7 @@ void ShapedItem::draw(
 }
 
 bool ShapedItem::invisibleAt(int offset) const {
-	const auto &entry = *_entry;
+	const auto &entry = View(_view);
 	if (offset < 0 || offset >= entry.length) {
 		return false;
 	}
@@ -245,16 +295,17 @@ bool ShapedItem::invisibleAt(int offset) const {
 }
 
 Fixed ShapedItem::rightBearingBefore(int offset) const {
-	const auto &entry = *_entry;
+	const auto &entry = View(_view);
 	if (offset <= 0 || offset > entry.length) {
 		return {};
 	}
 	const auto glyph = entry.logClusters[offset - 1];
-	if (glyph >= entry.si->num_glyphs || !entry.fontEngine) {
+	const auto &fontEngine = _shaper->backend().fontEngines[_index];
+	if (glyph >= entry.si->num_glyphs || !fontEngine) {
 		return {};
 	}
 	auto bearing = qreal();
-	entry.fontEngine->getGlyphBearings(
+	fontEngine->getGlyphBearings(
 		entry.glyphs.glyphs[glyph],
 		0,
 		&bearing);
@@ -265,27 +316,30 @@ Fixed ShapedItem::rightBearingBefore(int offset) const {
 		std::min(QFixed::fromReal(bearing), QFixed(0)).value());
 }
 
-struct Paragraph::State {
-	QVarLengthArray<QScriptAnalysis, 4096> analysis;
-	int position = 0;
-};
-
-Paragraph::Paragraph()
-: _state(std::make_unique<State>()) {
+Paragraph::Paragraph() {
+	static_assert(sizeof(State) <= sizeof(_storage));
+	static_assert(alignof(State) <= alignof(std::max_align_t));
+	new (_storage) State;
 }
 
-Paragraph::Paragraph(Paragraph &&other) = default;
+Paragraph::~Paragraph() {
+	state().~State();
+}
 
-Paragraph &Paragraph::operator=(Paragraph &&other) = default;
+Paragraph::State &Paragraph::state() {
+	return *std::launder(reinterpret_cast<State*>(_storage));
+}
 
-Paragraph::~Paragraph() = default;
+const Paragraph::State &Paragraph::state() const {
+	return *std::launder(reinterpret_cast<const State*>(_storage));
+}
 
 void Paragraph::clear() {
-	_state->analysis.resize(0);
+	state().analysis.resize(0);
 }
 
 bool Paragraph::ready() const {
-	return !_state->analysis.isEmpty();
+	return !state().analysis.isEmpty();
 }
 
 void Paragraph::resolve(
@@ -303,14 +357,15 @@ void Paragraph::resolve(
 	}
 	// Kept even for an empty paragraph: the lines of it still ask for their
 	// place in the analysis, and the answer is "at the start of nothing".
-	_state->position = position;
+	state().position = position;
 	if (!length) {
 		return;
 	}
-	_state->analysis.resize(length);
+	auto &analysis = state().analysis;
+	analysis.resize(length);
 	auto bidi = BidiAlgorithm(
 		t->_text.constData() + position,
-		_state->analysis.data(),
+		analysis.data(),
 		length,
 		baseRtl,
 		begin(t->_blocks) + blockIndexHint,
@@ -322,44 +377,40 @@ void Paragraph::resolve(
 }
 
 void Paragraph::elide(int position, int count, bool baseRtl) {
+	auto &analysis = state().analysis;
 	const auto length = position + count;
-	if (length > _state->analysis.size()) {
-		_state->analysis.resize(length);
+	if (length > analysis.size()) {
+		analysis.resize(length);
 	}
 	const auto level = (length > count)
-		? _state->analysis[length - count - 1].bidiLevel
+		? analysis[length - count - 1].bidiLevel
 		: uchar(baseRtl ? 1 : 0);
 	for (auto i = count; i > 0; --i) {
-		_state->analysis[length - i].bidiLevel = level;
+		analysis[length - i].bidiLevel = level;
 	}
 }
 
-struct LineShaper::Backend {
-	Backend(
-		not_null<const String*> t,
-		Paragraph &paragraph,
-		int offset,
-		const QString &text,
-		int blockIndexHint,
-		int blockIndexLimit)
-	: engine(
-		t,
-		offset,
-		text,
-		gsl::span(paragraph._state->analysis).subspan(
-			offset - paragraph._state->position),
-		blockIndexHint,
-		blockIndexLimit) {
-	}
+int LineShaper::Backend::itemLength(int item) const {
+	const auto &e = engine.wrapped();
+	const auto &list = e.layoutData->items;
+	const auto next = (item + 1 < int(list.size()))
+		? list[item + 1].position
+		: int(e.layoutData->string.size());
+	return next - list[item].position;
+}
 
-	StackEngine engine;
-	int first = 0;
-	std::vector<Item> items;
-	std::vector<int> visualOrder;
-	std::vector<CharAttribute> attributes;
-	std::vector<ShapeEntry> entries;
-	std::vector<ShapedItem> shaped;
-};
+ItemView LineShaper::Backend::view(int index) {
+	auto &e = engine.wrapped();
+	const auto &si = e.layoutData->items[first + index];
+	return {
+		.engine = &e,
+		.si = &si,
+		.logClusters = e.logClusters(&si),
+		.attributes = attributes ? (attributes + si.position) : nullptr,
+		.glyphs = e.shapedGlyphs(&si),
+		.length = itemLength(first + index),
+	};
+}
 
 LineShaper::LineShaper(
 	not_null<const String*> t,
@@ -367,65 +418,93 @@ LineShaper::LineShaper(
 	int offset,
 	const QString &text,
 	int blockIndexHint,
-	int blockIndexLimit)
-: _backend(std::make_unique<Backend>(
-	t,
-	paragraph,
-	offset,
-	text,
-	blockIndexHint,
-	blockIndexLimit)) {
+	int blockIndexLimit) {
+	static_assert(sizeof(Backend) <= sizeof(_storage));
+	static_assert(alignof(Backend) <= alignof(std::max_align_t));
+	new (_storage) Backend(
+		t,
+		paragraph,
+		offset,
+		text,
+		blockIndexHint,
+		blockIndexLimit);
 }
 
-LineShaper::~LineShaper() = default;
-
-const std::vector<Item> &LineShaper::items() const {
-	return _backend->items;
+LineShaper::~LineShaper() {
+	backend().~Backend();
 }
 
-gsl::span<const CharAttribute> LineShaper::attributes() const {
-	auto &attributes = _backend->attributes;
-	if (attributes.empty()) {
-		auto &e = _backend->engine.wrapped();
-		// Taken after shaping: shaping grows the engine's memory block, and
-		// the attributes live in it, so a pointer taken earlier can be left
-		// behind.
-		if (const auto from = e.attributes()) {
-			const auto count = int(e.layoutData->string.size());
-			attributes.resize(count);
-			for (auto i = 0; i != count; ++i) {
-				attributes[i] = CharAttribute{
-					.graphemeBoundary = bool(from[i].graphemeBoundary),
-					.lineBreak = bool(from[i].lineBreak),
-					.whiteSpace = bool(from[i].whiteSpace),
-				};
-			}
-		}
-	}
-	return attributes;
+LineShaper::Backend &LineShaper::backend() {
+	return *std::launder(reinterpret_cast<Backend*>(_storage));
+}
+
+const LineShaper::Backend &LineShaper::backend() const {
+	return *std::launder(reinterpret_cast<const Backend*>(_storage));
+}
+
+int LineShaper::itemCount() const {
+	return backend().count;
+}
+
+Item LineShaper::item(int index) const {
+	const auto &backend = this->backend();
+	const auto item = backend.first + index;
+	const auto &si = backend.engine.wrapped().layoutData->items[item];
+	return {
+		.position = si.position,
+		.length = backend.itemLength(item),
+		.width = Fixed::FromRaw(si.width.value()),
+		.ascent = si.ascent.toInt(),
+		.descent = si.descent.toInt(),
+		.blockIndex = backend.blockIndices[index],
+		.bidiLevel = uchar(si.analysis.bidiLevel),
+		.object = (si.analysis.flags >= QScriptAnalysis::TabOrObject),
+		.newline = (si.analysis.flags
+			== QScriptAnalysis::LineOrParagraphSeparator),
+	};
+}
+
+CharAttribute LineShaper::attribute(int position) const {
+	Expects(backend().attributes != nullptr);
+
+	const auto &attribute = backend().attributes[position];
+	return {
+		.graphemeBoundary = bool(attribute.graphemeBoundary),
+		.lineBreak = bool(attribute.lineBreak),
+		.whiteSpace = bool(attribute.whiteSpace),
+	};
 }
 
 gsl::span<const int> LineShaper::visualOrder() const {
-	return _backend->visualOrder;
+	return backend().visualOrder;
 }
 
 int LineShaper::findItem(int position) const {
-	return _backend->engine.wrapped().findItem(position);
+	return backend().engine.wrapped().findItem(position);
 }
 
-void LineShaper::shapeRange(int firstItem, int lastItem) {
-	auto &e = _backend->engine.wrapped();
-	_backend->first = firstItem;
+void LineShaper::shapeRange(
+		int firstItem,
+		int lastItem,
+		bool withAttributes) {
+	auto &backend = this->backend();
+	auto &e = backend.engine.wrapped();
 	const auto count = lastItem - firstItem + 1;
-	_backend->items.resize(count);
-	_backend->entries.resize(count);
-	_backend->shaped.resize(count);
+	backend.first = firstItem;
+	backend.count = count;
+	backend.fontEngines.resize(count);
+	backend.blockIndices.resize(count);
+	if (withAttributes) {
+		// Before shaping: asked for after it, they take the room twice
+		e.attributes();
+	}
 
 	auto levels = QVarLengthArray<uchar>(count);
 	auto skipIndex = -1;
 	for (auto i = 0; i != count; ++i) {
-		const auto blockIt = _backend->engine.shapeGetBlock(firstItem + i);
+		const auto blockIt = backend.engine.shapeGetBlock(firstItem + i);
 		auto &si = e.layoutData->items[firstItem + i];
+		backend.blockIndices[i] = backend.engine.blockIndex(si.position);
 		if ((*blockIt)->type() == TextBlockType::Skip) {
 			// A skip is laid out as if it had no direction of its own, so
 			// that it stays at the end of the line it trails.
@@ -434,75 +513,47 @@ void LineShaper::shapeRange(int firstItem, int lastItem) {
 		} else {
 			levels[i] = si.analysis.bidiLevel;
 		}
-		_backend->items[i] = Item{
-			.position = si.position,
-			.length = itemLength(firstItem + i),
-			.width = Fixed::FromRaw(si.width.value()),
-			.ascent = si.ascent.toInt(),
-			.descent = si.descent.toInt(),
-			.blockIndex = _backend->engine.blockIndex(si.position),
-			.bidiLevel = uchar(si.analysis.bidiLevel),
-			.object = (si.analysis.flags >= QScriptAnalysis::TabOrObject),
-			.newline = (si.analysis.flags
-				== QScriptAnalysis::LineOrParagraphSeparator),
-		};
-		if (_backend->items[i].object) {
-			// Never shaped, so there is no glyph of it to measure.
-			_backend->entries[i].fontEngine.reset();
-		} else {
+		if (si.analysis.flags < QScriptAnalysis::TabOrObject) {
 			// Taken now, while shaping this item has left its block's font
 			// on the engine: after the loop only the last one of them is.
-			_backend->entries[i].fontEngine = e.fontEngine(si);
+			backend.fontEngines[i] = e.fontEngine(si);
 		}
 	}
+	if (withAttributes) {
+		backend.attributes = e.attributes();
+	}
 
-	_backend->visualOrder.resize(count);
-	QTextEngine::bidiReorder(count, levels.data(), _backend->visualOrder.data());
+	auto &visualOrder = backend.visualOrder;
+	visualOrder.resize(count);
+	QTextEngine::bidiReorder(count, levels.data(), visualOrder.data());
 	if (style::RightToLeft() && skipIndex == count - 1) {
 		for (auto i = count; i > 1;) {
 			--i;
-			_backend->visualOrder[i] = _backend->visualOrder[i - 1];
+			visualOrder[i] = visualOrder[i - 1];
 		}
-		_backend->visualOrder[0] = skipIndex;
+		visualOrder[0] = skipIndex;
 	}
 }
 
-int LineShaper::itemLength(int index) const {
-	auto &e = _backend->engine.wrapped();
-	const auto &list = e.layoutData->items;
-	const auto next = (index + 1 < int(list.size()))
-		? list[index + 1].position
-		: int(e.layoutData->string.size());
-	return next - list[index].position;
-}
-
-const ShapedItem &LineShaper::shape(int index) {
-	auto &e = _backend->engine.wrapped();
-	auto &shaped = _backend->shaped[index];
-	if (shaped) {
-		return shaped;
-	}
-	auto &si = e.layoutData->items[_backend->first + index];
-	auto &entry = _backend->entries[index];
-
-	// Asked for first: filling them in grows the engine's memory block, and
-	// the glyphs live in it, so pointers taken earlier would be left behind.
-	const auto attributes = e.attributes();
-
-	entry.engine = &e;
-	entry.si = &si;
-	entry.logClusters = e.logClusters(&si);
-	entry.glyphs = e.shapedGlyphs(&si);
-	entry.attributes = attributes ? (attributes + si.position) : nullptr;
-	entry.length = itemLength(_backend->first + index);
-	shaped._entry = &entry;
-	shaped._length = entry.length;
-	shaped._rtl = (si.analysis.bidiLevel % 2) != 0;
-	return shaped;
+ShapedItem LineShaper::shape(int index) {
+	static_assert(sizeof(ItemView) <= sizeof(ShapedItem::_view));
+	static_assert(alignof(ItemView) <= alignof(std::max_align_t));
+	static_assert(std::is_trivially_copyable_v<ItemView>);
+	const auto view = backend().view(index);
+	return ShapedItem(
+		this,
+		index,
+		view.length,
+		(view.si->analysis.bidiLevel % 2) != 0,
+		bytes::object_as_span(&view));
 }
 
 int LineShaper::blockIndex(int position) const {
-	return _backend->engine.blockIndex(position);
+	return backend().engine.blockIndex(position);
+}
+
+QString FontPath(const QString &path) {
+	return path;
 }
 
 } // namespace Ui::Text

@@ -147,6 +147,12 @@ struct StateRequestElided : StateRequest {
 	int removeFromEnd = 0;
 };
 
+struct CustomEmojiLinkTexts {
+	QString tooltip;
+	QString copyText;
+	QString copyContextItemText;
+};
+
 class SpoilerMessCache {
 public:
 	explicit SpoilerMessCache(int capacity);
@@ -252,6 +258,14 @@ struct HighlightInfoRequest {
 	QRect interpolateTo;
 	float64 interpolateProgress = 0.;
 	QPainterPath *outPath = nullptr;
+};
+
+struct HighlightRectsRequest {
+	QPoint position;
+	GeometryDescriptor geometry;
+	style::align align = style::al_left;
+	QRect clip;
+	float64 ratio = 1.;
 };
 
 struct PaintContext {
@@ -363,7 +377,8 @@ public:
 	[[nodiscard]] bool hasCustomEmoji() const;
 	void setCustomEmojiClickHandler(
 		Fn<bool(QStringView)> predicate,
-		Fn<void(QStringView, ClickContext)> callback);
+		Fn<void(QStringView, ClickContext)> callback,
+		Fn<CustomEmojiLinkTexts(QStringView)> texts = nullptr);
 
 	[[nodiscard]] bool hasCollapsedBlockquots() const;
 	[[nodiscard]] bool blockquoteCollapsed(int index) const;
@@ -392,6 +407,9 @@ public:
 		QPoint point,
 		GeometryDescriptor geometry,
 		StateRequest request = StateRequest()) const;
+	[[nodiscard]] std::vector<QRect> countHighlightRects(
+		std::span<const TextSelection> ranges,
+		const HighlightRectsRequest &request) const;
 
 	void draw(Painter &p, int32 left, int32 top, int32 width, style::align align = style::al_left, int32 yFrom = 0, int32 yTo = -1, TextSelection selection = { 0, 0 }, bool fullWidthSelection = true) const;
 	void drawElided(Painter &p, int32 left, int32 top, int32 width, int32 lines = 1, style::align align = style::al_left, int32 yFrom = 0, int32 yTo = -1, int32 removeFromEnd = 0, bool breakEverywhere = false, TextSelection selection = { 0, 0 }) const;

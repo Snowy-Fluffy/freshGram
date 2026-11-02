@@ -24,6 +24,10 @@ void _dispatch_main_queue_callback_4CF(mach_msg_header_t *msg);
 namespace Ui {
 namespace Platform {
 
+bool IsMaximizedNatively(not_null<QWidget*> window) {
+	return window->isMaximized();
+}
+
 bool IsApplicationActive() {
 	return [[NSApplication sharedApplication] isActive];
 }
@@ -105,6 +109,13 @@ void AcceptAllMouseInput(not_null<QWidget*> widget) {
 	// See https://stackoverflow.com/a/29451199 and comments.
 	NSWindow *window = [reinterpret_cast<NSView*>(widget->winId()) window];
 	[window setIgnoresMouseEvents:NO];
+}
+
+void KeepOnCurrentSpace(not_null<QWidget*> widget) {
+	NSWindow *window = [reinterpret_cast<NSView*>(widget->winId()) window];
+	[window setCollectionBehavior:(([window collectionBehavior]
+		& ~NSWindowCollectionBehaviorMoveToActiveSpace)
+		| NSWindowCollectionBehaviorManaged)];
 }
 
 void DrainMainQueue() {

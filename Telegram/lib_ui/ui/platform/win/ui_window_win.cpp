@@ -29,6 +29,9 @@
 #include <QtWidgets/QApplication>
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qwindowsysteminterface.h>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <qpa/qplatformwindow_p.h>
+#endif // Qt >= 6.0.0
 
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -45,6 +48,10 @@ constexpr auto kDWMWCP_DONOTROUND = DWORD(1);
 constexpr auto kDWMWA_WINDOW_CORNER_PREFERENCE = DWORD(33);
 constexpr auto kDWMWA_CAPTION_COLOR = DWORD(35);
 constexpr auto kDWMWA_TEXT_COLOR = DWORD(36);
+
+// Undocumented messages of classic (unthemed) caption painting.
+constexpr auto kWM_NCUAHDRAWCAPTION = UINT(0x00AE);
+constexpr auto kWM_NCUAHDRAWFRAME = UINT(0x00AF);
 
 UINT(__stdcall *GetDpiForWindow)(_In_ HWND hwnd);
 
@@ -147,11 +154,24 @@ BOOL(__stdcall *AdjustWindowRectExForDpi)(
 	return bAutoHidden;
 }
 
-void FixAeroSnap(HWND handle) {
-	SetWindowLongPtr(
-		handle,
-		GWL_STYLE,
-		GetWindowLongPtr(handle, GWL_STYLE) | WS_CAPTION | WS_THICKFRAME);
+// Qt 6 dropped "WindowsCustomMargins" property for native interface.
+void SetCustomMargins(not_null<QWindow*> window, QMargins margins) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	if (window->flags() & Qt::FramelessWindowHint) {
+		return; // Qt refuses custom margins on frameless windows.
+	}
+	using namespace QNativeInterface::Private;
+	if (const auto native = window->nativeInterface<QWindowsWindow>()) {
+		native->setCustomMargins(margins);
+	}
+#else // Qt >= 6.0.0
+	if (const auto native = QGuiApplication::platformNativeInterface()) {
+		native->setWindowProperty(
+			window->handle(),
+			"WindowsCustomMargins",
+			QVariant::fromValue<QMargins>(margins));
+	}
+#endif // Qt >= 6.0.0
 }
 
 [[nodiscard]] Qt::KeyboardModifiers LookupModifiers() {
@@ -183,9 +203,6 @@ WindowHelper::WindowHelper(not_null<RpWidget*> window)
 , NativeEventFilter(window)
 , _title(Ui::CreateChild<TitleWidget>(window.get()))
 , _body(Ui::CreateChild<RpWidget>(window.get())) {
-	if (!::Platform::IsWindows8OrGreater()) {
-		window->setWindowFlag(Qt::FramelessWindowHint);
-	}
 	init();
 }
 
@@ -237,12 +254,6 @@ void WindowHelper::setTitleStyle(const style::WindowTitle &st) {
 }
 
 void WindowHelper::setNativeFrame(bool enabled) {
-	if (_handle && !::Platform::IsWindows8OrGreater()) {
-		window()->windowHandle()->setFlag(Qt::FramelessWindowHint, !enabled);
-		if (!enabled) {
-			FixAeroSnap(_handle);
-		}
-	}
 	_title->setVisible(!enabled);
 	if (_handle) {
 		updateShadow();
@@ -316,7 +327,6 @@ void WindowHelper::setGeometry(QRect rect) {
 void WindowHelper::showFullScreen() {
 	if (!_isFullScreen) {
 		_isFullScreen = true;
-		updateMargins();
 		updateCornersRounding();
 		updateCloaking();
 	}
@@ -346,6 +356,11 @@ rpl::producer<HitTestResult> WindowHelper::systemButtonDown() const {
 	return _systemButtonDown.events();
 }
 
+auto WindowHelper::systemCommandRequests() const
+-> rpl::producer<not_null<SystemCommandRequest*>> {
+	return _systemCommandRequests.events();
+}
+
 void WindowHelper::overrideSystemButtonOver(HitTestResult button) {
 	_systemButtonOver.fire_copy(button);
 }
@@ -359,14 +374,6 @@ void WindowHelper::init() {
 
 	window()->winIdValue() | rpl::on_next([=](WId winId) {
 		_handle = reinterpret_cast<HWND>(winId);
-
-		if (!::Platform::IsWindows8OrGreater()) {
-			const auto native = _title->isHidden();
-			window()->setWindowFlag(Qt::FramelessWindowHint, !native);
-			if (_handle && !native) {
-				FixAeroSnap(_handle);
-			}
-		}
 
 		if (_handle) {
 			_dpi = GetDpiForWindowSupported()
@@ -458,6 +465,26 @@ bool WindowHelper::filterNativeEvent(
 
 	switch (msg) {
 
+	case WM_SYSCOMMAND: {
+		// Win+Up / system menu arrive here before any state change,
+		// so window may replace maximize / restore with its own behavior.
+		const auto command = (wParam & 0xFFF0);
+		if ((command != SC_MAXIMIZE && command != SC_RESTORE)
+			|| IsIconic(_handle)) {
+			return false;
+		}
+		auto request = SystemCommandRequest{
+			.command = (command == SC_MAXIMIZE)
+				? SystemCommand::Maximize
+				: SystemCommand::Restore,
+		};
+		_systemCommandRequests.fire(&request);
+		if (!request.handled) {
+			return false;
+		}
+		if (result) *result = 0;
+	} return true;
+
 	case WM_ACTIVATE: {
 		if (LOWORD(wParam) == WA_CLICKACTIVE) {
 			Ui::MarkInactivePress(window(), true);
@@ -482,9 +509,42 @@ bool WindowHelper::filterNativeEvent(
 		if (result) *result = 0;
 	} return true;
 
-	case WM_NCCALCSIZE: {
-		if (_title->isHidden() || window()->isFullScreen() || !wParam) {
+	case WM_SETTEXT:
+	case WM_SETICON: {
+		if (::Platform::IsWindows8OrGreater() || _title->isHidden()) {
 			return false;
+		}
+		// Classic caption painter reacts to these bypassing WM_NCPAINT,
+		// so hide the window from it while DefWindowProc stores the value.
+		const auto style = GetWindowLongPtr(_handle, GWL_STYLE);
+		SetWindowLongPtr(_handle, GWL_STYLE, style & ~WS_VISIBLE);
+		const auto res = DefWindowProc(_handle, msg, wParam, lParam);
+		SetWindowLongPtr(_handle, GWL_STYLE, style);
+		if (result) *result = res;
+	} return true;
+
+	case kWM_NCUAHDRAWCAPTION:
+	case kWM_NCUAHDRAWFRAME: {
+		if (::Platform::IsWindows8OrGreater() || _title->isHidden()) {
+			return false;
+		}
+		if (result) *result = 0;
+	} return true;
+
+	case WM_NCCALCSIZE: {
+		if (_title->isHidden() || !wParam) {
+			return false;
+		}
+		const auto style = GetWindowLongPtr(_handle, GWL_STYLE);
+		const auto fullscreen = (style & WS_POPUP)
+			&& !(style & (WS_DLGFRAME | WS_THICKFRAME));
+		if (fullscreen) {
+			// Whole window is client, and Qt must not apply custom
+			// margins of normal state (they stay set in full screen).
+			if (result) {
+				*result = 0;
+			}
+			return true;
 		}
 		const auto r = &((LPNCCALCSIZE_PARAMS)lParam)->rgrc[0];
 		const auto maximized = [&] {
@@ -549,7 +609,11 @@ bool WindowHelper::filterNativeEvent(
 		if (_title->isHidden()) {
 			return false;
 		}
-		if (IsCompositionEnabled()) {
+		// DWM doesn't manage frames of layered windows, so themed caption
+		// painter ignores lParam == -1 and flashes native caption for a frame.
+		const auto layered = GetWindowLongPtr(_handle, GWL_EXSTYLE)
+			& WS_EX_LAYERED;
+		if (IsCompositionEnabled() && !layered) {
 			const auto res = DefWindowProc(_handle, msg, wParam, -1);
 			if (result) *result = res;
 		} else {
@@ -853,7 +917,9 @@ void WindowHelper::enableCloakingForHidden() {
 }
 
 void WindowHelper::updateMargins() {
-	if (!_handle || _updatingMargins) {
+	// Full screen keeps margins of normal state, each change makes Qt
+	// resize frame and breaks geometry restored after full screen.
+	if (!_handle || _updatingMargins || _isFullScreen) {
 		return;
 	}
 
@@ -892,39 +958,41 @@ void WindowHelper::updateMargins() {
 			m.right - w.right,
 			m.bottom - w.bottom);
 
-		const auto normal = margins;
-		margins = QMargins(r.left, r.top, -r.right, -r.bottom) - _rcWorkDelta;
-		_marginsDelta = normal - margins;
-	} else if (!_marginsDelta.isNull()) {
-		RECT w;
-		GetWindowRect(_handle, &w);
-		SetWindowPos(
-			_handle,
-			0,
-			0,
-			0,
-			w.right - w.left - _marginsDelta.left() - _marginsDelta.right(),
-			w.bottom - w.top - _marginsDelta.top() - _marginsDelta.bottom(),
-			(SWP_NOMOVE
-				| SWP_NOSENDCHANGING
-				| SWP_NOZORDER
-				| SWP_NOACTIVATE
-				| SWP_NOREPOSITION));
+		_marginsDelta = _rcWorkDelta;
+
+		// With native borders Qt already measures maximized frame itself,
+		// shifting custom margins here made it 16px wider than client.
+		if (!nativeResize()) {
+			margins.setLeft(margins.left() - _rcWorkDelta.left());
+			margins.setRight(margins.right() - _rcWorkDelta.right());
+			margins.setBottom(margins.bottom() - _rcWorkDelta.bottom());
+			margins.setTop(margins.top() - _rcWorkDelta.top());
+		}
+	} else if (!_isFullScreen && !_marginsDelta.isNull()) {
+		if (!nativeResize()) {
+			RECT w;
+			GetWindowRect(_handle, &w);
+			SetWindowPos(
+				_handle,
+				0,
+				0,
+				0,
+				w.right - w.left - _marginsDelta.left() - _marginsDelta.right(),
+				w.bottom - w.top - _marginsDelta.top() - _marginsDelta.bottom(),
+				(SWP_NOMOVE
+					| SWP_NOSENDCHANGING
+					| SWP_NOZORDER
+					| SWP_NOACTIVATE
+					| SWP_NOREPOSITION));
+		}
 		_marginsDelta = QMargins();
 	}
 
-	if (_isFullScreen || _title->isHidden()) {
+	if (_title->isHidden()) {
 		margins = QMargins();
-		if (_title->isHidden()) {
-			_marginsDelta = QMargins();
-		}
+		_marginsDelta = QMargins();
 	}
-	if (const auto native = QGuiApplication::platformNativeInterface()) {
-		native->setWindowProperty(
-			window()->windowHandle()->handle(),
-			"WindowsCustomMargins",
-			QVariant::fromValue<QMargins>(margins));
-	}
+	SetCustomMargins(window()->windowHandle(), margins);
 }
 
 void WindowHelper::fixMaximizedWindow() {

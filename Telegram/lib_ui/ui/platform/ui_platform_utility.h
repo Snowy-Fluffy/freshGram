@@ -27,6 +27,9 @@ namespace Ui::Platform {
 
 [[nodiscard]] bool IsApplicationActive();
 
+// Native maximized state, true before Qt delivers its (queued) state event.
+[[nodiscard]] bool IsMaximizedNatively(not_null<QWidget*> window);
+
 [[nodiscard]] bool TranslucentWindowsSupported();
 
 void InitOnTopPanel(not_null<QWidget*> panel);
@@ -56,6 +59,7 @@ void SetForeignTransientParent(
 	not_null<QWidget*> widget,
 	const ForeignParent &parent);
 void AcceptAllMouseInput(not_null<QWidget*> widget);
+void KeepOnCurrentSpace(not_null<QWidget*> widget);
 
 void DisableSystemWindowResize(not_null<QWidget*> widget, QSize ratio);
 

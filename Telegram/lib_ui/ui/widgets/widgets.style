@@ -309,6 +309,7 @@ InputField {
 	placeholderAlign: align;
 	placeholderScale: double;
 	placeholderShift: pixels;
+	placeholderShiftLeft: pixels;
 	placeholderFont: font;
 
 	duration: int;

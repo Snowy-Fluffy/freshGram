@@ -101,6 +101,7 @@ public:
 	bool prepareGeometryFor(const QPoint &p);
 	void popupPrepared();
 	void hideMenu(bool fast = false);
+	void refreshAnimationCache();
 	void setTopShift(int topShift);
 	void setForceWidth(int forceWidth);
 	void setForcedOrigin(PanelAnimation::Origin origin);
@@ -154,6 +155,7 @@ protected:
 	void mousePressEvent(QMouseEvent *e) override;
 
 	bool eventFilter(QObject *o, QEvent *e) override;
+	bool focusNextPrevChild(bool next) override;
 
 private:
 	struct SubmenuAim;
@@ -165,6 +167,7 @@ private:
 	void hideAnimated();
 
 	QImage grabForPanelAnimation();
+	void prepareShowAnimation();
 	void startShowAnimation();
 	void startOpacityAnimation(bool hiding);
 	void prepareCache();
@@ -263,6 +266,7 @@ private:
 	bool _deleteLater = false;
 	bool _reactivateParent = true;
 	bool _grabbingForPanelAnimation = false;
+	bool _refreshingAnimationCache = false;
 
 	TouchForward _touchForward;
 	int _touchBeginCounter = 0;

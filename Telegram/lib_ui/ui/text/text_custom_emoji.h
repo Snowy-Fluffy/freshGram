@@ -207,6 +207,7 @@ private:
 	QMargins _padding;
 	QImage _frame;
 	int _paletteVersion = 0;
+	uint64 _paletteIdentity = 0;
 
 };
 

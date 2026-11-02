@@ -193,6 +193,11 @@ public:
 		_wheelDirectionLocked = true;
 	}
 
+	// For setHandleTouch(false) owners, their deltas are not rescaled.
+	bool touchScrollBy(QPoint delta, bool pressed);
+	void touchScrollRelease();
+	void touchScrollFinish(bool cancelled = false);
+
 	enum class OverscrollType : uchar {
 		None,
 		Virtual,
@@ -202,6 +207,8 @@ public:
 	void setOverscrollDefaults(int from, int till, bool shift = false);
 	void clearOverscroll();
 	void returnToOverscrollDefaults();
+	// Shrinks a plain bottom bounce so the content stays at that position.
+	void absorbBottomOverscroll(int position);
 	void setOverscrollBg(QColor bg);
 	void setContentBottomInset(int inset);
 
@@ -255,6 +262,12 @@ public:
 	void setBarBottomInset(int inset);
 
 private:
+	enum class WheelSource : uchar {
+		Wheel,
+		Touch,
+		ExactTouch,
+	};
+
 	bool eventHook(QEvent *e) override;
 	bool eventFilter(QObject *obj, QEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
@@ -263,7 +276,9 @@ private:
 	void paintEvent(QPaintEvent *e) override;
 	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
-	bool handleWheelEvent(not_null<QWheelEvent*> e, bool touch = false);
+	bool handleWheelEvent(
+		not_null<QWheelEvent*> e,
+		WheelSource source = WheelSource::Wheel);
 	bool requestBottomContent(int delta);
 	void handleTouchEvent(QTouchEvent *e);
 
@@ -282,7 +297,10 @@ private:
 	bool filterOutTouchEvent(QEvent *e);
 	void touchScrollTimer();
 	void touchScrollUpdated();
-	void sendWheelEvent(Qt::ScrollPhase phase, QPoint delta = {});
+	void sendWheelEvent(
+		Qt::ScrollPhase phase,
+		QPoint delta = {},
+		WheelSource source = WheelSource::Touch);
 
 	void touchResetSpeed();
 	void touchUpdateSpeed();
@@ -352,6 +370,7 @@ private:
 	bool _overscrollReturning : 1 = false;
 	bool _wheelDirectionLocked : 1 = false;
 	bool _insideBottomContentRequest : 1 = false;
+	bool _touchOwnerGesture : 1 = false;
 
 	Fn<bool(not_null<QWheelEvent*>)> _customWheelProcess;
 	Fn<bool(not_null<QTouchEvent*>)> _customTouchProcess;

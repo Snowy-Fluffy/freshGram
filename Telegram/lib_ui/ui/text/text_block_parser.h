@@ -70,7 +70,7 @@ private:
 		const MarkedContext &context,
 		ReadyToken);
 
-	void trimSourceRange();
+	void trimSourceRange(const TextParseOptions &options);
 	void createBlock(int skipBack = 0);
 	void createNewlineBlock(bool fromOriginalText);
 	void ensureAtNewline(QuoteDetails quote);
@@ -85,9 +85,14 @@ private:
 	void finishEntities();
 	void skipPassedEntities();
 	void skipBadEntities();
+	void skipWaitingEntity();
 
 	bool isInvalidEntity(const EntityInText &entity) const;
 	bool isLinkEntity(const EntityInText &entity) const;
+	bool isReplacedEntity(const EntityInText &entity) const;
+
+	void collectReplacedRanges();
+	[[nodiscard]] bool hasReplacedPart(const EntityInText &entity) const;
 
 	bool processCustomIndex(uint16 index);
 	[[nodiscard]] uint16 pushInternal(EntityLinkData &&data);
@@ -111,9 +116,11 @@ private:
 	QString _customEmojiData;
 	const bool _multiline = false;
 
+	std::vector<uint16> _skippedLinkIndices;
 	std::vector<uint16> _linksIndexes;
 	base::flat_map<uint16, uint16> _customLinkIndices; // _links -> custom.
 	std::vector<int> _internalBlocks; // Blocks with _internals indices.
+	ReplacedTextRanges _replacedRanges;
 
 	std::vector<EntityLinkData> _links;
 	std::vector<EntityLinkData> _internals;
