@@ -41,7 +41,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_schedule_box.h"
 #include "history/view/history_view_scheduled_section.h"
 #include "menu/menu_send.h"
-#include "wallet/wallet_panel.h"
 #include "data/data_types.h"
 #include "styles/style_calls.h" // groupCallBoxLabel
 #include "styles/style_chat_helpers.h"
@@ -1012,10 +1011,7 @@ void TonAddressClickHandler::onClick(ClickContext context) const {
 	if (context.button != Qt::LeftButton) {
 		return;
 	}
-	const auto my = context.other.value<ClickHandlerContext>();
-	if (const auto controller = my.sessionWindow.get()) {
-		Wallet::OpenAddressEntity(controller, _address);
-	}
+	TextUtilities::SetClipboardText(TextForMimeData::Simple(_address));
 }
 
 auto TonAddressClickHandler::getTextEntity() const -> TextEntity {
