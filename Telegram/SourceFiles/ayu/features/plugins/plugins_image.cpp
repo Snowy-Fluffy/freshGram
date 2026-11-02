@@ -16,7 +16,9 @@ namespace {
 
 // The picture comes from a plugin, so it is checked before it is decoded.
 constexpr auto kMaxPixels = qint64(24) * 1000 * 1000;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 constexpr auto kAllocationLimitMb = 256;
+#endif // Qt >= 6.0
 constexpr auto kMaxSide = qint64(8192);
 
 namespace error = fgpl::api::error;
@@ -43,7 +45,9 @@ fgpl::Result<fgpl::ImageResult, std::string> ProcessImage(
 		return Failure(error::kFailed);
 	}
 	auto reader = QImageReader(&input);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	reader.setAllocationLimit(kAllocationLimitMb);
+#endif // Qt >= 6.0
 	const auto format = reader.format();
 	if (format != "png" && format != "jpeg" && format != "webp") {
 		return Failure(error::kInvalid);
