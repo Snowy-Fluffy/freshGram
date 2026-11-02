@@ -376,6 +376,26 @@ void TestLargeRequests() {
 		const auto result = refused.value()->deliver(kEvent());
 		CHECK(result.ok() && result.value() == guest_status::kBadRequest);
 	}
+
+	const auto textModule = std::string(module);
+	const auto marker = std::string("\\61d\\5a");
+	const auto at = textModule.find(marker);
+	CHECK(at != std::string::npos);
+	if (at == std::string::npos) {
+		return;
+	}
+	auto textual = textModule;
+	textual.replace(at, marker.size(), "\\61d\\7a");
+	bridge.requests.clear();
+	auto loadedText = Load(runtime, bridge, textual.c_str());
+	CHECK(loadedText.ok());
+	if (loadedText.ok()) {
+		const auto result = loadedText.value()->deliver(kEvent());
+		CHECK(result.ok() && result.value() == guest_status::kOk);
+		CHECK(bridge.requests.size() == 1);
+		const auto text = bridge.requests.empty() ? nullptr : bridge.requests[0].find("d");
+		CHECK(text && text->asText() && text->asText()->size() == (size_t(3) << 20));
+	}
 }
 
 void TestAllocatorMisbehavior() {

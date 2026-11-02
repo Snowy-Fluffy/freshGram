@@ -423,7 +423,9 @@ void LinkHost(
 		buffer.erase(buffer.begin(), buffer.begin() + 4 + ptrdiff_t(size));
 		if (!decoded.ok()) {
 			state.dead = true;
-			state.lastError = "a malformed protocol frame";
+			state.lastError = (decoded.error() == cbor::Error::TooLarge)
+				? "a protocol frame has a too large value"
+				: "a malformed protocol frame";
 			return kIo;
 		}
 		const auto &message = decoded.value();

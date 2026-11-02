@@ -22,7 +22,10 @@ struct RuntimeLimits {
 	size_t maxMessageBytes = size_t(128) << 20;
 	size_t maxCallsPerDispatch = 256;
 	uint32_t maxHostCallMs = 60000;
-	cbor::Limits cbor = { .maxBytes = size_t(128) << 20 };
+	cbor::Limits cbor = {
+		.maxString = size_t(128) << 20,
+		.maxBytes = size_t(128) << 20,
+	};
 };
 
 struct RuntimeOptions {
