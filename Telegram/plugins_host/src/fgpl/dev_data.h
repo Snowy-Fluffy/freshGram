@@ -82,6 +82,7 @@ public:
 	std::string pinChat(int64_t chat, bool pinned) override;
 	std::string composerInsert(int64_t chat, const std::string &text) override;
 	std::string notify(const std::string &title, const std::string &text) override;
+	std::string setNotifyRules(const std::string &plugin, std::vector<NotifyRule> rules) override;
 	std::string clipboardWrite(const std::string &text) override;
 	std::optional<std::string> clipboardRead() override;
 	std::string saveFile(const std::string &name, const cbor::Bytes &bytes) override;

@@ -70,6 +70,10 @@ pub fn sql_run(sql: &str, params: Vec<Value>, limit: i64) -> Result<Value, Error
     call("sql.run", Some(map! { "sql" => sql, "params" => params, "limit" => limit }))
 }
 
+pub fn silence_chat(chat: i64) -> Result<(), Error> {
+    done(call("notify.set_rules", Some(map! { "rules" => vec![map! { "chat" => chat }] })))
+}
+
 pub fn send_text(chat: i64, text: &str) -> Result<Sent, Error> {
     call("messages.send", Some(map! { "chat" => chat, "text" => text })).map(|answer| sent(&answer))
 }

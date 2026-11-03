@@ -2986,6 +2986,15 @@ public:
 		return ProcessImage(request);
 	}
 
+	std::string setNotifyRules(
+			const std::string &plugin,
+			std::vector<fgpl::NotifyRule> rules) override {
+		return OnMain<std::string>([=, rules = std::move(rules)]() mutable -> std::string {
+			SetPluginNotifyRules(plugin, _account, std::move(rules));
+			return {};
+		}, fgpl::api::error::kUnavailable);
+	}
+
 	std::string notify(const std::string &title, const std::string &text) override {
 		return OnMain<std::string>([=]() -> std::string {
 			const auto session = FindSession(_account);
@@ -3865,6 +3874,7 @@ struct PluginHidden {
 	base::flat_set<HiddenKey> pending;
 	base::flat_set<HiddenKey> silenced;
 	base::flat_map<HiddenKey, std::string> displayed;
+	base::flat_map<std::pair<std::string, std::string>, std::vector<fgpl::NotifyRule>> rules;
 };
 
 [[nodiscard]] PluginHidden &PluginHiddenState() {
@@ -3885,7 +3895,48 @@ bool IsHiddenByPlugin(not_null<const HistoryItem*> item) {
 }
 
 bool IsSilencedByPlugin(not_null<const HistoryItem*> item) {
-	return PluginHiddenState().silenced.contains(HiddenKeyOf(item));
+	const auto &state = PluginHiddenState();
+	if (state.silenced.contains(HiddenKeyOf(item))) {
+		return true;
+	} else if (state.rules.empty()) {
+		return false;
+	}
+	const auto session = &item->history()->session();
+	const auto peer = item->history()->peer;
+	if (HiddenPeer(peer)) {
+		return false;
+	}
+	const auto account = AccountId(session).toStdString();
+	const auto from = item->from();
+	const auto text = item->originalText().text;
+	for (const auto &[key, rules] : state.rules) {
+		if (key.second != account) {
+			continue;
+		}
+		for (const auto &rule : rules) {
+			if ((!rule.chat || rule.chat == ChatId(peer))
+				&& (!rule.sender || rule.sender == int64_t(from->id.value))
+				&& (rule.contains.empty()
+					|| text.contains(
+						QString::fromStdString(rule.contains),
+						Qt::CaseInsensitive))) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void SetPluginNotifyRules(
+		const std::string &plugin,
+		const std::string &account,
+		std::vector<fgpl::NotifyRule> rules) {
+	auto &map = PluginHiddenState().rules;
+	if (rules.empty()) {
+		map.remove({ plugin, account });
+	} else {
+		map[{ plugin, account }] = std::move(rules);
+	}
 }
 
 void SetSilencedByPlugin(not_null<const HistoryItem*> item, bool silenced) {
@@ -3945,6 +3996,15 @@ void SetDisplayedByPlugin(
 }
 
 void ClearPluginDisplays(const std::string &plugin, const std::string &account) {
+	auto &rules = PluginHiddenState().rules;
+	for (auto i = rules.begin(); i != rules.end();) {
+		if ((plugin.empty() || i->first.first == plugin)
+			&& (account.empty() || i->first.second == account)) {
+			i = rules.erase(i);
+		} else {
+			++i;
+		}
+	}
 	auto &map = PluginHiddenState().displayed;
 	if (map.empty()) {
 		return;
@@ -4213,6 +4273,12 @@ void SetDisplayedByPlugin(
 }
 
 void ClearPluginDisplays(const std::string &, const std::string &) {
+}
+
+void SetPluginNotifyRules(
+		const std::string &,
+		const std::string &,
+		std::vector<fgpl::NotifyRule>) {
 }
 
 void ReleasePendingHidden() {

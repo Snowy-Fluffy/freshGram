@@ -877,6 +877,16 @@ class _Notify(_Namespace):
         """Show a system notification (notifications), at most one in 5 seconds."""
         return self._call("notify.show", _nothing, text=text, **_given(title=title))
 
+    def set_rules(self, rules):
+        """Replaces the rules that silence notifications; needs notifications.suppress.
+
+        A rule is a dict with any of chat, sender (ids) and contains (a
+        case-insensitive piece of text); a message that matches all the keys
+        of a rule raises no notification. An empty list removes the rules, and
+        they are removed when the plugin stops.
+        """
+        return self._call("notify.set_rules", _nothing, rules=[dict(rule) for rule in rules])
+
 
 class _Clipboard(_Namespace):
     """The clipboard (clipboard), only within 10 seconds after a user action."""

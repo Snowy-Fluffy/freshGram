@@ -262,6 +262,7 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "composer.draft", Request("composer.set_draft", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "messages.send", Request("messages.send", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "ui.toast", Request("ui.toast", { { "text", Text("x") } }) },
+		{ "notifications.suppress", Request("notify.set_rules", { { "rules", cbor::Value::FromArray({}) } }) },
 		{ "storage.sql", Request("sql.run", { { "sql", Text("SELECT 1") } }) },
 		{ "storage.sql", Request("sql.batch", { { "statements", cbor::Value::FromArray({ cbor::Value::FromMap({ { "sql", Text("SELECT 1") } }) }) } }) },
 		{ "storage.sql", Request("sql.usage") },
@@ -1569,6 +1570,36 @@ void TestSetDisplay() {
 
 	broker.beginIncoming();
 	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }))) == "unavailable");
+}
+
+void TestNotifyRules() {
+	auto fixture = Fixture({ "notifications.suppress" });
+	auto broker = fixture.make();
+	const auto rule = [](cbor::Map entries) {
+		return cbor::Value::FromMap(std::move(entries));
+	};
+	const auto set = [&](cbor::Array rules) {
+		return broker.call(Request("notify.set_rules", { { "rules", cbor::Value::FromArray(std::move(rules)) } }));
+	};
+	CHECK(IsOk(set({ rule({ { "chat", Int(5) }, { "contains", Text("spam") } }), rule({ { "sender", Int(7) } }), rule({}) })));
+	CHECK(IsOk(set({})));
+	CHECK(fixture.data.actions.size() == 2);
+	if (fixture.data.actions.size() == 2) {
+		CHECK(fixture.data.actions[0] == "notify_rules com.example.test 5/0/spam 0/7/ 0/0/");
+		CHECK(fixture.data.actions[1] == "notify_rules com.example.test");
+	}
+	CHECK(Code(broker.call(Request("notify.set_rules"))) == "invalid");
+	CHECK(Code(set({ Text("x") })) == "invalid");
+	CHECK(Code(set({ rule({ { "chat", Int(0) } }) })) == "invalid");
+	CHECK(Code(set({ rule({ { "chat", Text("1") } }) })) == "invalid");
+	CHECK(Code(set({ rule({ { "contains", Text("") } }) })) == "invalid");
+	CHECK(Code(set({ rule({ { "contains", Text(std::string(201, 'x')) } }) })) == "invalid");
+	CHECK(Code(set({ rule({ { "regex", Text("x") } }) })) == "invalid");
+	auto many = cbor::Array();
+	for (auto i = 0; i != 51; ++i) {
+		many.push_back(rule({ { "chat", Int(1) } }));
+	}
+	CHECK(Code(set(std::move(many))) == "invalid");
 }
 
 void TestSql() {
@@ -3519,6 +3550,7 @@ int main() {
 	TestEveryOperationNeedsItsPermission();
 	TestSetDisplay();
 	TestSql();
+	TestNotifyRules();
 	TestSilenceIncoming();
 	TestComposerFormatting();
 	TestMediaProgress();

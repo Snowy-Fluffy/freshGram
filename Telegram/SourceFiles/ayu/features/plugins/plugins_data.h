@@ -22,6 +22,7 @@ namespace fgpl {
 class DataProvider;
 struct TextEntity;
 struct IncomingInfo;
+struct NotifyRule;
 } // namespace fgpl
 
 namespace FreshPlugins {
@@ -42,6 +43,10 @@ void SetDisplayedByPlugin(
 	const std::string &plugin,
 	bool displayed);
 void ClearPluginDisplays(const std::string &plugin, const std::string &account);
+void SetPluginNotifyRules(
+	const std::string &plugin,
+	const std::string &account,
+	std::vector<fgpl::NotifyRule> rules);
 void ReleasePendingHidden();
 
 #ifdef FRESHGRAM_PLUGINS

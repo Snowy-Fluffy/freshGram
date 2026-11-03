@@ -124,6 +124,9 @@ constexpr auto kMaxSqlValue = size_t(1) << 20;
 constexpr auto kMaxSqlRows = int64_t(5000);
 constexpr auto kMaxSqlBatch = size_t(100);
 
+constexpr auto kMaxNotifyRules = size_t(50);
+constexpr auto kMaxNotifyMatch = size_t(200);
+
 constexpr auto kMaxTranslateItems = size_t(20);
 constexpr auto kMaxAiAnswer = size_t(64) << 10;
 constexpr auto kMaxTranslatedItem = size_t(32) << 10;
@@ -3649,6 +3652,44 @@ cbor::Value Broker::deviceAnswer(const std::string &op, const cbor::Value *args)
 			? _grants.pluginId
 			: (_grants.pluginId + ": " + *title);
 		return Done(data->notify(attributed, *text), "the notification was not shown");
+	} else if (op == "notify.set_rules") {
+		if (const auto refused = need("notifications.suppress", false)) {
+			return *refused;
+		}
+		const auto list = Arg(args, "rules");
+		const auto items = list ? list->asArray() : nullptr;
+		if (!items || items->size() > kMaxNotifyRules) {
+			return api::Fail(api::error::kInvalid, "rules");
+		}
+		auto rules = std::vector<NotifyRule>();
+		for (const auto &item : *items) {
+			const auto map = item.asMap();
+			if (!map) {
+				return api::Fail(api::error::kInvalid, "a rule");
+			}
+			auto rule = NotifyRule();
+			for (const auto &entry : *map) {
+				if (entry.key == "chat" || entry.key == "sender") {
+					const auto id = entry.value.asInt();
+					if (!id || *id == 0) {
+						return api::Fail(api::error::kInvalid, entry.key);
+					}
+					(entry.key == "chat" ? rule.chat : rule.sender) = *id;
+				} else if (entry.key == "contains") {
+					const auto text = entry.value.asText();
+					if (!text || text->empty() || text->size() > kMaxNotifyMatch) {
+						return api::Fail(api::error::kInvalid, "contains");
+					}
+					rule.contains = *text;
+				} else {
+					return api::Fail(api::error::kInvalid, "a rule has an unknown key");
+				}
+			}
+			rules.push_back(std::move(rule));
+		}
+		return Done(
+			data->setNotifyRules(_grants.pluginId, std::move(rules)),
+			"the rules were not set");
 	} else if (op == "clipboard.write") {
 		if (const auto refused = need("clipboard", true)) {
 			return *refused;

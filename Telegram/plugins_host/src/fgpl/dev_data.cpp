@@ -323,6 +323,11 @@ std::string DevData::composerInsert(int64_t chat, const std::string &text) {
 	return {};
 }
 
+std::string DevData::setNotifyRules(const std::string &, std::vector<NotifyRule> rules) {
+	_say("[app] notify rules " + std::to_string(rules.size()));
+	return {};
+}
+
 std::string DevData::notify(const std::string &title, const std::string &text) {
 	_say("[app] notify " + Quoted(title) + " " + Quoted(text));
 	return {};

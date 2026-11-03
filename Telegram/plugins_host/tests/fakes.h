@@ -422,6 +422,14 @@ public:
 		}
 		return Media{ "photo", "image/jpeg", "", cbor::Bytes{ 1, 2, 3 }, false };
 	}
+	std::string setNotifyRules(const std::string &plugin, std::vector<NotifyRule> rules) override {
+		auto text = std::string("notify_rules ") + plugin;
+		for (const auto &rule : rules) {
+			text += " " + std::to_string(rule.chat) + "/" + std::to_string(rule.sender) + "/" + rule.contains;
+		}
+		actions.push_back(text);
+		return {};
+	}
 	std::string notify(const std::string &title, const std::string &text) override {
 		actions.push_back("notify " + title + " " + text);
 		return {};

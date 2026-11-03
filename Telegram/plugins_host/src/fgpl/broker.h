@@ -59,6 +59,12 @@ struct Grants {
 	int maxPending = 32;
 };
 
+struct NotifyRule {
+	int64_t chat = 0;
+	int64_t sender = 0;
+	std::string contains;
+};
+
 class Storage {
 public:
 	virtual ~Storage() = default;
@@ -809,6 +815,14 @@ public:
 			const std::string &text) {
 		(void)title;
 		(void)text;
+		return api::error::kUnavailable;
+	}
+	// Replaces the plugin's rules; an incoming message that matches one raises no notification.
+	[[nodiscard]] virtual std::string setNotifyRules(
+			const std::string &plugin,
+			std::vector<NotifyRule> rules) {
+		(void)plugin;
+		(void)rules;
 		return api::error::kUnavailable;
 	}
 	[[nodiscard]] virtual std::string clipboardWrite(const std::string &text) {
