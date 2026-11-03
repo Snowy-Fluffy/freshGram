@@ -2,9 +2,11 @@
 #include "fgpl/database.h"
 
 #include <chrono>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 #include <thread>
 
 namespace {
@@ -12,9 +14,14 @@ namespace {
 using namespace fgpl;
 namespace fs = std::filesystem;
 
+void RemoveAll(const fs::path &path) {
+	auto error = std::error_code();
+	fs::remove_all(path, error);
+}
+
 [[nodiscard]] fs::path TempDirectory(const char *name) {
 	const auto path = fs::temp_directory_path() / name;
-	fs::remove_all(path);
+	RemoveAll(path);
 	return path;
 }
 
@@ -70,7 +77,7 @@ void TestRowsAndParameters() {
 	CHECK(CodeOf(Run(database, "SELECT 1; SELECT 2")) == "invalid");
 	CHECK(Run(database, "SELECT 1; -- done").ok());
 	CHECK(CodeOf(Run(database, "INSERT INTO log (id) VALUES (1)")) == "invalid");
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestRowLimit() {
@@ -86,7 +93,7 @@ void TestRowLimit() {
 		CHECK(selected.value()[0].rows.size() == 10);
 		CHECK(selected.value()[0].truncated);
 	}
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestForbiddenStatements() {
@@ -118,7 +125,7 @@ void TestForbiddenStatements() {
 	CHECK(CodeOf(Run(database, "SAVEPOINT a")) == "denied");
 	CHECK(Run(database, "SELECT 1").ok());
 	CHECK(CodeOf(Run(database, "CREATE VIRTUAL TABLE t USING dbstat")) == "denied");
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestBatchRollsBack() {
@@ -140,7 +147,7 @@ void TestBatchRollsBack() {
 	CHECK(done.ok() && done.value().size() == 2);
 	const auto after = Run(database, "SELECT COUNT(*) FROM t");
 	CHECK(after.ok() && *after.value()[0].rows[0][0].asInt() == 2);
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestQuotaAndTimeout() {
@@ -171,7 +178,7 @@ void TestQuotaAndTimeout() {
 		slow);
 	CHECK(CodeOf(spin) == "limit");
 	CHECK(Run(database, "SELECT 1").ok());
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestMemoryAndSize() {
@@ -194,7 +201,7 @@ void TestMemoryAndSize() {
 	CHECK(CodeOf(sorted) == "limit");
 	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
 	CHECK(Run(database, "SELECT 1").ok());
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestCloseInterrupts() {
@@ -218,7 +225,7 @@ void TestCloseInterrupts() {
 	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(5));
 	CHECK(code == "limit");
 	CHECK(CodeOf(Run(database, "SELECT 1")) == "unavailable");
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestFullTextSearch() {
@@ -229,7 +236,7 @@ void TestFullTextSearch() {
 	CHECK(Run(database, "INSERT INTO docs (body) VALUES (?)", { Text("lazy dogs") }).ok());
 	const auto found = Run(database, "SELECT body FROM docs WHERE docs MATCH ?", { Text("quick") });
 	CHECK(found.ok() && found.value()[0].rows.size() == 1);
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 void TestPersistsAndRecovers() {
@@ -246,7 +253,8 @@ void TestPersistsAndRecovers() {
 		CHECK(rows.ok() && *rows.value()[0].rows[0][0].asText() == "kept");
 	}
 	for (const auto &suffix : { "-wal", "-shm" }) {
-		fs::remove(fs::path(file) += suffix);
+		auto error = std::error_code();
+		fs::remove(fs::path(file) += suffix, error);
 	}
 	{
 		auto stream = std::ofstream(file, std::ios::binary | std::ios::trunc);
@@ -260,12 +268,12 @@ void TestPersistsAndRecovers() {
 	auto closed = SqliteDatabase(directory / "b.sqlite");
 	closed.close();
 	CHECK(CodeOf(Run(closed, "SELECT 1")) == "unavailable");
-	fs::remove_all(directory);
+	RemoveAll(directory);
 }
 
 } // namespace
 
-int main() {
+int main() try {
 	TestRowsAndParameters();
 	TestRowLimit();
 	TestForbiddenStatements();
@@ -276,4 +284,7 @@ int main() {
 	TestFullTextSearch();
 	TestPersistsAndRecovers();
 	return Failures() ? 1 : 0;
+} catch (const std::exception &e) {
+	std::fprintf(stderr, "uncaught exception: %s\n", e.what());
+	return 1;
 }
