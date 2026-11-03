@@ -1006,9 +1006,14 @@ private:
 			if (!nextParsed.ok()) {
 				return Error("redirect", u"a redirect is not allowed"_q);
 			}
-			if (nextParsed.value().host != parsed.value().host) {
+			if (nextParsed.value().host != parsed.value().host
+				|| nextParsed.value().port != parsed.value().port) {
 				std::erase_if(headers, [](const auto &entry) {
-					return Lower(entry.first) == "authorization";
+					const auto name = Lower(entry.first);
+					return name != "accept"
+						&& name != "accept-language"
+						&& name != "user-agent"
+						&& name != "content-type";
 				});
 			}
 			if (value.first.status == 303
