@@ -295,6 +295,10 @@ PasscodeLockWidget::PasscodeLockWidget(
 	FreshPasscodeGuard::EnsureLoaded();
 	setupEye();
 	updateClock();
+	_statusScroll.init([=](crl::time) {
+		update();
+		return true;
+	});
 	updateStatus();
 	setupSettings();
 	if (_preview) {
@@ -564,6 +568,56 @@ void PasscodeLockWidget::updateClock() {
 	update();
 }
 
+void PasscodeLockWidget::updateStatusScroll() {
+	const auto &font = _telegramStyle ? st::boxTextFont : st::passcodeStatusFont;
+	_status.replace('\n', QString::fromUtf8("  \xE2\x80\xA2  "));
+	_statusTextWidth = _status.isEmpty() ? 0 : font->width(_status);
+	if (_statusTextWidth > _submit->width() && !_preview) {
+		if (!_statusScroll.animating()) {
+			_statusScroll.start();
+		}
+	} else {
+		_statusScroll.stop();
+	}
+}
+
+void PasscodeLockWidget::paintStatus(
+		QPainter &p,
+		const style::font &font,
+		int top,
+		int height) {
+	const auto available = _submit->width();
+	const auto rect = QRect(
+		(width() - available) / 2,
+		top,
+		available,
+		height);
+	p.setFont(font);
+	p.setPen(_statusError ? st::boxTextFgError : st::windowSubTextFg);
+	if (_statusTextWidth <= available) {
+		p.drawText(rect, Qt::AlignCenter, _status);
+		return;
+	}
+	constexpr auto kPause = crl::time(1200);
+	constexpr auto kSpeed = 40; // Pixels per second.
+	const auto overflow = _statusTextWidth - available;
+	const auto travel = crl::time(overflow) * 1000 / kSpeed;
+	const auto cycle = 2 * (kPause + travel);
+	const auto elapsed = (crl::now() - _statusScroll.started()) % cycle;
+	const auto shift = (elapsed < kPause)
+		? 0
+		: (elapsed < kPause + travel)
+		? int((elapsed - kPause) * kSpeed / 1000)
+		: (elapsed < 2 * kPause + travel)
+		? overflow
+		: overflow - int((elapsed - 2 * kPause - travel) * kSpeed / 1000);
+	p.setClipRect(rect);
+	p.drawText(
+		rect.translated(-shift, 0).adjusted(0, 0, overflow, 0),
+		Qt::AlignLeft | Qt::AlignVCenter,
+		_status);
+}
+
 void PasscodeLockWidget::updateStatus() {
 	const auto wait = FreshPasscodeGuard::WaitLeft();
 	const auto left = FreshPasscodeGuard::AttemptsBeforeWipe();
@@ -596,6 +650,7 @@ void PasscodeLockWidget::updateStatus() {
 		_status = _status.isEmpty() ? attempts : (_status + '\n' + attempts);
 		_statusError = _statusError || (left <= kAttemptsWarning);
 	}
+	updateStatusScroll();
 	update();
 }
 
@@ -804,12 +859,11 @@ void PasscodeLockWidget::paintCardContent(QPainter &p) {
 		_title.isEmpty() ? tr::lng_passcode_enter(tr::now) : _title);
 
 	if (!_status.isEmpty()) {
-		p.setFont(st::passcodeStatusFont);
-		p.setPen(_statusError ? st::boxTextFgError : st::windowSubTextFg);
-		p.drawText(
-			QRect(_card.x(), _statusTop, _card.width(), st::passcodeStatusHeight),
-			Qt::AlignCenter | Qt::TextDontClip,
-			_status);
+		paintStatus(
+			p,
+			st::passcodeStatusFont,
+			_statusTop,
+			st::passcodeStatusHeight);
 	}
 }
 
@@ -825,16 +879,11 @@ void PasscodeLockWidget::paintTelegramContent(QPainter &p) {
 		QRect(0, headerTop, width(), 0),
 		tr::lng_passcode_enter(tr::now));
 	if (!_status.isEmpty()) {
-		p.setFont(st::boxTextFont);
-		p.setPen(_statusError ? st::boxTextFgError : st::windowSubTextFg);
-		p.drawText(
-			QRect(
-				0,
-				_passcode->y() + _passcode->height(),
-				width(),
-				st::passcodeSubmitSkip),
-			Qt::AlignCenter | Qt::TextDontClip,
-			_status);
+		paintStatus(
+			p,
+			st::boxTextFont,
+			_passcode->y() + _passcode->height(),
+			st::passcodeSubmitSkip);
 	}
 }
 
@@ -913,6 +962,7 @@ void PasscodeLockWidget::updateLayout() {
 	} else {
 		updateCardLayout();
 	}
+	updateStatusScroll();
 	update();
 }
 

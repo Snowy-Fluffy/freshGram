@@ -129,6 +129,8 @@ private:
 	void setCapsLock(bool on);
 	void setBusy(bool busy);
 	void shake();
+	void paintStatus(QPainter &p, const style::font &font, int top, int height);
+	void updateStatusScroll();
 
 	rpl::variable<SystemUnlockType> _systemUnlockAvailable;
 	rpl::variable<SystemUnlockType> _systemUnlockAllowed;
@@ -139,6 +141,8 @@ private:
 	Ui::IconButton *_eye = nullptr;
 	QString _error;
 	QString _status;
+	Ui::Animations::Basic _statusScroll;
+	int _statusTextWidth = 0;
 	QString _clock;
 	QString _title;
 	style::font _clockFont;
