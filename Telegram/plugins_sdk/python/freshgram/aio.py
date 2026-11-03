@@ -33,6 +33,7 @@ from . import (
     _Notify,
     _Plugins,
     _Settings,
+    _Sql,
     _Stars,
     _Storage,
     _Timers,
@@ -48,6 +49,7 @@ Task = _aio.Task
 spawn = _aio.spawn
 
 storage = _Storage(_async_call)
+sql = _Sql(_async_call)
 net = _Net(_async_call)
 ui = _Ui(_async_call)
 chats = _Chats(_async_call)

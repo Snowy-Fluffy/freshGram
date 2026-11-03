@@ -900,6 +900,9 @@ bool PluginManager::uninstall(const std::string &id, bool removeData) {
 	if (found->second.store) {
 		found->second.store->discard();
 	}
+	if (found->second.database) {
+		found->second.database->close();
+	}
 	auto error = std::error_code();
 	if (removeData) {
 		fs::remove_all(_config.root / id, error);
@@ -1659,6 +1662,7 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 	instance->serial = record.serial;
 	auto services = BrokerServices();
 	services.storage = instance->storage.get();
+	services.database = databaseOf(record);
 	services.keepAlive = instance->storage;
 	services.data = _config.services.dataFor
 		? _config.services.dataFor(account)
@@ -2185,6 +2189,14 @@ std::shared_ptr<SharedStorage> PluginManager::storeOf(Record &record) {
 		AppendLog(*record.log, _config.logLines, "failure: the storage file was damaged and there was no copy, started with empty storage", true);
 	}
 	return record.store;
+}
+
+std::shared_ptr<Database> PluginManager::databaseOf(Record &record) {
+	if (!record.database) {
+		record.database = std::make_shared<SqliteDatabase>(
+			_config.root / record.id / "data" / "store.sqlite");
+	}
+	return record.database;
 }
 
 bool PluginManager::wantsEvents(const char *event) const {

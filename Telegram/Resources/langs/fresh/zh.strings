@@ -295,6 +295,7 @@
 "fresh_PermNetLocal" = "与本机上的程序通信";
 "fresh_PermLocalPorts" = "端口：{ports}";
 "fresh_PermStorage" = "保存自己的数据";
+"fresh_PermStorageSql" = "使用自己的数据库";
 "fresh_PermPluginsMessage" = "与其他插件交换消息";
 "fresh_PermFiles" = "打开和保存你选择的文件";
 "fresh_PermClipboard" = "使用剪贴板";

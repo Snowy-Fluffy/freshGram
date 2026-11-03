@@ -295,6 +295,7 @@
 "fresh_PermNetLocal" = "Обращаться к программам на этом компьютере";
 "fresh_PermLocalPorts" = "Порты: {ports}";
 "fresh_PermStorage" = "Хранить свои данные";
+"fresh_PermStorageSql" = "Использовать свою базу данных";
 "fresh_PermPluginsMessage" = "Обмениваться сообщениями с другими плагинами";
 "fresh_PermFiles" = "Открывать и сохранять выбранные вами файлы";
 "fresh_PermClipboard" = "Пользоваться буфером обмена";

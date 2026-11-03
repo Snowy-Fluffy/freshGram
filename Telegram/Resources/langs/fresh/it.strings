@@ -295,6 +295,7 @@
 "fresh_PermNetLocal" = "Comunicare con i programmi di questo computer";
 "fresh_PermLocalPorts" = "Porte: {ports}";
 "fresh_PermStorage" = "Conservare i propri dati";
+"fresh_PermStorageSql" = "Usare un proprio database";
 "fresh_PermPluginsMessage" = "Scambiare messaggi con altri plugin";
 "fresh_PermFiles" = "Aprire e salvare i file che scegli";
 "fresh_PermClipboard" = "Usare gli appunti";

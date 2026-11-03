@@ -98,6 +98,54 @@ def _nothing(value):
     return None
 
 
+class Rows:
+    """The answer of a statement: columns, rows of values, and what it changed."""
+
+    def __init__(self, data):
+        self.columns = data["columns"]
+        self.rows = [tuple(row) for row in data["rows"]]
+        self.changes = data["changes"]
+        self.last_id = data["last_id"]
+        self.truncated = data["truncated"]
+
+    def dicts(self):
+        return [dict(zip(self.columns, row)) for row in self.rows]
+
+    def first(self):
+        return self.rows[0] if self.rows else None
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __len__(self):
+        return len(self.rows)
+
+
+def _statement(statement):
+    if isinstance(statement, str):
+        return {"sql": statement}
+    sql, params = statement
+    return {"sql": sql, "params": list(params)}
+
+
+class _Sql(_Namespace):
+    """A private SQLite database; needs storage.sql. One statement per call,
+    use batch to run several in one transaction. FTS5 tables are allowed."""
+
+    def run(self, sql, params=(), limit=1000):
+        return self._call("sql.run", Rows, sql=sql, params=list(params), limit=limit)
+
+    def batch(self, statements):
+        return self._call(
+            "sql.batch",
+            lambda answers: [Rows(answer) for answer in answers],
+            statements=[_statement(statement) for statement in statements],
+        )
+
+    def usage(self):
+        return self._call("sql.usage")
+
+
 class Response:
     def __init__(self, data):
         self.status = data["status"]
@@ -1015,6 +1063,7 @@ class _Composer(_Namespace):
 
 
 storage = _Storage(_sync_call)
+sql = _Sql(_sync_call)
 net = _Net(_sync_call)
 ui = _Ui(_sync_call)
 chats = _Chats(_sync_call)

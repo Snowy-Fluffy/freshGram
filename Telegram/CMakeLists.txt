@@ -2827,7 +2827,7 @@ target_include_directories(Telegram PRIVATE ${src_loc})
 # The database report reads the page usage of every table from dbstat.
 set_source_files_properties(
     ${src_loc}/ayu/libs/sqlite/sqlite3.c
-    PROPERTIES COMPILE_DEFINITIONS SQLITE_ENABLE_DBSTAT_VTAB
+    PROPERTIES COMPILE_DEFINITIONS "SQLITE_ENABLE_DBSTAT_VTAB;SQLITE_ENABLE_FTS5"
 )
 
 target_compile_definitions(Telegram

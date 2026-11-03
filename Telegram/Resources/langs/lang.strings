@@ -9079,6 +9079,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermNetLocal" = "Talk to programs on this computer";
 "fresh_PermLocalPorts" = "Ports: {ports}";
 "fresh_PermStorage" = "Keep its own data";
+"fresh_PermStorageSql" = "Use its own database";
 "fresh_PermPluginsMessage" = "Exchange messages with other plugins";
 "fresh_PermFiles" = "Open and save files you choose";
 "fresh_PermFolderRead" = "Read the files in a folder you choose";

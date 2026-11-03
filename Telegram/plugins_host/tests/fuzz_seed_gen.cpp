@@ -104,6 +104,7 @@ int main(int argc, char **argv) {
 		call("chats.ban", { { "chat", chat }, { "user", Int(7) } }),
 		call("messages.set_incoming", { { "text", Text("seen") } }),
 		call("messages.set_display", { { "chat", chat }, { "id", Int(100) }, { "text", Text("seen") } }),
+		call("sql.run", { { "sql", Text("SELECT 1") } }),
 		call("messages.hide_incoming", { { "reason", Text("spam") } }),
 		call("chats.members", { { "chat", chat } }),
 		call("chats.admins", { { "chat", chat } }),

@@ -75,6 +75,7 @@ endif()
 if (NOT FGPL_HOST_ONLY)
 	find_package(ZLIB REQUIRED)
 	find_package(OpenSSL REQUIRED)
+	find_package(SQLite3 REQUIRED)
 endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -115,8 +116,8 @@ else()
 	add_library(fgpl_core STATIC src/fgpl/sha256.cpp src/fgpl/module_cache.cpp
 		src/fgpl/base64.cpp src/fgpl/json.cpp src/fgpl/semver.cpp src/fgpl/zip_reader.cpp src/fgpl/signature.cpp src/fgpl/net_policy.cpp src/fgpl/manifest.cpp
 		src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/text_markup.cpp src/fgpl/directory_package.cpp src/fgpl/broker.cpp
-		${fgpl_folder_sources} src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/runtime_bundle.cpp src/fgpl/ui_tree.cpp)
-	target_link_libraries(fgpl_core PUBLIC fgpl_base ZLIB::ZLIB OpenSSL::Crypto)
+		${fgpl_folder_sources} src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/database.cpp src/fgpl/runtime_bundle.cpp src/fgpl/ui_tree.cpp)
+	target_link_libraries(fgpl_core PUBLIC fgpl_base ZLIB::ZLIB OpenSSL::Crypto SQLite::SQLite3)
 	fgpl_options(fgpl_core)
 	set(fgpl_common fgpl_core)
 endif()
@@ -216,7 +217,7 @@ if (FGPL_BUILD_TESTS AND NOT FGPL_HOST_ONLY)
 		endif()
 	endif()
 
-	foreach (name test_cbor test_vfs test_cache test_storage test_formats test_zip test_manifest test_package test_runtime test_broker test_folder test_runtime_bundle test_markup)
+	foreach (name test_cbor test_vfs test_cache test_storage test_database test_formats test_zip test_manifest test_package test_runtime test_broker test_folder test_runtime_bundle test_markup)
 		add_executable(${name} tests/${name}.cpp)
 		target_link_libraries(${name} PRIVATE fgpl_core)
 		if (name STREQUAL "test_runtime" OR name STREQUAL "test_broker"

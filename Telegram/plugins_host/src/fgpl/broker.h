@@ -947,8 +947,11 @@ public:
 	}
 };
 
+class Database;
+
 struct BrokerServices {
 	Storage *storage = nullptr;
+	std::shared_ptr<Database> database;
 	DataProvider *data = nullptr;
 	Transport *transport = nullptr;
 	std::function<int64_t()> clockMs;
@@ -1036,6 +1039,9 @@ private:
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] cbor::Value storageCall(
+		const std::string &op,
+		const cbor::Value *args);
+	[[nodiscard]] cbor::Value sqlCall(
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] cbor::Value netFetch(const cbor::Value *args);

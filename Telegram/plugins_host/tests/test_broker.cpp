@@ -1,6 +1,7 @@
 #include "fgpl/broker.h"
 #include "check.h"
 #include "fakes.h"
+#include "fgpl/database.h"
 #include "fgpl/net_policy.h"
 
 #include <chrono>
@@ -261,6 +262,9 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "composer.draft", Request("composer.set_draft", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "messages.send", Request("messages.send", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "ui.toast", Request("ui.toast", { { "text", Text("x") } }) },
+		{ "storage.sql", Request("sql.run", { { "sql", Text("SELECT 1") } }) },
+		{ "storage.sql", Request("sql.batch", { { "statements", cbor::Value::FromArray({ cbor::Value::FromMap({ { "sql", Text("SELECT 1") } }) }) } }) },
+		{ "storage.sql", Request("sql.usage") },
 		{ "messages.edit", Request("messages.edit", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }) },
 		{ "messages.transform_incoming", Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }) },
 		{ "messages.edit", Request("messages.edit_media", { { "chat", Int(1) }, { "id", Int(100) }, { "data", cbor::Value::FromBytes(cbor::Bytes(4, 1)) }, { "name", Text("a.png") } }) },
@@ -304,7 +308,7 @@ void TestEveryOperationNeedsItsPermission() {
 			std::fprintf(stderr, "%s was not denied\n", item.first.c_str());
 			CHECK(false);
 		}
-		auto allowed = Fixture({ item.first.rfind("storage.", 0) == 0
+		auto allowed = Fixture({ (item.first.rfind("storage.", 0) == 0 && item.first != "storage.sql")
 			? std::string("storage.private")
 			: item.first });
 		auto grantedBroker = allowed.make();
@@ -1565,6 +1569,87 @@ void TestSetDisplay() {
 
 	broker.beginIncoming();
 	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }))) == "unavailable");
+}
+
+void TestSql() {
+	const auto directory = std::filesystem::temp_directory_path() / "fgpl-broker-sql";
+	std::filesystem::remove_all(directory);
+	auto fixture = Fixture({ "storage.sql" });
+	fixture.services.database = std::make_shared<SqliteDatabase>(directory / "a.sqlite");
+	fixture.grants.storageQuotaBytes = uint64_t(64) << 10;
+	auto broker = fixture.make();
+	const auto statement = [](std::string sql, cbor::Array params = {}) {
+		return cbor::Value::FromMap({
+			{ "sql", Text(sql) },
+			{ "params", cbor::Value::FromArray(std::move(params)) },
+		});
+	};
+
+	CHECK(IsOk(broker.call(Request("sql.run", { { "sql", Text("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)") } }))));
+	const auto inserted = broker.call(Request("sql.run", {
+		{ "sql", Text("INSERT INTO t (v) VALUES (?)") },
+		{ "params", cbor::Value::FromArray({ Text("one") }) },
+	}));
+	CHECK(IsOk(inserted));
+	CHECK(*Payload(inserted).find("changes")->asInt() == 1);
+	CHECK(*Payload(inserted).find("last_id")->asInt() == 1);
+	const auto selected = broker.call(Request("sql.run", { { "sql", Text("SELECT id, v FROM t") } }));
+	CHECK(IsOk(selected));
+	CHECK(Payload(selected).find("columns")->asArray()->size() == 2);
+	CHECK(Payload(selected).find("rows")->asArray()->size() == 1);
+	CHECK(!*Payload(selected).find("truncated")->asBool());
+
+	const auto batch = broker.call(Request("sql.batch", { { "statements", cbor::Value::FromArray({
+		statement("INSERT INTO t (v) VALUES (?)", { Text("two") }),
+		statement("INSERT INTO t (v) VALUES ('three')"),
+	}) } }));
+	CHECK(IsOk(batch));
+	CHECK(Payload(batch).asArray() && Payload(batch).asArray()->size() == 2);
+	CHECK(Code(broker.call(Request("sql.batch", { { "statements", cbor::Value::FromArray({
+		statement("INSERT INTO t (v) VALUES ('four')"),
+		statement("INSERT INTO nothing VALUES (1)"),
+	}) } }))) == "invalid");
+	const auto count = broker.call(Request("sql.run", { { "sql", Text("SELECT COUNT(*) FROM t") } }));
+	CHECK(*Payload(count).find("rows")->asArray()->front().asArray()->front().asInt() == 3);
+
+	const auto usage = broker.call(Request("sql.usage"));
+	CHECK(IsOk(usage));
+	CHECK(*Payload(usage).find("quota")->asInt() == (64 << 10));
+	CHECK(*Payload(usage).find("used")->asInt() > 0);
+
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text("ATTACH 'x' AS y") } }))) == "denied");
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text("") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Int(5) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text("SELECT 1") }, { "limit", Int(0) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text("SELECT ?") }, { "params", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.run", {
+		{ "sql", Text("SELECT ?") },
+		{ "params", cbor::Value::FromArray({ cbor::Value::FromArray({}) }) },
+	}))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text(std::string(70000, 'x')) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.batch", { { "statements", cbor::Value::FromArray({}) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.drop"))) == "invalid");
+
+	auto bloated = std::string(1000, 'x');
+	auto full = std::string();
+	for (auto i = 0; i != 200 && full.empty(); ++i) {
+		full = Code(broker.call(Request("sql.run", {
+			{ "sql", Text("INSERT INTO t (v) VALUES (?)") },
+			{ "params", cbor::Value::FromArray({ Text(bloated) }) },
+		})));
+	}
+	CHECK(full == "quota");
+
+	auto denied = Fixture({ "storage.private" });
+	denied.services.database = fixture.services.database;
+	auto other = denied.make();
+	CHECK(Code(other.call(Request("sql.run", { { "sql", Text("SELECT 1") } }))) == "denied");
+	auto missing = Fixture({ "storage.sql" });
+	auto none = missing.make();
+	CHECK(Code(none.call(Request("sql.run", { { "sql", Text("SELECT 1") } }))) == "unavailable");
+
+	fixture.services.database->close();
+	std::filesystem::remove_all(directory);
 }
 
 void TestPluginMessages() {
@@ -3433,6 +3518,7 @@ int main() {
 	TestMetaAndLog();
 	TestEveryOperationNeedsItsPermission();
 	TestSetDisplay();
+	TestSql();
 	TestSilenceIncoming();
 	TestComposerFormatting();
 	TestMediaProgress();

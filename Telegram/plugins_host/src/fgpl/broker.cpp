@@ -1,4 +1,5 @@
 #include "fgpl/broker.h"
+#include "fgpl/database.h"
 #include "fgpl/text_markup.h"
 #include "fgpl/folder.h"
 #include "fgpl/manifest.h"
@@ -116,6 +117,12 @@ constexpr auto kMaxTimerMs = int64_t(7) * 24 * 3600 * 1000;
 [[nodiscard]] cbor::Value Int(int64_t number) {
 	return cbor::Value::FromInt(number);
 }
+
+constexpr auto kMaxSql = size_t(64) << 10;
+constexpr auto kMaxSqlParams = size_t(256);
+constexpr auto kMaxSqlValue = size_t(1) << 20;
+constexpr auto kMaxSqlRows = int64_t(5000);
+constexpr auto kMaxSqlBatch = size_t(100);
 
 constexpr auto kMaxTranslateItems = size_t(20);
 constexpr auto kMaxAiAnswer = size_t(64) << 10;
@@ -1223,6 +1230,11 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		}
 		const auto lock = std::scoped_lock(_storageMutex);
 		return storageCall(op, args);
+	} else if (op.rfind("sql.", 0) == 0) {
+		if (!has("storage.sql")) {
+			return api::Fail(api::error::kDenied, "storage.sql");
+		}
+		return sqlCall(op, args);
 	} else if (op == "ui.settings.set") {
 		if (!has("ui.settings_page")) {
 			return api::Fail(api::error::kDenied, "ui.settings_page");
@@ -1371,6 +1383,99 @@ cbor::Value Broker::storageCall(const std::string &op, const cbor::Value *args) 
 		}
 	}
 	return api::Fail(api::error::kInvalid, "unknown storage operation");
+}
+
+cbor::Value Broker::sqlCall(const std::string &op, const cbor::Value *args) {
+	const auto database = _services.database;
+	if (!database) {
+		return api::Fail(api::error::kUnavailable, "the database");
+	}
+	auto limits = SqlLimits();
+	limits.maxBytes = _grants.storageQuotaBytes;
+	if (op == "sql.usage") {
+		return api::Ok(cbor::Value::FromMap({
+			{ "used", Int(int64_t(database->usedBytes())) },
+			{ "quota", Int(int64_t(_grants.storageQuotaBytes)) },
+		}));
+	}
+	const auto parse = [](const cbor::Value &item) -> std::optional<SqlStatement> {
+		const auto sql = TextArg(&item, "sql", kMaxSql);
+		const auto list = item.find("params");
+		if (!sql || sql->empty() || (list && !list->asArray())) {
+			return std::nullopt;
+		}
+		auto statement = SqlStatement{ *sql };
+		if (list) {
+			if (list->asArray()->size() > kMaxSqlParams) {
+				return std::nullopt;
+			}
+			for (const auto &value : *list->asArray()) {
+				const auto type = value.type();
+				const auto text = value.asText();
+				const auto bytes = value.asBytes();
+				if (type == cbor::Value::Type::Array
+					|| type == cbor::Value::Type::Map
+					|| (text && text->size() > kMaxSqlValue)
+					|| (bytes && bytes->size() > kMaxSqlValue)) {
+					return std::nullopt;
+				}
+				statement.params.push_back(value);
+			}
+		}
+		return statement;
+	};
+	auto statements = std::vector<SqlStatement>();
+	if (op == "sql.run") {
+		const auto one = args ? parse(*args) : std::nullopt;
+		const auto rows = IntArg(args, "limit").value_or(1000);
+		if (!one || rows < 1) {
+			return api::Fail(api::error::kInvalid, "sql, params or limit");
+		}
+		limits.maxRows = size_t(std::min<int64_t>(rows, kMaxSqlRows));
+		statements.push_back(*one);
+	} else if (op == "sql.batch") {
+		const auto list = Arg(args, "statements");
+		const auto items = list ? list->asArray() : nullptr;
+		if (!items || items->empty() || items->size() > kMaxSqlBatch) {
+			return api::Fail(api::error::kInvalid, "statements");
+		}
+		for (const auto &item : *items) {
+			const auto one = parse(item);
+			if (!one) {
+				return api::Fail(api::error::kInvalid, "a statement");
+			}
+			statements.push_back(*one);
+		}
+		limits.maxRows = 100;
+		limits.maxResultBytes = (size_t(512) << 10) / statements.size();
+	} else {
+		return api::Fail(api::error::kInvalid, "unknown sql operation");
+	}
+	const auto done = database->run(statements, limits, op == "sql.batch");
+	if (!done.ok()) {
+		return api::Fail(done.error().code, done.error().message);
+	}
+	auto answers = cbor::Array();
+	for (const auto &result : done.value()) {
+		auto columns = cbor::Array();
+		for (const auto &name : result.columns) {
+			columns.push_back(Text(name));
+		}
+		auto rows = cbor::Array();
+		for (const auto &row : result.rows) {
+			rows.push_back(cbor::Value::FromArray(row));
+		}
+		answers.push_back(cbor::Value::FromMap({
+			{ "columns", cbor::Value::FromArray(std::move(columns)) },
+			{ "rows", cbor::Value::FromArray(std::move(rows)) },
+			{ "changes", Int(result.changes) },
+			{ "last_id", Int(result.lastId) },
+			{ "truncated", cbor::Value::FromBool(result.truncated) },
+		}));
+	}
+	return api::Ok(op == "sql.batch"
+		? cbor::Value::FromArray(std::move(answers))
+		: std::move(answers.front()));
 }
 
 cbor::Value Broker::netFetch(const cbor::Value *args) {

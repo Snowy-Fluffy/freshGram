@@ -3,6 +3,7 @@
 #include "fgpl/async_pool.h"
 #include "fgpl/broker.h"
 #include "fgpl/cached_load.h"
+#include "fgpl/database.h"
 #include "fgpl/file_storage.h"
 #include "fgpl/host_client.h"
 #include "fgpl/manifest.h"
@@ -499,6 +500,7 @@ private:
 		std::string disabledReason;
 		std::map<std::string, StoredGrant> grants;
 		std::shared_ptr<SharedStorage> store;
+		std::shared_ptr<Database> database;
 		std::shared_ptr<std::mutex> serial = std::make_shared<std::mutex>();
 		PluginStats stats;
 		std::deque<int64_t> failures;
@@ -638,6 +640,7 @@ private:
 		const char *trigger = nullptr);
 	[[nodiscard]] Instance *running(const std::string &id, const std::string &account);
 	[[nodiscard]] std::shared_ptr<SharedStorage> storeOf(Record &record);
+	[[nodiscard]] std::shared_ptr<Database> databaseOf(Record &record);
 	[[nodiscard]] bool activatedBy(const Record &record, const char *trigger) const;
 	void sampleUsage(Record &record, const Instance &instance);
 	[[nodiscard]] Result<std::shared_ptr<Instance>, std::string> prepare(

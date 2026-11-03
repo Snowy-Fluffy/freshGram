@@ -51,6 +51,7 @@ add_library(fgpl_app STATIC
 	${fgpl_src}/broker.cpp
 	${fgpl_src}/permissions.cpp
 	${fgpl_src}/file_storage.cpp
+	${fgpl_src}/database.cpp
 	${fgpl_src}/runtime_bundle.cpp
 	${fgpl_platform_sources}
 	${fgpl_src}/ui_tree.cpp
@@ -62,7 +63,8 @@ add_library(fgpl_app STATIC
 	${fgpl_src}/manager.cpp)
 add_library(tdesktop::fgpl_app ALIAS fgpl_app)
 init_target(fgpl_app)
-target_include_directories(fgpl_app PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
+# WHY: the app compiles its own SQLite, so only the header is needed here.
+target_include_directories(fgpl_app PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src ${CMAKE_CURRENT_LIST_DIR}/../SourceFiles/ayu/libs/sqlite)
 target_link_libraries(fgpl_app
 PUBLIC
 	desktop-app::external_zlib

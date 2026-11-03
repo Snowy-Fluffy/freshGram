@@ -66,6 +66,10 @@ pub fn storage_keys(prefix: &str, limit: i64) -> Result<Vec<String>, Error> {
     Ok(keys.iter().filter_map(|key| key.as_str().map(str::to_string)).collect())
 }
 
+pub fn sql_run(sql: &str, params: Vec<Value>, limit: i64) -> Result<Value, Error> {
+    call("sql.run", Some(map! { "sql" => sql, "params" => params, "limit" => limit }))
+}
+
 pub fn send_text(chat: i64, text: &str) -> Result<Sent, Error> {
     call("messages.send", Some(map! { "chat" => chat, "text" => text })).map(|answer| sent(&answer))
 }
