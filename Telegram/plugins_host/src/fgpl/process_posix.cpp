@@ -1,6 +1,9 @@
 #include "fgpl/os.h"
 
 #include <fcntl.h>
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif // __APPLE__
 #include <signal.h>
 #include <spawn.h>
 #include <sys/socket.h>
@@ -74,6 +77,20 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 	posix_spawnattr_init(&attributes);
 #ifdef __APPLE__
 	posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT);
+	// WHY: the client's crash handler port would otherwise be inherited by the host, and it lives outside the sandbox.
+	if (const auto result = posix_spawnattr_setexceptionports_np(
+			&attributes,
+			EXC_MASK_ALL,
+			MACH_PORT_NULL,
+			EXCEPTION_DEFAULT,
+			THREAD_STATE_NONE)) {
+		const auto error = std::string(std::strerror(result));
+		posix_spawn_file_actions_destroy(&actions);
+		posix_spawnattr_destroy(&attributes);
+		close(pair[0]);
+		close(pair[1]);
+		return error;
+	}
 #endif // __APPLE__
 	posix_spawn_file_actions_adddup2(&actions, pair[1], kHostFd);
 	for (const auto fd : { 0, 1, 2 }) {
