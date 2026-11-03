@@ -12,6 +12,7 @@ namespace fgpl {
 namespace {
 
 constexpr auto kCallGraceMs = 3000;
+constexpr auto kFrameOverhead = size_t(1) << 20;
 
 [[nodiscard]] ClientFailure Failure(ClientError error, std::string detail) {
 	return ClientFailure{ .error = error, .detail = std::move(detail) };
@@ -300,6 +301,9 @@ Result<std::monostate, ClientFailure> HostClient::load(
 	};
 	_timeoutMs = int(request.limits.callTimeoutMs);
 	_hostCallMs = int(request.limits.maxHostCallMs);
+	_frameLimit = std::min(
+		ipc::kMaxFrameBytes,
+		size_t(request.limits.maxMessageBytes) + kFrameOverhead);
 	_startMs = int(request.limits.startTimeoutMs);
 	_fresh = true;
 	const auto sent = ipc::WriteFrame(_fd, proto::Map({
@@ -378,7 +382,7 @@ Result<int32_t, ClientFailure> HostClient::run(
 		auto frame = ipc::ReadFrame(
 			_fd,
 			ipc::StrictLimits(),
-			ipc::kMaxFrameBytes,
+			_frameLimit,
 			int(slice > 0 ? slice : 0));
 		if (!frame.ok()) {
 			if (frame.error() == ipc::IoError::Timeout && slice < left) {
@@ -459,7 +463,7 @@ Result<cbor::Value, ClientFailure> HostClient::waitFor(int timeoutMs) {
 		auto frame = ipc::ReadFrame(
 			_fd,
 			ipc::StrictLimits(),
-			ipc::kMaxFrameBytes,
+			_frameLimit,
 			(_rssLimit != 0) ? int(std::max<int64_t>(slice, 0)) : timeoutMs);
 		if (frame.ok()) {
 			return std::move(frame.value());

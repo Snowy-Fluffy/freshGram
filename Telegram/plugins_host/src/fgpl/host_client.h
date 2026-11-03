@@ -139,6 +139,7 @@ private:
 	std::atomic<int> _pid{ -1 };
 	std::mutex _reap;
 	int _timeoutMs = 500;
+	size_t _frameLimit = ipc::kMaxFrameBytes;
 	uint64_t _rssLimit = 0;
 	int _startMs = 10000;
 	int _hostCallMs = 60000;
