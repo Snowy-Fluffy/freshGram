@@ -512,6 +512,35 @@ void TestAiProviderManifest() {
 	CHECK(PermissionDanger("ai.provide") == Danger::High);
 }
 
+void TestTranscriberManifest() {
+	const auto withTranscriber = [](cbor::Value decl, bool permission = true) {
+		return [=](cbor::Value &d) {
+			if (permission) {
+				Set(d, "permissions.optional", cbor::Value::FromArray({
+					cbor::Value::FromMap({ { "id", Text("transcribe.provide") }, { "reason", Text("x") } }),
+				}));
+			}
+			Set(d, "contributes.transcriber", decl);
+		};
+	};
+	ExpectError("transcriber permission", withTranscriber(cbor::Value::FromMap({
+		{ "name", Text("P") } }), false), "transcribe.provide");
+	ExpectError("transcriber name", withTranscriber(cbor::Value::FromMap({})), "name");
+	ExpectError("transcriber limit", withTranscriber(cbor::Value::FromMap({
+		{ "name", Text("P") }, { "maxSeconds", Int(1) } })), "maxSeconds");
+	auto document = ValidDocument();
+	withTranscriber(cbor::Value::FromMap({ { "name", Text("Whisper") }, { "maxSeconds", Int(120) } }))(document);
+	const auto parsed = Parse(document);
+	CHECK(parsed.ok());
+	if (parsed.ok()) {
+		const auto &decl = parsed.value().transcriber;
+		CHECK(decl.declared && decl.name == "Whisper" && decl.maxSeconds == 120);
+		CHECK(parsed.value().activation.contains("transcribe"));
+	}
+	CHECK(HostFeatures().contains("transcribe.provide"));
+	CHECK(PermissionDanger("transcribe.provide") == Danger::High);
+}
+
 void TestMenuConditions() {
 	const auto withMenu = [](const char *surface, cbor::Value when) {
 		return [=](cbor::Value &d) {
@@ -936,6 +965,7 @@ int main() {
 	TestMenuConditions();
 	TestTranslatorManifest();
 	TestAiProviderManifest();
+	TestTranscriberManifest();
 	TestStorageExport();
 	return Failures() ? 1 : 0;
 }

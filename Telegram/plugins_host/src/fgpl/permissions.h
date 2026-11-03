@@ -31,6 +31,7 @@ enum class Risk : uint8_t {
 	Files,
 	Folder,
 	AiProvider,
+	TranscribeProvider,
 	FolderExfiltration,
 	PluginMessages,
 };

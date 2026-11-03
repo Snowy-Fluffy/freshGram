@@ -722,7 +722,7 @@ void AyuSettings::validate() {
 	validateEnum(_showAddFilterInContextMenu, defaults._showAddFilterInContextMenu);
 
 	validateEnum(_translationProvider, defaults._translationProvider, 5);
-	validateEnum(_transcriptionProvider, defaults._transcriptionProvider, 1);
+	validateEnum(_transcriptionProvider, defaults._transcriptionProvider, 2);
 	if (((_translationProvider.current() == TranslationProvider::Native)
 			&& !Platform::IsTranslateProviderAvailable())
 		|| ((_translationProvider.current() == TranslationProvider::Local)
@@ -1817,6 +1817,14 @@ void AyuSettings::setTranslationPlugin(const QString &id) {
 	save();
 }
 
+void AyuSettings::setTranscriptionPlugin(const QString &id) {
+	if (_transcriptionPlugin.current() != id) {
+		_transcriptionPlugin = id;
+	}
+	setTranscriptionProvider(TranscriptionProvider::Plugin);
+	save();
+}
+
 void AyuSettings::setAiPlugin(const QString &id) {
 	if (_aiPlugin.current() == id) {
 		return;
@@ -2039,6 +2047,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"showTranslateButtonInMessageField", s._showTranslateButtonInMessageField.current()},
 		{"translateComposeTo", s._translateComposeTo.current()},
 		{"translationPlugin", s._translationPlugin.current()},
+		{"transcriptionPlugin", s._transcriptionPlugin.current()},
 		{"aiPlugin", s._aiPlugin.current()},
 		{"autoTranslateOutgoing", s._autoTranslateOutgoing.current()},
 		{"showAiEditorButtonInMessageField", s._showAiEditorButtonInMessageField.current()},
@@ -2237,6 +2246,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._showTranslateButtonInMessageField = j.value("showTranslateButtonInMessageField", defaults._showTranslateButtonInMessageField.current());
 	s._translateComposeTo = j.value("translateComposeTo", defaults._translateComposeTo.current());
 	s._translationPlugin = j.value("translationPlugin", defaults._translationPlugin.current());
+	s._transcriptionPlugin = j.value("transcriptionPlugin", defaults._transcriptionPlugin.current());
 	s._aiPlugin = j.value("aiPlugin", defaults._aiPlugin.current());
 	s._autoTranslateOutgoing = j.value("autoTranslateOutgoing", defaults._autoTranslateOutgoing.current());
 	s._showAiEditorButtonInMessageField = j.value("showAiEditorButtonInMessageField", defaults._showAiEditorButtonInMessageField.current());

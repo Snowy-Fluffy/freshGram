@@ -240,6 +240,19 @@ struct AiResult {
 	std::vector<TextEntity> entities;
 };
 
+struct TranscribeRequest {
+	int64_t chat = 0;
+	int64_t message = 0;
+	// Seconds of speech, or 0 when unknown; round videos are "video".
+	int64_t duration = 0;
+	bool video = false;
+};
+
+struct TranscribeResult {
+	std::string error;
+	std::string text;
+};
+
 struct PluginInfo {
 	std::string id;
 	std::string name;
@@ -284,6 +297,12 @@ struct ContributedAiProvider {
 	int maxChars = 0;
 };
 
+struct ContributedTranscriber {
+	bool declared = false;
+	std::string name;
+	int maxSeconds = 0;
+};
+
 struct ContributedCommand {
 	std::string name;
 	std::string description;
@@ -297,6 +316,7 @@ struct Contribution {
 	bool settingsPage = false;
 	ContributedTranslator translator;
 	ContributedAiProvider aiProvider;
+	ContributedTranscriber transcriber;
 };
 
 struct DispatchReport {
@@ -465,6 +485,15 @@ public:
 		std::function<void(AiResult)> done);
 	// The callback of a cancelled request is dropped without being called.
 	void cancelAi(int64_t ticket);
+
+	// Like aiAsync for contributes.transcriber; the plugin fetches the audio itself with media.get.
+	int64_t transcribeAsync(
+		const std::string &account,
+		const std::string &plugin,
+		TranscribeRequest request,
+		int timeoutMs,
+		std::function<void(TranscribeResult)> done);
+	void cancelTranscribe(int64_t ticket);
 
 	[[nodiscard]] ManagerSnapshot snapshot() const;
 
@@ -694,6 +723,17 @@ private:
 		std::vector<TextEntity> entities,
 		std::string error);
 	void expireAi();
+	[[nodiscard]] std::string acceptTranscribe(
+		const std::string &plugin,
+		const std::string &account,
+		int64_t ticket,
+		std::string text,
+		std::string error);
+	void expireTranscribes();
+	void failTranscribes(
+		const std::string &plugin,
+		const std::string &account,
+		const std::string &reason);
 	void failAi(
 		const std::string &plugin,
 		const std::string &account,
@@ -758,6 +798,15 @@ private:
 	std::mutex _aiMutex;
 	std::map<int64_t, PendingAi> _ai;
 	int64_t _nextAi = 1;
+	struct PendingTranscribe {
+		std::string plugin;
+		std::string account;
+		std::chrono::steady_clock::time_point deadline;
+		std::function<void(TranscribeResult)> done;
+	};
+	std::mutex _transcribeMutex;
+	std::map<int64_t, PendingTranscribe> _transcribes;
+	int64_t _nextTranscribe = 1;
 	std::map<Key, std::map<std::string, Timer>> _timers;
 	std::set<std::string> _accounts;
 	bool _locked = false;

@@ -3195,6 +3195,7 @@ namespace {
 	case fgpl::Risk::Files: return tr::fresh_RiskFiles(tr::now);
 	case fgpl::Risk::Folder: return tr::fresh_RiskFolder(tr::now);
 	case fgpl::Risk::AiProvider: return tr::fresh_RiskAiProvider(tr::now);
+	case fgpl::Risk::TranscribeProvider: return tr::fresh_RiskTranscribeProvider(tr::now);
 	case fgpl::Risk::FolderExfiltration: return tr::fresh_RiskFolderExfiltration(tr::now);
 	case fgpl::Risk::PluginMessages: return tr::fresh_RiskPlugins(tr::now);
 	}
@@ -3274,7 +3275,7 @@ namespace {
 		"chat.info", "media.read", "media.read_outgoing", "media.download", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
 		"messages.ids", "chats.activity", "stories.read", "calls.activity",
-		"chats.manage", "chats.moderate", "folders.manage",
+		"chats.manage", "chats.moderate", "folders.manage", "transcribe.provide",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -3882,6 +3883,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "app.activity", tr::fresh_PermAppActivity },
 		{ "translate.provide", tr::fresh_PermTranslateProvide },
 		{ "ai.provide", tr::fresh_PermAiProvide },
+		{ "transcribe.provide", tr::fresh_PermTranscribeProvide },
 		{ "bots.inline", tr::fresh_PermBotsInline },
 		{ "chats.manage", tr::fresh_PermChatsManage },
 		{ "chats.moderate", tr::fresh_PermChatsModerate },

@@ -86,6 +86,7 @@ enum class TranslationProvider {
 enum class TranscriptionProvider {
 	Telegram = 0,
 	WhisperLocal = 1,
+	Plugin = 2,
 };
 
 enum class SendWithoutSoundOption {
@@ -124,6 +125,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(TranslationProvider, {
 NLOHMANN_JSON_SERIALIZE_ENUM(TranscriptionProvider, {
 	{TranscriptionProvider::Telegram, "telegram"},
 	{TranscriptionProvider::WhisperLocal, "whisper"},
+	{TranscriptionProvider::Plugin, "plugin"},
 })
 
 NLOHMANN_JSON_SERIALIZE_ENUM(SendWithoutSoundOption, {
@@ -528,6 +530,7 @@ public:
 	[[nodiscard]] bool roundConfirmation() const { return _roundConfirmation.current(); }
 	[[nodiscard]] TranslationProvider translationProvider() const { return _translationProvider.current(); }
 	[[nodiscard]] const QString &translationPlugin() const { return _translationPlugin.current(); }
+	[[nodiscard]] const QString &transcriptionPlugin() const { return _transcriptionPlugin.current(); }
 	[[nodiscard]] const QString &aiPlugin() const { return _aiPlugin.current(); }
 	[[nodiscard]] rpl::producer<QString> aiPluginValue() const { return _aiPlugin.value(); }
 	[[nodiscard]] TranscriptionProvider transcriptionProvider() const { return _transcriptionProvider.current(); }
@@ -705,6 +708,7 @@ public:
 	void setRoundConfirmation(bool val);
 	void setTranslationProvider(TranslationProvider val);
 	void setTranslationPlugin(const QString &id);
+	void setTranscriptionPlugin(const QString &id);
 	void setAiPlugin(const QString &id);
 	void setTranscriptionProvider(TranscriptionProvider val);
 	void setAdaptiveCoverColor(bool val);
@@ -942,6 +946,7 @@ public:
 			}));
 	}
 	[[nodiscard]] rpl::producer<QString> translationPluginValue() const { return _translationPlugin.value(); }
+	[[nodiscard]] rpl::producer<QString> transcriptionPluginValue() const { return _transcriptionPlugin.value(); }
 	[[nodiscard]] rpl::producer<TranscriptionProvider> transcriptionProviderValue() const { return _transcriptionProvider.value(); }
 	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorValue() const { return _adaptiveCoverColor.value(); }
 	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorChanges() const { return _adaptiveCoverColor.changes(); }
@@ -1132,6 +1137,7 @@ private:
 	rpl::variable<bool> _roundConfirmation = false;
 	rpl::variable<TranslationProvider> _translationProvider = TranslationProvider::Telegram;
 	rpl::variable<QString> _translationPlugin;
+	rpl::variable<QString> _transcriptionPlugin;
 	rpl::variable<QString> _aiPlugin;
 	rpl::variable<TranscriptionProvider> _transcriptionProvider = TranscriptionProvider::Telegram;
 	rpl::variable<bool> _adaptiveCoverColor = true;

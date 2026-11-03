@@ -194,6 +194,8 @@
 "messages.set_incoming"
 "messages.set_display"
 "sql.run"
+"transcribe.reply"
+"transcribe.provide"
 "folders.add_chat"
 "folders.remove_chat"
 "folders.manage"

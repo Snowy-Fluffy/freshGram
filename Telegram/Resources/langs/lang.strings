@@ -9088,6 +9088,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermFolderRead" = "Read the files in a folder you choose";
 "fresh_PermFolderWrite" = "Read and change the files in a folder you choose";
 "fresh_PermAiProvide" = "Rewrite the texts you ask it to improve";
+"fresh_PermTranscribeProvide" = "Recognize the voice messages you ask it to transcribe";
 "fresh_PermClipboard" = "Use the clipboard";
 "fresh_PermBackground" = "Keep running in the background";
 "fresh_RiskExfiltration" = "Can read your data and send it to the internet";
@@ -9105,6 +9106,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_RiskFolder" = "Can use the files in the folder you choose";
 "fresh_RiskFolderExfiltration" = "Can send the files of that folder to the internet";
 "fresh_RiskAiProvider" = "Receives the text you ask it to rewrite";
+"fresh_RiskTranscribeProvider" = "Receives the voice messages you ask it to transcribe";
 "fresh_RiskPlugins" = "Can exchange data with other plugins that accept it";
 "fresh_AiProvider" = "AI provider";
 "fresh_AiProviderUnavailable" = "The AI provider plugin is not available. Choose another one in the settings.";

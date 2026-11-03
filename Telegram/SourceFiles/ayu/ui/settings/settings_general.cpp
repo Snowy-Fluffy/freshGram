@@ -15,6 +15,7 @@
 #include "ayu/features/recognition/text_translation.h"
 #include "ayu/features/plugins/plugins_service.h"
 #include "ayu/features/plugins/plugins_ai.h"
+#include "ayu/features/plugins/plugins_transcribe.h"
 #include "ayu/features/plugins/plugins_translate.h"
 #include "ayu/ui/boxes/recognition_models_box.h"
 #include "ayu/ui/settings/ayu_builder.h"
@@ -244,10 +245,41 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	auto *settings = &AyuSettings::getInstance();
 	const auto whisper = FreshRecognition::SpeechRecognitionAvailable();
 
-	auto options = std::vector<QString>{ u"Telegram"_q };
-	if (whisper) {
-		options.push_back(tr::fresh_TranscriptionWhisper(tr::now));
-	}
+	struct Option {
+		TranscriptionProvider provider;
+		QString label;
+		QString plugin;
+	};
+	const auto optionsNow = [=] {
+		auto result = std::vector<Option>{
+			{ TranscriptionProvider::Telegram, u"Telegram"_q },
+		};
+		if (whisper) {
+			result.push_back({
+				TranscriptionProvider::WhisperLocal,
+				tr::fresh_TranscriptionWhisper(tr::now),
+			});
+		}
+		for (const auto &entry : FreshPlugins::Transcribers()) {
+			result.push_back({
+				TranscriptionProvider::Plugin,
+				entry.name,
+				entry.plugin,
+			});
+		}
+		return result;
+	};
+	const auto indexOf = [](
+			const std::vector<Option> &list,
+			TranscriptionProvider provider,
+			const QString &plugin) {
+		const auto i = ranges::find_if(list, [&](const Option &option) {
+			return (option.provider == provider)
+				&& (provider != TranscriptionProvider::Plugin
+					|| option.plugin == plugin);
+		});
+		return (i != end(list)) ? int(i - begin(list)) : 0;
+	};
 
 	builder.addSubsectionTitle(tr::fresh_TranscriptionSubtitle());
 	builder.addButton({
@@ -255,24 +287,35 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.altIds = { u"ayu/whisperProvider"_q, u"ayu/voiceToText"_q },
 		.title = tr::fresh_TranscriptionProvider(),
 		.st = &st::settingsButtonNoIcon,
-		.label = settings->transcriptionProviderValue()
-			| rpl::map([=](TranscriptionProvider value) {
-				const auto index = std::min(
-					int(value),
-					int(options.size()) - 1);
-				return options[index];
-			}),
+		.label = rpl::combine(
+			settings->transcriptionProviderValue(),
+			settings->transcriptionPluginValue(),
+			rpl::single(rpl::empty) | rpl::then(FreshPlugins::ListChanges() | rpl::to_empty)
+		) | rpl::map([=](TranscriptionProvider provider, const QString &plugin, auto) {
+			const auto list = optionsNow();
+			return list[indexOf(list, provider, plugin)].label;
+		}),
 		.onClick = [=] {
 			controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+				const auto list = optionsNow();
+				auto labels = std::vector<QString>();
+				for (const auto &option : list) {
+					labels.push_back(option.label);
+				}
 				SingleChoiceBox(box, {
 					.title = tr::fresh_TranscriptionProvider(),
-					.options = options,
-					.initialSelection = std::min(
-						int(AyuSettings::getInstance().transcriptionProvider()),
-						int(options.size()) - 1),
+					.options = labels,
+					.initialSelection = indexOf(
+						list,
+						AyuSettings::getInstance().transcriptionProvider(),
+						AyuSettings::getInstance().transcriptionPlugin()),
 					.callback = [=](int index) {
-						AyuSettings::getInstance().setTranscriptionProvider(
-							static_cast<TranscriptionProvider>(index));
+						const auto &option = list[index];
+						if (option.provider == TranscriptionProvider::Plugin) {
+							AyuSettings::getInstance().setTranscriptionPlugin(option.plugin);
+						} else {
+							AyuSettings::getInstance().setTranscriptionProvider(option.provider);
+						}
 					},
 				});
 			}));

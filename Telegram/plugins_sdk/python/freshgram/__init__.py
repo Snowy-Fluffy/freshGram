@@ -1382,6 +1382,51 @@ def on_ai(function=None, markdown=False):
     return register(function) if function is not None else register
 
 
+def on_transcribe(function=None):
+    """Make the plugin a speech recognizer (transcribe.provide, contributes.transcriber).
+
+    The function gets one dict: "chat", "message" (the voice message or round
+    video to recognize), "duration" in seconds (0 when unknown) and "video".
+    Fetch the audio with media.get(chat, message, download=True), which needs
+    media.read and media.download. Return the text, or a coroutine of it, and
+    raise an exception to answer with an error. A plugin whose manifest lists
+    activation triggers needs "transcribe" among them.
+    """
+    def register(handler):
+        def wrapper(event):
+            ticket = event["ticket"]
+
+            def reply(text=None, error=None):
+                if error is not None:
+                    _request("transcribe.reply", ticket=ticket, error=str(error)[:200])
+                else:
+                    _request("transcribe.reply", ticket=ticket, text=str(text) or " ")
+
+            request = {key: value for key, value in event.items() if key not in ("type", "ticket")}
+            try:
+                result = handler(request)
+            except Exception as error:
+                _log_exception()
+                reply(error=error)
+                return
+
+            if isinstance(result, _types.CoroutineType):
+                async def finish():
+                    try:
+                        text = await result
+                    except Exception as error:
+                        _log_exception()
+                        reply(error=error)
+                        return
+                    reply(text)
+                _aio.spawn(finish())
+            else:
+                reply(result)
+        _event_handlers.append(("transcribe.request", wrapper))
+        return handler
+    return register(function) if function is not None else register
+
+
 def on_toast(action_id=None):
     """Run when the button of a toast shown by ui.toast(..., action=...) is pressed.
 

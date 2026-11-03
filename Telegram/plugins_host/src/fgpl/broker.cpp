@@ -1168,6 +1168,24 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 		}
 		const auto refused = _services.aiReply(*ticket, std::move(answer), std::move(marked), *error);
 		return Done(refused, "no such request");
+	} else if (op == "transcribe.reply") {
+		if (!has("transcribe.provide")) {
+			return api::Fail(api::error::kDenied, "transcribe.provide");
+		} else if (!_services.transcribeReply) {
+			return api::Fail(api::error::kUnavailable, "the transcriber");
+		}
+		const auto ticket = IntArg(args, "ticket");
+		const auto error = Arg(args, "error")
+			? TextArg(args, "error", 200)
+			: std::optional<std::string>(std::string());
+		const auto text = Arg(args, "text")
+			? TextArg(args, "text", kMaxAiAnswer)
+			: std::optional<std::string>(std::string());
+		if (!ticket || !error || !text || (error->empty() && text->empty())) {
+			return api::Fail(api::error::kInvalid, "ticket, text or error");
+		}
+		const auto refused = _services.transcribeReply(*ticket, *text, *error);
+		return Done(refused, "no such request");
 	} else if (op == "plugins.send" || op == "plugins.peers") {
 		if (!has("plugins.message")) {
 			return api::Fail(api::error::kDenied, "plugins.message");

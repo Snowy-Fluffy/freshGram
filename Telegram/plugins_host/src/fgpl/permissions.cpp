@@ -10,7 +10,7 @@ const auto kReadingPermissions = std::set<std::string>{
 	"chat.info", "account.info", "contacts.list", "composer.draft", "media.read",
 	"media.read_outgoing",
 	"folders.list", "settings.read", "stars.balance", "users.info", "chats.active",
-	"chats.activity", "users.presence", "app.activity", "translate.provide", "ai.provide",
+	"chats.activity", "users.presence", "app.activity", "translate.provide", "ai.provide", "transcribe.provide",
 	"stories.read", "calls.activity", "messages.transform_incoming",
 	"messages.transform_outgoing",
 };
@@ -25,7 +25,7 @@ const auto kHighPermissions = std::set<std::string>{
 	"messages.send", "messages.transform_outgoing", "messages.read_deleted",
 	"net.tcp", "net.udp", "net.local", "background", "fs.user_selected", "fs.folder", "clipboard",
 	"messages.edit", "messages.delete", "ghost.control", "messages.transform_incoming",
-	"chats.moderate", "ai.provide", "media.read_outgoing",
+	"chats.moderate", "ai.provide", "transcribe.provide", "media.read_outgoing",
 };
 
 const auto kLowPermissions = std::set<std::string>{
@@ -151,6 +151,9 @@ std::vector<RiskNote> RiskNotes(const std::set<std::string> &granted) {
 	}
 	if (Has(granted, "ai.provide")) {
 		notes.push_back({ Risk::AiProvider, "receives the text you ask it to rewrite" });
+	}
+	if (Has(granted, "transcribe.provide")) {
+		notes.push_back({ Risk::TranscribeProvider, "receives the voice messages you ask it to transcribe" });
 	}
 	if (Has(granted, "fs.folder")) {
 		notes.push_back({ Risk::Folder, "can use the files in the folder you chose" });

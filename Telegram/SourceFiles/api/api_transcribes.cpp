@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "lang_auto.h"
 #include "logs.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/features/plugins/plugins_transcribe.h"
 #include "ayu/features/recognition/local_transcribe.h"
 #include "ui/toast/toast.h"
 #include "api/api_text_entities.h"
@@ -200,8 +202,7 @@ void Transcribes::loadLocal(not_null<HistoryItem*> item) {
 			}
 		}
 	}
-	FreshRecognition::TranscribeLocally(item, [=](
-			FreshRecognition::LocalTranscript transcript) {
+	const auto finish = [=](FreshRecognition::LocalTranscript transcript) {
 		using Status = FreshRecognition::LocalTranscribeStatus;
 		const auto i = _map.find(id);
 		if (i == _map.end()) {
@@ -240,7 +241,16 @@ void Transcribes::loadLocal(not_null<HistoryItem*> item) {
 			}
 			_session->data().requestItemResize(item);
 		}
-	});
+	};
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.transcriptionProvider() == TranscriptionProvider::Plugin) {
+		FreshPlugins::TranscribeByPlugin(
+			item,
+			settings.transcriptionPlugin(),
+			finish);
+	} else {
+		FreshRecognition::TranscribeLocally(item, finish);
+	}
 }
 
 void Transcribes::load(not_null<HistoryItem*> item) {

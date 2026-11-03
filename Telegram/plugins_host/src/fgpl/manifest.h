@@ -105,6 +105,12 @@ struct AiProviderDecl {
 	int maxChars = 4096;
 };
 
+struct TranscriberDecl {
+	bool declared = false;
+	std::string name;
+	int maxSeconds = 300;
+};
+
 struct OutgoingFilter {
 	std::set<int64_t> chats;
 	std::set<std::string> chatTypes;
@@ -232,7 +238,7 @@ struct Manifest {
 	int eventTimeoutMs = 500;
 	int storageMb = 10;
 
-	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer", "translate", "ai", "toast", "link" };
+	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer", "translate", "ai", "toast", "link", "transcribe" };
 	bool background = false;
 
 	std::vector<PermissionRequest> permissions;
@@ -247,6 +253,7 @@ struct Manifest {
 	IncomingHook incoming;
 	TranslatorDecl translator;
 	AiProviderDecl aiProvider;
+	TranscriberDecl transcriber;
 	std::vector<std::string> messagesFrom;
 
 	std::vector<Dependency> dependencies;

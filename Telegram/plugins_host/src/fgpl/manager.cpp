@@ -668,6 +668,7 @@ void PluginManager::stopMany(const std::vector<Key> &keys) {
 	for (const auto &key : keys) {
 		failTranslations(key.first, key.second, "the plugin stopped");
 		failAi(key.first, key.second, "the plugin stopped");
+		failTranscribes(key.first, key.second, "the plugin stopped");
 		const auto i = _instances.find(key);
 		if (i == _instances.end()) {
 			continue;
@@ -1327,6 +1328,13 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 				parsed->aiProvider.maxChars,
 			};
 		}
+		if (parsed->transcriber.declared && has("transcribe.provide")) {
+			entry.transcriber = {
+				true,
+				parsed->transcriber.name,
+				parsed->transcriber.maxSeconds,
+			};
+		}
 		if (parsed->translator.declared && has("translate.provide")) {
 			entry.translator = {
 				true,
@@ -1339,7 +1347,8 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 			|| !entry.commands.empty()
 			|| entry.settingsPage
 			|| entry.translator.declared
-			|| entry.aiProvider.declared) {
+			|| entry.aiProvider.declared
+			|| entry.transcriber.declared) {
 			result.push_back(std::move(entry));
 		}
 	}
@@ -1786,6 +1795,12 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 			std::vector<TextEntity> entities,
 			std::string error) {
 		return acceptAi(pluginId, account, ticket, std::move(text), std::move(entities), std::move(error));
+	};
+	services.transcribeReply = [this, pluginId, account](
+			int64_t ticket,
+			std::string text,
+			std::string error) {
+		return acceptTranscribe(pluginId, account, ticket, std::move(text), std::move(error));
 	};
 	services.setTimer = [this, key](const std::string &id, int64_t delayMs, bool repeat) {
 		return setTimer(key, id, delayMs, repeat);
@@ -2418,6 +2433,7 @@ int PluginManager::pump() {
 	advanceOutgoing();
 	expireTranslations();
 	expireAi();
+	expireTranscribes();
 	return handled;
 }
 
@@ -3269,6 +3285,7 @@ void PluginManager::failTranslations(
 constexpr auto kMaxAiRequests = size_t(4);
 constexpr auto kMaxAiBytes = size_t(32) << 10;
 constexpr auto kMaxAiPrompt = size_t(2048);
+constexpr auto kMaxTranscribeRequests = size_t(4);
 
 int64_t PluginManager::aiAsync(
 		const std::string &account,
@@ -3440,6 +3457,167 @@ void PluginManager::failAi(
 	}
 	for (auto &pending : failed) {
 		auto result = AiResult();
+		result.error = reason;
+		pending.done(std::move(result));
+	}
+}
+
+int64_t PluginManager::transcribeAsync(
+		const std::string &account,
+		const std::string &plugin,
+		TranscribeRequest request,
+		int timeoutMs,
+		std::function<void(TranscribeResult)> done) {
+	const auto fail = [&](const char *why) {
+		auto result = TranscribeResult();
+		result.error = why;
+		done(std::move(result));
+		return int64_t(0);
+	};
+	const auto found = _records.find(plugin);
+	if (!ValidAccount(account) || !mayRun() || found == _records.end()) {
+		return fail("unavailable");
+	} else if (request.message <= 0 || request.duration < 0) {
+		return fail("invalid");
+	}
+	auto &record = found->second;
+	const auto grant = record.grants.find(kAllAccounts);
+	const auto parsed = manifest(plugin);
+	if (!record.enabled
+		|| grant == record.grants.end()
+		|| !grant->second.granted.contains("transcribe.provide")
+		|| !parsed
+		|| !parsed->transcriber.declared) {
+		return fail("unavailable");
+	} else if (!grant->second.allows(account, request.chat)) {
+		return fail("denied");
+	} else if (request.duration > parsed->transcriber.maxSeconds) {
+		return fail("too_long");
+	}
+	{
+		const auto lock = std::scoped_lock(_transcribeMutex);
+		const auto busy = std::count_if(
+			_transcribes.begin(),
+			_transcribes.end(),
+			[&](const auto &entry) { return entry.second.plugin == plugin; });
+		if (size_t(busy) >= kMaxTranscribeRequests) {
+			return fail("busy");
+		}
+	}
+	pump();
+	auto *instance = ensure(record, account, "transcribe");
+	if (!instance) {
+		return fail("unavailable");
+	}
+	auto ticket = int64_t(0);
+	{
+		const auto lock = std::scoped_lock(_transcribeMutex);
+		ticket = _nextTranscribe++;
+		_transcribes.emplace(ticket, PendingTranscribe{
+			plugin,
+			account,
+			std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs),
+			std::move(done),
+		});
+	}
+	const auto event = cbor::Value::FromMap({
+		{ "type", Text("transcribe.request") },
+		{ "ticket", cbor::Value::FromInt(ticket) },
+		{ "chat", cbor::Value::FromInt(request.chat) },
+		{ "message", cbor::Value::FromInt(request.message) },
+		{ "duration", cbor::Value::FromInt(request.duration) },
+		{ "video", cbor::Value::FromBool(request.video) },
+	});
+	const auto size = EncodedSize(event);
+	auto queued = false;
+	{
+		const auto lock = std::scoped_lock(instance->mutex);
+		if (!instance->closing && !instance->finished) {
+			instance->queue.emplace_back(event, size);
+			instance->queuedBytes += size;
+			queued = true;
+		}
+	}
+	if (!queued) {
+		failTranscribes(plugin, account, "unavailable");
+		return 0;
+	}
+	instance->wake.notify_one();
+	return ticket;
+}
+
+void PluginManager::cancelTranscribe(int64_t ticket) {
+	const auto lock = std::scoped_lock(_transcribeMutex);
+	_transcribes.erase(ticket);
+}
+
+std::string PluginManager::acceptTranscribe(
+		const std::string &plugin,
+		const std::string &account,
+		int64_t ticket,
+		std::string text,
+		std::string error) {
+	auto pending = std::optional<PendingTranscribe>();
+	{
+		const auto lock = std::scoped_lock(_transcribeMutex);
+		const auto i = _transcribes.find(ticket);
+		if (i == _transcribes.end()
+			|| i->second.plugin != plugin
+			|| i->second.account != account) {
+			return api::error::kNotFound;
+		}
+		pending = std::move(i->second);
+		_transcribes.erase(i);
+	}
+	auto result = TranscribeResult();
+	if (error.empty()) {
+		result.text = std::move(text);
+	} else {
+		result.error = std::move(error);
+	}
+	pending->done(std::move(result));
+	return {};
+}
+
+void PluginManager::expireTranscribes() {
+	auto expired = std::vector<PendingTranscribe>();
+	{
+		const auto lock = std::scoped_lock(_transcribeMutex);
+		const auto now = std::chrono::steady_clock::now();
+		for (auto i = _transcribes.begin(); i != _transcribes.end();) {
+			if (now >= i->second.deadline) {
+				expired.push_back(std::move(i->second));
+				i = _transcribes.erase(i);
+			} else {
+				++i;
+			}
+		}
+	}
+	for (auto &pending : expired) {
+		auto result = TranscribeResult();
+		result.error = "timeout";
+		pending.done(std::move(result));
+	}
+}
+
+void PluginManager::failTranscribes(
+		const std::string &plugin,
+		const std::string &account,
+		const std::string &reason) {
+	auto failed = std::vector<PendingTranscribe>();
+	{
+		const auto lock = std::scoped_lock(_transcribeMutex);
+		for (auto i = _transcribes.begin(); i != _transcribes.end();) {
+			if (i->second.plugin == plugin && i->second.account == account) {
+				failed.push_back(std::move(i->second));
+				i = _transcribes.erase(i);
+			} else {
+				++i;
+			}
+		}
+	}
+	for (auto &pending : failed) {
+		auto result = TranscribeResult();
 		result.error = reason;
 		pending.done(std::move(result));
 	}

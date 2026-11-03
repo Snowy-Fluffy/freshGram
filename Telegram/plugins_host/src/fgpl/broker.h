@@ -1008,6 +1008,12 @@ struct BrokerServices {
 		std::vector<TextEntity> entities,
 		std::string error)> aiReply;
 
+	// Answers an empty string, or an error code (not_found).
+	std::function<std::string(
+		int64_t ticket,
+		std::string text,
+		std::string error)> transcribeReply;
+
 	std::function<void(std::function<void()> work)> post;
 	std::function<void(int64_t delayMs, std::function<void()> work)> after;
 	std::function<void(int64_t ticket, cbor::Value result)> complete;

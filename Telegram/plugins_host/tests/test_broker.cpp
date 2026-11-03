@@ -262,6 +262,7 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "composer.draft", Request("composer.set_draft", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "messages.send", Request("messages.send", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "ui.toast", Request("ui.toast", { { "text", Text("x") } }) },
+		{ "transcribe.provide", Request("transcribe.reply", { { "ticket", Int(1) }, { "text", Text("x") } }) },
 		{ "folders.manage", Request("folders.add_chat", { { "chat", Int(1) }, { "folder", Int(2) } }) },
 		{ "folders.manage", Request("folders.remove_chat", { { "chat", Int(1) }, { "folder", Int(2) } }) },
 		{ "settings.write", Request("settings.set", { { "theme", Text("dark") } }) },
@@ -2689,6 +2690,34 @@ void TestAiReply() {
 		{ "ticket", Int(7) }, { "text", Text("a") } }))) == "denied");
 }
 
+void TestTranscribeReply() {
+	auto fixture = Fixture({ "transcribe.provide" });
+	auto seen = std::vector<std::tuple<int64_t, std::string, std::string>>();
+	fixture.services.transcribeReply = [&](
+			int64_t ticket,
+			std::string text,
+			std::string error) -> std::string {
+		seen.emplace_back(ticket, text, error);
+		return (ticket == 7) ? std::string() : std::string(api::error::kNotFound);
+	};
+	auto broker = fixture.make();
+	const auto reply = [&](cbor::Map args) {
+		return Code(broker.call(Request("transcribe.reply", std::move(args))));
+	};
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Text("hello") } }) == "");
+	CHECK(IsOk(broker.call(Request("transcribe.reply", { { "ticket", Int(7) }, { "error", Text("no model") } }))));
+	CHECK(seen.size() == 2 && std::get<1>(seen[0]) == "hello" && std::get<2>(seen[1]) == "no model");
+	CHECK(reply({ { "ticket", Int(8) }, { "text", Text("a") } }) == "not_found");
+	CHECK(reply({ { "text", Text("a") } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Int(1) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Text(std::string((size_t(64) << 10) + 1, 'x')) } }) == "invalid");
+	CHECK(Code(Fixture({}).make().call(Request("transcribe.reply", {
+		{ "ticket", Int(7) }, { "text", Text("a") } }))) == "denied");
+	CHECK(Code(Fixture({ "ai.provide" }).make().call(Request("transcribe.reply", {
+		{ "ticket", Int(7) }, { "text", Text("a") } }))) == "denied");
+}
+
 void TestActivityEvents() {
 	const auto chatEvent = [](const char *type, int64_t chat, bool secret = false) {
 		return cbor::Value::FromMap({
@@ -3635,6 +3664,7 @@ int main() {
 	TestActivityEvents();
 	TestTranslateReply();
 	TestAiReply();
+	TestTranscribeReply();
 	TestTextFormats();
 	TestImageCalls();
 	TestToastActions();

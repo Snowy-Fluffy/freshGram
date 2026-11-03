@@ -1627,6 +1627,77 @@ void TestAiProvider() {
 	CHECK(!cancelled);
 }
 
+void TestTranscribeProvider() {
+	auto lab = Lab("fgpl-manager-transcribe");
+	auto manager = PluginManager(lab.config());
+	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
+		{ "transcribe.provide", {} },
+	};
+	const auto provider = [](cbor::Value &document) {
+		Remove(document, "contributes.events");
+		Set(document, "contributes.transcriber", cbor::Value::FromMap({
+			{ "name", Text("Model") },
+			{ "maxSeconds", Int(60) },
+		}));
+	};
+	const auto good = std::string("com.example.listener");
+	const auto bystander = std::string("com.example.tbystander");
+	CHECK(manager.install(CustomArchive(good, CallingModule(EncodedRequest(
+		"transcribe.reply",
+		{ { "ticket", Int(1) }, { "text", Text("heard") } })), permissions, provider)).ok());
+	CHECK(manager.install(CustomArchive(bystander, CallingModule(EncodedRequest(
+		"transcribe.reply",
+		{ { "ticket", Int(2) }, { "text", Text("STOLEN") } })), permissions, provider)).ok());
+	for (const auto &id : { good, bystander }) {
+		CHECK(manager.setEnabled(id, true));
+	}
+	CHECK(manager.grant(good, "A", { { "transcribe.provide" }, std::nullopt }));
+	CHECK(manager.grant(bystander, "A", { { "transcribe.provide" }, std::set<int64_t>{ 5 } }));
+
+	const auto ask = [&](const std::string &plugin, int64_t chat = 1, int64_t duration = 10, const char *account = "A") {
+		auto result = std::optional<TranscribeResult>();
+		auto request = TranscribeRequest();
+		request.chat = chat;
+		request.message = 100;
+		request.duration = duration;
+		manager.transcribeAsync(account, plugin, request, 5000, [&](TranscribeResult value) {
+			result = std::move(value);
+		});
+		for (auto waited = 0; !result && waited < 20000; waited += 5) {
+			manager.pump();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+		return result;
+	};
+	const auto answered = ask(good);
+	CHECK(answered && answered->error.empty() && answered->text == "heard");
+	CHECK(ask(bystander, 1)->error == "denied");
+	CHECK(ask(good, 1, 61)->error == "too_long");
+	CHECK(ask("com.example.none")->error == "unavailable");
+	CHECK(ask(good, 1, 10, "bad account!")->error == "unavailable");
+	const auto names = [&] {
+		auto result = std::vector<std::string>();
+		for (const auto &entry : manager.snapshot().contributions("A", "en")) {
+			if (entry.transcriber.declared) {
+				result.push_back(entry.transcriber.name);
+			}
+		}
+		return result;
+	}();
+	CHECK(names.size() == 2 && names[0] == "Model");
+
+	auto cancelled = false;
+	auto request = TranscribeRequest();
+	request.chat = 1;
+	request.message = 100;
+	const auto ticket = manager.transcribeAsync("A", good, request, 5000, [&](TranscribeResult) {
+		cancelled = true;
+	});
+	manager.cancelTranscribe(ticket);
+	manager.pump();
+	CHECK(!cancelled);
+}
+
 void TestFolderGrant() {
 	auto lab = Lab("fgpl-manager-folder");
 	const auto folder = lab.root / "shared";
@@ -2232,6 +2303,7 @@ int main(int argc, char **argv) {
 	run("incoming", TestIncomingTransform);
 	run("translator", TestTranslator);
 	run("ai provider", TestAiProvider);
+	run("transcribe provider", TestTranscribeProvider);
 	run("folder grant", TestFolderGrant);
 	run("toast-events", TestToastEvents);
 	run("stopped-callback", TestStoppedCallback);

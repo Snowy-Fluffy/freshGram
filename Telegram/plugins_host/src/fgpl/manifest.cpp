@@ -582,7 +582,7 @@ const std::set<std::string> &KnownPermissions() {
 		"fs.user_selected", "fs.folder", "clipboard", "background",
 		"messages.edit", "messages.delete", "messages.react", "users.info",
 		"chats.active", "messages.ids", "chats.activity", "users.presence",
-		"app.activity", "translate.provide", "ai.provide", "bots.inline", "chats.manage",
+		"app.activity", "translate.provide", "ai.provide", "transcribe.provide", "bots.inline", "chats.manage",
 		"stories.read", "calls.activity", "image.process",
 		"messages.transform_incoming",
 		"contacts.manage", "ghost.control", "chats.moderate", "folders.manage", "settings.write",
@@ -755,7 +755,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					|| (*name != "startup" && *name != "command" && *name != "event"
 						&& *name != "menu" && *name != "settings" && *name != "message"
 						&& *name != "timer" && *name != "translate" && *name != "ai"
-						&& *name != "toast" && *name != "link")) {
+						&& *name != "toast" && *name != "link" && *name != "transcribe")) {
 					reader.error("activation.on", "has an unknown trigger");
 				} else {
 					manifest.activation.insert(*name);
@@ -847,7 +847,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
 			"events", "eventFilters", "menus", "commands", "links", "settingsPage", "outgoing", "incoming", "messages", "icons",
-			"translator", "aiProvider" })) {
+			"translator", "aiProvider", "transcriber" })) {
 		if (const auto icons = contributes->find("icons"); icons && !icons->asMap()) {
 			reader.error("contributes.icons", "must be an object");
 		} else if (icons) {
@@ -1070,6 +1070,13 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			decl.name = reader.text(*provider, "name", "contributes.aiProvider", true, 40).value_or("");
 			decl.maxChars = int(reader.integer(*provider, "maxChars", "contributes.aiProvider", 64, 8192).value_or(4096));
 		}
+		if (const auto provider = reader.object(*contributes, "transcriber", "contributes", false, {
+				"name", "maxSeconds" })) {
+			auto &decl = manifest.transcriber;
+			decl.declared = true;
+			decl.name = reader.text(*provider, "name", "contributes.transcriber", true, 40).value_or("");
+			decl.maxSeconds = int(reader.integer(*provider, "maxSeconds", "contributes.transcriber", 5, 3600).value_or(300));
+		}
 		const auto readHook = [&](
 				const char *key,
 				bool &declared,
@@ -1253,6 +1260,9 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 	if (manifest.translator.declared && !hasPermission("translate.provide")) {
 		reader.error("contributes.translator", "needs the translate.provide permission");
+	}
+	if (manifest.transcriber.declared && !hasPermission("transcribe.provide")) {
+		reader.error("contributes.transcriber", "needs the transcribe.provide permission");
 	}
 	if (manifest.aiProvider.declared && !hasPermission("ai.provide")) {
 		reader.error("contributes.aiProvider", "needs the ai.provide permission");
