@@ -279,6 +279,8 @@
 "fresh_PermContactsList" = "Voir vos contacts";
 "fresh_PermSettingsRead" = "Lire les réglages de l’application";
 "fresh_PermFoldersList" = "Voir vos dossiers de discussions";
+"fresh_PermFoldersManage" = "Ajouter des discussions aux dossiers et les en retirer";
+"fresh_PermSettingsWrite" = "Changer le thème et le mode streamer";
 "fresh_PermUiMenu" = "Ajouter des éléments de menu";
 "fresh_PermUiCommand" = "Ajouter des commandes de discussion";
 "fresh_PermUiSettingsPage" = "Afficher une page de réglages";

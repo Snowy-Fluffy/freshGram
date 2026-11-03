@@ -144,6 +144,15 @@ public:
 		actions.push_back("mute " + std::to_string(chat) + " " + std::to_string(seconds));
 		return {};
 	}
+	std::string changeFolder(int64_t folder, int64_t chat, bool add) override {
+		actions.push_back(std::string(add ? "folder_add " : "folder_remove ") + std::to_string(folder) + " " + std::to_string(chat));
+		return folder == 2 ? std::string() : std::string(api::error::kNotFound);
+	}
+	std::string changeSettings(const SettingsChange &change) override {
+		actions.push_back("settings" + (change.theme ? " theme=" + *change.theme : std::string())
+			+ (change.streamerMode ? std::string(" streamer=") + (*change.streamerMode ? "on" : "off") : std::string()));
+		return {};
+	}
 	std::string archiveChat(int64_t chat, bool archived) override {
 		actions.push_back(std::string("archive ") + std::to_string(chat) + (archived ? " on" : " off"));
 		return {};

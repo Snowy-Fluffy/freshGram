@@ -65,6 +65,7 @@
 #include "core/version.h"
 #include "ui/image/image.h"
 #include "window/themes/window_theme.h"
+#include "boxes/choose_filter_box.h"
 #include "dialogs/dialogs_entry.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "dialogs/dialogs_main_list.h"
@@ -1524,6 +1525,47 @@ public:
 				value.period = int(seconds);
 			}
 			session->data().notifySettings().update(peer, value);
+			return std::string();
+		}, std::string(fgpl::api::error::kUnavailable));
+	}
+
+	std::string changeFolder(int64_t folder, int64_t chat, bool add) override {
+		return OnMain<std::string>([=] {
+			const auto history = historyOf(chat);
+			if (!history || HiddenPeer(history->peer)) {
+				return std::string(fgpl::api::error::kNotFound);
+			}
+			const auto id = FilterId(folder);
+			const auto &list = history->owner().chatsFilters().list();
+			const auto i = ranges::find(list, id, &Data::ChatFilter::id);
+			if (i == end(list)) {
+				return std::string(fgpl::api::error::kNotFound);
+			} else if (i->contains(history) == add) {
+				return std::string();
+			}
+			const auto validator = ChooseFilterValidator(history);
+			if (add ? !validator.canAdd(id) : !validator.canRemove(id)) {
+				return std::string(fgpl::api::error::kDenied);
+			} else if (add) {
+				if (validator.limitReached(id, true).reached) {
+					return std::string(fgpl::api::error::kLimit);
+				}
+				validator.add(id);
+			} else {
+				validator.remove(id);
+			}
+			return std::string();
+		}, std::string(fgpl::api::error::kUnavailable));
+	}
+
+	std::string changeSettings(const fgpl::SettingsChange &change) override {
+		return OnMain<std::string>([=] {
+			if (change.theme && (*change.theme == "dark") != Window::Theme::IsNightMode()) {
+				Window::Theme::ToggleNightMode();
+			}
+			if (change.streamerMode) {
+				AyuSettings::getInstance().setStreamerMode(*change.streamerMode);
+			}
 			return std::string();
 		}, std::string(fgpl::api::error::kUnavailable));
 	}

@@ -279,6 +279,8 @@
 "fresh_PermContactsList" = "Vedere i contatti";
 "fresh_PermSettingsRead" = "Leggere le impostazioni dell’app";
 "fresh_PermFoldersList" = "Vedere le cartelle delle chat";
+"fresh_PermFoldersManage" = "Aggiungere e togliere chat dalle cartelle";
+"fresh_PermSettingsWrite" = "Cambiare tema e modalità streamer";
 "fresh_PermUiMenu" = "Aggiungere voci di menu";
 "fresh_PermUiCommand" = "Aggiungere comandi in chat";
 "fresh_PermUiSettingsPage" = "Mostrare una pagina di impostazioni";

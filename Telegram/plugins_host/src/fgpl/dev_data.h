@@ -78,6 +78,8 @@ public:
 		bool pinned,
 		bool silent) override;
 	std::string muteChat(int64_t chat, int64_t seconds) override;
+	std::string changeFolder(int64_t folder, int64_t chat, bool add) override;
+	std::string changeSettings(const SettingsChange &change) override;
 	std::string archiveChat(int64_t chat, bool archived) override;
 	std::string pinChat(int64_t chat, bool pinned) override;
 	std::string composerInsert(int64_t chat, const std::string &text) override;

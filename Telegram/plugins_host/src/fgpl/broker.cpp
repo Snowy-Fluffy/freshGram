@@ -846,6 +846,9 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 		_sendTokens -= 1.;
 	} else if (op == "messages.edit"
 		|| op == "messages.set_display"
+		|| op == "folders.add_chat"
+		|| op == "folders.remove_chat"
+		|| op == "settings.set"
 		|| op == "messages.delete"
 		|| op == "messages.react"
 		|| op == "chats.mark_read"
@@ -3161,6 +3164,47 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 				? data->archiveChat(chat.value(), *on)
 				: data->pinChat(chat.value(), *on),
 			"the chat was not changed");
+	} else if (op == "folders.add_chat" || op == "folders.remove_chat") {
+		if (const auto refused = need({ "folders.manage" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		const auto folder = IntArg(args, "folder");
+		if (!chat.ok()) {
+			return chat.error();
+		} else if (!folder || *folder <= 0 || *folder > INT32_MAX) {
+			return api::Fail(api::error::kInvalid, "folder");
+		}
+		return Done(
+			data->changeFolder(*folder, chat.value(), op == "folders.add_chat"),
+			"the folder was not changed");
+	} else if (op == "settings.set") {
+		if (const auto refused = need({ "settings.write" })) {
+			return *refused;
+		}
+		auto change = SettingsChange();
+		const auto map = args ? args->asMap() : nullptr;
+		for (const auto &entry : map ? *map : cbor::Map()) {
+			if (entry.key == "theme") {
+				const auto theme = entry.value.asText();
+				if (!theme || (*theme != "light" && *theme != "dark")) {
+					return api::Fail(api::error::kInvalid, "theme");
+				}
+				change.theme = *theme;
+			} else if (entry.key == "streamerMode") {
+				const auto on = entry.value.asBool();
+				if (!on) {
+					return api::Fail(api::error::kInvalid, "streamerMode");
+				}
+				change.streamerMode = *on;
+			} else {
+				return api::Fail(api::error::kInvalid, "an unknown setting");
+			}
+		}
+		if (!change.theme && !change.streamerMode) {
+			return api::Fail(api::error::kInvalid, "no setting");
+		}
+		return Done(data->changeSettings(change), "the settings were not changed");
 	} else if (op == "users.block" || op == "users.unblock") {
 		if (const auto refused = need({ "contacts.manage" })) {
 			return *refused;

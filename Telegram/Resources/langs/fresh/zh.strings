@@ -279,6 +279,8 @@
 "fresh_PermContactsList" = "查看联系人";
 "fresh_PermSettingsRead" = "读取应用设置";
 "fresh_PermFoldersList" = "查看聊天文件夹";
+"fresh_PermFoldersManage" = "将聊天加入文件夹或从文件夹移除";
+"fresh_PermSettingsWrite" = "更改主题和主播模式";
 "fresh_PermUiMenu" = "添加菜单项";
 "fresh_PermUiCommand" = "添加聊天命令";
 "fresh_PermUiSettingsPage" = "显示设置页面";

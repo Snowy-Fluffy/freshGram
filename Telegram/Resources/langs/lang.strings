@@ -9063,6 +9063,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermContactsList" = "See your contacts";
 "fresh_PermSettingsRead" = "Read app settings";
 "fresh_PermFoldersList" = "See your chat folders";
+"fresh_PermFoldersManage" = "Add chats to folders and remove them";
+"fresh_PermSettingsWrite" = "Change the theme and streamer mode";
 "fresh_PermUiMenu" = "Add menu items";
 "fresh_PermUiCommand" = "Add chat commands";
 "fresh_PermUiSettingsPage" = "Show a settings page";

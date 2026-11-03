@@ -279,6 +279,8 @@
 "fresh_PermContactsList" = "Deine Kontakte sehen";
 "fresh_PermSettingsRead" = "App-Einstellungen lesen";
 "fresh_PermFoldersList" = "Deine Chatordner sehen";
+"fresh_PermFoldersManage" = "Chats in Ordner legen und aus Ordnern nehmen";
+"fresh_PermSettingsWrite" = "Design und Streamer-Modus ändern";
 "fresh_PermUiMenu" = "Menüeinträge hinzufügen";
 "fresh_PermUiCommand" = "Chatbefehle hinzufügen";
 "fresh_PermUiSettingsPage" = "Eine Einstellungsseite anzeigen";

@@ -3216,6 +3216,8 @@ namespace {
 		{ "contacts.list", &st::menuIconProfile },
 		{ "settings.read", &st::menuIconSettings },
 		{ "folders.list", &st::menuIconShowInFolder },
+		{ "folders.manage", &st::menuIconShowInFolder },
+		{ "settings.write", &st::menuIconSettings },
 		{ "ui.menu", &st::menuIconCustomize },
 		{ "ui.command", &st::menuIconBotCommands },
 		{ "ui.settings_page", &st::menuIconSettings },
@@ -3267,7 +3269,7 @@ namespace {
 		"chat.info", "media.read", "media.read_outgoing", "media.download", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
 		"messages.ids", "chats.activity", "stories.read", "calls.activity",
-		"chats.manage", "chats.moderate",
+		"chats.manage", "chats.moderate", "folders.manage",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -3838,6 +3840,8 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "contacts.list", tr::fresh_PermContactsList },
 		{ "settings.read", tr::fresh_PermSettingsRead },
 		{ "folders.list", tr::fresh_PermFoldersList },
+		{ "folders.manage", tr::fresh_PermFoldersManage },
+		{ "settings.write", tr::fresh_PermSettingsWrite },
 		{ "ui.menu", tr::fresh_PermUiMenu },
 		{ "ui.command", tr::fresh_PermUiCommand },
 		{ "ui.settings_page", tr::fresh_PermUiSettingsPage },

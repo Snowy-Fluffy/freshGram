@@ -279,6 +279,8 @@
 "fresh_PermContactsList" = "Видеть контакты";
 "fresh_PermSettingsRead" = "Читать настройки приложения";
 "fresh_PermFoldersList" = "Видеть папки чатов";
+"fresh_PermFoldersManage" = "Добавлять чаты в папки и убирать их";
+"fresh_PermSettingsWrite" = "Менять тему и режим стримера";
 "fresh_PermUiMenu" = "Добавлять пункты меню";
 "fresh_PermUiCommand" = "Добавлять команды в чате";
 "fresh_PermUiSettingsPage" = "Показывать страницу настроек";

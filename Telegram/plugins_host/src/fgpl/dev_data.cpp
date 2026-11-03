@@ -308,6 +308,17 @@ std::string DevData::muteChat(int64_t chat, int64_t seconds) {
 	return {};
 }
 
+std::string DevData::changeFolder(int64_t folder, int64_t chat, bool add) {
+	_say(std::string("[app] folder ") + (add ? "add" : "remove") + " folder=" + std::to_string(folder) + " chat=" + std::to_string(chat));
+	return {};
+}
+
+std::string DevData::changeSettings(const SettingsChange &change) {
+	_say("[app] settings" + (change.theme ? " theme=" + *change.theme : std::string())
+		+ (change.streamerMode ? std::string(" streamer=") + (*change.streamerMode ? "on" : "off") : std::string()));
+	return {};
+}
+
 std::string DevData::archiveChat(int64_t chat, bool archived) {
 	_say(std::string("[app] ") + (archived ? "archive" : "unarchive") + " chat=" + std::to_string(chat));
 	return {};

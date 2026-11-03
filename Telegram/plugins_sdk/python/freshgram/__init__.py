@@ -989,10 +989,26 @@ class _Folders(_Namespace):
     def list(self):
         return self._call("folders.list")
 
+    def add_chat(self, folder, chat):
+        """Put a chat into a folder (folders.manage), as the user would."""
+        return self._call("folders.add_chat", _nothing, folder=folder, chat=chat)
+
+    def remove_chat(self, folder, chat):
+        return self._call("folders.remove_chat", _nothing, folder=folder, chat=chat)
+
 
 class _Settings(_Namespace):
     def read(self):
         return self._call("settings.read")
+
+    def set(self, theme=None, streamer_mode=None):
+        """Change the app theme ("light" or "dark") or the streamer mode (settings.write)."""
+        arguments = {}
+        if theme is not None:
+            arguments["theme"] = theme
+        if streamer_mode is not None:
+            arguments["streamerMode"] = streamer_mode
+        return self._call("settings.set", _nothing, **arguments)
 
 
 class _Media(_Namespace):

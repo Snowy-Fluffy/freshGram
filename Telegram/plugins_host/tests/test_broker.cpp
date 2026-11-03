@@ -262,6 +262,9 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "composer.draft", Request("composer.set_draft", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "messages.send", Request("messages.send", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "ui.toast", Request("ui.toast", { { "text", Text("x") } }) },
+		{ "folders.manage", Request("folders.add_chat", { { "chat", Int(1) }, { "folder", Int(2) } }) },
+		{ "folders.manage", Request("folders.remove_chat", { { "chat", Int(1) }, { "folder", Int(2) } }) },
+		{ "settings.write", Request("settings.set", { { "theme", Text("dark") } }) },
 		{ "notifications.suppress", Request("notify.set_rules", { { "rules", cbor::Value::FromArray({}) } }) },
 		{ "storage.sql", Request("sql.run", { { "sql", Text("SELECT 1") } }) },
 		{ "storage.sql", Request("sql.batch", { { "statements", cbor::Value::FromArray({ cbor::Value::FromMap({ { "sql", Text("SELECT 1") } }) }) } }) },
@@ -1570,6 +1573,44 @@ void TestSetDisplay() {
 
 	broker.beginIncoming();
 	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }))) == "unavailable");
+}
+
+void TestFoldersAndSettings() {
+	auto fixture = Fixture({ "folders.manage", "settings.write" });
+	auto broker = fixture.make();
+	CHECK(IsOk(broker.call(Request("folders.add_chat", { { "chat", Int(1) }, { "folder", Int(2) } }))));
+	CHECK(IsOk(broker.call(Request("folders.remove_chat", { { "chat", Int(1) }, { "folder", Int(2) } }))));
+	CHECK(Code(broker.call(Request("folders.add_chat", { { "chat", Int(1) }, { "folder", Int(3) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("folders.add_chat", { { "chat", Int(1) }, { "folder", Int(0) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("folders.add_chat", { { "chat", Int(1) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("folders.add_chat", { { "chat", Int(3) }, { "folder", Int(2) } }))) == "not_found");
+	CHECK(Code(broker.call(Request("folders.add_chat", { { "chat", Int(api::kServiceChat) }, { "folder", Int(2) } }))) == "denied");
+	CHECK(fixture.data.actions.size() == 3);
+	if (fixture.data.actions.size() == 3) {
+		CHECK(fixture.data.actions[0] == "folder_add 2 1");
+		CHECK(fixture.data.actions[1] == "folder_remove 2 1");
+	}
+
+	fixture.data.actions.clear();
+	CHECK(IsOk(broker.call(Request("settings.set", { { "theme", Text("dark") } }))));
+	CHECK(IsOk(broker.call(Request("settings.set", { { "streamerMode", cbor::Value::FromBool(true) } }))));
+	CHECK(IsOk(broker.call(Request("settings.set", { { "theme", Text("light") }, { "streamerMode", cbor::Value::FromBool(false) } }))));
+	CHECK(fixture.data.actions.size() == 3);
+	if (fixture.data.actions.size() == 3) {
+		CHECK(fixture.data.actions[0] == "settings theme=dark");
+		CHECK(fixture.data.actions[1] == "settings streamer=on");
+		CHECK(fixture.data.actions[2] == "settings theme=light streamer=off");
+	}
+	CHECK(Code(broker.call(Request("settings.set"))) == "invalid");
+	CHECK(Code(broker.call(Request("settings.set", { { "theme", Text("blue") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("settings.set", { { "theme", Int(1) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("settings.set", { { "streamerMode", Text("yes") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("settings.set", { { "language", Text("en") } }))) == "invalid");
+
+	auto scoped = Fixture({ "folders.manage" });
+	scoped.grants.chats = std::set<int64_t>{ 2 };
+	auto narrow = scoped.make();
+	CHECK(Code(narrow.call(Request("folders.add_chat", { { "chat", Int(1) }, { "folder", Int(2) } }))) == "denied");
 }
 
 void TestNotifyRules() {
@@ -3551,6 +3592,7 @@ int main() {
 	TestSetDisplay();
 	TestSql();
 	TestNotifyRules();
+	TestFoldersAndSettings();
 	TestSilenceIncoming();
 	TestComposerFormatting();
 	TestMediaProgress();

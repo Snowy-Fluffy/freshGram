@@ -222,6 +222,11 @@ struct AppSettings {
 	bool streamerMode = false;
 };
 
+struct SettingsChange {
+	std::optional<std::string> theme;
+	std::optional<bool> streamerMode;
+};
+
 struct Media {
 	std::string kind;
 	std::string mime;
@@ -743,6 +748,16 @@ public:
 	[[nodiscard]] virtual std::string muteChat(int64_t chat, int64_t seconds) {
 		(void)chat;
 		(void)seconds;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string changeFolder(int64_t folder, int64_t chat, bool add) {
+		(void)folder;
+		(void)chat;
+		(void)add;
+		return api::error::kUnavailable;
+	}
+	[[nodiscard]] virtual std::string changeSettings(const SettingsChange &change) {
+		(void)change;
 		return api::error::kUnavailable;
 	}
 	[[nodiscard]] virtual std::string archiveChat(int64_t chat, bool archived) {
