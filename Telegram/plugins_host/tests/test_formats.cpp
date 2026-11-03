@@ -120,6 +120,10 @@ void TestVersions() {
 	CHECK(Compare(v("1.0.0-beta"), v("1.0.0-beta.2")) < 0);
 	CHECK(Compare(v("1.0.0-beta.2"), v("1.0.0-beta.11")) < 0);
 	CHECK(Compare(v("1.0.0-rc.1"), v("1.0.0")) < 0);
+	CHECK(Compare(v("1.0.0-beta.99999999999999999999"), v("1.0.0-beta.2")) > 0);
+	CHECK(Compare(v("1.0.0-beta.99999999999999999999"), v("1.0.0-beta.99999999999999999998")) > 0);
+	CHECK(Compare(v("1.0.0-beta.007"), v("1.0.0-beta.7")) == 0);
+	CHECK(Compare(v("1.0.0-beta.0"), v("1.0.0-beta.00")) == 0);
 	CHECK(v("7.5.9-beta.1").text() == "7.5.9-beta.1");
 }
 

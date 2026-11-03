@@ -67,9 +67,17 @@ namespace {
 			return !part.empty();
 		};
 		if (numeric(pa) && numeric(pb)) {
-			const auto na = std::stoull(pa);
-			const auto nb = std::stoull(pb);
-			if (na != nb) {
+			const auto significant = [](const std::string &part) {
+				const auto first = part.find_first_not_of('0');
+				return (first == std::string::npos)
+					? std::string_view()
+					: std::string_view(part).substr(first);
+			};
+			const auto na = significant(pa);
+			const auto nb = significant(pb);
+			if (na.size() != nb.size()) {
+				return na.size() < nb.size() ? -1 : 1;
+			} else if (na != nb) {
 				return na < nb ? -1 : 1;
 			}
 		} else if (numeric(pa)) {
