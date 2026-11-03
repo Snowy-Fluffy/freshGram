@@ -27,8 +27,18 @@ if (fgpl_target_arch MATCHES "^(aarch64|arm64|ARM64)$")
 else()
 	set(fgpl_wasmtime_arch x86_64)
 endif()
-set(FGPL_WASMTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wasmtime-v50.0.1-${fgpl_wasmtime_arch}-${fgpl_wasmtime_os}-c-api"
-	CACHE PATH "Unpacked Wasmtime C API release")
+set(fgpl_wasmtime_name "wasmtime-v50.0.1-${fgpl_wasmtime_arch}-${fgpl_wasmtime_os}-c-api")
+set(fgpl_wasmtime_default "${CMAKE_CURRENT_SOURCE_DIR}/third_party/${fgpl_wasmtime_name}")
+set(FGPL_WASMTIME_DIR "${fgpl_wasmtime_default}" CACHE PATH "Unpacked Wasmtime C API release")
+get_filename_component(fgpl_wasmtime_parent "${FGPL_WASMTIME_DIR}" DIRECTORY)
+get_filename_component(fgpl_wasmtime_cached "${FGPL_WASMTIME_DIR}" NAME)
+# A release in third_party is the default of an older checkout, not a choice, so it moves on.
+if (fgpl_wasmtime_parent STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+	AND fgpl_wasmtime_cached MATCHES "^wasmtime-v[0-9.]+-${fgpl_wasmtime_arch}-${fgpl_wasmtime_os}-c-api$"
+	AND NOT fgpl_wasmtime_cached STREQUAL fgpl_wasmtime_name)
+	message(STATUS "Wasmtime: ${fgpl_wasmtime_cached} -> ${fgpl_wasmtime_name}")
+	set(FGPL_WASMTIME_DIR "${fgpl_wasmtime_default}" CACHE PATH "Unpacked Wasmtime C API release" FORCE)
+endif()
 
 if (MSVC)
 	# WHY: the host runs in a sandbox that can load system libraries only, so the CRT is linked in.
@@ -132,6 +142,10 @@ if (WIN32)
 	set(fgpl_wasmtime_file "${FGPL_WASMTIME_DIR}/lib/wasmtime.lib")
 else()
 	set(fgpl_wasmtime_file "${FGPL_WASMTIME_DIR}/lib/libwasmtime.a")
+endif()
+if (NOT EXISTS "${fgpl_wasmtime_file}")
+	message(FATAL_ERROR "No Wasmtime C API at ${FGPL_WASMTIME_DIR}, "
+		"run runtime/fetch_wasmtime.py ${fgpl_wasmtime_arch}-${fgpl_wasmtime_os}")
 endif()
 set_target_properties(wasmtime PROPERTIES
 	IMPORTED_LOCATION "${fgpl_wasmtime_file}"
