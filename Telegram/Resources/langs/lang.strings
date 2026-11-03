@@ -8982,6 +8982,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginsBlockUdp" = "Block UDP for all plugins";
 "fresh_PluginsProxy" = "Proxy for plugins";
 "fresh_PluginsProxyOff" = "Off";
+"fresh_PluginsProxyAbout" = "Plugins can't reach this computer or your local network through the proxy. To check this, the addresses plugins connect to are looked up on this device, not by the proxy.";
 "fresh_PermMessagesEdit" = "Edit messages you sent";
 "fresh_PermMessagesDelete" = "Delete messages you sent";
 "fresh_PermMessagesReact" = "Put reactions on messages";

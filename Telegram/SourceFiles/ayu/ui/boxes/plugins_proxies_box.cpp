@@ -277,6 +277,12 @@ void FillBox(not_null<Ui::GenericBox*> box) {
 			Mode::Enabled,
 			tr::lng_proxy_use_custom(tr::now)),
 		st::proxyUsePadding);
+	container->add(
+		object_ptr<Ui::FlatLabel>(
+			container,
+			tr::fresh_PluginsProxyAbout(tr::now),
+			st::boxDividerLabel),
+		st::proxyAboutPadding);
 
 	state->wrap = container->add(object_ptr<Ui::VerticalLayout>(container));
 	container->add(object_ptr<Ui::FixedHeightWidget>(

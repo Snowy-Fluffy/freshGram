@@ -199,6 +199,7 @@
 "fresh_PluginsBlockUdp" = "对所有插件屏蔽 UDP";
 "fresh_PluginsProxy" = "插件代理";
 "fresh_PluginsProxyOff" = "关闭";
+"fresh_PluginsProxyAbout" = "插件无法通过代理访问这台电脑或你的局域网。为此，插件连接的地址会在本设备上解析，而不是由代理解析。";
 "fresh_PermMessagesEdit" = "编辑你发送的消息";
 "fresh_PermMessagesDelete" = "删除你发送的消息";
 "fresh_PermMessagesReact" = "对消息做出回应";

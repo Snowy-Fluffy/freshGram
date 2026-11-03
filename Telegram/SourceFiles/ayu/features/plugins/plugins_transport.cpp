@@ -758,13 +758,19 @@ struct ProxySocket {
 		Connection &entry,
 		const QDeadlineTimer &deadline,
 		bool local = false) {
-	if (!local && proxy.type != NetworkProxy::Type::None) {
-		entry.via = ProxyLabel(proxy);
-		return ConnectThrough(proxy, host, ip, port, entry, deadline);
-	}
 	const auto resolved = Resolve(host, ip, entry, deadline, local);
 	if (!resolved.ok()) {
 		return resolved.error();
+	} else if (!local && proxy.type != NetworkProxy::Type::None) {
+		// The proxy gets the checked address, a name could lead it to this computer.
+		entry.via = ProxyLabel(proxy);
+		return ConnectThrough(
+			proxy,
+			resolved.value().toString().toStdString(),
+			true,
+			port,
+			entry,
+			deadline);
 	}
 	entry.address = resolved.value();
 	return Connect(resolved.value(), port, entry, deadline);
@@ -1049,12 +1055,23 @@ private:
 				if (policy.proxy.type == NetworkProxy::Type::Http) {
 					return fail("unavailable", u"UDP is not supported through an HTTP proxy"_q);
 				}
+				const auto target = Resolve(
+					request.host,
+					request.ip,
+					*entry,
+					deadline);
+				if (!target.ok()) {
+					return failWith(target.error());
+				}
 				entry->via = ProxyLabel(policy.proxy);
 				auto relay = Socks5Associate(policy.proxy, *entry, deadline);
 				if (!relay.ok()) {
 					return failWith(relay.error());
 				}
-				const auto header = Socks5Address(request.host, request.ip, request.port);
+				const auto header = Socks5Address(
+					target.value().toString().toStdString(),
+					true,
+					request.port);
 				if (!header.ok()) {
 					return failWith(header.error());
 				}

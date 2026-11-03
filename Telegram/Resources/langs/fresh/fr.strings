@@ -199,6 +199,7 @@
 "fresh_PluginsBlockUdp" = "Bloquer UDP pour tous les plugins";
 "fresh_PluginsProxy" = "Proxy pour les plugins";
 "fresh_PluginsProxyOff" = "Désactivé";
+"fresh_PluginsProxyAbout" = "Les plugins ne peuvent pas atteindre cet ordinateur ni votre réseau local via le proxy. Pour le vérifier, les adresses auxquelles les plugins se connectent sont résolues sur cet appareil, et non par le proxy.";
 "fresh_PermMessagesEdit" = "Modifier les messages que vous avez envoyés";
 "fresh_PermMessagesDelete" = "Supprimer les messages que vous avez envoyés";
 "fresh_PermMessagesReact" = "Réagir aux messages";
