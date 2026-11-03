@@ -47,6 +47,8 @@ void StoreSettingsPage(
 
 void ForgetSettingsPages(const std::string &id);
 
+[[nodiscard]] QImage DecodePluginIcon(const QByteArray &bytes);
+
 struct PluginBadge {
 	std::string plugin;
 	std::string id;

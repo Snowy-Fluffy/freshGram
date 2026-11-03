@@ -244,6 +244,25 @@ struct Pages {
 	return (i != icons.end()) ? i->second : nullptr;
 }
 
+[[nodiscard]] QImage DecodeRaster(const QByteArray &bytes) {
+	constexpr auto kMaxPixels = qint64(4) * 1024 * 1024;
+	auto buffer = QBuffer();
+	buffer.setData(bytes);
+	buffer.open(QIODevice::ReadOnly);
+	auto reader = QImageReader(&buffer);
+	const auto format = reader.format();
+	const auto size = reader.size();
+	if ((format != "png" && format != "jpeg")
+		|| size.isEmpty()
+		|| qint64(size.width()) * size.height() > kMaxPixels) {
+		return QImage();
+	}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	reader.setAllocationLimit(int(kMaxPixels * 4 / (1024 * 1024)) + 1);
+#endif // Qt >= 6.0
+	return reader.read();
+}
+
 [[nodiscard]] QImage IconMask(
 		const std::string &plugin,
 		const std::string &name,
@@ -289,7 +308,7 @@ struct Pages {
 					(image.height() - fitted.height()) / 2.),
 				fitted));
 		} else {
-			const auto source = QImage::fromData(data).scaled(
+			const auto source = DecodeRaster(data).scaled(
 				image.size(),
 				Qt::KeepAspectRatio,
 				Qt::SmoothTransformation);
@@ -912,7 +931,6 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 		const QByteArray &bytes,
 		const QString &kind,
 		QSize want) {
-	constexpr auto kMaxPixels = qint64(4) * 1024 * 1024;
 	if (kind == u"svg"_q || kind == u"lottie"_q) {
 		if (want.isEmpty() || want.width() > 512 || want.height() > 512) {
 			return QImage();
@@ -936,21 +954,7 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 		}
 		return icon->frame().convertToFormat(QImage::Format_ARGB32_Premultiplied);
 	}
-	auto buffer = QBuffer();
-	buffer.setData(bytes);
-	buffer.open(QIODevice::ReadOnly);
-	auto reader = QImageReader(&buffer);
-	const auto format = reader.format();
-	const auto size = reader.size();
-	if ((format != "png" && format != "jpeg")
-		|| size.isEmpty()
-		|| qint64(size.width()) * size.height() > kMaxPixels) {
-		return QImage();
-	}
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-	reader.setAllocationLimit(int(kMaxPixels * 4 / (1024 * 1024)) + 1);
-#endif // Qt >= 6.0
-	return reader.read();
+	return DecodeRaster(bytes);
 }
 
 [[nodiscard]] QByteArray BytesOf(const cbor::Value &item, const char *name) {
@@ -3671,6 +3675,10 @@ namespace {
 
 } // namespace
 
+QImage DecodePluginIcon(const QByteArray &bytes) {
+	return DecodeRaster(bytes);
+}
+
 void AddPluginHeader(
 		not_null<Ui::VerticalLayout*> container,
 		const PluginHeader &data) {
@@ -3678,7 +3686,7 @@ void AddPluginHeader(
 		object_ptr<Ui::RpWidget>(container),
 		st::boxRowPadding);
 	const auto size = st::pluginHeaderIconSize;
-	auto image = data.icon.isEmpty() ? QImage() : QImage::fromData(data.icon);
+	auto image = data.icon.isEmpty() ? QImage() : DecodeRaster(data.icon);
 	if (!image.isNull()) {
 		const auto ratio = style::DevicePixelRatio();
 		image = image.scaled(

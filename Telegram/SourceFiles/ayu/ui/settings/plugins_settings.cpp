@@ -138,9 +138,9 @@ void AddPluginIconOverlay(
 	if (!bytes || bytes->empty()) {
 		return;
 	}
-	auto image = QImage::fromData(
-		reinterpret_cast<const uchar*>(bytes->data()),
-		qsizetype(bytes->size()));
+	auto image = FreshPlugins::DecodePluginIcon(QByteArray(
+		reinterpret_cast<const char*>(bytes->data()),
+		qsizetype(bytes->size())));
 	if (image.isNull()) {
 		return;
 	}
