@@ -454,6 +454,11 @@ auto PanelAnimation::paintFrame(
 		}
 	}
 
+	outerLeft = std::max(outerLeft, 0);
+	outerTop = std::max(outerTop, 0);
+	outerRight = std::min(outerRight, _frameWidth);
+	outerBottom = std::min(outerBottom, _frameHeight);
+
 	if (opacity == 1.) {
 		// Fill above the frame top with transparent.
 		auto fillTopInts = (_frameInts + outerTop * _frameIntsPerLine + outerLeft);
