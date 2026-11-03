@@ -805,7 +805,8 @@ void Broker::noteUserAction(std::string_view type, std::string_view window) {
 	// The app sends closes itself (toast timeout, refused dialog), so they are no gesture.
 	if (type != "dialog.close"
 		&& type != "window.close"
-		&& type != "toast.close") {
+		&& type != "toast.close"
+		&& type != "settings.open") {
 		_lastUserAction = _services.clockMs();
 	}
 	if (type == "dialog.close") {

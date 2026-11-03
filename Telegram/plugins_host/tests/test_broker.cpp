@@ -702,6 +702,8 @@ void TestOpenSettings() {
 	fixture.time = 100000;
 	auto broker = fixture.make();
 	CHECK(Code(broker.call(Request("ui.open_settings"))) == "denied");
+	broker.noteUserAction("settings.open");
+	CHECK(Code(broker.call(Request("ui.open_settings"))) == "denied");
 	broker.noteUserAction("menu.click");
 	CHECK(IsOk(broker.call(Request("ui.open_settings"))));
 	CHECK(kinds == (std::vector<std::string>{ "open_settings" }));
