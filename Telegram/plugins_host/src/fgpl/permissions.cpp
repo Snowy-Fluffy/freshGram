@@ -11,7 +11,8 @@ const auto kReadingPermissions = std::set<std::string>{
 	"media.read_outgoing",
 	"folders.list", "settings.read", "stars.balance", "users.info", "chats.active",
 	"chats.activity", "users.presence", "app.activity", "translate.provide", "ai.provide",
-	"stories.read", "calls.activity",
+	"stories.read", "calls.activity", "messages.transform_incoming",
+	"messages.transform_outgoing",
 };
 
 [[nodiscard]] bool Has(

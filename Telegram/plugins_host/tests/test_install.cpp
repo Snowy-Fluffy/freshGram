@@ -5,6 +5,7 @@
 #include "fgpl/permissions.h"
 #include "python_support.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 
@@ -46,6 +47,12 @@ void TestPermissions() {
 	CHECK(RiskNotes({ "net.https" }).size() == 1);
 	CHECK(RiskNotes({ "net.udp" }).size() == 2);
 	CHECK(RiskNotes({ "messages.read" }).empty());
+	for (const auto hook : { "messages.transform_incoming", "messages.transform_outgoing" }) {
+		const auto hooked = RiskNotes({ hook, "net.https" });
+		CHECK(std::any_of(hooked.begin(), hooked.end(), [](const RiskNote &note) {
+			return note.risk == Risk::ExfiltrationPossible;
+		}));
+	}
 	CHECK(RiskNotes({ "messages.read_deleted", "net.tcp", "messages.send", "background" }).size() == 6);
 
 	auto next = manifest;
