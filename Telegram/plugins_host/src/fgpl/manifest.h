@@ -164,6 +164,7 @@ struct OutgoingInfo {
 	std::vector<TextEntity> entities;
 	// Not empty for a send of files.
 	std::vector<OutgoingFile> files;
+	uint64_t send = 0;
 };
 
 // The permission an event type needs, or null for an unknown event.

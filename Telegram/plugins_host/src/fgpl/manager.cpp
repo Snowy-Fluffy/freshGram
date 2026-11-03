@@ -1878,7 +1878,8 @@ void PluginManager::run(Instance &instance) {
 				instance.broker->beginOutgoing(
 					outgoing->media,
 					outgoing->chat,
-					outgoing->memoryBytes);
+					outgoing->memoryBytes,
+					outgoing->send);
 			}
 		}
 		const auto result = instance.client->deliver(event, *instance.broker);
@@ -2751,6 +2752,7 @@ bool PluginManager::advance(
 		auto pending = std::make_shared<Outgoing>();
 		const auto &info = chain.info;
 		pending->chat = info.chat;
+		pending->send = info.send;
 		pending->memoryBytes = size_t(parsed->memoryMb) << 20;
 		auto event = cbor::Map{
 			{ "type", Text("message.outgoing") },

@@ -72,9 +72,10 @@ struct OutgoingFileSource {
 	QString path;
 	QByteArray bytes;
 };
-// Main thread only: the file number index of the send that is at the front of the history queue.
+// Main thread only: the file number index of the send, while it is at the front of the history queue.
 [[nodiscard]] std::optional<OutgoingFileSource> PendingOutgoingFile(
 	not_null<History*> history,
+	uint64 send,
 	size_t index,
 	bool thumbnail);
 [[nodiscard]] State CurrentState();

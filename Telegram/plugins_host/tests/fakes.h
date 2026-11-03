@@ -21,6 +21,7 @@ public:
 	static constexpr auto kSavedChat = int64_t(6);
 
 	bool withSaved = false;
+	uint64_t queuedSend = 0;
 
 	std::vector<Chat> chats(size_t) override {
 		auto result = std::vector<Chat>{
@@ -255,8 +256,8 @@ public:
 		return std::nullopt;
 	}
 
-	std::optional<Media> outgoingFile(int64_t chat, size_t index, bool thumbnail, size_t maxBytes) override {
-		if (chat != 1 && chat != 3) {
+	std::optional<Media> outgoingFile(int64_t chat, uint64_t send, size_t index, bool thumbnail, size_t maxBytes) override {
+		if ((chat != 1 && chat != 3) || send != queuedSend) {
 			return std::nullopt;
 		} else if (index == 0) {
 			return Media{ thumbnail ? "thumbnail" : "photo", "image/png", "p.png", cbor::Bytes(12, 3) };

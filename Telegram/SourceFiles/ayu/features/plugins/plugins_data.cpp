@@ -3272,6 +3272,7 @@ public:
 
 	std::optional<fgpl::Media> outgoingFile(
 			int64_t chat,
+			uint64_t send,
 			size_t index,
 			bool thumbnail,
 			size_t maxBytes) override {
@@ -3282,7 +3283,7 @@ public:
 			if (!history || HiddenPeer(history->peer)) {
 				return std::nullopt;
 			}
-			return PendingOutgoingFile(history, index, thumbnail);
+			return PendingOutgoingFile(history, send, index, thumbnail);
 		}, std::nullopt);
 		if (!source) {
 			return std::nullopt;

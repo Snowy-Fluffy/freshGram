@@ -885,6 +885,15 @@ void TestOutgoingFileRead() {
 	(void)broker.finishOutgoing();
 	CHECK(Code(broker.call(file(0))) == "invalid");
 
+	fixture.data.queuedSend = 8;
+	broker.beginOutgoing(true, 1, 100, 7);
+	CHECK(Code(broker.call(file(0))) == "not_found");
+	(void)broker.finishOutgoing();
+	broker.beginOutgoing(true, 1, 100, 8);
+	CHECK(IsOk(broker.call(file(0))));
+	(void)broker.finishOutgoing();
+	fixture.data.queuedSend = 0;
+
 	broker.beginOutgoing(true, 5);
 	CHECK(Code(broker.call(file(0))) == "denied");
 	(void)broker.finishOutgoing();

@@ -112,12 +112,14 @@ struct Outgoing {
 	std::optional<MsgId> localMessageId;
 	bool byPlugin = false;
 	std::unique_ptr<OutgoingFiles> files;
+	uint64 send = 0;
 };
 
 struct Service {
 	std::unique_ptr<Control> control;
 	std::map<Main::Account*, Watched> watched;
 	std::map<not_null<History*>, std::deque<Outgoing>> outgoing;
+	uint64 lastSend = 0;
 	bool sending = false;
 	rpl::variable<State> state = State::Disabled;
 	rpl::event_stream<> list;
@@ -1214,7 +1216,8 @@ void Next(not_null<History*> history) {
 		}
 		const auto &message = i->second.front().message;
 		const auto account = AccountId(&history->session()).toStdString();
-		const auto info = InfoOf(message, i->second.front().files.get());
+		auto info = InfoOf(message, i->second.front().files.get());
+		info.send = i->second.front().send;
 		const auto weak = base::make_weak(&history->session());
 		const auto posted = Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->transformOutgoingAsync(
@@ -1265,7 +1268,13 @@ bool ApplyOutgoing(
 			&& IsPluginMessage(
 				&history->session(),
 				FullMsgId(history->peer->id, *localMessageId)));
-	queue.push_back({ std::move(message), localMessageId, byPlugin });
+	queue.push_back({
+		std::move(message),
+		localMessageId,
+		byPlugin,
+		nullptr,
+		++service.lastSend,
+	});
 	if (!waiting) {
 		Next(history);
 	}
@@ -1306,7 +1315,13 @@ bool ApplyOutgoingFiles(
 		return false;
 	}
 	auto &queue = service.outgoing[history];
-	queue.push_back({ std::move(message), std::nullopt, false, std::move(files) });
+	queue.push_back({
+		std::move(message),
+		std::nullopt,
+		false,
+		std::move(files),
+		++service.lastSend,
+	});
 	if (!waiting) {
 		Next(history);
 	}
@@ -1318,12 +1333,15 @@ bool ApplyOutgoingFiles(
 
 std::optional<OutgoingFileSource> PendingOutgoingFile(
 		not_null<History*> history,
+		uint64 send,
 		size_t index,
 		bool thumbnail) {
 #ifdef FRESHGRAM_PLUGINS
 	const auto &outgoing = GetService().outgoing;
 	const auto i = outgoing.find(history);
-	if (i == end(outgoing) || i->second.empty()) {
+	if (i == end(outgoing)
+		|| i->second.empty()
+		|| i->second.front().send != send) {
 		return std::nullopt;
 	}
 	const auto &files = i->second.front().files;

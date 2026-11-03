@@ -473,10 +473,12 @@ public:
 	// A file the user is sending, while its message.outgoing hook runs.
 	[[nodiscard]] virtual std::optional<Media> outgoingFile(
 			int64_t chat,
+			uint64_t send,
 			size_t index,
 			bool thumbnail,
 			size_t maxBytes) {
 		(void)chat;
+		(void)send;
 		(void)index;
 		(void)thumbnail;
 		(void)maxBytes;
@@ -996,7 +998,11 @@ public:
 		return _grants;
 	}
 
-	void beginOutgoing(bool media = false, int64_t chat = 0, size_t memoryBytes = 0);
+	void beginOutgoing(
+		bool media = false,
+		int64_t chat = 0,
+		size_t memoryBytes = 0,
+		uint64_t send = 0);
 	void beginIncoming(bool service = false);
 	[[nodiscard]] OutgoingEdit finishOutgoing();
 	void releaseSockets();
@@ -1098,6 +1104,7 @@ private:
 	bool _serviceHook = false;
 	bool _mediaHook = false;
 	int64_t _hookChat = 0;
+	uint64_t _hookSend = 0;
 	size_t _hookMemoryBytes = 0;
 	OutgoingEdit _outgoingEdit;
 

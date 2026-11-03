@@ -644,10 +644,15 @@ void Broker::beginIncoming(bool service) {
 	_outgoingEdit = OutgoingEdit();
 }
 
-void Broker::beginOutgoing(bool media, int64_t chat, size_t memoryBytes) {
+void Broker::beginOutgoing(
+		bool media,
+		int64_t chat,
+		size_t memoryBytes,
+		uint64_t send) {
 	_hook = HookKind::Outgoing;
 	_mediaHook = media;
 	_hookChat = chat;
+	_hookSend = send;
 	_hookMemoryBytes = memoryBytes;
 	_outgoingEdit = OutgoingEdit();
 }
@@ -1001,6 +1006,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			: kMaxMedia;
 		const auto file = _services.data->outgoingFile(
 			_hookChat,
+			_hookSend,
 			size_t(*index),
 			*thumbnail,
 			limit);
