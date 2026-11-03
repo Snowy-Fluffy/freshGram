@@ -83,6 +83,7 @@ constexpr auto kMaxTextEmoji = size_t(100);
 constexpr auto kMaxNotifyTitle = size_t(64);
 constexpr auto kMaxNotifyText = size_t(256);
 constexpr auto kNotifyEachMs = int64_t(5000);
+constexpr auto kSettingsEachMs = int64_t(5000);
 constexpr auto kResolveEachMs = int64_t(1000);
 constexpr auto kImageEachMs = int64_t(100);
 constexpr auto kMaxImageInput = size_t(16) << 20;
@@ -131,6 +132,7 @@ constexpr auto kMaxNotifyMatch = size_t(200);
 
 constexpr auto kMaxTranslateItems = size_t(20);
 constexpr auto kMaxAiAnswer = size_t(64) << 10;
+constexpr auto kMaxTranscript = size_t(16) << 10;
 constexpr auto kMaxTranslatedItem = size_t(32) << 10;
 constexpr auto kMaxTranslatedTotal = size_t(96) << 10;
 
@@ -852,6 +854,7 @@ void Broker::noteUserAction(std::string_view type, std::string_view window) {
 	if (type != "dialog.close"
 		&& type != "window.close"
 		&& type != "toast.close"
+		&& type != "link.open"
 		&& type != "settings.open") {
 		_lastUserAction = _services.clockMs();
 		_userActionCalls = kUserActionCalls;
@@ -886,7 +889,6 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 		|| op == "messages.set_display"
 		|| op == "folders.add_chat"
 		|| op == "folders.remove_chat"
-		|| op == "settings.set"
 		|| op == "messages.delete"
 		|| op == "messages.react"
 		|| op == "chats.mark_read"
@@ -900,6 +902,11 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 			return api::Fail(api::error::kLimit, "this is done too often");
 		}
 		_actionTokens -= 1.;
+	} else if (op == "settings.set") {
+		if (_lastSettings && now - _lastSettings < kSettingsEachMs) {
+			return api::Fail(api::error::kLimit, "settings are changed too often");
+		}
+		_lastSettings = now;
 	} else if (op == "ui.toast") {
 		if (_lastToast && now - _lastToast < kToastEachMs) {
 			return api::Fail(api::error::kLimit, "toasts are shown too often");
@@ -1217,7 +1224,7 @@ cbor::Value Broker::dispatch(const std::string &op, const cbor::Value *args) {
 			? TextArg(args, "error", 200)
 			: std::optional<std::string>(std::string());
 		const auto text = Arg(args, "text")
-			? TextArg(args, "text", kMaxAiAnswer)
+			? TextArg(args, "text", kMaxTranscript)
 			: std::optional<std::string>(std::string());
 		if (!ticket || !error || !text || (error->empty() && text->empty())) {
 			return api::Fail(api::error::kInvalid, "ticket, text or error");
@@ -1454,6 +1461,7 @@ cbor::Value Broker::sqlCall(const std::string &op, const cbor::Value *args) {
 	}
 	auto limits = SqlLimits();
 	limits.maxBytes = _grants.storageQuotaBytes;
+	limits.maxResultBytes = size_t(512) << 10;
 	if (op == "sql.usage") {
 		return api::Ok(cbor::Value::FromMap({
 			{ "used", Int(int64_t(database->usedBytes())) },
@@ -1490,7 +1498,7 @@ cbor::Value Broker::sqlCall(const std::string &op, const cbor::Value *args) {
 	if (op == "sql.run") {
 		const auto one = args ? parse(*args) : std::nullopt;
 		const auto rows = IntArg(args, "limit").value_or(1000);
-		if (!one || rows < 1) {
+		if (!one || rows < 1 || (Arg(args, "limit") && !IntArg(args, "limit"))) {
 			return api::Fail(api::error::kInvalid, "sql, params or limit");
 		}
 		limits.maxRows = size_t(std::min<int64_t>(rows, kMaxSqlRows));
@@ -3259,6 +3267,8 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		}
 		if (!change.theme && !change.streamerMode) {
 			return api::Fail(api::error::kInvalid, "no setting");
+		} else if (change.streamerMode && !*change.streamerMode && !takeUserAction()) {
+			return api::Fail(api::error::kDenied, "only right after a user action");
 		}
 		return Done(data->changeSettings(change), "the settings were not changed");
 	} else if (op == "users.block" || op == "users.unblock") {
@@ -3789,6 +3799,13 @@ cbor::Value Broker::deviceAnswer(const std::string &op, const cbor::Value *args)
 				} else {
 					return api::Fail(api::error::kInvalid, "a rule has an unknown key");
 				}
+			}
+			if (!rule.chat && !rule.sender && rule.contains.empty()) {
+				return api::Fail(api::error::kInvalid, "a rule needs a key");
+			} else if (_grants.chats && !rule.chat) {
+				return api::Fail(api::error::kInvalid, "a rule needs a chat");
+			} else if (rule.chat && (rule.chat == api::kServiceChat || !chatInScope(rule.chat))) {
+				return api::Fail(api::error::kDenied, "this chat");
 			}
 			rules.push_back(std::move(rule));
 		}

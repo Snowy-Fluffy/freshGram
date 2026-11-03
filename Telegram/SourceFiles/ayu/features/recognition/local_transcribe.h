@@ -24,7 +24,7 @@ struct LocalTranscript {
 	QString details; // For the log.
 };
 
-// The Whisper (local) provider or a transcriber plugin is chosen and available.
+// The Whisper (local) provider is chosen and available, or a transcriber plugin is chosen.
 [[nodiscard]] bool LocalTranscriptionEnabled();
 
 // Downloads the media if needed and recognizes the speech in a background

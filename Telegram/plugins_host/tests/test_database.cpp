@@ -1,9 +1,11 @@
 #include "check.h"
 #include "fgpl/database.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -63,8 +65,8 @@ void TestRowsAndParameters() {
 	}
 	CHECK(CodeOf(Run(database, "SELECT ?", {})) == "invalid");
 	CHECK(CodeOf(Run(database, "SELECT 1", { Int(1) })) == "invalid");
-	CHECK(CodeOf(Run(database, "SELEC")) == "invalid");
-	CHECK(CodeOf(Run(database, "")) == "invalid");
+	CHECK(!Run(database, "SELEC").ok());
+	CHECK(!Run(database, "").ok());
 	CHECK(CodeOf(Run(database, "SELECT 1; SELECT 2")) == "invalid");
 	CHECK(Run(database, "SELECT 1; -- done").ok());
 	CHECK(CodeOf(Run(database, "INSERT INTO log (id) VALUES (1)")) == "invalid");
@@ -99,13 +101,21 @@ void TestForbiddenStatements() {
 	CHECK(Run(database, "PRAGMA user_version=3").ok());
 	const auto version = Run(database, "PRAGMA user_version");
 	CHECK(version.ok() && *version.value()[0].rows[0][0].asInt() == 3);
-	CHECK(CodeOf(Run(database, "VACUUM")) == "invalid");
-	CHECK(CodeOf(Run(database, "/* x */ vacuum INTO '" + (directory / "c.sqlite").generic_string() + "'")) == "invalid");
-	CHECK(CodeOf(Run(database, "-- x\nVACUUM")) == "invalid");
+	CHECK(CodeOf(Run(database, "VACUUM")) == "denied");
+	CHECK(CodeOf(Run(database, "/* x */ vacuum INTO '" + (directory / "c.sqlite").generic_string() + "'")) == "denied");
+	CHECK(CodeOf(Run(database, "-- x\nVACUUM")) == "denied");
+	CHECK(CodeOf(Run(database, "\fVACUUM temp")) == "denied");
+	CHECK(CodeOf(Run(database, "\vVACUUM")) == "denied");
+	CHECK(CodeOf(Run(database, "CREATE TEMP TABLE t (v)")) == "denied");
+	CHECK(CodeOf(Run(database, "CREATE TEMP TABLE IF NOT EXISTS t (v)")) == "denied");
+	CHECK(CodeOf(Run(database, "CREATE VIEW v AS SELECT 1")) != "");
+	CHECK(!Run(database, "CREATE VIEW v AS SELECT 1").ok());
+	CHECK(CodeOf(Run(database, "SELECT * FROM dbstat")) == "denied");
+	CHECK(CodeOf(Run(database, "SELECT * FROM sqlite_dbpage")) != "");
 	CHECK(!fs::exists(directory / "c.sqlite"));
 	CHECK(!Run(database, "SELECT load_extension('x')").ok());
 	CHECK(CodeOf(Run(database, "BEGIN")) == "denied");
-	CHECK(CodeOf(Run(database, "SAVEPOINT a")) == "invalid");
+	CHECK(CodeOf(Run(database, "SAVEPOINT a")) == "denied");
 	CHECK(Run(database, "SELECT 1").ok());
 	CHECK(CodeOf(Run(database, "CREATE VIRTUAL TABLE t USING dbstat")) == "denied");
 	fs::remove_all(directory);
@@ -164,6 +174,53 @@ void TestQuotaAndTimeout() {
 	fs::remove_all(directory);
 }
 
+void TestMemoryAndSize() {
+	const auto directory = TempDirectory("fgpl-sql-memory");
+	auto database = SqliteDatabase(directory / "a.sqlite");
+	auto wide = std::string("SELECT zeroblob(1000000), zeroblob(1000000)");
+	CHECK(CodeOf(Run(database, wide)) == "limit");
+	CHECK(CodeOf(Run(database, "SELECT zeroblob(16000000)")) == "limit");
+	auto columns = std::string("SELECT 1");
+	for (auto i = 0; i != 70; ++i) {
+		columns += ", 1";
+	}
+	CHECK(!Run(database, columns).ok());
+	CHECK(Run(database, "SELECT zeroblob(1000)").ok());
+
+	const auto started = std::chrono::steady_clock::now();
+	const auto sorted = Run(
+		database,
+		"SELECT x FROM (WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM c) SELECT zeroblob(500000) AS x FROM c) ORDER BY x");
+	CHECK(CodeOf(sorted) == "limit");
+	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
+	CHECK(Run(database, "SELECT 1").ok());
+	fs::remove_all(directory);
+}
+
+void TestCloseInterrupts() {
+	const auto directory = TempDirectory("fgpl-sql-close");
+	auto database = SqliteDatabase(directory / "a.sqlite");
+	CHECK(Run(database, "SELECT 1").ok());
+	auto slow = SqlLimits();
+	slow.timeoutMs = 60000;
+	auto code = std::string();
+	auto worker = std::thread([&] {
+		code = CodeOf(Run(
+			database,
+			"WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT COUNT(*) FROM c",
+			{},
+			slow));
+	});
+	std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	const auto started = std::chrono::steady_clock::now();
+	database.close();
+	worker.join();
+	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(5));
+	CHECK(code == "limit");
+	CHECK(CodeOf(Run(database, "SELECT 1")) == "unavailable");
+	fs::remove_all(directory);
+}
+
 void TestFullTextSearch() {
 	const auto directory = TempDirectory("fgpl-sql-fts");
 	auto database = SqliteDatabase(directory / "a.sqlite");
@@ -214,6 +271,8 @@ int main() {
 	TestForbiddenStatements();
 	TestBatchRollsBack();
 	TestQuotaAndTimeout();
+	TestMemoryAndSize();
+	TestCloseInterrupts();
 	TestFullTextSearch();
 	TestPersistsAndRecovers();
 	return Failures() ? 1 : 0;

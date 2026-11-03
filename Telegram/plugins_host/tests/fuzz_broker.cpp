@@ -1,4 +1,5 @@
 #include "fgpl/broker.h"
+#include "fgpl/database.h"
 #include "fgpl/manifest.h"
 #include "fakes.h"
 
@@ -71,6 +72,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
 	auto services = BrokerServices();
 	services.storage = &storage;
+	services.database = std::make_shared<SqliteDatabase>(":memory:");
 	services.data = &fake;
 	services.transport = &transport;
 	services.clockMs = [&] { return time; };

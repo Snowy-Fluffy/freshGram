@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <atomic>
+#include <cctype>
 #include <cstring>
 #include <system_error>
 
@@ -13,10 +15,15 @@ namespace fgpl {
 namespace {
 
 constexpr auto kPageSize = 4096;
-constexpr auto kMaxBlobLength = 1 << 24;
+constexpr auto kMaxBlobLength = 1 << 20;
+constexpr auto kMaxColumns = 64;
+constexpr auto kMaxStatementMemory = int64_t(64) << 20;
+constexpr auto kProgressOps = 100;
 
 struct Deadline {
 	std::chrono::steady_clock::time_point end;
+	const std::atomic<bool> *stop = nullptr;
+	int64_t memory = 0;
 };
 
 [[nodiscard]] bool Same(const char *a, const char *b) {
@@ -60,29 +67,22 @@ int Authorize(
 	case SQLITE_INSERT:
 	case SQLITE_UPDATE:
 	case SQLITE_DELETE:
-	case SQLITE_READ:
 	case SQLITE_RECURSIVE:
 	case SQLITE_CREATE_TABLE:
 	case SQLITE_CREATE_INDEX:
-	case SQLITE_CREATE_VIEW:
 	case SQLITE_CREATE_TRIGGER:
-	case SQLITE_CREATE_TEMP_TABLE:
-	case SQLITE_CREATE_TEMP_INDEX:
-	case SQLITE_CREATE_TEMP_VIEW:
-	case SQLITE_CREATE_TEMP_TRIGGER:
 	case SQLITE_DROP_TABLE:
 	case SQLITE_DROP_INDEX:
-	case SQLITE_DROP_VIEW:
 	case SQLITE_DROP_TRIGGER:
-	case SQLITE_DROP_TEMP_TABLE:
-	case SQLITE_DROP_TEMP_INDEX:
-	case SQLITE_DROP_TEMP_VIEW:
-	case SQLITE_DROP_TEMP_TRIGGER:
 	case SQLITE_ALTER_TABLE:
 	case SQLITE_REINDEX:
 	case SQLITE_ANALYZE:
 	case SQLITE_SAVEPOINT:
 		return SQLITE_OK;
+	case SQLITE_READ:
+		return (Same(first, "dbstat")
+			|| Same(first, "sqlite_dbpage")
+			|| Same(first, "sqlite_stmt")) ? SQLITE_DENY : SQLITE_OK;
 	case SQLITE_CREATE_VTABLE:
 	case SQLITE_DROP_VTABLE:
 		return Same(second, "fts5") ? SQLITE_OK : SQLITE_DENY;
@@ -96,7 +96,9 @@ int Authorize(
 
 int Progress(void *data) {
 	const auto deadline = static_cast<Deadline*>(data);
-	return (std::chrono::steady_clock::now() > deadline->end) ? 1 : 0;
+	return (std::chrono::steady_clock::now() > deadline->end
+		|| (deadline->stop && deadline->stop->load())
+		|| sqlite3_memory_used() - deadline->memory > kMaxStatementMemory) ? 1 : 0;
 }
 
 [[nodiscard]] SqlError Failure(sqlite3 *db, int code) {
@@ -123,7 +125,7 @@ int Progress(void *data) {
 // Skips spaces, comments and semicolons.
 [[nodiscard]] const char *SkipFiller(const char *p) {
 	while (*p) {
-		if (std::strchr(" \t\r\n;", *p)) {
+		if (std::strchr(" \t\r\n\f\v;", *p)) {
 			++p;
 		} else if (p[0] == '-' && p[1] == '-') {
 			while (*p && *p != '\n') {
@@ -142,9 +144,22 @@ int Progress(void *data) {
 	return p;
 }
 
-[[nodiscard]] bool IsVacuum(const char *sql) {
+[[nodiscard]] bool StartsAllowed(const char *sql) {
+	static constexpr const char *kAllowed[] = {
+		"select", "insert", "update", "delete", "with", "values", "replace",
+		"create", "drop", "alter", "reindex", "analyze", "pragma",
+	};
 	const auto p = SkipFiller(sql);
-	return sqlite3_strnicmp(p, "vacuum", 6) == 0;
+	auto length = size_t(0);
+	while (std::isalpha(static_cast<unsigned char>(p[length]))) {
+		++length;
+	}
+	for (const auto word : kAllowed) {
+		if (std::strlen(word) == length && sqlite3_strnicmp(p, word, int(length)) == 0) {
+			return true;
+		}
+	}
+	return false;
 }
 
 [[nodiscard]] std::string PathText(const std::filesystem::path &path) {
@@ -216,19 +231,41 @@ private:
 	}
 }
 
-[[nodiscard]] cbor::Value Column(sqlite3_stmt *statement, int index, size_t &size) {
+[[nodiscard]] size_t RowBytes(sqlite3_stmt *statement, int columns) {
+	auto result = size_t(0);
+	for (auto i = 0; i != columns; ++i) {
+		const auto type = sqlite3_column_type(statement, i);
+		result += (type == SQLITE_TEXT || type == SQLITE_BLOB)
+			? size_t(sqlite3_column_bytes(statement, i)) + 5
+			: 9;
+	}
+	return result;
+}
+
+class ProgressGuard {
+public:
+	ProgressGuard(sqlite3 *db, Deadline *deadline) : _db(db) {
+		sqlite3_progress_handler(_db, kProgressOps, Progress, deadline);
+	}
+	~ProgressGuard() {
+		sqlite3_progress_handler(_db, 0, nullptr, nullptr);
+	}
+
+private:
+	sqlite3 *_db = nullptr;
+
+};
+
+[[nodiscard]] cbor::Value Column(sqlite3_stmt *statement, int index) {
 	switch (sqlite3_column_type(statement, index)) {
 	case SQLITE_INTEGER:
-		size += 9;
 		return cbor::Value::FromInt(sqlite3_column_int64(statement, index));
 	case SQLITE_FLOAT:
-		size += 9;
 		return cbor::Value::FromFloat(sqlite3_column_double(statement, index));
 	case SQLITE_TEXT: {
 		const auto data = reinterpret_cast<const char*>(
 			sqlite3_column_text(statement, index));
 		auto text = std::string(data, size_t(sqlite3_column_bytes(statement, index)));
-		size += text.size() + 5;
 		if (cbor::IsValidUtf8(text)) {
 			return cbor::Value::FromText(std::move(text));
 		}
@@ -237,13 +274,11 @@ private:
 	case SQLITE_BLOB: {
 		const auto data = static_cast<const uint8_t*>(sqlite3_column_blob(statement, index));
 		const auto length = size_t(sqlite3_column_bytes(statement, index));
-		size += length + 5;
 		return cbor::Value::FromBytes(data
 			? cbor::Bytes(data, data + length)
 			: cbor::Bytes());
 	}
 	}
-	size += 1;
 	return cbor::Value();
 }
 
@@ -280,10 +315,12 @@ bool SqliteDatabase::open(SqlError &error) {
 			sqlite3_db_config(_db, SQLITE_DBCONFIG_ENABLE_FKEY, 1, nullptr);
 			sqlite3_db_config(_db, SQLITE_DBCONFIG_DQS_DML, 0, nullptr);
 			sqlite3_db_config(_db, SQLITE_DBCONFIG_DQS_DDL, 0, nullptr);
+			sqlite3_db_config(_db, SQLITE_DBCONFIG_ENABLE_VIEW, 0, nullptr);
 			sqlite3_limit(_db, SQLITE_LIMIT_LENGTH, kMaxBlobLength);
 			sqlite3_limit(_db, SQLITE_LIMIT_SQL_LENGTH, 1 << 16);
 			sqlite3_limit(_db, SQLITE_LIMIT_VARIABLE_NUMBER, 256);
 			sqlite3_limit(_db, SQLITE_LIMIT_ATTACHED, 0);
+			sqlite3_limit(_db, SQLITE_LIMIT_COLUMN, kMaxColumns);
 			sqlite3_limit(_db, SQLITE_LIMIT_COMPOUND_SELECT, 50);
 			sqlite3_limit(_db, SQLITE_LIMIT_EXPR_DEPTH, 100);
 			sqlite3_limit(_db, SQLITE_LIMIT_LIKE_PATTERN_LENGTH, 1000);
@@ -324,7 +361,9 @@ Result<std::vector<SqlResult>, SqlError> SqliteDatabase::run(
 		bool atomic) {
 	const auto lock = std::scoped_lock(_mutex);
 	auto error = SqlError();
-	if (!open(error)) {
+	if (_stop.load()) {
+		return SqlError{ api::error::kUnavailable, "the database is closed" };
+	} else if (!open(error)) {
 		return error;
 	}
 	{
@@ -337,9 +376,17 @@ Result<std::vector<SqlResult>, SqlError> SqliteDatabase::run(
 			return Failure(_db, sqlite3_errcode(_db));
 		}
 	}
+	auto deadline = Deadline{
+		std::chrono::steady_clock::now() + std::chrono::milliseconds(limits.timeoutMs),
+		&_stop,
+		sqlite3_memory_used(),
+	};
+	const auto progress = ProgressGuard(_db, &deadline);
 	auto results = std::vector<SqlResult>();
 	for (const auto &statement : statements) {
-		auto one = runOne(statement, limits);
+		auto one = _stop.load()
+			? Result<SqlResult, SqlError>(SqlError{ api::error::kUnavailable, "the database is closed" })
+			: runOne(statement, limits);
 		if (!one.ok()) {
 			if (atomic) {
 				const auto trusted = Trusted(_db);
@@ -369,8 +416,8 @@ Result<SqlResult, SqlError> SqliteDatabase::runOne(
 		const SqlLimits &limits) {
 	if (statement.sql.empty()
 		|| statement.sql.find('\0') != std::string::npos
-		|| IsVacuum(statement.sql.c_str())) {
-		return SqlError{ api::error::kInvalid, "the statement is empty or not allowed" };
+		|| !StartsAllowed(statement.sql.c_str())) {
+		return SqlError{ api::error::kDenied, "this statement is not allowed" };
 	}
 	auto prepared = static_cast<sqlite3_stmt*>(nullptr);
 	auto tail = static_cast<const char*>(nullptr);
@@ -398,9 +445,6 @@ Result<SqlResult, SqlError> SqliteDatabase::runOne(
 		}
 	}
 
-	auto deadline = Deadline{ std::chrono::steady_clock::now()
-		+ std::chrono::milliseconds(limits.timeoutMs) };
-	sqlite3_progress_handler(_db, 1000, Progress, &deadline);
 	auto result = SqlResult();
 	const auto columns = sqlite3_column_count(prepared);
 	for (auto i = 0; i != columns; ++i) {
@@ -410,18 +454,23 @@ Result<SqlResult, SqlError> SqliteDatabase::runOne(
 	auto size = size_t(0);
 	auto code = SQLITE_OK;
 	while ((code = sqlite3_step(prepared)) == SQLITE_ROW) {
-		if (result.rows.size() >= limits.maxRows || size >= limits.maxResultBytes) {
+		const auto bytes = RowBytes(prepared, columns);
+		if (result.rows.size() >= limits.maxRows
+			|| (!result.rows.empty() && size + bytes > limits.maxResultBytes)) {
 			result.truncated = true;
 			break;
+		} else if (bytes > limits.maxResultBytes) {
+			sqlite3_finalize(prepared);
+			return SqlError{ api::error::kLimit, "the row is too large" };
 		}
+		size += bytes;
 		auto row = std::vector<cbor::Value>();
 		row.reserve(columns);
 		for (auto i = 0; i != columns; ++i) {
-			row.push_back(Column(prepared, i, size));
+			row.push_back(Column(prepared, i));
 		}
 		result.rows.push_back(std::move(row));
 	}
-	sqlite3_progress_handler(_db, 0, nullptr, nullptr);
 	if (code != SQLITE_ROW && code != SQLITE_DONE) {
 		auto failure = Failure(_db, code);
 		sqlite3_finalize(prepared);
@@ -446,6 +495,7 @@ uint64_t SqliteDatabase::usedBytes() {
 }
 
 void SqliteDatabase::close() {
+	_stop = true;
 	const auto lock = std::scoped_lock(_mutex);
 	_closed = true;
 	if (_db) {

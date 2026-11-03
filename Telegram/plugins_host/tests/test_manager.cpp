@@ -1632,6 +1632,7 @@ void TestTranscribeProvider() {
 	auto manager = PluginManager(lab.config());
 	const auto permissions = std::vector<std::pair<std::string, std::vector<std::string>>>{
 		{ "transcribe.provide", {} },
+		{ "media.read", {} },
 	};
 	const auto provider = [](cbor::Value &document) {
 		Remove(document, "contributes.events");
@@ -1651,8 +1652,8 @@ void TestTranscribeProvider() {
 	for (const auto &id : { good, bystander }) {
 		CHECK(manager.setEnabled(id, true));
 	}
-	CHECK(manager.grant(good, "A", { { "transcribe.provide" }, std::nullopt }));
-	CHECK(manager.grant(bystander, "A", { { "transcribe.provide" }, std::set<int64_t>{ 5 } }));
+	CHECK(manager.grant(good, "A", { { "transcribe.provide", "media.read" }, std::nullopt }));
+	CHECK(manager.grant(bystander, "A", { { "transcribe.provide", "media.read" }, std::set<int64_t>{ 5 } }));
 
 	const auto ask = [&](const std::string &plugin, int64_t chat = 1, int64_t duration = 10, const char *account = "A") {
 		auto result = std::optional<TranscribeResult>();
@@ -1673,6 +1674,7 @@ void TestTranscribeProvider() {
 	CHECK(answered && answered->error.empty() && answered->text == "heard");
 	CHECK(ask(bystander, 1)->error == "denied");
 	CHECK(ask(good, 1, 61)->error == "too_long");
+	CHECK(ask(good, api::kServiceChat)->error == "denied");
 	CHECK(ask("com.example.none")->error == "unavailable");
 	CHECK(ask(good, 1, 10, "bad account!")->error == "unavailable");
 	const auto names = [&] {

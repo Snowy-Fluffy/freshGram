@@ -4,6 +4,7 @@
 #include "fgpl/result.h"
 
 #include <cstdint>
+#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -74,6 +75,7 @@ private:
 	std::filesystem::path _file;
 	sqlite3 *_db = nullptr;
 	bool _closed = false;
+	std::atomic<bool> _stop = false;
 
 };
 

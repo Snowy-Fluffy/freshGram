@@ -1397,8 +1397,10 @@ def on_transcribe(function=None):
             ticket = event["ticket"]
 
             def reply(text=None, error=None):
+                if error is None and text is None:
+                    error = "no text"
                 if error is not None:
-                    _request("transcribe.reply", ticket=ticket, error=str(error)[:200])
+                    _request("transcribe.reply", ticket=ticket, error=(str(error)[:200] or "failed"))
                 else:
                     _request("transcribe.reply", ticket=ticket, text=str(text) or " ")
 

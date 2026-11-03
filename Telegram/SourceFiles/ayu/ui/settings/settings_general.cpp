@@ -263,7 +263,7 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		for (const auto &entry : FreshPlugins::Transcribers()) {
 			result.push_back({
 				TranscriptionProvider::Plugin,
-				entry.name,
+				entry.name + u" ("_q + entry.plugin + u')',
 				entry.plugin,
 			});
 		}
@@ -278,7 +278,7 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 				&& (provider != TranscriptionProvider::Plugin
 					|| option.plugin == plugin);
 		});
-		return (i != end(list)) ? int(i - begin(list)) : 0;
+		return (i != end(list)) ? int(i - begin(list)) : -1;
 	};
 
 	builder.addSubsectionTitle(tr::fresh_TranscriptionSubtitle());
@@ -293,7 +293,10 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 			rpl::single(rpl::empty) | rpl::then(FreshPlugins::ListChanges() | rpl::to_empty)
 		) | rpl::map([=](TranscriptionProvider provider, const QString &plugin, auto) {
 			const auto list = optionsNow();
-			return list[indexOf(list, provider, plugin)].label;
+			const auto index = indexOf(list, provider, plugin);
+			return (index >= 0)
+				? list[index].label
+				: FreshPlugins::TranscriberName(plugin);
 		}),
 		.onClick = [=] {
 			controller->show(Box([=](not_null<Ui::GenericBox*> box) {
@@ -305,10 +308,10 @@ void BuildTranscription(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 				SingleChoiceBox(box, {
 					.title = tr::fresh_TranscriptionProvider(),
 					.options = labels,
-					.initialSelection = indexOf(
+					.initialSelection = std::max(0, indexOf(
 						list,
 						AyuSettings::getInstance().transcriptionProvider(),
-						AyuSettings::getInstance().transcriptionPlugin()),
+						AyuSettings::getInstance().transcriptionPlugin())),
 					.callback = [=](int index) {
 						const auto &option = list[index];
 						if (option.provider == TranscriptionProvider::Plugin) {

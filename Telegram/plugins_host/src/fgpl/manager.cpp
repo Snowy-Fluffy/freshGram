@@ -3499,7 +3499,8 @@ int64_t PluginManager::transcribeAsync(
 		|| !parsed
 		|| !parsed->transcriber.declared) {
 		return fail("unavailable");
-	} else if (!grant->second.allows(account, request.chat)) {
+	} else if (request.chat == api::kServiceChat
+		|| !grant->second.allows(account, request.chat)) {
 		return fail("denied");
 	} else if (request.duration > parsed->transcriber.maxSeconds) {
 		return fail("too_long");

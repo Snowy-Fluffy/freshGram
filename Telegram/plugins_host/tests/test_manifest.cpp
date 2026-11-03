@@ -524,6 +524,7 @@ void TestTranscriberManifest() {
 			if (permission) {
 				Set(d, "permissions.optional", cbor::Value::FromArray({
 					cbor::Value::FromMap({ { "id", Text("transcribe.provide") }, { "reason", Text("x") } }),
+					cbor::Value::FromMap({ { "id", Text("media.read") }, { "reason", Text("x") } }),
 				}));
 			}
 			Set(d, "contributes.transcriber", decl);
@@ -531,6 +532,12 @@ void TestTranscriberManifest() {
 	};
 	ExpectError("transcriber permission", withTranscriber(cbor::Value::FromMap({
 		{ "name", Text("P") } }), false), "transcribe.provide");
+	ExpectError("transcriber media", [](auto &d) {
+		Set(d, "permissions.optional", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "id", Text("transcribe.provide") }, { "reason", Text("x") } }),
+		}));
+		Set(d, "contributes.transcriber", cbor::Value::FromMap({ { "name", Text("P") } }));
+	}, "media.read");
 	ExpectError("transcriber name", withTranscriber(cbor::Value::FromMap({})), "name");
 	ExpectError("transcriber limit", withTranscriber(cbor::Value::FromMap({
 		{ "name", Text("P") }, { "maxSeconds", Int(1) } })), "maxSeconds");

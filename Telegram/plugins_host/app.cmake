@@ -64,7 +64,8 @@ add_library(fgpl_app STATIC
 add_library(tdesktop::fgpl_app ALIAS fgpl_app)
 init_target(fgpl_app)
 # WHY: the app compiles its own SQLite, so only the header is needed here.
-target_include_directories(fgpl_app PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src ${CMAKE_CURRENT_LIST_DIR}/../SourceFiles/ayu/libs/sqlite)
+target_include_directories(fgpl_app PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
+target_include_directories(fgpl_app PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../SourceFiles/ayu/libs/sqlite)
 target_link_libraries(fgpl_app
 PUBLIC
 	desktop-app::external_zlib

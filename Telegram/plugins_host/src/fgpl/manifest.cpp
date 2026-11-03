@@ -748,7 +748,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto activation = reader.object(document, "activation", "", false, { "on", "background" })) {
-		if (const auto list = reader.array(*activation, "on", "activation", 8)) {
+		if (const auto list = reader.array(*activation, "on", "activation", 16)) {
 			manifest.activation.clear();
 			for (const auto &item : *list) {
 				const auto name = item.asText();
@@ -1264,6 +1264,8 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 	if (manifest.transcriber.declared && !hasPermission("transcribe.provide")) {
 		reader.error("contributes.transcriber", "needs the transcribe.provide permission");
+	} else if (manifest.transcriber.declared && !hasPermission("media.read")) {
+		reader.error("contributes.transcriber", "needs the media.read permission");
 	}
 	if (manifest.aiProvider.declared && !hasPermission("ai.provide")) {
 		reader.error("contributes.aiProvider", "needs the ai.provide permission");

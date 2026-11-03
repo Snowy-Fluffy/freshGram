@@ -1143,6 +1143,7 @@ private:
 	int64_t _folderWindow = 0;
 	uint64_t _folderWritten = 0;
 	int64_t _lastNotify = 0;
+	int64_t _lastSettings = 0;
 	int64_t _lastResolve = 0;
 	int64_t _lastImage = 0;
 	int64_t _lastInline = 0;

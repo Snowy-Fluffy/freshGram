@@ -70,8 +70,9 @@ pub fn sql_run(sql: &str, params: Vec<Value>, limit: i64) -> Result<Value, Error
     call("sql.run", Some(map! { "sql" => sql, "params" => params, "limit" => limit }))
 }
 
-pub fn silence_chat(chat: i64) -> Result<(), Error> {
-    done(call("notify.set_rules", Some(map! { "rules" => vec![map! { "chat" => chat }] })))
+pub fn silence_chats(chats: &[i64]) -> Result<(), Error> {
+    let rules: Vec<Value> = chats.iter().map(|chat| map! { "chat" => *chat }).collect();
+    done(call("notify.set_rules", Some(map! { "rules" => rules })))
 }
 
 pub fn send_text(chat: i64, text: &str) -> Result<Sent, Error> {

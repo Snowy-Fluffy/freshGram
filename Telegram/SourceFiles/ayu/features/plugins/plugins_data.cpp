@@ -1561,6 +1561,9 @@ public:
 	std::string changeSettings(const fgpl::SettingsChange &change) override {
 		return OnMain<std::string>([=] {
 			if (change.theme && (*change.theme == "dark") != Window::Theme::IsNightMode()) {
+				if (!Window::Theme::Background()->nightModeChangeAllowed()) {
+					return std::string(fgpl::api::error::kDenied);
+				}
 				Window::Theme::ToggleNightMode();
 			}
 			if (change.streamerMode) {
@@ -3032,6 +3035,11 @@ public:
 			const std::string &plugin,
 			std::vector<fgpl::NotifyRule> rules) override {
 		return OnMain<std::string>([=, rules = std::move(rules)]() mutable -> std::string {
+			const auto snapshot = Snapshot();
+			const auto info = snapshot ? snapshot->plugin(plugin) : nullptr;
+			if (!info || !info->enabled) {
+				return std::string(fgpl::api::error::kUnavailable);
+			}
 			SetPluginNotifyRules(plugin, _account, std::move(rules));
 			return {};
 		}, fgpl::api::error::kUnavailable);

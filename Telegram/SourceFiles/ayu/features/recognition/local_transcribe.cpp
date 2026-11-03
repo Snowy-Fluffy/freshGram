@@ -2,7 +2,6 @@
 #include "ayu/features/recognition/local_transcribe.h"
 
 #include "ayu/ayu_settings.h"
-#include "ayu/features/plugins/plugins_transcribe.h"
 #include "ayu/features/recognition/recognition_models.h"
 #include "ayu/features/recognition/speech_recognition.h"
 #include "base/weak_ptr.h"
@@ -273,7 +272,7 @@ bool LocalTranscriptionEnabled() {
 	case TranscriptionProvider::WhisperLocal:
 		return SpeechRecognitionAvailable();
 	case TranscriptionProvider::Plugin:
-		return FreshPlugins::TranscriberAvailable(settings.transcriptionPlugin());
+		return true;
 	}
 	return false;
 }

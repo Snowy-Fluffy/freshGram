@@ -24,6 +24,7 @@
 #include "boxes/filters/edit_filter_chats_list.h"
 #include "boxes/peer_list_box.h"
 #include "ayu/ui/fagram/fagram_nav_drawer.h"
+#include "base/flat_map.h"
 #include "base/timer.h"
 #include "lottie/lottie_icon.h"
 #include "base/weak_ptr.h"
@@ -3279,7 +3280,7 @@ namespace {
 		"chat.info", "media.read", "media.read_outgoing", "media.download", "composer.draft", "folders.list",
 		"messages.edit", "messages.delete", "messages.react", "chats.active",
 		"messages.ids", "chats.activity", "stories.read", "calls.activity",
-		"chats.manage", "chats.moderate", "folders.manage", "transcribe.provide",
+		"chats.manage", "chats.moderate", "folders.manage", "transcribe.provide", "notifications.suppress",
 	};
 	return ranges::any_of(manifest.permissions, [](const auto &request) {
 		return scoped.contains(request.id);
@@ -5000,12 +5001,13 @@ void OpenPluginLink(
 		const QString &pluginId,
 		const QString &path,
 		const QMap<QString, QString> &query) {
-	static auto last = crl::time();
+	static auto last = base::flat_map<QString, crl::time>();
 	const auto now = crl::now();
-	if (last && now - last < kLinkEachMs) {
+	auto &when = last[pluginId];
+	if (when && now - when < kLinkEachMs) {
 		return;
 	}
-	last = now;
+	when = now;
 	auto fields = cbor::Map();
 	for (auto i = query.begin(); i != query.end() && fields.size() < kMaxLinkFields; ++i) {
 		if (i.key().size() <= kMaxLinkKey && i.value().size() <= kMaxLinkValue) {

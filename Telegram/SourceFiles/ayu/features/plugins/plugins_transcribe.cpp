@@ -21,6 +21,34 @@ namespace FreshPlugins {
 namespace {
 
 constexpr auto kTranscribeTimeoutMs = 120000;
+constexpr auto kMaxTranscriptLines = 50;
+
+[[nodiscard]] bool IsBidiControl(char16_t code) {
+	return (code == 0x200E)
+		|| (code == 0x200F)
+		|| (code == 0x061C)
+		|| (code >= 0x202A && code <= 0x202E)
+		|| (code >= 0x2066 && code <= 0x2069);
+}
+
+[[nodiscard]] QString Cleaned(const QString &text) {
+	auto result = QString();
+	result.reserve(text.size());
+	auto lines = 0;
+	for (const auto ch : text) {
+		const auto code = ch.unicode();
+		if (code == '\n') {
+			if (++lines <= kMaxTranscriptLines) {
+				result += ch;
+			}
+		} else if (code == '\t') {
+			result += ' ';
+		} else if (ch.category() != QChar::Other_Control && !IsBidiControl(code)) {
+			result += ch;
+		}
+	}
+	return result.trimmed();
+}
 
 [[nodiscard]] bool Provides(
 		const fgpl::ManagerSnapshot &snapshot,
@@ -96,7 +124,7 @@ void TranscribeByPlugin(
 			}
 			auto transcript = FreshRecognition::LocalTranscript();
 			transcript.status = FreshRecognition::LocalTranscribeStatus::Done;
-			transcript.text = QString::fromStdString(result.text).trimmed();
+			transcript.text = Cleaned(QString::fromStdString(result.text));
 			done(std::move(transcript));
 		});
 	};

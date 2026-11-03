@@ -1594,19 +1594,32 @@ void TestFoldersAndSettings() {
 	}
 
 	fixture.data.actions.clear();
+	fixture.time += 1000;
 	CHECK(IsOk(broker.call(Request("settings.set", { { "theme", Text("dark") } }))));
+	CHECK(Code(broker.call(Request("settings.set", { { "streamerMode", cbor::Value::FromBool(true) } }))) == "limit");
+	fixture.time += 5000;
 	CHECK(IsOk(broker.call(Request("settings.set", { { "streamerMode", cbor::Value::FromBool(true) } }))));
+	fixture.time += 5000;
+	CHECK(Code(broker.call(Request("settings.set", { { "theme", Text("light") }, { "streamerMode", cbor::Value::FromBool(false) } }))) == "denied");
+	fixture.time += 5000;
+	broker.noteUserAction("menu.click");
 	CHECK(IsOk(broker.call(Request("settings.set", { { "theme", Text("light") }, { "streamerMode", cbor::Value::FromBool(false) } }))));
+	fixture.time += 5000;
 	CHECK(fixture.data.actions.size() == 3);
 	if (fixture.data.actions.size() == 3) {
 		CHECK(fixture.data.actions[0] == "settings theme=dark");
 		CHECK(fixture.data.actions[1] == "settings streamer=on");
 		CHECK(fixture.data.actions[2] == "settings theme=light streamer=off");
 	}
+	fixture.time += 5000;
 	CHECK(Code(broker.call(Request("settings.set"))) == "invalid");
+	fixture.time += 5000;
 	CHECK(Code(broker.call(Request("settings.set", { { "theme", Text("blue") } }))) == "invalid");
+	fixture.time += 5000;
 	CHECK(Code(broker.call(Request("settings.set", { { "theme", Int(1) } }))) == "invalid");
+	fixture.time += 5000;
 	CHECK(Code(broker.call(Request("settings.set", { { "streamerMode", Text("yes") } }))) == "invalid");
+	fixture.time += 5000;
 	CHECK(Code(broker.call(Request("settings.set", { { "language", Text("en") } }))) == "invalid");
 
 	auto scoped = Fixture({ "folders.manage" });
@@ -1624,11 +1637,12 @@ void TestNotifyRules() {
 	const auto set = [&](cbor::Array rules) {
 		return broker.call(Request("notify.set_rules", { { "rules", cbor::Value::FromArray(std::move(rules)) } }));
 	};
-	CHECK(IsOk(set({ rule({ { "chat", Int(5) }, { "contains", Text("spam") } }), rule({ { "sender", Int(7) } }), rule({}) })));
+	CHECK(IsOk(set({ rule({ { "chat", Int(5) }, { "contains", Text("spam") } }), rule({ { "sender", Int(7) } }), rule({ { "contains", Text("x") } }) })));
 	CHECK(IsOk(set({})));
+	CHECK(Code(set({ rule({}) })) == "invalid");
 	CHECK(fixture.data.actions.size() == 2);
 	if (fixture.data.actions.size() == 2) {
-		CHECK(fixture.data.actions[0] == "notify_rules com.example.test 5/0/spam 0/7/ 0/0/");
+		CHECK(fixture.data.actions[0] == "notify_rules com.example.test 5/0/spam 0/7/ 0/0/x");
 		CHECK(fixture.data.actions[1] == "notify_rules com.example.test");
 	}
 	CHECK(Code(broker.call(Request("notify.set_rules"))) == "invalid");
@@ -1643,6 +1657,19 @@ void TestNotifyRules() {
 		many.push_back(rule({ { "chat", Int(1) } }));
 	}
 	CHECK(Code(set(std::move(many))) == "invalid");
+
+	auto scoped = Fixture({ "notifications.suppress" });
+	scoped.grants.chats = std::set<int64_t>{ 2 };
+	auto narrow = scoped.make();
+	const auto narrowSet = [&](cbor::Array rules) {
+		return Code(narrow.call(Request("notify.set_rules", { { "rules", cbor::Value::FromArray(std::move(rules)) } })));
+	};
+	CHECK(narrowSet({ rule({ { "chat", Int(2) } }) }) == "");
+	CHECK(narrowSet({ rule({ { "chat", Int(1) } }) }) == "denied");
+	CHECK(narrowSet({ rule({ { "contains", Text("code") } }) }) == "invalid");
+	CHECK(narrowSet({ rule({ { "sender", Int(7) } }) }) == "invalid");
+	CHECK(Code(Fixture({ "notifications.suppress" }).make().call(Request("notify.set_rules", {
+		{ "rules", cbor::Value::FromArray({ rule({ { "chat", Int(api::kServiceChat) } }) }) } }))) == "denied");
 }
 
 void TestSql() {
@@ -1703,6 +1730,8 @@ void TestSql() {
 	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text(std::string(70000, 'x')) } }))) == "invalid");
 	CHECK(Code(broker.call(Request("sql.batch", { { "statements", cbor::Value::FromArray({}) } }))) == "invalid");
 	CHECK(Code(broker.call(Request("sql.drop"))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text("SELECT 1") }, { "limit", Text("5") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("sql.run", { { "sql", Text("SELECT zeroblob(1000000), zeroblob(1000000)") } }))) == "limit");
 
 	auto bloated = std::string(1000, 'x');
 	auto full = std::string();
@@ -2712,7 +2741,7 @@ void TestTranscribeReply() {
 	CHECK(reply({ { "text", Text("a") } }) == "invalid");
 	CHECK(reply({ { "ticket", Int(7) } }) == "invalid");
 	CHECK(reply({ { "ticket", Int(7) }, { "text", Int(1) } }) == "invalid");
-	CHECK(reply({ { "ticket", Int(7) }, { "text", Text(std::string((size_t(64) << 10) + 1, 'x')) } }) == "invalid");
+	CHECK(reply({ { "ticket", Int(7) }, { "text", Text(std::string((size_t(16) << 10) + 1, 'x')) } }) == "invalid");
 	CHECK(Code(Fixture({}).make().call(Request("transcribe.reply", {
 		{ "ticket", Int(7) }, { "text", Text("a") } }))) == "denied");
 	CHECK(Code(Fixture({ "ai.provide" }).make().call(Request("transcribe.reply", {
@@ -3170,6 +3199,9 @@ void TestLevelTwoCalls() {
 	CHECK(IsOk(pasted) && *Payload(pasted).asText() == "copied");
 	fixture.time += 10000;
 	CHECK(Code(broker.call(Request("clipboard.read"))) == "denied");
+	broker.noteUserAction("link.open");
+	CHECK(Code(broker.call(Request("clipboard.read"))) == "denied");
+	CHECK(Code(broker.call(Request("clipboard.write", { { "text", Text("x") } }))) == "denied");
 
 	CHECK(Code(broker.call(Request("files.pick"))) == "invalid");
 	CHECK(Code(broker.call(Request("files.save", { { "name", Text("a") }, { "data", Text("b") } }))) == "invalid");
