@@ -32,6 +32,21 @@ namespace error = fgpl::api::error;
 	return QSize(int(width), int(height));
 }
 
+[[nodiscard]] QRect CoverPart(QSize source, QSize target) {
+	const auto sw = qint64(source.width());
+	const auto sh = qint64(source.height());
+	const auto tw = qint64(target.width());
+	const auto th = qint64(target.height());
+	const auto size = (sw * th > sh * tw)
+		? QSize(int(std::clamp<qint64>(sh * tw / th, 1, sw)), int(sh))
+		: QSize(int(sw), int(std::clamp<qint64>(sw * th / tw, 1, sh)));
+	return QRect(
+		QPoint(
+			(source.width() - size.width()) / 2,
+			(source.height() - size.height()) / 2),
+		size);
+}
+
 } // namespace
 
 fgpl::Result<fgpl::ImageResult, std::string> ProcessImage(
@@ -77,17 +92,13 @@ fgpl::Result<fgpl::ImageResult, std::string> ProcessImage(
 		if (target.width() > kMaxSide || target.height() > kMaxSide) {
 			return Failure(error::kLimit);
 		}
-		const auto mode = (request.fit == "exact")
+		if (request.fit == "cover") {
+			image = image.copy(CoverPart(image.size(), target));
+		}
+		const auto mode = (request.fit == "exact" || request.fit == "cover")
 			? Qt::IgnoreAspectRatio
-			: (request.fit == "cover")
-			? Qt::KeepAspectRatioByExpanding
 			: Qt::KeepAspectRatio;
 		image = image.scaled(target, mode, Qt::SmoothTransformation);
-		if (request.fit == "cover") {
-			const auto left = (image.width() - target.width()) / 2;
-			const auto top = (image.height() - target.height()) / 2;
-			image = image.copy(QRect(QPoint(left, top), target));
-		}
 	} else if (request.op == "crop") {
 		const auto part = QRect(
 			QPoint(int(request.x), int(request.y)),
