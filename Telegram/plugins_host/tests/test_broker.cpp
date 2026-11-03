@@ -2901,6 +2901,8 @@ void TestLevelTwoCalls() {
 	CHECK(Code(broker.call(Request("notify.show", { { "text", Text("x") } }))) == "limit");
 	fixture.time += 5000;
 	CHECK(IsOk(broker.call(Request("notify.show", { { "text", Text("y") } }))));
+	CHECK(std::ranges::find(fixture.data.actions, "notify com.example.test: T x") != fixture.data.actions.end());
+	CHECK(std::ranges::find(fixture.data.actions, "notify com.example.test y") != fixture.data.actions.end());
 
 	CHECK(Code(broker.call(Request("clipboard.write", { { "text", Text("x") } }))) == "denied");
 	CHECK(Code(broker.call(Request("clipboard.read"))) == "denied");

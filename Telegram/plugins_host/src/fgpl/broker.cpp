@@ -3507,7 +3507,10 @@ cbor::Value Broker::deviceAnswer(const std::string &op, const cbor::Value *args)
 		if (!title || !text || text->empty()) {
 			return api::Fail(api::error::kInvalid, "title or text");
 		}
-		return Done(data->notify(*title, *text), "the notification was not shown");
+		const auto attributed = title->empty()
+			? _grants.pluginId
+			: (_grants.pluginId + ": " + *title);
+		return Done(data->notify(attributed, *text), "the notification was not shown");
 	} else if (op == "clipboard.write") {
 		if (const auto refused = need("clipboard", true)) {
 			return *refused;
