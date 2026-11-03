@@ -104,6 +104,9 @@ enum { // Local Storage Keys
 	lskMediaLastPlaybackPositions = 0x1c, // no data
 	lskBotStorages = 0x1d, // data: PeerId botId
 	lskPrefs = 0x1e, // no data
+	lskWalletKey = 0x1f,
+	lskWalletEngineKey = 0x20,
+	lskWalletEngineStorages = 0x21,
 };
 
 auto EmptyMessageDraftSources()
@@ -501,6 +504,23 @@ Account::ReadMapResult Account::readMapWith(
 				const auto peerId = DeserializePeerId(peerIdSerialized);
 				botStoragesMap.emplace(peerId, key);
 				botStoragesNotReadMap.emplace(peerId, true);
+			}
+		} break;
+		case lskWalletKey:
+		case lskWalletEngineKey: {
+			auto walletKey = FileKey();
+			map.stream >> walletKey;
+		} break;
+		case lskWalletEngineStorages: {
+			quint32 count = 0;
+			map.stream >> count;
+			for (quint32 i = 0; i < count; ++i) {
+				FileKey key;
+				QString entryKey;
+				map.stream >> key >> entryKey;
+				if (!CheckStreamStatus(map.stream)) {
+					return ReadMapResult::Failed;
+				}
 			}
 		} break;
 		default:
