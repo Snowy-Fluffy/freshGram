@@ -165,6 +165,11 @@ void TestInstall() {
 	CHECK(read && read->revision == 3 && read->python == "3.14.0");
 	CHECK(read && VerifyInstalledRuntime(*read));
 
+	const auto older = Parsed(archive, 2);
+	CHECK(!InstallRuntime(archive, older, *BundleFor(older, "linux-x86_64"), lab.root).ok());
+	CHECK(ReadInstalledRuntime(lab.root)->revision == 3);
+	CHECK(InstallRuntime(archive, index, bundle, lab.root).ok());
+
 	{
 		auto stream = std::ofstream(os::ResolveCurrent(lab.root) / os::kHostFileName, std::ios::binary | std::ios::trunc);
 		stream << "evil";

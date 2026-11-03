@@ -255,6 +255,10 @@ Result<InstalledRuntime, std::string> InstallRuntime(
 			return std::string("this runtime revision is not allowed");
 		}
 	}
+	if (const auto current = ReadInstalledRuntime(root)
+		; current && index.revision < current->revision) {
+		return std::string("this runtime revision is older than the installed one");
+	}
 	if (archive.size() != bundle.size || HashText(archive) != bundle.hash) {
 		return std::string("the downloaded file does not match its hash");
 	}
