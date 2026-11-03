@@ -28,6 +28,7 @@ namespace fs = std::filesystem;
 constexpr auto kMaxMail = size_t(1024);
 constexpr auto kAllAccounts = "*";
 constexpr auto kAsyncThreads = 8;
+constexpr auto kIdleWatchEach = std::chrono::milliseconds(1000);
 constexpr auto kResultOverhead = size_t(1024);
 constexpr auto kMaxEmittedEvents = size_t(256);
 constexpr auto kMaxTimers = size_t(32);
@@ -2022,12 +2023,21 @@ void PluginManager::run(Instance &instance) {
 		auto outgoing = std::shared_ptr<Outgoing>();
 		{
 			auto lock = std::unique_lock(instance.mutex);
-			instance.wake.wait(lock, [&] {
+			const auto ready = [&] {
 				return instance.closing
 					|| !instance.queue.empty()
 					|| !instance.outgoing.empty()
 					|| !instance.results.empty();
-			});
+			};
+			while (!instance.wake.wait_for(lock, kIdleWatchEach, ready)) {
+				lock.unlock();
+				auto overuse = instance.client->watchIdle();
+				if (!overuse.empty()) {
+					fail(std::move(overuse));
+					return;
+				}
+				lock.lock();
+			}
 			if (instance.closing) {
 				return;
 			}

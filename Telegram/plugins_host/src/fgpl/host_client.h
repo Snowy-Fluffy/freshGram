@@ -7,6 +7,7 @@
 #include "fgpl/runtime.h"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -107,6 +108,9 @@ public:
 
 	void kill();
 
+	// Kills the host and says why when it exceeds its limits while no event runs.
+	[[nodiscard]] std::string watchIdle();
+
 	[[nodiscard]] int pid() const {
 		return _pid.load();
 	}
@@ -141,6 +145,9 @@ private:
 	int _timeoutMs = 500;
 	size_t _frameLimit = ipc::kMaxFrameBytes;
 	uint64_t _rssLimit = 0;
+	std::chrono::steady_clock::time_point _idleAt;
+	uint64_t _idleCpuMs = 0;
+	int _idleStrikes = 0;
 	int _startMs = 10000;
 	int _hostCallMs = 60000;
 	bool _fresh = false;

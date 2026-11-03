@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -201,6 +202,40 @@ void TestEveryFailureLeavesTheClientDead() {
 	}
 }
 
+[[nodiscard]] std::string WatchIdle(const char *attack, int samples) {
+	auto config = HostConfig();
+	config.path = FGPL_EVIL_HOST;
+	config.startupTimeoutMs = 500;
+	config.sendTimeoutMs = 500;
+	config.addressSpaceMb = 0;
+	config.reservationMb = 0;
+	config.extraArguments = { std::string("--attack=") + attack };
+	auto started = HostClient::Start(config);
+	CHECK(started.ok());
+	if (!started.ok()) {
+		return {};
+	}
+	auto &client = started.value();
+	auto request = LoadRequest();
+	request.limits.callTimeoutMs = 100;
+	request.limits.startTimeoutMs = 100;
+	auto bridge = AttackBridge();
+	CHECK(client->load(request).ok());
+	CHECK(client->deliver(cbor::Value::FromInt(1), bridge).ok());
+	auto reason = std::string();
+	for (auto i = 0; i != samples && reason.empty(); ++i) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(250));
+		reason = client->watchIdle();
+	}
+	CHECK(client->alive() == reason.empty());
+	return reason;
+}
+
+void TestIdleSpinIsKilled() {
+	CHECK(!WatchIdle("idle_spin", 40).empty());
+	CHECK(WatchIdle("event_ok", 12).empty());
+}
+
 void TestMemoryStaysBounded() {
 #ifndef FGPL_SANITIZED
 	auto usage = rusage();
@@ -217,6 +252,7 @@ int main() {
 	TestEventAttacks();
 	TestLogFloodIsCapped();
 	TestEveryFailureLeavesTheClientDead();
+	TestIdleSpinIsKilled();
 	TestMemoryStaysBounded();
 	return Failures() ? 1 : 0;
 }

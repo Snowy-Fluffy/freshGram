@@ -334,6 +334,15 @@ int main(int argc, char **argv) {
 	} else if (attack == "event_garbage") {
 		Garbage();
 		Forever();
+	} else if (attack == "idle_spin") {
+		Send(done());
+		std::thread([] {
+			volatile auto counter = uint64_t(0);
+			while (true) {
+				counter = counter + 1;
+			}
+		}).detach();
+		Forever();
 	} else {
 		Send(done());
 	}

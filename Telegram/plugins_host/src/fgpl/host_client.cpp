@@ -13,6 +13,9 @@ namespace {
 
 constexpr auto kCallGraceMs = 3000;
 constexpr auto kFrameOverhead = size_t(1) << 20;
+constexpr auto kIdleSampleMs = 200;
+constexpr auto kIdleBusyPercent = 50;
+constexpr auto kIdleStrikes = 4;
 
 [[nodiscard]] ClientFailure Failure(ClientError error, std::string detail) {
 	return ClientFailure{ .error = error, .detail = std::move(detail) };
@@ -55,6 +58,39 @@ void HostClient::kill() {
 		auto info = os::ExitInfo();
 		reap(true, info);
 	}
+}
+
+std::string HostClient::watchIdle() {
+	if (_fd < 0 || _pid.load() <= 0) {
+		return {};
+	}
+	const auto now = std::chrono::steady_clock::now();
+	const auto usage = os::ProcessUsage(_pid.load());
+	if (_rssLimit != 0 && usage.rssBytes > _rssLimit) {
+		kill();
+		return "the host used too much memory";
+	}
+	if (_idleAt == std::chrono::steady_clock::time_point()) {
+		_idleAt = now;
+		_idleCpuMs = usage.cpuMs;
+		return {};
+	}
+	const auto wallMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+		now - _idleAt).count();
+	if (wallMs < kIdleSampleMs) {
+		return {};
+	}
+	const auto busyMs = usage.cpuMs - std::min(usage.cpuMs, _idleCpuMs);
+	_idleAt = now;
+	_idleCpuMs = usage.cpuMs;
+	_idleStrikes = (int64_t(busyMs) * 100 > wallMs * kIdleBusyPercent)
+		? (_idleStrikes + 1)
+		: 0;
+	if (_idleStrikes >= kIdleStrikes) {
+		kill();
+		return "the host kept the processor busy without an event";
+	}
+	return {};
 }
 
 ClientFailure HostClient::died(const std::string &context) {
@@ -355,6 +391,8 @@ Result<int32_t, ClientFailure> HostClient::run(
 	if (_fd < 0) {
 		return Failure(ClientError::HostDied, "the host is not running");
 	}
+	_idleAt = std::chrono::steady_clock::time_point();
+	_idleStrikes = 0;
 	const auto id = _nextId++;
 	auto logBytes = size_t(0);
 	auto calls = 0;
