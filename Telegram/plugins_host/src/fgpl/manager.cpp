@@ -350,6 +350,19 @@ bool PluginManager::enqueue(Instance &instance, Record &record, const cbor::Valu
 	return true;
 }
 
+bool PluginManager::mailAllowed(
+		const std::string &from,
+		const std::string &to) const {
+	const auto lock = std::scoped_lock(_routesMutex);
+	const auto plugins = _routes.find(kAllAccounts);
+	if (plugins == _routes.end() || !plugins->second.contains(from)) {
+		return false;
+	}
+	const auto target = plugins->second.find(to);
+	return (target != plugins->second.end())
+		&& (target->second.acceptsAny || target->second.from.contains(from));
+}
+
 void PluginManager::deliverMail() {
 	auto batch = std::deque<Mail>();
 	{
@@ -362,6 +375,10 @@ void PluginManager::deliverMail() {
 			continue;
 		}
 		auto &record = found->second;
+		if (!mailAllowed(mail.from, mail.to)) {
+			++record.stats.dropped;
+			continue;
+		}
 		auto *instance = ensure(record, mail.account, "message");
 		if (!instance) {
 			++record.stats.dropped;

@@ -661,6 +661,9 @@ private:
 		const std::string &from,
 		const std::string &account) const;
 	void deliverMail();
+	[[nodiscard]] bool mailAllowed(
+		const std::string &from,
+		const std::string &to) const;
 	void fireTimers();
 	void clearTimers(const std::function<bool(const Key &key)> &matches);
 	[[nodiscard]] std::string setTimer(
