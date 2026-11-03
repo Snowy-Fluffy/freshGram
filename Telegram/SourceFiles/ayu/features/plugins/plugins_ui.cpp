@@ -4207,7 +4207,7 @@ void RefreshBadgeViews(int64_t user) {
 class BadgeLinkHandler final : public ClickHandler {
 public:
 	BadgeLinkHandler(
-		not_null<PeerData*> peer,
+		PeerId peer,
 		PluginBadge badge,
 		const char *surface,
 		FullMsgId item)
@@ -4222,8 +4222,12 @@ public:
 			return;
 		}
 		const auto my = context.other.value<ClickHandlerContext>();
-		if (const auto controller = my.sessionWindow.get()) {
-			ClickBadge(controller, _peer, _badge, _surface, _item);
+		const auto controller = my.sessionWindow.get();
+		const auto peer = controller
+			? controller->session().data().peerLoaded(_peer)
+			: nullptr;
+		if (peer) {
+			ClickBadge(controller, peer, _badge, _surface, _item);
 		}
 	}
 
@@ -4232,7 +4236,7 @@ public:
 	}
 
 private:
-	const not_null<PeerData*> _peer;
+	const PeerId _peer;
 	const PluginBadge _badge;
 	const char *_surface;
 	const FullMsgId _item;
@@ -4466,7 +4470,8 @@ ClickHandlerPtr BadgeLink(
 		const char *surface,
 		FullMsgId item) {
 	static auto cache = std::map<std::string, ClickHandlerPtr>();
-	auto key = badge.plugin
+	auto key = std::to_string(peer->session().uniqueId())
+		+ '|' + badge.plugin
 		+ '|' + badge.id
 		+ '|' + surface
 		+ '|' + std::to_string(peer->id.value)
@@ -4481,7 +4486,7 @@ ClickHandlerPtr BadgeLink(
 	}
 	return cache.emplace(
 		std::move(key),
-		std::make_shared<BadgeLinkHandler>(peer, badge, surface, item)
+		std::make_shared<BadgeLinkHandler>(peer->id, badge, surface, item)
 	).first->second;
 }
 
