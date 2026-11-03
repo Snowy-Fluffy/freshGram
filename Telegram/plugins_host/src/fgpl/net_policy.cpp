@@ -151,6 +151,8 @@ namespace {
 		return false;
 	} else if (first == 192 && second == 0 && a[2] == 2) {
 		return false;
+	} else if (first == 192 && second == 88 && a[2] == 99) {
+		return false;
 	} else if (first == 198 && (second == 18 || second == 19)) {
 		return false;
 	} else if (first == 198 && second == 51 && a[2] == 100) {
@@ -446,7 +448,12 @@ bool IsPublicAddress(std::string_view address) {
 	for (auto i = 0; i != 10; ++i) {
 		zeros = zeros && b[size_t(i)] == 0;
 	}
-	if (zeros && b[10] == 0xFF && b[11] == 0xFF) {
+	auto translated = true;
+	for (auto i = 0; i != 8; ++i) {
+		translated = translated && b[size_t(i)] == 0;
+	}
+	translated = translated && b[8] == 0xFF && b[9] == 0xFF && b[10] == 0 && b[11] == 0;
+	if ((zeros && b[10] == 0xFF && b[11] == 0xFF) || translated) {
 		return PublicV4({ b[12], b[13], b[14], b[15] });
 	} else if (zeros && b[10] == 0 && b[11] == 0) {
 		return PublicV4({ b[12], b[13], b[14], b[15] });
