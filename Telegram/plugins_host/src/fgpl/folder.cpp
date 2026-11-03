@@ -1,5 +1,8 @@
 #include "fgpl/folder.h"
 
+#include <cctype>
+#include <string>
+
 namespace fgpl::folder {
 namespace {
 
@@ -69,6 +72,24 @@ namespace {
 	}
 #ifdef _WIN32
 	if (name.back() == '.' || name.back() == ' ') {
+		return false;
+	}
+	auto stem = std::string(name.substr(0, name.find('.')));
+	while (!stem.empty() && stem.back() == ' ') {
+		stem.pop_back();
+	}
+	for (auto &ch : stem) {
+		ch = char(std::toupper(uint8_t(ch)));
+	}
+	const auto port = stem.starts_with("COM") || stem.starts_with("LPT");
+	const auto digit = (stem.size() == 4) && (stem[3] >= '0' && stem[3] <= '9');
+	const auto superscript = (stem.size() == 5)
+		&& (stem.substr(3) == "\xC2\xB9"
+			|| stem.substr(3) == "\xC2\xB2"
+			|| stem.substr(3) == "\xC2\xB3");
+	if ((port && (digit || superscript))
+		|| stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL"
+		|| stem == "CONIN$" || stem == "CONOUT$") {
 		return false;
 	}
 #endif // _WIN32
