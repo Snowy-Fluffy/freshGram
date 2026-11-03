@@ -49,7 +49,7 @@ jobs:
           dnf -q -y install dnf-plugins-core
           dnf config-manager --set-enabled powertools
           dnf -q -y install gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils \
-            cmake make git openssl-devel zlib-devel python3.11
+            cmake make git openssl-devel zlib-devel sqlite-devel python3.11
 
       - name: Clone
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -123,9 +123,9 @@ jobs:
         shell: bash
         run: python Telegram/plugins_host/runtime/fetch_wasmtime.py ${{ matrix.wasmtime }}
 
-      - name: Install OpenSSL and zlib
+      - name: Install OpenSSL, zlib and SQLite
         shell: bash
-        run: vcpkg install openssl zlib --triplet ${{ matrix.triplet }}
+        run: vcpkg install openssl zlib sqlite3 --triplet ${{ matrix.triplet }}
 
       - name: Configure
         shell: bash
