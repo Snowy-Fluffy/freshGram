@@ -11,6 +11,7 @@
 #include <sddl.h>
 #include <userenv.h>
 
+#include <algorithm>
 #include <array>
 #include <mutex>
 #include <random>
@@ -307,15 +308,27 @@ struct Pipe {
 			L"SystemRoot", L"windir", L"SystemDrive", L"TEMP", L"TMP",
 			L"ComSpec", L"PATHEXT", L"ProgramData", L"ProgramFiles",
 			L"CommonProgramFiles", L"ALLUSERSPROFILE", L"PUBLIC",
-			L"PROCESSOR_ARCHITECTURE", L"NUMBER_OF_PROCESSORS", L"OS" }
+			L"PROCESSOR_ARCHITECTURE", L"NUMBER_OF_PROCESSORS", L"OS",
+			L"USERPROFILE", L"LOCALAPPDATA", L"APPDATA", L"HOMEDRIVE", L"HOMEPATH" }
 		: std::vector<const wchar_t*>{ L"SystemRoot", L"windir" };
+	auto entries = std::vector<std::wstring>();
 	for (const auto name : names) {
 		wchar_t value[MAX_PATH] = {};
 		const auto size = GetEnvironmentVariableW(name, value, MAX_PATH);
 		if (size > 0 && size < MAX_PATH) {
-			result += std::wstring(name) + L"=" + std::wstring(value, size);
-			result.push_back(L'\0');
+			entries.push_back(std::wstring(name) + L"=" + std::wstring(value, size));
 		}
+	}
+	// WHY: an environment block must be sorted by name, ignoring case.
+	std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
+		return CompareStringOrdinal(
+			a.data(), int(a.find(L'=')),
+			b.data(), int(b.find(L'=')),
+			TRUE) == CSTR_LESS_THAN;
+	});
+	for (const auto &entry : entries) {
+		result += entry;
+		result.push_back(L'\0');
 	}
 	result.push_back(L'\0');
 	if (result.size() == 1) {
