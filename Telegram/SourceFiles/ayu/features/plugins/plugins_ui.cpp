@@ -117,7 +117,7 @@ constexpr auto kMaxLinkFields = size_t(16);
 constexpr auto kMaxLinkKey = 64;
 constexpr auto kMaxLinkValue = 1024;
 constexpr auto kSettingsWaitMs = crl::time(5000);
-constexpr auto kUncloseableDialogMs = crl::time(120000);
+constexpr auto kUncloseableDialogMs = crl::time(15000);
 
 [[nodiscard]] bool HiddenPeer(not_null<const PeerData*> peer) {
 	return FreshSecret::IsSecretPeerId(peer->id) || peer->isSelf();

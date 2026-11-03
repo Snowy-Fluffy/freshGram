@@ -1426,6 +1426,7 @@ void TestModeration() {
 	broker.noteUserAction("menu.click");
 	CHECK(ban(1, 7).empty());
 	CHECK(ban(1, 7, "chats.unban").empty());
+	CHECK(ban(1, 7) == "denied");
 	CHECK(ban(1, 0) == "invalid");
 	CHECK(ban(1, -3) == "invalid");
 	CHECK(ban(1, 42) == "denied");
@@ -2811,6 +2812,41 @@ void TestEvents() {
 	return request;
 }
 
+void RunQueued(std::vector<std::function<void()>> &queued) {
+	for (auto i = size_t(0); i != queued.size(); ++i) {
+		const auto work = queued[i];
+		work();
+	}
+	queued.clear();
+}
+
+void TestPoolShare() {
+	auto fixture = Fixture({ "net.https" });
+	auto queued = std::vector<std::function<void()>>();
+	auto results = std::map<int64_t, cbor::Value>();
+	fixture.services.post = [&](std::function<void()> work) {
+		queued.push_back(std::move(work));
+	};
+	fixture.services.after = [&](int64_t, std::function<void()> work) {
+		queued.push_back(std::move(work));
+	};
+	fixture.services.complete = [&](int64_t ticket, cbor::Value result) {
+		results.emplace(ticket, std::move(result));
+	};
+	const auto broker = std::make_shared<Broker>(fixture.grants, fixture.services);
+	for (auto i = 0; i != 6; ++i) {
+		CHECK(IsOk(broker->call(Awaited("net.fetch", { { "url", Text("https://api.example.com/x") } }))));
+		fixture.time += 10;
+	}
+	CHECK(queued.size() == 2 && broker->pending() == 6);
+	const auto first = std::move(queued.front());
+	queued.erase(queued.begin());
+	first();
+	CHECK(queued.size() == 2 && results.size() == 1);
+	RunQueued(queued);
+	CHECK(results.size() == 6 && broker->pending() == 0);
+}
+
 void TestAwaitableCalls() {
 	auto fixture = Fixture({ "storage.private", "net.https", "net.tcp" });
 	auto queued = std::vector<std::function<void()>>();
@@ -2842,10 +2878,7 @@ void TestAwaitableCalls() {
 		{ "url", Text("https://api.example.com/x") },
 	}));
 	CHECK(IsOk(fetch) && ticketOf(fetch) == 2);
-	for (auto &work : queued) {
-		work();
-	}
-	queued.clear();
+	RunQueued(queued);
 	CHECK(broker->pending() == 0);
 	CHECK(results.size() == 2 && IsOk(results[1]) && IsOk(results[2]));
 	CHECK(Payload(results[2]).find("status")->asInt() == 200);
@@ -2875,10 +2908,7 @@ void TestAwaitableCalls() {
 		fixture.time += 10;
 	}
 	CHECK(Code(broker->call(Awaited("storage.get", { { "key", Text("k") } }))) == "limit");
-	for (auto &work : queued) {
-		work();
-	}
-	queued.clear();
+	RunQueued(queued);
 	CHECK(broker->pending() == 0);
 
 	const auto socket = broker->call(Awaited("net.tcp.connect", {
@@ -2957,6 +2987,11 @@ void TestRateLimits() {
 	CHECK(Code(dialog()) == "limit");
 	broker.noteUserAction("menu.click");
 	CHECK(Code(dialog()) != "limit");
+	CHECK(Code(dialog()) != "limit");
+	fixture.time += 70000;
+	broker.noteUserAction("dialog.close");
+	CHECK(Code(dialog()) == "limit");
+	fixture.time += 61000;
 	CHECK(Code(dialog()) != "limit");
 }
 
@@ -3343,10 +3378,7 @@ void TestFolderCalls() {
 		if (!IsOk(response)) {
 			return response;
 		}
-		for (auto &work : queued) {
-			work();
-		}
-		queued.clear();
+		RunQueued(queued);
 		return results[*Payload(response).find("ticket")->asInt()];
 	};
 
@@ -3423,10 +3455,7 @@ void TestFilesAndTimers() {
 	const auto run = [&](cbor::Value request) {
 		const auto response = broker->call(request);
 		CHECK(IsOk(response));
-		for (auto &work : queued) {
-			work();
-		}
-		queued.clear();
+		RunQueued(queued);
 		return results[*Payload(response).find("ticket")->asInt()];
 	};
 
@@ -3438,6 +3467,7 @@ void TestFilesAndTimers() {
 	fixture.data.cancelPick = true;
 	const auto cancelled = run(Awaited("files.pick"));
 	CHECK(IsOk(cancelled) && Payload(cancelled).isNull());
+	broker->noteUserAction("command");
 	const auto saved = run(Awaited("files.save", { { "name", Text("out.txt") }, { "data", Text("abc") } }));
 	CHECK(IsOk(saved) && *Payload(saved).asBool());
 	CHECK(fixture.data.actions.back() == "save out.txt 3");
@@ -3472,9 +3502,7 @@ void TestClosedBrokerDropsAwaitedWork() {
 	request.asMap()->push_back({ "async", cbor::Value::FromBool(true) });
 	CHECK(IsOk(broker->call(request)));
 	broker->close();
-	for (auto &work : queued) {
-		work();
-	}
+	RunQueued(queued);
 	CHECK(results.size() == 1 && Code(results.begin()->second) == "unavailable");
 	CHECK(!fixture.storage.get("k"));
 }
@@ -3669,6 +3697,7 @@ int main() {
 	TestImageCalls();
 	TestToastActions();
 	TestAwaitableCalls();
+	TestPoolShare();
 	TestRateLimits();
 	TestClosedBrokerDropsAwaitedWork();
 	TestLevelTwoCalls();

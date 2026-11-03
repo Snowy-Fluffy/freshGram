@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -1067,6 +1068,8 @@ private:
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] SocketWorker &sockets();
+	void postShared(std::function<void()> work);
+	void pumpShared();
 	[[nodiscard]] bool has(const char *permission) const;
 	[[nodiscard]] bool chatVisible(int64_t id, bool secret) const;
 	[[nodiscard]] bool chatInScope(int64_t id) const;
@@ -1113,7 +1116,7 @@ private:
 		const std::string &op,
 		const cbor::Value *args);
 	[[nodiscard]] bool takeFolderWriteBudget(uint64_t bytes);
-	[[nodiscard]] bool recentUserAction();
+	[[nodiscard]] bool takeUserAction();
 	[[nodiscard]] bool admit();
 	[[nodiscard]] std::optional<cbor::Value> throttle(const std::string &op);
 
@@ -1127,6 +1130,9 @@ private:
 	std::mutex _socketWorkerMutex;
 	std::mutex _storageMutex;
 	std::atomic<int> _pending = 0;
+	std::mutex _poolMutex;
+	std::deque<std::function<void()>> _poolQueue;
+	int _poolRunning = 0;
 	std::atomic<bool> _closed = false;
 	std::mutex _limitsMutex;
 	double _sendTokens = 5.;
@@ -1145,6 +1151,7 @@ private:
 	std::map<int64_t, int64_t> _lastChatAction;
 	int64_t _lastDialog = 0;
 	int64_t _lastUserAction = 0;
+	int _userActionCalls = 0;
 	bool _dialogOpen = false;
 	std::set<int64_t> _badgeUsers;
 	std::map<std::string, std::string> _windows;

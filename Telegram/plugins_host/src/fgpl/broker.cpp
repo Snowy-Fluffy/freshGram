@@ -47,6 +47,7 @@ constexpr auto kMaxHeaderValue = size_t(4096);
 constexpr auto kMaxToast = size_t(200);
 constexpr auto kMaxToastTitle = size_t(64);
 constexpr auto kMaxSleepMs = int64_t(60000);
+constexpr auto kPoolShare = 2;
 constexpr auto kMaxChatsScanned = size_t(5000);
 constexpr auto kSendBurst = 5.;
 constexpr auto kSendEachMs = 1000.;
@@ -55,6 +56,7 @@ constexpr auto kActionBurst = 20.;
 constexpr auto kToastEachMs = int64_t(2000);
 constexpr auto kDialogEachMs = int64_t(60000);
 constexpr auto kUserActionWindowMs = int64_t(10000);
+constexpr auto kUserActionCalls = 2;
 constexpr auto kMaxWindows = size_t(3);
 constexpr auto kMaxBadgeUsers = size_t(256);
 constexpr auto kWindowUpdateEachMs = int64_t(100);
@@ -801,13 +803,47 @@ cbor::Value Broker::schedule(const std::string &op, const cbor::Value *args) {
 				: self->socketCall(op, copy ? &*copy : nullptr));
 		});
 	} else {
-		_services.post([self, op, copy, finish] {
+		postShared([self, op, copy, finish] {
 			finish(self->_closed
 				? cbor::Value()
 				: self->dispatch(op, copy ? &*copy : nullptr));
 		});
 	}
 	return api::Ok(cbor::Value::FromMap({ { "ticket", Int(ticket) } }));
+}
+
+void Broker::postShared(std::function<void()> work) {
+	{
+		const auto lock = std::scoped_lock(_poolMutex);
+		_poolQueue.push_back(std::move(work));
+	}
+	pumpShared();
+}
+
+void Broker::pumpShared() {
+	const auto self = weak_from_this().lock();
+	if (!self) {
+		return;
+	}
+	auto batch = std::vector<std::function<void()>>();
+	{
+		const auto lock = std::scoped_lock(_poolMutex);
+		while (_poolRunning < kPoolShare && !_poolQueue.empty()) {
+			++_poolRunning;
+			batch.push_back(std::move(_poolQueue.front()));
+			_poolQueue.pop_front();
+		}
+	}
+	for (auto &work : batch) {
+		_services.post([self, work = std::move(work)] {
+			work();
+			{
+				const auto lock = std::scoped_lock(self->_poolMutex);
+				--self->_poolRunning;
+			}
+			self->pumpShared();
+		});
+	}
 }
 
 void Broker::noteUserAction(std::string_view type, std::string_view window) {
@@ -818,9 +854,11 @@ void Broker::noteUserAction(std::string_view type, std::string_view window) {
 		&& type != "toast.close"
 		&& type != "settings.open") {
 		_lastUserAction = _services.clockMs();
+		_userActionCalls = kUserActionCalls;
 	}
 	if (type == "dialog.close") {
 		_dialogOpen = false;
+		_lastDialog = _services.clockMs();
 	} else if (type == "window.close") {
 		_windows.erase(std::string(window));
 		_windowUpdated.erase(std::string(window));
@@ -3372,7 +3410,7 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 			return api::Fail(api::error::kInvalid, "user");
 		} else if (*user == api::kServiceChat || *user == data->account().id) {
 			return api::Fail(api::error::kDenied, "this user");
-		} else if (!recentUserAction()) {
+		} else if (!takeUserAction()) {
 			return api::Fail(api::error::kDenied, "only right after a user action");
 		}
 		return Done(
@@ -3399,7 +3437,7 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		const auto enabled = Arg(args, "enabled") ? Arg(args, "enabled")->asBool() : std::nullopt;
 		if (!enabled) {
 			return api::Fail(api::error::kInvalid, "enabled");
-		} else if (!*enabled && !recentUserAction()) {
+		} else if (!*enabled && !takeUserAction()) {
 			return api::Fail(api::error::kDenied, "only right after a user action");
 		}
 		return Done(data->setGhost(*enabled), "ghost mode was not changed");
@@ -3681,10 +3719,15 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 	return deviceAnswer(op, args);
 }
 
-bool Broker::recentUserAction() {
+bool Broker::takeUserAction() {
 	const auto lock = std::scoped_lock(_limitsMutex);
-	return _lastUserAction
+	const auto recent = _lastUserAction
+		&& _userActionCalls > 0
 		&& (_services.clockMs() - _lastUserAction < kUserActionWindowMs);
+	if (recent) {
+		--_userActionCalls;
+	}
+	return recent;
 }
 
 cbor::Value Broker::deviceAnswer(const std::string &op, const cbor::Value *args) {
@@ -3694,7 +3737,7 @@ cbor::Value Broker::deviceAnswer(const std::string &op, const cbor::Value *args)
 			return api::Fail(api::error::kDenied, permission);
 		} else if (!data) {
 			return api::Fail(api::error::kUnavailable, "data");
-		} else if (userAction && !recentUserAction()) {
+		} else if (userAction && !takeUserAction()) {
 			return api::Fail(api::error::kDenied, "only right after a user action");
 		}
 		return std::nullopt;
