@@ -716,7 +716,14 @@ void PluginManager::stopMany(const std::vector<Key> &keys) {
 		}
 	}
 	for (const auto &key : keys) {
-		_instances.erase(key);
+		const auto i = _instances.find(key);
+		if (i == _instances.end()) {
+			continue;
+		}
+		_instances.erase(i);
+		if (_config.services.stopped) {
+			_config.services.stopped(key.first, key.second);
+		}
 	}
 }
 

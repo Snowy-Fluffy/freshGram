@@ -1348,6 +1348,26 @@ void TestIncomingTransform() {
 	manager.shutdown();
 }
 
+void TestStoppedCallback() {
+#ifdef FGPL_COUNTER_WASM
+	auto lab = Lab("fgpl-manager-stopped");
+	auto stopped = std::vector<std::string>();
+	lab.services.stopped = [&](const std::string &plugin, const std::string &account) {
+		stopped.push_back(plugin + "/" + account);
+	};
+	auto manager = PluginManager(lab.config());
+	const auto id = std::string("com.example.counter");
+	const auto key = Seed(1);
+	CHECK(manager.install(Build(Document(id, "1.0.0"), { { "plugin.wasm", ReadFile(FGPL_COUNTER_WASM) } }, &key).archive).ok());
+	Prepare(manager, id);
+	CHECK(manager.dispatchAndWait("A", Event()).delivered == 1);
+	CHECK(stopped.empty());
+	CHECK(manager.setEnabled(id, false));
+	CHECK(stopped.size() == 1 && stopped[0] == id + "/A");
+	manager.shutdown();
+#endif
+}
+
 void TestSettingsExport() {
 #ifdef FGPL_COUNTER_WASM
 	auto lab = Lab("fgpl-manager-export");
@@ -2200,6 +2220,7 @@ int main(int argc, char **argv) {
 	run("ai provider", TestAiProvider);
 	run("folder grant", TestFolderGrant);
 	run("toast-events", TestToastEvents);
+	run("stopped-callback", TestStoppedCallback);
 	run("settings-export", TestSettingsExport);
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);

@@ -817,6 +817,20 @@ static int fg_edit_text(fg_i64 chat, fg_i64 message, const char *text) {
 	return fg_send(&w, 0);
 }
 
+static int fg_set_display(fg_i64 chat, fg_i64 message, const char *text) {
+	fg_writer w;
+	fg_begin(&w, "messages.set_display", text ? 3 : 2);
+	fg_w_text(&w, "chat");
+	fg_w_int(&w, chat);
+	fg_w_text(&w, "id");
+	fg_w_int(&w, message);
+	if (text) {
+		fg_w_text(&w, "text");
+		fg_w_text(&w, text);
+	}
+	return fg_send(&w, 0);
+}
+
 static int fg_react(fg_i64 chat, fg_i64 message, const char *emoji) {
 	fg_writer w;
 	fg_begin(&w, "messages.react", 3);

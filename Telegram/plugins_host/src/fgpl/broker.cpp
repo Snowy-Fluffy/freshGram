@@ -835,6 +835,7 @@ std::optional<cbor::Value> Broker::throttle(const std::string &op) {
 		}
 		_sendTokens -= 1.;
 	} else if (op == "messages.edit"
+		|| op == "messages.set_display"
 		|| op == "messages.delete"
 		|| op == "messages.react"
 		|| op == "chats.mark_read"
@@ -2674,6 +2675,38 @@ cbor::Value Broker::actionAnswer(const std::string &op, const cbor::Value *args)
 		return Done(
 			data->edit(chat.value(), *id, formatted, *entities),
 			"the message was not edited");
+	} else if (op == "messages.set_display") {
+		if (const auto refused = need({ "messages.transform_incoming" })) {
+			return *refused;
+		}
+		const auto chat = chatArg("chat");
+		if (!chat.ok()) {
+			return chat.error();
+		}
+		const auto id = IntArg(args, "id");
+		const auto raw = Arg(args, "text");
+		const auto reset = !raw || raw->isNull();
+		const auto text = reset
+			? std::optional<std::string>()
+			: TextArg(args, "text", kMaxMessage);
+		const auto format = FormatArg(args);
+		auto entities = Arg(args, "entities")
+			? ParseTextEntities(*Arg(args, "entities"))
+			: std::optional<std::vector<TextEntity>>(std::vector<TextEntity>());
+		if (!id || *id <= 0 || !format || (!reset && (!text || text->empty()))) {
+			return api::Fail(api::error::kInvalid, "id, text or format");
+		} else if (!entities || (reset && !entities->empty())) {
+			return api::Fail(api::error::kInvalid, "entities");
+		}
+		auto formatted = text;
+		if (formatted) {
+			if (const auto problem = FormatText(*format, *formatted, *entities); !problem.empty()) {
+				return api::Fail(api::error::kInvalid, problem);
+			}
+		}
+		return Done(
+			data->setDisplay(_grants.pluginId, chat.value(), *id, formatted, *entities),
+			"the display was not changed");
 	} else if (op == "messages.edit_media") {
 		if (const auto refused = need({ "messages.edit" })) {
 			return *refused;

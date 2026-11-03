@@ -155,6 +155,13 @@ struct Service {
 	config.privateFolders = { PathOf(cWorkingDir() + u"tdata"_q) };
 	config.host.path = HostBinary().toStdString();
 	config.services.dataFor = &DataFor;
+	config.services.stopped = [](
+			const std::string &plugin,
+			const std::string &account) {
+		crl::on_main([=] {
+			ClearPluginDisplays(plugin, account);
+		});
+	};
 	config.services.transport = NetworkTransport();
 	config.services.settingsPage = [](
 			const std::string &id,
@@ -989,6 +996,7 @@ void Stop() {
 	service.lifetime.destroy();
 	service.watched.clear();
 	ReleasePendingHidden();
+	ClearPluginDisplays({}, {});
 	for (auto &[history, queue] : base::take(service.outgoing)) {
 		for (const auto &outgoing : queue) {
 			if (!outgoing.byPlugin && !outgoing.files) {

@@ -192,6 +192,7 @@
 "anonymous"
 "multiple"
 "messages.set_incoming"
+"messages.set_display"
 "messages.hide_incoming"
 "messages.transform_incoming"
 "chats.ban"

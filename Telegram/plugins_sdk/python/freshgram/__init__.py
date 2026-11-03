@@ -492,6 +492,17 @@ class _Messages(_Namespace):
             **({"entities": [dict(entity) for entity in entities]} if entities else {}),
             **_format(markdown))
 
+    def set_display(self, chat, message, text=None, markdown=False, entities=None):
+        """Show other text for a received message here only (messages.set_display); text=None restores it."""
+        return self._call(
+            "messages.set_display",
+            _nothing,
+            chat=chat,
+            id=_ref(message),
+            **({"text": text} if text is not None else {}),
+            **({"entities": [dict(entity) for entity in entities]} if entities else {}),
+            **_format(markdown))
+
     def edit_media(self, chat, message, data, name, caption="", kind="auto",
                    markdown=False, spoiler=False, entities=None):
         """Replace the media of a message you sent (messages.edit), up to 100 MiB.

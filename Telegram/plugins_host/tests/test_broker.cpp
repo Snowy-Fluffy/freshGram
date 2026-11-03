@@ -262,6 +262,7 @@ void TestEveryOperationNeedsItsPermission() {
 		{ "messages.send", Request("messages.send", { { "chat", Int(1) }, { "text", Text("x") } }) },
 		{ "ui.toast", Request("ui.toast", { { "text", Text("x") } }) },
 		{ "messages.edit", Request("messages.edit", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }) },
+		{ "messages.transform_incoming", Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }) },
 		{ "messages.edit", Request("messages.edit_media", { { "chat", Int(1) }, { "id", Int(100) }, { "data", cbor::Value::FromBytes(cbor::Bytes(4, 1)) }, { "name", Text("a.png") } }) },
 		{ "messages.delete", Request("messages.delete", { { "chat", Int(1) }, { "ids", cbor::Value::FromArray({ Int(100) }) } }) },
 		{ "messages.react", Request("messages.react", { { "chat", Int(1) }, { "id", Int(100) }, { "emoji", Text("x") } }) },
@@ -1528,6 +1529,42 @@ void TestEntitiesInMessages() {
 	CHECK(Code(broker.call(Request("messages.edit", {
 		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("new") }, { "entities", Text("bold") },
 	}))) == "invalid");
+}
+
+void TestSetDisplay() {
+	auto fixture = Fixture({ "messages.transform_incoming" });
+	auto broker = fixture.make();
+	const auto bold = cbor::Value::FromMap({ { "type", Text("bold") }, { "offset", Int(0) }, { "length", Int(2) } });
+	CHECK(IsOk(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("new") } }))));
+	CHECK(IsOk(broker.call(Request("messages.set_display", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("new") },
+		{ "entities", cbor::Value::FromArray({ bold }) },
+	}))));
+	CHECK(IsOk(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) } }))));
+	CHECK(IsOk(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", cbor::Value() } }))));
+	CHECK(fixture.data.actions.size() == 4);
+	if (fixture.data.actions.size() == 4) {
+		CHECK(fixture.data.actions[0] == "set_display com.example.test 1 100 text new");
+		CHECK(fixture.data.actions[1] == "set_display com.example.test 1 100 text new e1");
+		CHECK(fixture.data.actions[2] == "set_display com.example.test 1 100 reset");
+		CHECK(fixture.data.actions[3] == "set_display com.example.test 1 100 reset");
+	}
+	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(0) }, { "text", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(-5) }, { "text", Text("x") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Int(5) } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_display", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") }, { "format", Text("markdown") },
+		{ "entities", cbor::Value::FromArray({ bold }) },
+	}))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_display", {
+		{ "chat", Int(1) }, { "id", Int(100) }, { "entities", cbor::Value::FromArray({ bold }) },
+	}))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") }, { "entities", Text("bold") } }))) == "invalid");
+	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(7) }, { "text", Text("x") } }))) == "not_found");
+
+	broker.beginIncoming();
+	CHECK(Code(broker.call(Request("messages.set_display", { { "chat", Int(1) }, { "id", Int(100) }, { "text", Text("x") } }))) == "unavailable");
 }
 
 void TestPluginMessages() {
@@ -3395,6 +3432,7 @@ int main() {
 	TestHeaderRules();
 	TestMetaAndLog();
 	TestEveryOperationNeedsItsPermission();
+	TestSetDisplay();
 	TestSilenceIncoming();
 	TestComposerFormatting();
 	TestMediaProgress();

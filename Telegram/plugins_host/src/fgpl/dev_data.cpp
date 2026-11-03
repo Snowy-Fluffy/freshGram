@@ -207,6 +207,27 @@ std::string DevData::edit(
 	return {};
 }
 
+std::string DevData::setDisplay(
+		const std::string &,
+		int64_t chat,
+		int64_t id,
+		const std::optional<std::string> &text,
+		const std::vector<TextEntity> &entities) {
+	{
+		const auto lock = std::scoped_lock(_mutex);
+		const auto message = find(chat, id);
+		if (!message) {
+			return api::error::kNotFound;
+		} else if (message->out) {
+			return api::error::kDenied;
+		}
+	}
+	_say("[app] set_display chat=" + std::to_string(chat) + " id=" + std::to_string(id)
+		+ (entities.empty() ? "" : " entities=" + std::to_string(entities.size()))
+		+ (text ? " " + Quoted(*text) : std::string(" reset")));
+	return {};
+}
+
 std::string DevData::remove(
 		int64_t chat,
 		const std::vector<int64_t> &ids,

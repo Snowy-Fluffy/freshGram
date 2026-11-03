@@ -44,6 +44,12 @@ public:
 		int64_t id,
 		const std::string &text,
 		const std::vector<TextEntity> &entities) override;
+	std::string setDisplay(
+		const std::string &plugin,
+		int64_t chat,
+		int64_t id,
+		const std::optional<std::string> &text,
+		const std::vector<TextEntity> &entities) override;
 	std::string remove(
 		int64_t chat,
 		const std::vector<int64_t> &ids,

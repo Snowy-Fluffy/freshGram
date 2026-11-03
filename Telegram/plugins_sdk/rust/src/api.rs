@@ -90,6 +90,14 @@ pub fn edit_text(chat: i64, message: i64, text: &str) -> Result<(), Error> {
     done(call("messages.edit", Some(map! { "chat" => chat, "id" => message, "text" => text })))
 }
 
+pub fn set_display(chat: i64, message: i64, text: &str) -> Result<(), Error> {
+    done(call("messages.set_display", Some(map! { "chat" => chat, "id" => message, "text" => text })))
+}
+
+pub fn reset_display(chat: i64, message: i64) -> Result<(), Error> {
+    done(call("messages.set_display", Some(map! { "chat" => chat, "id" => message })))
+}
+
 pub fn edit_media(chat: i64, message: i64, data: Vec<u8>, name: &str, caption: &str, kind: &str) -> Result<(), Error> {
     let arguments = map! {
         "chat" => chat,

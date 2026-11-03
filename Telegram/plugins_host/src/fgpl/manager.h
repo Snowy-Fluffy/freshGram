@@ -107,6 +107,8 @@ struct ManagerServices {
 	std::function<int64_t()> clockMs;
 	// Called for every line of a plugin's log, from whichever thread wrote it.
 	std::function<void(const std::string &plugin, const LogLine &line)> logSink;
+	// Called from whichever thread stopped the plugin's instance for the account.
+	std::function<void(const std::string &plugin, const std::string &account)> stopped;
 };
 
 struct ManagerConfig {

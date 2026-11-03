@@ -1297,6 +1297,41 @@ public:
 		}, fgpl::api::error::kUnavailable, kWaitSend);
 	}
 
+	std::string setDisplay(
+			const std::string &plugin,
+			int64_t chat,
+			int64_t id,
+			const std::optional<std::string> &text,
+			const std::vector<fgpl::TextEntity> &entities) override {
+		return OnMainAsync<std::string>([=](Fn<void(std::string)> done) {
+			resolveMessage(chat, id, [=](HistoryItem *item, std::string error) {
+				if (!error.empty()) {
+					done(std::move(error));
+					return;
+				} else if (item->out()) {
+					done(fgpl::api::error::kDenied);
+					return;
+				} else if (item->isService()) {
+					done(fgpl::api::error::kInvalid);
+					return;
+				} else if (item->isLocal()) {
+					done(fgpl::api::error::kNotFound);
+					return;
+				}
+				if (text) {
+					item->setPluginDisplay(DisplayTextOf(
+						&item->history()->session(),
+						QString::fromStdString(*text),
+						entities));
+				} else {
+					item->setPluginDisplay(std::nullopt);
+				}
+				SetDisplayedByPlugin(item, plugin, text.has_value());
+				done({});
+			});
+		}, fgpl::api::error::kUnavailable, kWaitSend);
+	}
+
 	std::string remove(
 			int64_t chat,
 			const std::vector<int64_t> &ids,
@@ -3829,6 +3864,7 @@ struct PluginHidden {
 	base::flat_set<HiddenKey> hidden;
 	base::flat_set<HiddenKey> pending;
 	base::flat_set<HiddenKey> silenced;
+	base::flat_map<HiddenKey, std::string> displayed;
 };
 
 [[nodiscard]] PluginHidden &PluginHiddenState() {
@@ -3893,6 +3929,54 @@ void ForgetHiddenByPlugin(not_null<const HistoryItem*> item) {
 	state.hidden.remove(key);
 	state.pending.remove(key);
 	state.silenced.remove(key);
+	state.displayed.remove(key);
+}
+
+void SetDisplayedByPlugin(
+		not_null<const HistoryItem*> item,
+		const std::string &plugin,
+		bool displayed) {
+	auto &map = PluginHiddenState().displayed;
+	if (displayed) {
+		map[HiddenKeyOf(item)] = plugin;
+	} else {
+		map.remove(HiddenKeyOf(item));
+	}
+}
+
+void ClearPluginDisplays(const std::string &plugin, const std::string &account) {
+	auto &map = PluginHiddenState().displayed;
+	if (map.empty()) {
+		return;
+	}
+	auto sessions = base::flat_map<uint64, not_null<Main::Session*>>();
+	for (const auto &entry : Core::App().domain().accounts()) {
+		const auto session = entry.account->maybeSession();
+		if (session
+			&& (account.empty()
+				|| AccountId(session).toStdString() == account)) {
+			sessions.emplace(session->uniqueId(), session);
+		}
+	}
+	auto cleared = std::vector<std::pair<not_null<Main::Session*>, FullMsgId>>();
+	auto kept = std::vector<std::pair<HiddenKey, std::string>>();
+	for (auto &entry : map) {
+		const auto session = sessions.find(entry.first.first);
+		if (session != sessions.end()
+			&& (plugin.empty() || entry.second == plugin)) {
+			cleared.emplace_back(session->second, entry.first.second);
+		} else {
+			kept.push_back(std::move(entry));
+		}
+	}
+	map = base::flat_map<HiddenKey, std::string>(
+		kept.begin(),
+		kept.end());
+	for (const auto &[session, fullId] : cleared) {
+		if (const auto item = session->data().message(fullId)) {
+			item->setPluginDisplay(std::nullopt);
+		}
+	}
 }
 
 void ReleasePendingHidden() {
@@ -4120,6 +4204,15 @@ void SetSilencedByPlugin(not_null<const HistoryItem*>, bool) {
 }
 
 void ForgetHiddenByPlugin(not_null<const HistoryItem*>) {
+}
+
+void SetDisplayedByPlugin(
+		not_null<const HistoryItem*>,
+		const std::string &,
+		bool) {
+}
+
+void ClearPluginDisplays(const std::string &, const std::string &) {
 }
 
 void ReleasePendingHidden() {

@@ -316,6 +316,12 @@ public:
 			+ (entities.empty() ? "" : " e" + std::to_string(entities.size())));
 		return (id == 100 || id < 0) ? std::string() : std::string(api::error::kDenied);
 	}
+	std::string setDisplay(const std::string &plugin, int64_t chat, int64_t id, const std::optional<std::string> &text, const std::vector<TextEntity> &entities) override {
+		actions.push_back("set_display " + plugin + " " + std::to_string(chat) + " " + std::to_string(id)
+			+ " " + (text ? "text " + *text : std::string("reset"))
+			+ (entities.empty() ? "" : " e" + std::to_string(entities.size())));
+		return id == 100 ? std::string() : std::string(api::error::kNotFound);
+	}
 	std::string editMedia(const OutgoingMediaEdit &edit) override {
 		editedMedia.push_back(edit);
 		return (edit.id == 100 || edit.id < 0)

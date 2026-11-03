@@ -37,6 +37,11 @@ void SetHiddenByPlugin(not_null<HistoryItem*> item, bool hidden, bool pending);
 [[nodiscard]] bool IsSilencedByPlugin(not_null<const HistoryItem*> item);
 void SetSilencedByPlugin(not_null<const HistoryItem*> item, bool silenced);
 void ForgetHiddenByPlugin(not_null<const HistoryItem*> item);
+void SetDisplayedByPlugin(
+	not_null<const HistoryItem*> item,
+	const std::string &plugin,
+	bool displayed);
+void ClearPluginDisplays(const std::string &plugin, const std::string &account);
 void ReleasePendingHidden();
 
 #ifdef FRESHGRAM_PLUGINS

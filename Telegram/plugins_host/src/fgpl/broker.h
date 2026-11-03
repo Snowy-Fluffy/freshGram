@@ -544,6 +544,15 @@ public:
 		(void)entities;
 		return api::error::kUnavailable;
 	}
+	// An empty text restores the original; the plugin id lets the app drop the text when it stops.
+	[[nodiscard]] virtual std::string setDisplay(
+			const std::string &,
+			int64_t,
+			int64_t,
+			const std::optional<std::string> &,
+			const std::vector<TextEntity> &) {
+		return api::error::kUnavailable;
+	}
 	[[nodiscard]] virtual std::string remove(
 			int64_t chat,
 			const std::vector<int64_t> &ids,
