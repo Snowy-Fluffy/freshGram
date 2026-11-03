@@ -425,7 +425,9 @@ void AddPluginAction(
 		return nullptr;
 	}
 	const auto snapshot = Snapshot();
-	const auto grant = snapshot ? snapshot->grantsOf(plugin) : std::nullopt;
+	const auto grant = snapshot
+		? snapshot->grantsOf(plugin, AccountOf(session))
+		: std::nullopt;
 	if (!grant
 		|| !(grant->granted.contains("chat.info") || grant->granted.contains("chats.list"))
 		|| (grant->chats && !grant->chats->contains(int64_t(id)))
@@ -510,7 +512,7 @@ void AddButtonIcon(
 	const auto &hidden = settings.pluginMenuHidden();
 	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
 		if (peer) {
-			const auto grant = snapshot->grantsOf(plugin.id);
+			const auto grant = snapshot->grantsOf(plugin.id, AccountOf(session));
 			if (grant
 				&& grant->chats
 				&& !grant->chats->contains(int64_t(peer->id.value))) {
@@ -2100,7 +2102,9 @@ void FillLogBox(
 
 [[nodiscard]] bool UsesNetwork(const fgpl::PluginInfo &info) {
 	const auto snapshot = Snapshot();
-	const auto grant = snapshot ? snapshot->grantsOf(info.id) : std::nullopt;
+	const auto grant = snapshot
+		? snapshot->grantsOf(info.id, std::string())
+		: std::nullopt;
 	if (!grant) {
 		return false;
 	}
@@ -2134,7 +2138,7 @@ void FillPermissionsBox(
 		box,
 		controller,
 		*parsed,
-		snapshot->grantsOf(plugin),
+		snapshot->grantsOf(plugin, account),
 		{});
 	box->addButton(tr::fresh_PluginApply(), [=] {
 		const auto chosen = decision();
@@ -2521,7 +2525,9 @@ void BuildDetails(
 		Ui::AddSkip(content);
 	}
 	if (parsed) {
-		const auto granted = snapshot->grantsOf(plugin);
+		const auto granted = snapshot->grantsOf(
+			plugin,
+			AccountOf(&controller->session()));
 		const auto total = int(parsed->permissions.size());
 		const auto allowed = int(ranges::count_if(parsed->permissions, [&](const auto &request) {
 			return request.required
@@ -2638,7 +2644,10 @@ void BuildDetails(
 	if (!info) {
 		return std::nullopt;
 	}
-	const auto granted = snapshot->grantsOf(plugin);
+	const auto session = Core::App().activeAccount().maybeSession();
+	const auto granted = snapshot->grantsOf(
+		plugin,
+		session ? AccountOf(session) : std::string());
 	auto permissions = QStringList();
 	if (granted) {
 		for (const auto &id : granted->granted) {
@@ -4329,7 +4338,9 @@ std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer) {
 	auto result = std::vector<PluginBadge>();
 	for (const auto &badge : i->second) {
 		const auto info = snapshot->plugin(badge.plugin);
-		const auto grants = snapshot->grantsOf(badge.plugin);
+		const auto grants = snapshot->grantsOf(
+			badge.plugin,
+			AccountOf(&peer->session()));
 		if (!info
 			|| !info->enabled
 			|| !grants
@@ -4854,7 +4865,7 @@ std::vector<PluginCommand> CommandsFor(
 		return result;
 	}
 	for (const auto &plugin : snapshot->contributions(AccountOf(session), Language())) {
-		const auto grant = snapshot->grantsOf(plugin.id);
+		const auto grant = snapshot->grantsOf(plugin.id, AccountOf(session));
 		const auto info = snapshot->plugin(plugin.id);
 		const auto parsed = snapshot->manifest(plugin.id);
 		const auto startable = info
@@ -4910,7 +4921,7 @@ CommandResult RunCommand(
 		if (!target.isEmpty() && Utf8(plugin.id).toLower() != target) {
 			continue;
 		}
-		const auto grant = snapshot->grantsOf(plugin.id);
+		const auto grant = snapshot->grantsOf(plugin.id, AccountOf(session));
 		if (grant
 			&& grant->chats
 			&& !grant->chats->contains(int64_t(peer->id.value))) {

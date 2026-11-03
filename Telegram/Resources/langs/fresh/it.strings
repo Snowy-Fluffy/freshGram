@@ -316,7 +316,7 @@
 "fresh_PluginChatsSelected" = "Solo le chat scelte";
 "fresh_PluginChatsChoose" = "Scegli chat";
 "fresh_PluginChatsCount" = "{amount} scelte";
-"fresh_PluginChatsAbout" = "Il plugin vede messaggi, chat ed eventi solo dalle chat consentite.";
+"fresh_PluginChatsAbout" = "Il plugin vede messaggi, chat ed eventi solo dalle chat consentite. Le chat scelte valgono solo per questo account.";
 "fresh_PluginChatsNone" = "Scegli almeno una chat o consenti tutte le chat.";
 "fresh_PluginRisks" = "Con questi permessi il plugin:";
 "fresh_PluginRisksNone" = "Questi permessi non comportano rischi particolari.";

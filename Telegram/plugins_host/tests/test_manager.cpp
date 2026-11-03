@@ -1136,12 +1136,12 @@ void TestOutgoingFilterDropAndOptions() {
 	auto probe = OutgoingInfo();
 	probe.chat = 1;
 	probe.chatType = "user";
-	CHECK(!snapshot.transformsOutgoing(probe));
+	CHECK(!snapshot.transformsOutgoing("A", probe));
 	probe.chatType = "group";
-	CHECK(snapshot.transformsOutgoing(probe));
+	CHECK(snapshot.transformsOutgoing("A", probe));
 	probe.chat = 9;
 	probe.chatType = "user";
-	CHECK(snapshot.transformsOutgoing(probe));
+	CHECK(snapshot.transformsOutgoing("A", probe));
 
 	const auto untouched = run(1, "user");
 	CHECK(!untouched.dropped && !untouched.silent && !untouched.replyTo && untouched.text == "hi");
@@ -1305,12 +1305,12 @@ void TestIncomingTransform() {
 	CHECK(!run(info(23, "group", true)).hidden);
 
 	const auto snapshot = manager.snapshot();
-	CHECK(snapshot.transformsIncoming(info(21, "group")) == IncomingMode::Swap);
-	CHECK(snapshot.transformsIncoming(info(24, "group")) == IncomingMode::Hold);
-	CHECK(snapshot.transformsIncoming(info(1, "group")) == IncomingMode::None);
-	CHECK(snapshot.transformsIncoming(info(21, "group", true)) == IncomingMode::None);
-	CHECK(snapshot.transformsIncoming(info(21, "self")) == IncomingMode::None);
-	CHECK(!snapshot.transformsOutgoing(21, false));
+	CHECK(snapshot.transformsIncoming("A", info(21, "group")) == IncomingMode::Swap);
+	CHECK(snapshot.transformsIncoming("A", info(24, "group")) == IncomingMode::Hold);
+	CHECK(snapshot.transformsIncoming("A", info(1, "group")) == IncomingMode::None);
+	CHECK(snapshot.transformsIncoming("A", info(21, "group", true)) == IncomingMode::None);
+	CHECK(snapshot.transformsIncoming("A", info(21, "self")) == IncomingMode::None);
+	CHECK(!snapshot.transformsOutgoing("A", 21, false));
 	manager.shutdown();
 }
 
@@ -1697,6 +1697,97 @@ void TestOldPerAccountStateIsMerged() {
 #endif
 }
 
+void TestChosenChatsBelongToTheirAccount() {
+#ifdef FGPL_COUNTER_WASM
+	constexpr auto kAlice = int64_t(4242001);
+	constexpr auto kBob = int64_t(4242002);
+	auto lab = Lab("fgpl-manager-chats");
+	const auto id = std::string("com.example.scoped");
+	const auto chosen = [](std::set<int64_t> chats) {
+		return GrantDecision{ { "messages.read", "storage.private" }, std::move(chats) };
+	};
+	const auto chatsIn = [&](PluginManager &manager, const char *account) {
+		const auto grant = manager.grants(id, account);
+		return (grant && grant->chats) ? *grant->chats : std::set<int64_t>{ -1 };
+	};
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(manager.install(CounterArchive(id, "1.0.0")).ok());
+		CHECK(manager.setEnabled(id, true));
+		CHECK(manager.grant(id, "A", chosen({ kAlice })));
+		CHECK(chatsIn(manager, "A") == std::set<int64_t>{ kAlice });
+		CHECK(chatsIn(manager, "B").empty());
+		CHECK(manager.dispatchAndWait("B", Event(kAlice)).delivered == 0);
+		CHECK(manager.dispatchAndWait("A", Event(kAlice)).delivered == 1);
+		CHECK(manager.dispatchAndWait("A", Event(kBob)).delivered == 0);
+		CHECK(!manager.snapshot().transformsOutgoing("B", kAlice, false));
+		CHECK(manager.snapshot().grantsOf(id, "B")->chats->empty());
+
+		CHECK(manager.grant(id, "B", chosen({ kBob })));
+		CHECK(chatsIn(manager, "A") == std::set<int64_t>{ kAlice });
+		CHECK(chatsIn(manager, "B") == std::set<int64_t>{ kBob });
+		manager.shutdown();
+	}
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(!manager.stateWasTampered());
+		CHECK(chatsIn(manager, "A") == std::set<int64_t>{ kAlice });
+		CHECK(chatsIn(manager, "B") == std::set<int64_t>{ kBob });
+		CHECK(manager.dispatchAndWait("B", Event(kAlice)).delivered == 0);
+		CHECK(manager.dispatchAndWait("B", Event(kBob)).delivered == 1);
+		manager.shutdown();
+	}
+
+	const auto path = lab.root / "plugins" / "state.json";
+	auto text = std::string();
+	{
+		auto stream = std::ifstream(path);
+		text.assign(std::istreambuf_iterator<char>(stream), {});
+	}
+	auto document = json::Parse(text).value();
+	std::erase_if(*document.asMap(), [](const cbor::MapEntry &entry) {
+		return entry.key == "mac";
+	});
+	for (auto &plugin : *document.asMap()->front().value.asMap()) {
+		for (auto &field : *plugin.value.asMap()) {
+			if (field.key == "grants") {
+				field.value = cbor::Value::FromMap({
+					{ "*", cbor::Value::FromMap({
+						{ "granted", Array({ "messages.read", "storage.private" }) },
+						{ "chats", cbor::Value::FromArray({ Int(kAlice) }) },
+					}) },
+				});
+			}
+		}
+	}
+	const auto canonical = json::Canonical(document);
+	const auto mac = HmacSha256(lab.key, { reinterpret_cast<const uint8_t *>(canonical.data()), canonical.size() });
+	document.asMap()->push_back({ "mac", Text(Base64Encode(mac)) });
+	{
+		auto stream = std::ofstream(path, std::ios::trunc);
+		stream << json::Canonical(document);
+	}
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(!manager.stateWasTampered());
+		CHECK(chatsIn(manager, "A").empty());
+		CHECK(chatsIn(manager, "B").empty());
+		manager.claimChats("B");
+		manager.claimChats("A");
+		CHECK(chatsIn(manager, "B") == std::set<int64_t>{ kAlice });
+		CHECK(chatsIn(manager, "A").empty());
+		manager.shutdown();
+	}
+	{
+		auto manager = PluginManager(lab.config());
+		CHECK(chatsIn(manager, "B") == std::set<int64_t>{ kAlice });
+		manager.claimChats("A");
+		CHECK(chatsIn(manager, "A").empty());
+		manager.shutdown();
+	}
+#endif
+}
+
 void TestConflictsBothWays() {
 	auto lab = Lab("fgpl-manager-conflicts");
 	auto manager = PluginManager(lab.config());
@@ -1826,8 +1917,8 @@ void TestOutgoingAnswersWithoutWaiting() {
 	const auto early = manager.transformOutgoing("A", 1, false, "hi", 5000);
 	CHECK(early.blocked && early.plugin == id);
 	CHECK(manager.drain(20000));
-	CHECK(manager.snapshot().transformsOutgoing(1, false));
-	CHECK(!manager.snapshot().transformsOutgoing(1, true));
+	CHECK(manager.snapshot().transformsOutgoing("A", 1, false));
+	CHECK(!manager.snapshot().transformsOutgoing("A", 1, true));
 
 	auto answers = std::vector<OutgoingResult>();
 	manager.transformOutgoingAsync("A", 1, false, "a", 5000, [&](OutgoingResult result) {
@@ -1856,7 +1947,7 @@ void TestSnapshotMatchesTheManager() {
 	const auto snapshot = manager.snapshot();
 	CHECK(snapshot.plugins.size() == 1 && snapshot.plugin(id) && snapshot.plugin(id)->enabled);
 	CHECK(snapshot.manifest(id) && snapshot.manifest(id)->id == id);
-	CHECK(snapshot.grantsOf(id) && snapshot.grantsOf(id)->granted == manager.grants(id, "A")->granted);
+	CHECK(snapshot.grantsOf(id, "A") && snapshot.grantsOf(id, "A")->granted == manager.grants(id, "A")->granted);
 	CHECK(snapshot.log(id) == manager.log(id));
 	CHECK(snapshot.wantsEvents == manager.wantsEvents());
 	const auto path = lab.root / "plugins" / id / "1.0.0" / "package.fgpl";
@@ -2063,6 +2154,7 @@ int main(int argc, char **argv) {
 	run("conflicts", TestConflictsBothWays);
 	run("messages", TestPluginsTalkThroughTheApp);
 	run("merge", TestOldPerAccountStateIsMerged);
+	run("chats", TestChosenChatsBelongToTheirAccount);
 	run("async", TestAwaitedCallsDoNotBlockThePlugin);
 	run("hosttime", TestWaitingForTheAppIsNotTheEventsTime);
 	run("abort", TestStopDoesNotWaitForTheNetwork);

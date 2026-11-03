@@ -27,7 +27,7 @@ constexpr auto kBatchBytes = size_t(24) << 10;
 		const std::string &id) {
 	const auto info = snapshot.plugin(id);
 	const auto parsed = snapshot.manifest(id);
-	const auto grant = snapshot.grantsOf(id);
+	const auto grant = snapshot.grantsOf(id, std::string());
 	return info
 		&& info->enabled
 		&& parsed

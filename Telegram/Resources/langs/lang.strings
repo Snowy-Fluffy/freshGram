@@ -9114,7 +9114,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginChatsSelected" = "Only the chats I choose";
 "fresh_PluginChatsChoose" = "Choose chats";
 "fresh_PluginChatsCount" = "{amount} chosen";
-"fresh_PluginChatsAbout" = "The plugin sees messages, chats and events only from the chats it may use.";
+"fresh_PluginChatsAbout" = "The plugin sees messages, chats and events only from the chats it may use. The chats you choose apply only to this account.";
 "fresh_PluginChatsNone" = "Choose at least one chat or allow all chats.";
 "fresh_PluginRisks" = "With these permissions the plugin:";
 "fresh_PluginRisksNone" = "These permissions carry no special risks.";

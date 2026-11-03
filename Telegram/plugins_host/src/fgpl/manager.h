@@ -303,10 +303,25 @@ struct DispatchReport {
 	int failed = 0;
 };
 
+// The permissions are shared by all accounts, the chosen chats are per account.
+struct StoredGrant {
+	std::set<std::string> granted;
+	bool selectedChats = false;
+	std::map<std::string, std::set<int64_t>> chats;
+	std::optional<std::set<int64_t>> unclaimedChats;
+	std::string folder;
+
+	[[nodiscard]] std::optional<std::set<int64_t>> chatsOf(
+		const std::string &account) const;
+	[[nodiscard]] bool allows(const std::string &account, int64_t chat) const;
+	[[nodiscard]] bool allowsAnywhere(int64_t chat) const;
+	[[nodiscard]] GrantDecision decisionFor(const std::string &account) const;
+};
+
 struct ManagerSnapshot {
 	std::vector<PluginInfo> plugins;
 	std::map<std::string, std::shared_ptr<const Manifest>> manifests;
-	std::map<std::string, GrantDecision> grants;
+	std::map<std::string, StoredGrant> grants;
 	std::map<std::string, std::shared_ptr<LogRing>> logs;
 	std::map<std::string, std::shared_ptr<const cbor::Bytes>> icons;
 	std::map<std::pair<std::string, std::string>, std::shared_ptr<const cbor::Bytes>> customIcons;
@@ -326,7 +341,8 @@ struct ManagerSnapshot {
 		const std::string &id,
 		const std::string &name) const;
 	[[nodiscard]] std::optional<GrantDecision> grantsOf(
-		const std::string &id) const;
+		const std::string &id,
+		const std::string &account) const;
 	[[nodiscard]] std::vector<std::string> log(const std::string &id) const;
 	[[nodiscard]] std::vector<LogLine> logLines(const std::string &id) const;
 	[[nodiscard]] std::vector<Contribution> contributions(
@@ -335,9 +351,16 @@ struct ManagerSnapshot {
 	[[nodiscard]] bool wants(const char *event) const {
 		return wantedEvents.contains(event);
 	}
-	[[nodiscard]] bool transformsOutgoing(const OutgoingInfo &info) const;
-	[[nodiscard]] bool transformsOutgoing(int64_t chat, bool secret) const;
-	[[nodiscard]] IncomingMode transformsIncoming(const IncomingInfo &info) const;
+	[[nodiscard]] bool transformsOutgoing(
+		const std::string &account,
+		const OutgoingInfo &info) const;
+	[[nodiscard]] bool transformsOutgoing(
+		const std::string &account,
+		int64_t chat,
+		bool secret) const;
+	[[nodiscard]] IncomingMode transformsIncoming(
+		const std::string &account,
+		const IncomingInfo &info) const;
 };
 
 class PluginManager {
@@ -359,6 +382,8 @@ public:
 	[[nodiscard]] std::optional<GrantDecision> grants(
 		const std::string &id,
 		const std::string &account) const;
+	// Chats chosen before they were kept per account go to this one.
+	void claimChats(const std::string &account);
 
 	[[nodiscard]] std::vector<PluginInfo> list() const;
 	[[nodiscard]] std::shared_ptr<const Manifest> manifest(
@@ -457,12 +482,6 @@ public:
 	[[nodiscard]] bool wantsEvents(const char *event = nullptr) const;
 
 private:
-	struct StoredGrant {
-		std::set<std::string> granted;
-		std::optional<std::set<int64_t>> chats;
-		std::string folder;
-	};
-
 	struct Record {
 		std::string id;
 		std::string name;

@@ -316,7 +316,7 @@
 "fresh_PluginChatsSelected" = "Seulement les discussions choisies";
 "fresh_PluginChatsChoose" = "Choisir les discussions";
 "fresh_PluginChatsCount" = "{amount} choisies";
-"fresh_PluginChatsAbout" = "Le plugin ne voit les messages, discussions et événements que des discussions autorisées.";
+"fresh_PluginChatsAbout" = "Le plugin ne voit les messages, discussions et événements que des discussions autorisées. Les discussions choisies ne valent que pour ce compte.";
 "fresh_PluginChatsNone" = "Choisissez au moins une discussion ou autorisez toutes les discussions.";
 "fresh_PluginRisks" = "Avec ces autorisations, le plugin :";
 "fresh_PluginRisksNone" = "Ces autorisations ne présentent pas de risque particulier.";

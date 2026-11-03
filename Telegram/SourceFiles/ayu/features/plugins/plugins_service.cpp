@@ -439,7 +439,7 @@ void RunIncoming(
 		return;
 	}
 	auto info = IncomingInfoOf(item, edited);
-	const auto mode = snapshot->transformsIncoming(info);
+	const auto mode = snapshot->transformsIncoming(account, info);
 	if (mode == fgpl::IncomingMode::None) {
 		return;
 	}
@@ -803,7 +803,7 @@ void WatchEvents(
 		const auto fullId = item->fullId();
 		events->seen.erase(fullId);
 		events->incoming.erase(fullId);
-		ForgetHiddenByPlugin(fullId);
+		ForgetHiddenByPlugin(item);
 		events->sending.remove(fullId);
 		events->byPlugin.remove(fullId);
 		if (!WantsEvents() || !Reportable(item) || item->isDeleted()) {
@@ -839,7 +839,11 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 		}
 		const auto id = AccountId(session).toStdString();
 		i->second.id = id;
+		const auto active = (&Core::App().activeAccount() == account.get());
 		Post([=](not_null<fgpl::PluginManager*> manager) {
+			if (active) {
+				manager->claimChats(id);
+			}
 			manager->startEnabled(id);
 		});
 		WatchEvents(session, id, i->second.events);
@@ -1031,7 +1035,9 @@ namespace {
 		&& !options.welcomeTemplate
 		&& !options.suggest.exists
 		&& (!snapshot->loaded
-			|| snapshot->transformsOutgoing(InfoOf(message, files)));
+			|| snapshot->transformsOutgoing(
+				AccountId(&message.action.history->session()).toStdString(),
+				InfoOf(message, files)));
 }
 
 void ApplyChanges(

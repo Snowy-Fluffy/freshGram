@@ -166,7 +166,9 @@ void FillInstallBox(
 		? snapshot->manifest(manifest.id)
 		: nullptr;
 	const auto granted = (installed && snapshot)
-		? snapshot->grantsOf(manifest.id)
+		? snapshot->grantsOf(
+			manifest.id,
+			FreshPlugins::AccountId(&controller->session()).toStdString())
 		: std::nullopt;
 	const auto added = previous
 		? fgpl::NewRequests(*previous, manifest)

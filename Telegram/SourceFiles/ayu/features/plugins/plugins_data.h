@@ -36,7 +36,7 @@ void SetHiddenByPlugin(not_null<HistoryItem*> item, bool hidden, bool pending);
 // A silenced message stays visible, only its notification and sound are skipped.
 [[nodiscard]] bool IsSilencedByPlugin(not_null<const HistoryItem*> item);
 void SetSilencedByPlugin(not_null<const HistoryItem*> item, bool silenced);
-void ForgetHiddenByPlugin(FullMsgId id);
+void ForgetHiddenByPlugin(not_null<const HistoryItem*> item);
 void ReleasePendingHidden();
 
 #ifdef FRESHGRAM_PLUGINS

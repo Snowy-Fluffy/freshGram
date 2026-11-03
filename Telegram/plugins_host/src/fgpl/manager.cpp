@@ -167,12 +167,22 @@ cbor::Value PluginManager::stateDocument() const {
 			if (!grant.second.folder.empty()) {
 				entry.push_back({ "folder", Text(grant.second.folder) });
 			}
-			if (grant.second.chats) {
-				auto chats = cbor::Array();
-				for (const auto chat : *grant.second.chats) {
-					chats.push_back(cbor::Value::FromInt(chat));
+			const auto list = [](const std::set<int64_t> &chats) {
+				auto result = cbor::Array();
+				for (const auto chat : chats) {
+					result.push_back(cbor::Value::FromInt(chat));
 				}
-				entry.push_back({ "chats", cbor::Value::FromArray(std::move(chats)) });
+				return cbor::Value::FromArray(std::move(result));
+			};
+			if (grant.second.selectedChats) {
+				auto chats = cbor::Map();
+				for (const auto &[account, chosen] : grant.second.chats) {
+					chats.push_back({ account, list(chosen) });
+				}
+				entry.push_back({ "chats", cbor::Value::FromMap(std::move(chats)) });
+			}
+			if (grant.second.unclaimedChats) {
+				entry.push_back({ "unclaimed", list(*grant.second.unclaimedChats) });
 			}
 			grants.push_back({ grant.first, cbor::Value::FromMap(std::move(entry)) });
 		}
@@ -487,13 +497,31 @@ void PluginManager::loadState() {
 						stored.folder = *text;
 					}
 				}
-				if (const auto chats = grant.value.find("chats")) {
-					stored.chats = std::set<int64_t>();
-					for (const auto &item : chats->asArray() ? *chats->asArray() : cbor::Array()) {
+				const auto ids = [](const cbor::Value &value) {
+					auto result = std::set<int64_t>();
+					for (const auto &item : value.asArray() ? *value.asArray() : cbor::Array()) {
 						if (const auto id = item.asInt()) {
-							stored.chats->insert(*id);
+							result.insert(*id);
 						}
 					}
+					return result;
+				};
+				if (const auto chats = grant.value.find("chats")) {
+					stored.selectedChats = true;
+					if (const auto map = chats->asMap()) {
+						for (const auto &chosen : *map) {
+							if (ValidAccount(chosen.key)) {
+								stored.chats.emplace(chosen.key, ids(chosen.value));
+							}
+						}
+					} else if (grant.key == kAllAccounts) {
+						stored.unclaimedChats = ids(*chats);
+					} else {
+						stored.chats.emplace(grant.key, ids(*chats));
+					}
+				}
+				if (const auto unclaimed = grant.value.find("unclaimed")) {
+					stored.unclaimedChats = ids(*unclaimed);
 				}
 				if (grant.key == kAllAccounts || !merged) {
 					merged = std::move(stored);
@@ -509,14 +537,9 @@ void PluginManager::loadState() {
 				std::erase_if(merged->granted, [&](const std::string &id) {
 					return !stored.granted.contains(id);
 				});
-				if (stored.chats) {
-					if (!merged->chats) {
-						merged->chats = stored.chats;
-					} else {
-						std::erase_if(*merged->chats, [&](int64_t chat) {
-							return !stored.chats->contains(chat);
-						});
-					}
+				if (stored.selectedChats) {
+					merged->selectedChats = true;
+					merged->chats.merge(stored.chats);
 				}
 			}
 			if (merged) {
@@ -912,7 +935,15 @@ bool PluginManager::grant(
 			stored.granted.insert(request.id);
 		}
 	}
-	stored.chats = decision.chats;
+	if (decision.chats) {
+		const auto previous = record.grants.find(kAllAccounts);
+		if (previous != record.grants.end()) {
+			stored.chats = previous->second.chats;
+			stored.unclaimedChats = previous->second.unclaimedChats;
+		}
+		stored.selectedChats = true;
+		stored.chats[account] = *decision.chats;
+	}
 	if (stored.granted.contains("fs.folder")) {
 		const auto checked = folder::CheckRoot(decision.folder);
 		if (checked.ok()) {
@@ -940,11 +971,27 @@ std::optional<GrantDecision> PluginManager::grants(
 	if (grant == found->second.grants.end()) {
 		return std::nullopt;
 	}
-	return GrantDecision{
-		grant->second.granted,
-		grant->second.chats,
-		grant->second.folder,
-	};
+	return grant->second.decisionFor(account);
+}
+
+void PluginManager::claimChats(const std::string &account) {
+	if (!ValidAccount(account)) {
+		return;
+	}
+	auto claimed = false;
+	for (auto &[id, record] : _records) {
+		const auto grant = record.grants.find(kAllAccounts);
+		if (grant == record.grants.end() || !grant->second.unclaimedChats) {
+			continue;
+		}
+		auto &stored = grant->second;
+		stored.chats.try_emplace(account, std::move(*stored.unclaimedChats));
+		stored.unclaimedChats.reset();
+		claimed = true;
+	}
+	if (claimed) {
+		saveState();
+	}
 }
 
 std::vector<PluginInfo> PluginManager::list() const {
@@ -1086,7 +1133,7 @@ ManagerSnapshot PluginManager::snapshot() const {
 			}
 		}
 		if (const auto grant = record.grants.find(kAllAccounts); grant != record.grants.end()) {
-			result.grants.emplace(id, GrantDecision{ grant->second.granted, grant->second.chats });
+			result.grants.emplace(id, grant->second);
 		}
 		result.logs.emplace(id, record.log);
 	}
@@ -1117,9 +1164,40 @@ std::shared_ptr<const cbor::Bytes> ManagerSnapshot::icon(const std::string &id) 
 	return (i == icons.end()) ? nullptr : i->second;
 }
 
-std::optional<GrantDecision> ManagerSnapshot::grantsOf(const std::string &id) const {
+std::optional<std::set<int64_t>> StoredGrant::chatsOf(
+		const std::string &account) const {
+	if (!selectedChats) {
+		return std::nullopt;
+	}
+	const auto i = chats.find(account);
+	return (i == chats.end()) ? std::set<int64_t>() : i->second;
+}
+
+bool StoredGrant::allows(const std::string &account, int64_t chat) const {
+	if (!selectedChats) {
+		return true;
+	}
+	const auto i = chats.find(account);
+	return (i != chats.end()) && i->second.contains(chat);
+}
+
+bool StoredGrant::allowsAnywhere(int64_t chat) const {
+	return !selectedChats || std::any_of(chats.begin(), chats.end(), [&](const auto &entry) {
+		return entry.second.contains(chat);
+	});
+}
+
+GrantDecision StoredGrant::decisionFor(const std::string &account) const {
+	return GrantDecision{ granted, chatsOf(account), folder };
+}
+
+std::optional<GrantDecision> ManagerSnapshot::grantsOf(
+		const std::string &id,
+		const std::string &account) const {
 	const auto i = grants.find(id);
-	return (i == grants.end()) ? std::nullopt : std::make_optional(i->second);
+	return (i == grants.end())
+		? std::nullopt
+		: std::make_optional(i->second.decisionFor(account));
 }
 
 std::vector<std::string> ManagerSnapshot::log(const std::string &id) const {
@@ -1208,14 +1286,19 @@ std::vector<Contribution> ManagerSnapshot::contributions(
 	return result;
 }
 
-bool ManagerSnapshot::transformsOutgoing(int64_t chat, bool secret) const {
+bool ManagerSnapshot::transformsOutgoing(
+		const std::string &account,
+		int64_t chat,
+		bool secret) const {
 	auto info = OutgoingInfo();
 	info.chat = chat;
 	info.secret = secret;
-	return transformsOutgoing(info);
+	return transformsOutgoing(account, info);
 }
 
-IncomingMode ManagerSnapshot::transformsIncoming(const IncomingInfo &info) const {
+IncomingMode ManagerSnapshot::transformsIncoming(
+		const std::string &account,
+		const IncomingInfo &info) const {
 	const auto chat = info.chat;
 	if (hidden
 		|| locked
@@ -1235,7 +1318,7 @@ IncomingMode ManagerSnapshot::transformsIncoming(const IncomingInfo &info) const
 			&& parsed->incoming.declared
 			&& (!info.service || parsed->incoming.service)
 			&& Matches(parsed->incoming.filter, info)
-			&& (!grant->second.chats || grant->second.chats->contains(chat))) {
+			&& grant->second.allows(account, chat)) {
 			if (parsed->incoming.hold) {
 				return IncomingMode::Hold;
 			}
@@ -1245,7 +1328,9 @@ IncomingMode ManagerSnapshot::transformsIncoming(const IncomingInfo &info) const
 	return result;
 }
 
-bool ManagerSnapshot::transformsOutgoing(const OutgoingInfo &info) const {
+bool ManagerSnapshot::transformsOutgoing(
+		const std::string &account,
+		const OutgoingInfo &info) const {
 	const auto chat = info.chat;
 	if (hidden
 		|| locked
@@ -1264,7 +1349,7 @@ bool ManagerSnapshot::transformsOutgoing(const OutgoingInfo &info) const {
 			&& parsed->outgoing.declared
 			&& (info.files.empty() || parsed->outgoing.media)
 			&& Matches(parsed->outgoing.filter, info)
-			&& (!grant->second.chats || grant->second.chats->contains(chat))) {
+			&& grant->second.allows(account, chat)) {
 			return true;
 		}
 	}
@@ -1697,7 +1782,7 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		}
 		strong->wake.notify_one();
 	};
-	auto grants = MakeGrants(manifest, { grant->second.granted, grant->second.chats, grant->second.folder });
+	auto grants = MakeGrants(manifest, grant->second.decisionFor(account));
 	grants.account = account;
 	instance->broker = std::make_shared<Broker>(std::move(grants), std::move(services));
 
@@ -2339,7 +2424,7 @@ DispatchReport PluginManager::dispatch(
 			continue;
 		}
 		const auto grant = record.grants.find(kAllAccounts);
-		if (!FilterEvent(MakeGrants(*parsed, { grant->second.granted, grant->second.chats, grant->second.folder }), event)) {
+		if (!FilterEvent(MakeGrants(*parsed, grant->second.decisionFor(account)), event)) {
 			++report.skipped;
 			continue;
 		}
@@ -2598,7 +2683,7 @@ bool PluginManager::advanceIncoming(
 			|| !parsed->incoming.declared
 			|| (chain.incoming.service && !parsed->incoming.service)
 			|| !Matches(parsed->incoming.filter, chain.incoming)
-			|| (grant->second.chats && !grant->second.chats->contains(chain.incoming.chat))) {
+			|| !grant->second.allows(chain.account, chain.incoming.chat)) {
 			continue;
 		}
 		const auto blocking = parsed->incoming.block;
@@ -2733,7 +2818,7 @@ bool PluginManager::advance(
 			|| !parsed->outgoing.declared
 			|| (!chain.info.files.empty() && !parsed->outgoing.media)
 			|| !Matches(parsed->outgoing.filter, chain.info)
-			|| (grant->second.chats && !grant->second.chats->contains(chain.info.chat))) {
+			|| !grant->second.allows(chain.account, chain.info.chat)) {
 			continue;
 		}
 		const auto blocking = parsed->outgoing.block;

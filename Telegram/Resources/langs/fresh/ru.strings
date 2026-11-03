@@ -316,7 +316,7 @@
 "fresh_PluginChatsSelected" = "Только выбранные чаты";
 "fresh_PluginChatsChoose" = "Выбрать чаты";
 "fresh_PluginChatsCount" = "Выбрано: {amount}";
-"fresh_PluginChatsAbout" = "Плагин видит сообщения, чаты и события только из разрешённых чатов.";
+"fresh_PluginChatsAbout" = "Плагин видит сообщения, чаты и события только из разрешённых чатов. Выбранные чаты действуют только в этом аккаунте.";
 "fresh_PluginChatsNone" = "Выберите хотя бы один чат или разрешите все чаты.";
 "fresh_PluginRisks" = "С этими разрешениями плагин:";
 "fresh_PluginRisksNone" = "Эти разрешения не несут особых рисков.";

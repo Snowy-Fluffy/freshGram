@@ -3823,10 +3823,12 @@ TextWithTags TextWithEntitiesOf(
 
 namespace {
 
+using HiddenKey = std::pair<uint64, FullMsgId>;
+
 struct PluginHidden {
-	base::flat_set<FullMsgId> hidden;
-	base::flat_set<FullMsgId> pending;
-	base::flat_set<FullMsgId> silenced;
+	base::flat_set<HiddenKey> hidden;
+	base::flat_set<HiddenKey> pending;
+	base::flat_set<HiddenKey> silenced;
 };
 
 [[nodiscard]] PluginHidden &PluginHiddenState() {
@@ -3834,24 +3836,28 @@ struct PluginHidden {
 	return result;
 }
 
+[[nodiscard]] HiddenKey HiddenKeyOf(not_null<const HistoryItem*> item) {
+	return { item->history()->session().uniqueId(), item->fullId() };
+}
+
 } // namespace
 
 bool IsHiddenByPlugin(not_null<const HistoryItem*> item) {
 	const auto &state = PluginHiddenState();
-	const auto id = item->fullId();
-	return state.hidden.contains(id) || state.pending.contains(id);
+	const auto key = HiddenKeyOf(item);
+	return state.hidden.contains(key) || state.pending.contains(key);
 }
 
 bool IsSilencedByPlugin(not_null<const HistoryItem*> item) {
-	return PluginHiddenState().silenced.contains(item->fullId());
+	return PluginHiddenState().silenced.contains(HiddenKeyOf(item));
 }
 
 void SetSilencedByPlugin(not_null<const HistoryItem*> item, bool silenced) {
 	auto &set = PluginHiddenState().silenced;
 	if (silenced) {
-		set.emplace(item->fullId());
+		set.emplace(HiddenKeyOf(item));
 	} else {
-		set.remove(item->fullId());
+		set.remove(HiddenKeyOf(item));
 	}
 }
 
@@ -3867,12 +3873,13 @@ void SetHiddenByPlugin(not_null<HistoryItem*> item, bool hidden, bool pending) {
 	}
 	for (const auto &one : items) {
 		auto &set = pending ? state.pending : state.hidden;
+		const auto key = HiddenKeyOf(one);
 		if (hidden) {
-			set.emplace(one->fullId());
+			set.emplace(key);
 		} else {
-			set.remove(one->fullId());
+			set.remove(key);
 			if (!pending) {
-				state.pending.remove(one->fullId());
+				state.pending.remove(key);
 			}
 		}
 		one->invalidateChatListEntry();
@@ -3880,11 +3887,12 @@ void SetHiddenByPlugin(not_null<HistoryItem*> item, bool hidden, bool pending) {
 	FiltersCacheController::fireUpdate();
 }
 
-void ForgetHiddenByPlugin(FullMsgId id) {
+void ForgetHiddenByPlugin(not_null<const HistoryItem*> item) {
 	auto &state = PluginHiddenState();
-	state.hidden.remove(id);
-	state.pending.remove(id);
-	state.silenced.remove(id);
+	const auto key = HiddenKeyOf(item);
+	state.hidden.remove(key);
+	state.pending.remove(key);
+	state.silenced.remove(key);
 }
 
 void ReleasePendingHidden() {
@@ -4111,7 +4119,7 @@ bool IsSilencedByPlugin(not_null<const HistoryItem*>) {
 void SetSilencedByPlugin(not_null<const HistoryItem*>, bool) {
 }
 
-void ForgetHiddenByPlugin(FullMsgId) {
+void ForgetHiddenByPlugin(not_null<const HistoryItem*>) {
 }
 
 void ReleasePendingHidden() {

@@ -316,7 +316,7 @@
 "fresh_PluginChatsSelected" = "仅选定的聊天";
 "fresh_PluginChatsChoose" = "选择聊天";
 "fresh_PluginChatsCount" = "已选 {amount} 个";
-"fresh_PluginChatsAbout" = "插件只能看到允许的聊天中的消息、聊天和事件。";
+"fresh_PluginChatsAbout" = "插件只能看到允许的聊天中的消息、聊天和事件。所选聊天仅适用于此账号。";
 "fresh_PluginChatsNone" = "请至少选择一个聊天，或允许所有聊天。";
 "fresh_PluginRisks" = "拥有这些权限后，插件：";
 "fresh_PluginRisksNone" = "这些权限没有特别的风险。";

@@ -316,7 +316,7 @@
 "fresh_PluginChatsSelected" = "Nur die gewählten Chats";
 "fresh_PluginChatsChoose" = "Chats wählen";
 "fresh_PluginChatsCount" = "{amount} gewählt";
-"fresh_PluginChatsAbout" = "Das Plugin sieht Nachrichten, Chats und Ereignisse nur aus den erlaubten Chats.";
+"fresh_PluginChatsAbout" = "Das Plugin sieht Nachrichten, Chats und Ereignisse nur aus den erlaubten Chats. Die ausgewählten Chats gelten nur für dieses Konto.";
 "fresh_PluginChatsNone" = "Wähle mindestens einen Chat oder erlaube alle Chats.";
 "fresh_PluginRisks" = "Mit diesen Berechtigungen kann das Plugin:";
 "fresh_PluginRisksNone" = "Diese Berechtigungen bergen keine besonderen Risiken.";
