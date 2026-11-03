@@ -4,10 +4,12 @@
 #include <cerrno>
 #include <climits>
 #include <cstdlib>
+#include <cstdio>
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -57,6 +59,32 @@ private:
 };
 
 constexpr auto kDirFlags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC;
+
+// A FIFO or a device must not even be opened, an open of it can block or act.
+[[nodiscard]] std::optional<Fail> NotPlainFile(int parent, const char *leaf) {
+	auto info = StatBuf();
+	if (::fstatat(parent, leaf, &info, AT_SYMLINK_NOFOLLOW) != 0) {
+		return (errno == ENOENT) ? std::nullopt : std::make_optional(Fail::Denied);
+	}
+	return S_ISREG(info.st_mode) ? std::nullopt : std::make_optional(Fail::Denied);
+}
+
+[[nodiscard]] int RenameNoReplace(int fromDir, const char *from, int toDir, const char *to) {
+#if defined __APPLE__
+	if (::renameatx_np(fromDir, from, toDir, to, RENAME_EXCL) == 0) {
+		return 0;
+	} else if (errno != ENOTSUP && errno != EINVAL) {
+		return -1;
+	}
+#elif defined __linux__ && defined __GLIBC__
+	if (::renameat2(fromDir, from, toDir, to, RENAME_NOREPLACE) == 0) {
+		return 0;
+	} else if (errno != EINVAL && errno != ENOSYS) {
+		return -1;
+	}
+#endif // __APPLE__ || __linux__ && __GLIBC__
+	return ::renameat(fromDir, from, toDir, to);
+}
 
 [[nodiscard]] Fail FromErrno(int error) {
 	switch (error) {
@@ -271,6 +299,10 @@ Result<std::vector<uint8_t>, Fail> Read(
 	auto located = Locate(root, path);
 	if (!located.ok()) {
 		return located.error();
+	} else if (const auto fail = NotPlainFile(
+			located.value().parent.get(),
+			located.value().leaf.c_str())) {
+		return *fail;
 	}
 	const auto file = Fd(::openat(
 		located.value().parent.get(),
@@ -320,6 +352,9 @@ Result<bool, Fail> Write(
 	}
 	const auto parent = located.value().parent.get();
 	const auto leaf = located.value().leaf.c_str();
+	if (const auto fail = NotPlainFile(parent, leaf)) {
+		return *fail;
+	}
 	auto fresh = false;
 	auto file = Fd();
 	if (mode == WriteMode::Create) {
@@ -441,7 +476,7 @@ Result<bool, Fail> Rename(
 			AT_SYMLINK_NOFOLLOW) == 0) {
 		return Fail::Exists;
 	}
-	if (::renameat(
+	if (RenameNoReplace(
 			source.value().parent.get(),
 			source.value().leaf.c_str(),
 			target.value().parent.get(),
