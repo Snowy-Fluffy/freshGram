@@ -135,6 +135,7 @@
 "fresh_PluginInstalledToast" = "Плагин установлен.";
 "fresh_PluginInstallFailed" = "Не удалось установить плагин: {reason}";
 "fresh_PluginPublisherChanged" = "Издатель этого плагина изменился. Всё равно установить?";
+"fresh_PluginPublisherUnknown" = "Установленная версия плагина не подписана, поэтому нельзя проверить, что этот пакет от того же автора. Он получит разрешения и данные плагина. Всё равно установить?";
 "fresh_PluginsEnableFirst" = "Сначала включите плагины в настройках.";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
 "fresh_PluginsRevision" = "Ревизия";

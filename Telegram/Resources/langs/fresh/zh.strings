@@ -135,6 +135,7 @@
 "fresh_PluginInstalledToast" = "插件已安装。";
 "fresh_PluginInstallFailed" = "无法安装插件：{reason}";
 "fresh_PluginPublisherChanged" = "此插件的发布者已更改。仍要安装吗？";
+"fresh_PluginPublisherUnknown" = "此插件的已安装版本未签名，无法确认此安装包来自同一作者。它将获得该插件的权限和数据。仍要安装吗？";
 "fresh_PluginsEnableFirst" = "请先在设置中启用插件。";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
 "fresh_PluginsRevision" = "修订版本";

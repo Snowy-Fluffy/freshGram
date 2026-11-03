@@ -8918,6 +8918,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PluginInstalledToast" = "Plugin installed.";
 "fresh_PluginInstallFailed" = "Could not install the plugin: {reason}";
 "fresh_PluginPublisherChanged" = "The publisher of this plugin has changed. Install it anyway?";
+"fresh_PluginPublisherUnknown" = "The installed version of this plugin isn't signed, so it can't be checked that this package comes from the same author. It will get the plugin's permissions and data. Install it anyway?";
 "fresh_PluginsEnableFirst" = "Turn on plugins in the settings first.";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
 "fresh_PluginsRevision" = "Revision";

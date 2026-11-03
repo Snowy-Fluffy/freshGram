@@ -278,6 +278,20 @@ void TestInstallPolicy() {
 	trust.acceptNewPublisher = true;
 	CHECK(manager.install(CounterArchive("com.example.policy", "1.2.0", 2), trust).ok());
 
+	InstallOptions loose;
+	loose.acceptUnsigned = true;
+	const auto plain = [](const char *version) {
+		return Build(Document("com.example.plain", version), { { "plugin.wasm", ReadFile(FGPL_COUNTER_WASM) } }).archive;
+	};
+	CHECK(manager.install(plain("1.0.0"), loose).ok());
+	const auto anyone = manager.install(plain("1.1.0"), loose);
+	CHECK(!anyone.ok() && anyone.error().error == InstallError::PublisherChanged);
+	CHECK(anyone.error().details.size() == 2 && anyone.error().details[0].empty());
+	const auto signedOver = manager.install(CounterArchive("com.example.plain", "1.2.0", 2));
+	CHECK(!signedOver.ok() && signedOver.error().error == InstallError::PublisherChanged);
+	loose.acceptNewPublisher = true;
+	CHECK(manager.install(plain("1.1.0"), loose).ok());
+
 	auto incompatible = Document("com.example.future", "1.0.0");
 	Set(incompatible, "compat.freshgram", Text(">=9.0.0"));
 	const auto key = Seed(1);

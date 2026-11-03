@@ -81,8 +81,12 @@ void Installed(
 		const auto failure = result.error();
 		if (failure.error == fgpl::InstallError::PublisherChanged
 			&& !options.acceptNewPublisher) {
+			const auto unknown = failure.details.empty()
+				|| failure.details.front().empty();
 			controller->show(Ui::MakeConfirmBox({
-				.text = tr::fresh_PluginPublisherChanged(tr::now),
+				.text = unknown
+					? tr::fresh_PluginPublisherUnknown(tr::now)
+					: tr::fresh_PluginPublisherChanged(tr::now),
 				.confirmed = [=](Fn<void()> &&close) {
 					auto again = options;
 					again.acceptNewPublisher = true;

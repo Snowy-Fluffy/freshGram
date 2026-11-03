@@ -135,6 +135,7 @@
 "fresh_PluginInstalledToast" = "Plugin installé.";
 "fresh_PluginInstallFailed" = "Impossible d'installer le plugin : {reason}";
 "fresh_PluginPublisherChanged" = "L'éditeur de ce plugin a changé. L'installer quand même ?";
+"fresh_PluginPublisherUnknown" = "La version installée de ce plugin n'est pas signée : impossible de vérifier que ce paquet vient du même auteur. Il obtiendra les autorisations et les données du plugin. L'installer quand même ?";
 "fresh_PluginsEnableFirst" = "Activez d'abord les plugins dans les paramètres.";
 "fresh_PluginsVersions" = "Wasmtime {wasmtime} · Python {python}";
 "fresh_PluginsRevision" = "Révision";

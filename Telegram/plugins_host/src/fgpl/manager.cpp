@@ -770,8 +770,8 @@ Result<InstallReport, InstallFailure> PluginManager::install(
 				return fail(InstallError::DowngradeRefused, { existing->second.current });
 			}
 		}
-		if (!existing->second.publisher.empty()
-			&& existing->second.publisher != package.publisher
+		if ((existing->second.publisher.empty()
+				|| existing->second.publisher != package.publisher)
 			&& !options.acceptNewPublisher) {
 			return fail(InstallError::PublisherChanged, {
 				existing->second.publisher,
