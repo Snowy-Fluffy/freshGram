@@ -3331,7 +3331,10 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 			: &st::settingsIconBg2;
 	};
 	const auto addRow = [&](const fgpl::PermissionRequest *request) {
-		const auto fresh = ranges::find(added, request->id) != end(added);
+		const auto fresh = ranges::any_of(added, [&](const std::string &id) {
+			return (id == request->id)
+				|| id.starts_with(request->id + ':');
+		});
 		const auto checked = request->required
 			|| !current
 			|| fresh

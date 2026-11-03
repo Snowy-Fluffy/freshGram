@@ -33,6 +33,26 @@ const auto kLowPermissions = std::set<std::string>{
 	"notifications", "messages.ids",
 };
 
+[[nodiscard]] bool PortsCovered(
+		const std::vector<std::pair<int, int>> &allowed,
+		const std::vector<std::pair<int, int>> &wanted) {
+	for (const auto &[low, high] : wanted) {
+		for (auto port = low; port <= high;) {
+			auto reach = port - 1;
+			for (const auto &[from, till] : allowed) {
+				if (from <= port && port <= till) {
+					reach = std::max(reach, till);
+				}
+			}
+			if (reach < port) {
+				return false;
+			}
+			port = reach + 1;
+		}
+	}
+	return true;
+}
+
 } // namespace
 
 Danger PermissionDanger(const std::string &id, const std::string &scope) {
@@ -171,6 +191,10 @@ std::vector<std::string> NewRequests(
 			&& old->mode != "write"
 			&& request.mode == "write") {
 			result.push_back("fs.folder:write");
+		}
+		if (request.id == "net.local"
+			&& !PortsCovered(old->ports, request.ports)) {
+			result.push_back("net.local:ports");
 		}
 	}
 	return result;

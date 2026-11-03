@@ -600,6 +600,26 @@ void TestLocalPorts() {
 	CHECK(grants.permissions.contains("net.local") && grants.localPorts == ports);
 	CHECK(MakeGrants(parsed.value(), { {}, std::nullopt }).localPorts.empty());
 	CHECK(HostFeatures().contains("net.local"));
+
+	const auto version = [&](cbor::Value list) {
+		auto other = ValidDocument();
+		withPorts(std::move(list))(other);
+		return Parse(other).value();
+	};
+	const auto widened = [&](cbor::Value before, cbor::Value after) {
+		const auto added = NewRequests(version(std::move(before)), version(std::move(after)));
+		return std::ranges::find(added, "net.local:ports") != added.end();
+	};
+	const auto list = [](std::initializer_list<cbor::Value> items) {
+		return cbor::Value::FromArray(cbor::Array(items));
+	};
+	CHECK(widened(list({ Int(8080) }), list({ Text("1-65535") })));
+	CHECK(widened(list({ Int(8080) }), list({ Int(8080), Int(8081) })));
+	CHECK(widened(list({ Text("9000-9100") }), list({ Text("8999-9100") })));
+	CHECK(!widened(list({ Text("1-65535") }), list({ Int(8080) })));
+	CHECK(!widened(list({ Int(8080), Text("9000-9100") }), list({ Text("9010-9020"), Int(8080) })));
+	CHECK(!widened(list({ Text("9000-9050"), Text("9051-9100") }), list({ Text("9000-9100") })));
+	CHECK(!widened(list({ Int(8080) }), list({ Int(8080) })));
 }
 
 void TestFolderPermission() {
