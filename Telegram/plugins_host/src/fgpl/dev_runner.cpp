@@ -715,7 +715,7 @@ int Run(const RunOptions &options) {
 	config.host.addressSpaceMb = 1024;
 	config.python = PythonPaths(options);
 	config.cache.directory = root / "cache";
-	config.cache.secret.fill(0x44);
+	os::RandomBytes(config.cache.secret);
 	config.storageFlushMs = 0;
 	config.environment.app = *version;
 	config.environment.apiLevel = int(api::kVersion);
