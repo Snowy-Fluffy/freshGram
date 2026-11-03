@@ -1200,7 +1200,11 @@ void FillSubPageBox(
 					QString(),
 					host->value());
 				button->addClickHandler([=] {
-					UrlClickHandler::Open(*url);
+					HiddenUrlClickHandler::Open(
+						*url,
+						QVariant::fromValue(ClickHandlerContext{
+							.sessionWindow = base::make_weak(controller),
+						}));
 				});
 				update = crl::guard(button, [=](const cbor::Value &now) {
 					*label = TextOf(now, "label");
