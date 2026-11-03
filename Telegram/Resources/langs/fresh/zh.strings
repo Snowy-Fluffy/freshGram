@@ -283,6 +283,7 @@
 "fresh_PermSettingsWrite" = "更改主题和主播模式";
 "fresh_PermUiMenu" = "添加菜单项";
 "fresh_PermUiCommand" = "添加聊天命令";
+"fresh_PermUiLink" = "接收 tg://plugin 链接";
 "fresh_PermUiSettingsPage" = "显示设置页面";
 "fresh_PermUiComposerButton" = "在输入框旁添加按钮";
 "fresh_PermUiDialog" = "显示对话框";

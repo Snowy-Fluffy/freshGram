@@ -594,6 +594,7 @@ void TestUiContributions() {
 		{ "ui.menu", {} }, { "ui.command", {} }, { "ui.settings_page", {} }, { "storage.private", {} },
 		{ "ui.dialog", {} },
 		{ "ui.badges", {} },
+		{ "ui.link", {} },
 	});
 	Set(document, "runtime.kind", Text("python"));
 	Remove(document, "runtime.module");
@@ -607,6 +608,9 @@ void TestUiContributions() {
 	}));
 	Set(document, "contributes.commands", cbor::Value::FromArray({
 		cbor::Value::FromMap({ { "name", Text("tr") }, { "description", Text("Translate") } }),
+	}));
+	Set(document, "contributes.links", cbor::Value::FromArray({
+		cbor::Value::FromMap({ { "path", Text("stats") } }),
 	}));
 	Set(document, "contributes.settingsPage", cbor::Value::FromBool(true));
 	const auto key = Seed(5);
@@ -632,6 +636,16 @@ void TestUiContributions() {
 	CHECK(!manager.send(id, "A", badgeClick));
 	CHECK(manager.grant(id, "A", { { "ui.menu", "ui.command", "ui.settings_page", "storage.private", "ui.dialog", "ui.badges" }, std::nullopt }));
 	CHECK(manager.send(id, "A", badgeClick));
+	const auto linkOpen = [](const char *path) {
+		return cbor::Value::FromMap({
+			{ "type", Text("link.open") }, { "path", Text(path) },
+			{ "query", cbor::Value::FromMap({ { "id", Text("5") } }) },
+		});
+	};
+	CHECK(!manager.send(id, "A", linkOpen("stats")));
+	CHECK(manager.grant(id, "A", { { "ui.menu", "ui.command", "ui.settings_page", "storage.private", "ui.dialog", "ui.badges", "ui.link" }, std::nullopt }));
+	CHECK(manager.send(id, "A", linkOpen("stats")));
+	CHECK(!manager.send(id, "A", linkOpen("other")));
 	const auto contributions = manager.contributions("A", "ru");
 	CHECK(contributions.size() == 1);
 	if (!contributions.empty()) {

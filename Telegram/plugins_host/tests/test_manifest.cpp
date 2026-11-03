@@ -297,6 +297,16 @@ void TestRejections() {
 			cbor::Value::FromMap({ { "name", Text("tr") } }),
 		}));
 	}, "ui.command");
+	ExpectError("link without permission", [](auto &d) {
+		Set(d, "contributes.links", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "path", Text("stats") } }),
+		}));
+	}, "ui.link");
+	ExpectError("bad link path", [](auto &d) {
+		Set(d, "contributes.links", cbor::Value::FromArray({
+			cbor::Value::FromMap({ { "path", Text("a/b") } }),
+		}));
+	}, "bad link path");
 	ExpectError("settings page without permission", [](auto &d) {
 		Set(d, "contributes.settingsPage", cbor::Value::FromBool(true));
 	}, "ui.settings_page");

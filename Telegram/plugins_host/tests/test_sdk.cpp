@@ -1,9 +1,11 @@
 #include "fgpl/broker.h"
 #include "check.h"
 #include "fakes.h"
+#include "fgpl/database.h"
 #include "fgpl/host_client.h"
 #include "python_support.h"
 
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -25,8 +27,10 @@ struct World {
 	explicit World(std::set<std::string> permissions) {
 		grants.pluginId = "com.example.test";
 		grants.permissions = std::move(permissions);
-		grants.storageQuotaBytes = 4096;
+		grants.storageQuotaBytes = 16384;
 		services.storage = &storage;
+		services.database = std::make_shared<SqliteDatabase>(
+			std::filesystem::temp_directory_path() / "fgpl-sdk-sql" / "a.sqlite");
 		services.data = &data;
 		services.transport = &transport;
 		services.log = [this](std::string_view line) {
@@ -74,9 +78,11 @@ void TestPythonSdk() {
 	if (!pysupport::Installed()) {
 		return;
 	}
+	std::filesystem::remove_all(std::filesystem::temp_directory_path() / "fgpl-sdk-sql");
 	auto world = World({
 		"storage.private", "net.https", "chats.list", "account.info",
 		"messages.history", "stars.balance", "ui.toast", "messages.read",
+		"storage.sql",
 	});
 	auto broker = Broker(world.grants, world.services);
 	auto client = Start({ "--winch" });
@@ -115,7 +121,7 @@ void TestPythonSdk() {
 	}
 	CHECK(StringAt(*report, "plugin") == "com.example.test");
 	CHECK(report->find("count")->asInt() == 1);
-	CHECK(report->find("granted")->asArray()->size() == 8);
+	CHECK(report->find("granted")->asArray()->size() == 9);
 	const auto chats = report->find("chats")->asArray();
 	CHECK(chats && chats->size() == 3);
 	CHECK(chats && chats->size() == 3 && (*chats)[0].asInt() == 1);
@@ -139,6 +145,9 @@ void TestPythonSdk() {
 	CHECK(StringAt(*report, "ip_url") == "denied");
 	CHECK(StringAt(*report, "cookie_header") == "invalid");
 	CHECK(StringAt(*report, "quota") == "quota");
+	CHECK(StringAt(*report, "sql_attach") == "denied");
+	CHECK(report->find("sql_count")->asInt() == 2);
+	CHECK(StringAt(*report, "sql_first") == "a");
 	CHECK(report->find("stars")->asInt() == 1234);
 	CHECK(world.data.toasts.size() == 1);
 	CHECK(world.transport.requests.size() == 3);

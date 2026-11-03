@@ -207,6 +207,26 @@ bool HandleAyuPlugin(
 	return true;
 }
 
+bool HandlePluginLink(
+	Window::SessionController *controller,
+	const Match &match,
+	const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto id = match->captured(1);
+	const auto path = match->captured(2);
+	if (id.isEmpty() || path.isEmpty()) {
+		return false;
+	}
+	FreshPlugins::OpenPluginLink(
+		controller,
+		id,
+		path,
+		url_parse_params(match->captured(3), qthelp::UrlParamNameTransform::NoTransform));
+	return true;
+}
+
 bool TryHandleSpotify(const QString &url) {
 	if (!url.contains("spotify.com")) {
 		return false;

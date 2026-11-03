@@ -40,7 +40,13 @@ def message(event):
     report["http_url"] = attempt(lambda: freshgram.net.fetch("http://api.example.com/"))
     report["ip_url"] = attempt(lambda: freshgram.net.fetch("https://127.0.0.1/"))
     report["cookie_header"] = attempt(lambda: freshgram.net.fetch("https://api.example.com/", headers={"Cookie": "a=b"}))
-    report["quota"] = attempt(lambda: freshgram.storage.set("big", "x" * 5000))
+    report["quota"] = attempt(lambda: freshgram.storage.set("big", "x" * 20000))
+    freshgram.sql.run("CREATE TABLE IF NOT EXISTS t (v TEXT)")
+    freshgram.sql.run("INSERT INTO t VALUES (?)", ["a"])
+    report["sql_first"] = freshgram.sql.run("SELECT v FROM t").first()[0]
+    report["sql_attach"] = attempt(lambda: freshgram.sql.run("ATTACH 'x' AS y"))
+    answers = freshgram.sql.batch([("INSERT INTO t VALUES (?)", ["b"]), "SELECT COUNT(*) FROM t"])
+    report["sql_count"] = answers[1].first()[0]
     report["stars"] = freshgram.stars.balance()
     report["toast"] = attempt(lambda: freshgram.ui.toast("demo done"))
     freshgram.storage.set("report", report)

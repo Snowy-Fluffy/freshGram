@@ -283,6 +283,7 @@
 "fresh_PermSettingsWrite" = "Design und Streamer-Modus ändern";
 "fresh_PermUiMenu" = "Menüeinträge hinzufügen";
 "fresh_PermUiCommand" = "Chatbefehle hinzufügen";
+"fresh_PermUiLink" = "tg://plugin-Links entgegennehmen";
 "fresh_PermUiSettingsPage" = "Eine Einstellungsseite anzeigen";
 "fresh_PermUiComposerButton" = "Eine Schaltfläche neben dem Eingabefeld hinzufügen";
 "fresh_PermUiDialog" = "Dialoge anzeigen";

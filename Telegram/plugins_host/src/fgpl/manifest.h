@@ -79,6 +79,11 @@ struct Command {
 	Localized description;
 };
 
+struct DeepLink {
+	std::string path;
+	Localized description;
+};
+
 struct StorageExport {
 	bool declared = false;
 	std::vector<std::string> prefixes;
@@ -227,7 +232,7 @@ struct Manifest {
 	int eventTimeoutMs = 500;
 	int storageMb = 10;
 
-	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer", "translate", "ai", "toast" };
+	std::set<std::string> activation = { "event", "command", "menu", "settings", "message", "timer", "translate", "ai", "toast", "link" };
 	bool background = false;
 
 	std::vector<PermissionRequest> permissions;
@@ -236,6 +241,7 @@ struct Manifest {
 	std::vector<MenuItem> menus;
 	std::map<std::string, std::string> icons;
 	std::vector<Command> commands;
+	std::vector<DeepLink> links;
 	bool settingsPage = false;
 	OutgoingHook outgoing;
 	IncomingHook incoming;

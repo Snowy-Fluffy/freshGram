@@ -283,6 +283,7 @@
 "fresh_PermSettingsWrite" = "Changer le thème et le mode streamer";
 "fresh_PermUiMenu" = "Ajouter des éléments de menu";
 "fresh_PermUiCommand" = "Ajouter des commandes de discussion";
+"fresh_PermUiLink" = "Recevoir les liens tg://plugin";
 "fresh_PermUiSettingsPage" = "Afficher une page de réglages";
 "fresh_PermUiComposerButton" = "Ajouter un bouton à côté du champ de saisie";
 "fresh_PermUiDialog" = "Afficher des fenêtres";

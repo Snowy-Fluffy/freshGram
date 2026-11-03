@@ -112,6 +112,10 @@ namespace {
 namespace cbor = fgpl::cbor;
 
 constexpr auto kMaxPluginChats = 100;
+constexpr auto kLinkEachMs = crl::time(500);
+constexpr auto kMaxLinkFields = size_t(16);
+constexpr auto kMaxLinkKey = 64;
+constexpr auto kMaxLinkValue = 1024;
 constexpr auto kSettingsWaitMs = crl::time(5000);
 constexpr auto kUncloseableDialogMs = crl::time(120000);
 
@@ -3220,6 +3224,7 @@ namespace {
 		{ "settings.write", &st::menuIconSettings },
 		{ "ui.menu", &st::menuIconCustomize },
 		{ "ui.command", &st::menuIconBotCommands },
+		{ "ui.link", &st::menuIconLink },
 		{ "ui.settings_page", &st::menuIconSettings },
 		{ "ui.composer_button", &st::menuIconCustomize },
 		{ "ui.dialog", &st::menuIconCustomize },
@@ -3844,6 +3849,7 @@ QString PermissionTitle(const std::string &id, const std::string &scope) {
 		{ "settings.write", tr::fresh_PermSettingsWrite },
 		{ "ui.menu", tr::fresh_PermUiMenu },
 		{ "ui.command", tr::fresh_PermUiCommand },
+		{ "ui.link", tr::fresh_PermUiLink },
 		{ "ui.settings_page", tr::fresh_PermUiSettingsPage },
 		{ "ui.composer_button", tr::fresh_PermUiComposerButton },
 		{ "ui.dialog", tr::fresh_PermUiDialog },
@@ -4979,6 +4985,30 @@ CommandResult RunCommand(
 	return CommandResult::None;
 }
 
+void OpenPluginLink(
+		not_null<Window::SessionController*> controller,
+		const QString &pluginId,
+		const QString &path,
+		const QMap<QString, QString> &query) {
+	static auto last = crl::time();
+	const auto now = crl::now();
+	if (last && now - last < kLinkEachMs) {
+		return;
+	}
+	last = now;
+	auto fields = cbor::Map();
+	for (auto i = query.begin(); i != query.end() && fields.size() < kMaxLinkFields; ++i) {
+		if (i.key().size() <= kMaxLinkKey && i.value().size() <= kMaxLinkValue) {
+			fields.push_back({ i.key().toStdString(), Text(i.value()) });
+		}
+	}
+	Send(&controller->session(), pluginId.toStdString(), cbor::Value::FromMap({
+		{ "type", cbor::Value::FromText("link.open") },
+		{ "path", Text(path) },
+		{ "query", cbor::Value::FromMap(std::move(fields)) },
+	}));
+}
+
 void ShowPluginSettings(
 		not_null<Window::SessionController*> controller,
 		const QString &pluginId,
@@ -5057,6 +5087,13 @@ void ShowPluginSettings(
 }
 
 void OpenPluginSettings(const std::string &, const std::string &) {
+}
+
+void OpenPluginLink(
+		not_null<Window::SessionController*>,
+		const QString &,
+		const QString &,
+		const QMap<QString, QString> &) {
 }
 
 void ShowPluginDetails(not_null<Window::SessionController*>, const QString &) {

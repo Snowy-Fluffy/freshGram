@@ -576,7 +576,7 @@ const std::set<std::string> &KnownPermissions() {
 		"messages.transform_outgoing", "media.read", "media.read_outgoing", "media.download", "chats.list", "chat.info",
 		"messages.history", "account.info", "stars.balance", "composer.draft",
 		"contacts.list", "settings.read", "folders.list", "ui.menu",
-		"ui.command", "ui.settings_page", "ui.composer_button", "ui.dialog",
+		"ui.command", "ui.link", "ui.settings_page", "ui.composer_button", "ui.dialog",
 		"ui.toast", "ui.badges", "notifications", "notifications.suppress", "net.https", "net.tcp", "net.udp", "net.ws", "net.local", "storage.private", "storage.sql",
 		"plugins.message",
 		"fs.user_selected", "fs.folder", "clipboard", "background",
@@ -755,7 +755,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 					|| (*name != "startup" && *name != "command" && *name != "event"
 						&& *name != "menu" && *name != "settings" && *name != "message"
 						&& *name != "timer" && *name != "translate" && *name != "ai"
-						&& *name != "toast")) {
+						&& *name != "toast" && *name != "link")) {
 					reader.error("activation.on", "has an unknown trigger");
 				} else {
 					manifest.activation.insert(*name);
@@ -846,7 +846,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 
 	if (const auto contributes = reader.object(document, "contributes", "", false, {
-			"events", "eventFilters", "menus", "commands", "settingsPage", "outgoing", "incoming", "messages", "icons",
+			"events", "eventFilters", "menus", "commands", "links", "settingsPage", "outgoing", "incoming", "messages", "icons",
 			"translator", "aiProvider" })) {
 		if (const auto icons = contributes->find("icons"); icons && !icons->asMap()) {
 			reader.error("contributes.icons", "must be an object");
@@ -1014,6 +1014,26 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 				command.description = *description;
 			}
 			manifest.commands.push_back(std::move(command));
+		}
+		const auto links = reader.array(*contributes, "links", "contributes", 16);
+		for (const auto &item : links ? *links : cbor::Array()) {
+			if (!item.asMap()) {
+				reader.error("contributes.links", "entries must be objects");
+				continue;
+			}
+			reader.checkKeys(item, "contributes.links", { "path", "description" });
+			auto link = DeepLink();
+			link.path = reader.text(item, "path", "contributes.links", true, 64).value_or("");
+			for (const auto ch : link.path) {
+				if (!((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-')) {
+					reader.error("contributes.links", "bad link path");
+					break;
+				}
+			}
+			if (const auto description = reader.localized(item, "description", "contributes.links", false, 200)) {
+				link.description = *description;
+			}
+			manifest.links.push_back(std::move(link));
 		}
 		manifest.settingsPage = reader.boolean(*contributes, "settingsPage", "contributes").value_or(false);
 		if (const auto messages = reader.object(*contributes, "messages", "contributes", false, { "from" })) {
@@ -1218,6 +1238,9 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 	if (!manifest.commands.empty() && !hasPermission("ui.command")) {
 		reader.error("contributes.commands", "needs the ui.command permission");
+	}
+	if (!manifest.links.empty() && !hasPermission("ui.link")) {
+		reader.error("contributes.links", "needs the ui.link permission");
 	}
 	if (manifest.settingsPage && !hasPermission("ui.settings_page")) {
 		reader.error("contributes.settingsPage", "needs the ui.settings_page permission");

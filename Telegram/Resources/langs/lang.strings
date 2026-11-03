@@ -9067,6 +9067,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_PermSettingsWrite" = "Change the theme and streamer mode";
 "fresh_PermUiMenu" = "Add menu items";
 "fresh_PermUiCommand" = "Add chat commands";
+"fresh_PermUiLink" = "Receive tg://plugin links";
 "fresh_PermUiSettingsPage" = "Show a settings page";
 "fresh_PermUiComposerButton" = "Add a button next to the message field";
 "fresh_PermUiDialog" = "Show dialogs";

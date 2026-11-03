@@ -41,6 +41,12 @@ bool HandleAyuPlugin(
 	const Match &match,
 	const QVariant &context);
 
+// tg://plugin/<id>/<path>?<query>: a link a plugin declared in its manifest.
+bool HandlePluginLink(
+	Window::SessionController *controller,
+	const Match &match,
+	const QVariant &context);
+
 bool TryHandleSpotify(const QString &url);
 
 [[nodiscard]] bool IsWebUrl(const QUrl &url);

@@ -1869,6 +1869,10 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
 			AyuUrlHandlers::HandleAyuPlugin
 		},
 		{
+			u"^plugin/([a-z0-9._-]+)/([a-z0-9_-]+)/?(?:\\?([^#]*))?(#|$)"_q,
+			AyuUrlHandlers::HandlePluginLink
+		},
+		{
 			u"^ayu(/?.+)?(#|$)"_q,
 			AyuUrlHandlers::HandleAyu
 		},

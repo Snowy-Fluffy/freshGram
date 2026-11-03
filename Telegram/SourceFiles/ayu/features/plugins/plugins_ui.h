@@ -231,6 +231,13 @@ void ShowPluginSettings(
 	const QString &pluginId,
 	const QString &alias = QString());
 
+// tg://plugin/<id>/<path>?<query>: hands the link to a plugin that declared the path.
+void OpenPluginLink(
+	not_null<Window::SessionController*> controller,
+	const QString &pluginId,
+	const QString &path,
+	const QMap<QString, QString> &query);
+
 void ShowPluginDetails(
 	not_null<Window::SessionController*> controller,
 	const QString &pluginId);

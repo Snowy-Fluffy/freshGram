@@ -29,7 +29,7 @@ const auto kHighPermissions = std::set<std::string>{
 };
 
 const auto kLowPermissions = std::set<std::string>{
-	"storage.private", "storage.sql", "settings.read", "ui.menu", "ui.command",
+	"storage.private", "storage.sql", "settings.read", "ui.menu", "ui.command", "ui.link",
 	"ui.settings_page", "ui.composer_button", "ui.dialog", "ui.toast", "ui.badges",
 	"notifications", "messages.ids",
 };

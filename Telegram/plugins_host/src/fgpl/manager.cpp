@@ -1466,6 +1466,13 @@ bool PluginManager::send(
 		if (!has("ui.command") || !declared) {
 			return false;
 		}
+	} else if (*type == "link.open") {
+		const auto declared = std::any_of(parsed->links.begin(), parsed->links.end(), [&](const auto &link) {
+			return link.path == text("path");
+		});
+		if (!has("ui.link") || !declared) {
+			return false;
+		}
 	} else if (*type == "settings.change"
 		|| *type == "settings.click"
 		|| *type == "settings.long_click"
@@ -1511,6 +1518,8 @@ bool PluginManager::send(
 		? "menu"
 		: (*type == "command")
 		? "command"
+		: (*type == "link.open")
+		? "link"
 		: (type->rfind("settings.", 0) == 0)
 		? "settings"
 		: (type->rfind("toast.", 0) == 0)

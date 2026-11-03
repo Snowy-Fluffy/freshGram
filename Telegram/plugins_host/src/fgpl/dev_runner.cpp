@@ -215,6 +215,7 @@ const char *kHelp =
 	"  dialog click|change|close <id> [value]\n"
 	"  window <window> click|change|close <id> [value]\n"
 	"  toast click|close <id> [reason]\n"
+	"  link <path> [key=value ...]          open a tg://plugin link\n"
 	"  outgoing <chat> <text>                run the message.outgoing hooks on a text\n"
 	"  timer advance <ms>                    move the clock so that timers fire\n"
 	"  mock <url-prefix> <status> <body|@file>   answer net.fetch calls\n"
@@ -276,6 +277,8 @@ public:
 			return chat(tokens);
 		} else if (name == "command") {
 			return command(tokens);
+		} else if (name == "link") {
+			return link(tokens);
 		} else if (name == "menu") {
 			return menu(tokens);
 		} else if (name == "settings" || name == "dialog" || name == "window" || name == "toast") {
@@ -403,6 +406,24 @@ private:
 			map.push_back(std::move(field));
 		}
 		return send(Event("command", std::move(map)));
+	}
+
+	[[nodiscard]] Result link(const std::vector<Token> &tokens) {
+		if (tokens.size() < 2) {
+			return fail("usage: link <path> [key=value ...]");
+		}
+		auto fields = ParseFields(tokens, 2);
+		if (!fields.error.empty()) {
+			return fail(fields.error);
+		}
+		auto query = cbor::Map();
+		for (auto &field : fields.map) {
+			query.push_back({ field.key, field.value.asText() ? field.value : cbor::Value::FromText(Render(field.value)) });
+		}
+		return send(Event("link.open", cbor::Map{
+			{ "path", cbor::Value::FromText(tokens[1].text) },
+			{ "query", cbor::Value::FromMap(std::move(query)) },
+		}));
 	}
 
 	[[nodiscard]] Result menu(const std::vector<Token> &tokens) {

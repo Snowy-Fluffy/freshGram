@@ -1185,6 +1185,22 @@ def on_command(name):
     return register
 
 
+def on_link(path=None):
+    """A tg://plugin/<plugin id>/<path>?<query> link was opened.
+
+    Declare the paths in contributes.links and ask for ui.link. The event has
+    path and query (a dict of strings); anything may open such a link, so
+    treat both as untrusted input.
+    """
+    def register(function):
+        def wrapper(event):
+            if path is None or event.get("path") == path:
+                return function(event)
+        _event_handlers.append(("link.open", wrapper))
+        return function
+    return register
+
+
 def on_plugin_message(sender=None):
     def register(function):
         def wrapper(event):
