@@ -173,6 +173,9 @@ public:
 		} else if (text->size() > maxSize || (text->empty() && !allowEmpty)) {
 			error(name, "has a bad length");
 			return std::nullopt;
+		} else if (!ui::SafeText(*text, maxSize, false)) {
+			error(name, "has control or bidirectional characters");
+			return std::nullopt;
 		}
 		return *text;
 	}
@@ -235,7 +238,8 @@ public:
 			const char *key,
 			const std::string &where,
 			bool required,
-			size_t maxSize) {
+			size_t maxSize,
+			bool multiline = false) {
 		const auto value = parent.find(key);
 		const auto name = where.empty() ? std::string(key) : where + "." + key;
 		if (!value) {
@@ -248,6 +252,9 @@ public:
 		if (const auto plain = value->asText()) {
 			if (plain->empty() || plain->size() > maxSize) {
 				error(name, "has a bad length");
+				return std::nullopt;
+			} else if (!ui::SafeText(*plain, maxSize, multiline)) {
+				error(name, "has control or bidirectional characters");
 				return std::nullopt;
 			}
 			result.text["default"] = *plain;
@@ -263,7 +270,7 @@ public:
 			if ((entry.key != "default" && !ValidLanguage(entry.key))
 				|| !line
 				|| line->empty()
-				|| line->size() > maxSize) {
+				|| !ui::SafeText(*line, maxSize, multiline)) {
 				error(name, "has a bad entry '" + entry.key + "'");
 				return std::nullopt;
 			}
@@ -634,13 +641,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 			reader.error("version", "must be a semantic version");
 		}
 	}
-	if (const auto description = reader.localized(document, "description", "", false, 1000)) {
-		for (const auto &[language, text] : description->text) {
-			if (!ui::SafeText(text, 1000, true)) {
-				reader.error("description", "has control or bidirectional characters");
-				break;
-			}
-		}
+	if (const auto description = reader.localized(document, "description", "", false, 1000, true)) {
 		manifest.description = *description;
 	}
 	if (const auto author = reader.object(document, "author", "", false, { "name", "url", "contact" })) {

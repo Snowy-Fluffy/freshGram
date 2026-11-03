@@ -437,6 +437,12 @@ void TestStorageExport() {
 	ExpectError("description control", [](auto &d) {
 		Set(d, "description", Text("bad \x01 text"));
 	}, "description");
+	ExpectError("name bidi", [](auto &d) {
+		Set(d, "name", Text("Safe \xE2\x80\xAE" "txet"));
+	}, "name");
+	ExpectError("author newline", [](auto &d) {
+		Set(d, "author.name", Text("a\nb"));
+	}, "author.name");
 }
 
 void TestTranslatorManifest() {
