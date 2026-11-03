@@ -3,6 +3,7 @@
 
 #include "ayu/features/plugins/plugins_data.h"
 #include "ayu/features/plugins/plugins_service.h"
+#include "base/weak_ptr.h"
 #include "crl/crl_on_main.h"
 #include "main/main_session.h"
 #include "ui/text/text_utilities.h"
@@ -96,12 +97,17 @@ int RequestAi(
 	const auto state = std::make_shared<Pending>();
 	Active().emplace(id, state);
 
+	const auto weak = base::make_weak(session);
 	const auto finish = [=](fgpl::AiResult result) {
 		const auto i = Active().find(id);
 		if (i == Active().end() || state->cancelled) {
 			return;
 		}
 		Active().erase(i);
+		const auto strong = weak.get();
+		if (!strong) {
+			return;
+		}
 		if (!result.error.empty() || result.text.empty()) {
 			fail(QString::fromStdString(result.error.empty()
 				? std::string("empty")
@@ -109,7 +115,7 @@ int RequestAi(
 			return;
 		}
 		done(DisplayTextOf(
-			session,
+			strong,
 			QString::fromStdString(result.text),
 			result.entities));
 	};

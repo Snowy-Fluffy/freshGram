@@ -3889,7 +3889,8 @@ void CloseData() {
 }
 
 void ReleaseData() {
-	GetData().providers.clear();
+	// WHY: callbacks of requests still in flight and brokers that outlive the
+	// manager hold a provider, and it only keeps an account id.
 }
 
 std::vector<fgpl::TextEntity> EntitiesOf(const TextWithTags &text) {
