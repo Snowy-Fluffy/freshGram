@@ -1096,6 +1096,26 @@ void TestOutgoingPriorityAndFinal() {
 	CHECK(result->silent == std::optional<bool>(true));
 	CHECK(result->text == "final");
 	CHECK(!result->replyTo);
+
+	const auto guard = std::string("com.example.0-guard");
+	CHECK(manager.install(CustomArchive(guard, CallingModule(EncodedRequest(
+		"messages.drop_outgoing", { { "reason", Text("guarded") } })), permissions, [](cbor::Value &document) {
+		Set(document, "contributes.outgoing.onFailure", Text("block"));
+		Set(document, "contributes.outgoing.priority", Int(-1));
+	})).ok());
+	CHECK(manager.setEnabled(guard, true));
+	CHECK(manager.grant(guard, "A", { { "messages.read", "messages.transform_outgoing" }, std::nullopt }));
+	CHECK(manager.startEnabled("A").started <= 1);
+	CHECK(manager.drain(20000));
+	result.reset();
+	manager.transformOutgoingAsync("A", info, 5000, [&](OutgoingResult value) {
+		result = std::move(value);
+	});
+	while (!result) {
+		manager.pump();
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+	CHECK(result->dropped && result->plugin == guard);
 }
 
 void TestOutgoingFilterDropAndOptions() {

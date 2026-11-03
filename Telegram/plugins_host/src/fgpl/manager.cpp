@@ -2829,7 +2829,7 @@ bool PluginManager::advance(
 					? manifest(chain.plugins[chain.next - 1])
 					: nullptr;
 				if (parsed && parsed->outgoing.final) {
-					chain.next = chain.plugins.size();
+					chain.finalized = true;
 				}
 			} else if (chain.blocking) {
 				return refuse(
@@ -2856,7 +2856,8 @@ bool PluginManager::advance(
 			|| !parsed->outgoing.declared
 			|| (!chain.info.files.empty() && !parsed->outgoing.media)
 			|| !Matches(parsed->outgoing.filter, chain.info)
-			|| !grant->second.allows(chain.account, chain.info.chat)) {
+			|| !grant->second.allows(chain.account, chain.info.chat)
+			|| (chain.finalized && !parsed->outgoing.block)) {
 			continue;
 		}
 		const auto blocking = parsed->outgoing.block;

@@ -591,6 +591,7 @@ private:
 		size_t next = 0;
 		std::shared_ptr<Outgoing> current;
 		bool blocking = false;
+		bool finalized = false;
 		std::chrono::steady_clock::time_point deadline;
 		OutgoingResult result;
 		std::function<void(OutgoingResult)> done;

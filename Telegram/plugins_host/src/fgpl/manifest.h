@@ -111,7 +111,7 @@ struct OutgoingHook {
 	// Also sees the sends of files, where the text is the caption.
 	bool media = false;
 	int priority = 0;
-	// Once this hook has changed a send, the later hooks do not see it.
+	// Once this hook has changed a send, only the later guards with onFailure block see it.
 	bool final = false;
 	OutgoingFilter filter;
 };
