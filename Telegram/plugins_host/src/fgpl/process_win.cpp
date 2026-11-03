@@ -303,7 +303,11 @@ struct Pipe {
 [[nodiscard]] std::wstring MinimalEnvironment(bool wider) {
 	auto result = std::wstring();
 	const auto names = wider
-		? std::vector<const wchar_t*>{ L"SystemRoot", L"windir", L"SystemDrive", L"TEMP", L"TMP" }
+		? std::vector<const wchar_t*>{
+			L"SystemRoot", L"windir", L"SystemDrive", L"TEMP", L"TMP",
+			L"ComSpec", L"PATHEXT", L"ProgramData", L"ProgramFiles",
+			L"CommonProgramFiles", L"ALLUSERSPROFILE", L"PUBLIC",
+			L"PROCESSOR_ARCHITECTURE", L"NUMBER_OF_PROCESSORS", L"OS" }
 		: std::vector<const wchar_t*>{ L"SystemRoot", L"windir" };
 	for (const auto name : names) {
 		wchar_t value[MAX_PATH] = {};
