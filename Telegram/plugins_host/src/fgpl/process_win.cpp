@@ -272,14 +272,11 @@ struct Pipe {
 		error = Describe("creating the channel");
 		return false;
 	}
-	auto inheritable = SECURITY_ATTRIBUTES();
-	inheritable.nLength = sizeof(inheritable);
-	inheritable.bInheritHandle = TRUE;
 	pipe.client = CreateFileW(
 		name.c_str(),
 		GENERIC_READ | GENERIC_WRITE,
 		0,
-		&inheritable,
+		nullptr,
 		OPEN_EXISTING,
 		FILE_FLAG_OVERLAPPED,
 		nullptr);
@@ -303,9 +300,12 @@ struct Pipe {
 }
 
 // Side-by-side activation looks for SystemRoot, a process without it does not start.
-[[nodiscard]] std::wstring MinimalEnvironment() {
+[[nodiscard]] std::wstring MinimalEnvironment(bool wider) {
 	auto result = std::wstring();
-	for (const auto name : { L"SystemRoot", L"windir" }) {
+	const auto names = wider
+		? std::vector<const wchar_t*>{ L"SystemRoot", L"windir", L"SystemDrive", L"TEMP", L"TMP" }
+		: std::vector<const wchar_t*>{ L"SystemRoot", L"windir" };
+	for (const auto name : names) {
 		wchar_t value[MAX_PATH] = {};
 		const auto size = GetEnvironmentVariableW(name, value, MAX_PATH);
 		if (size > 0 && size < MAX_PATH) {
@@ -463,7 +463,6 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 		AppendArgument(line, Widen(argument));
 	}
 	line.push_back(L'\0');
-	auto environment = MinimalEnvironment();
 
 	// Stdio goes to NUL, the pipe is the only other handle the host gets.
 	auto inherited = std::array<HANDLE, 2>{ pipe.client, nul };
@@ -480,10 +479,11 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 	auto info = PROCESS_INFORMATION();
 	auto created = false;
 	auto problems = std::string();
-	// The mitigations are required, a host that cannot get them does not
-	// start. The full environment is the way out when a container refuses
-	// a bare one.
+	// WHY: the mitigations are required, a host without them does not start;
+	// a container that refuses the bare environment gets a few more system
+	// variables, never the environment of the app.
 	for (const auto bareEnvironment : { true, false }) {
+		auto environment = MinimalEnvironment(!bareEnvironment);
 		auto size = SIZE_T(0);
 		InitializeProcThreadAttributeList(nullptr, 4, 0, &size);
 		auto storage = std::vector<uint8_t>(size);
@@ -536,6 +536,7 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 		startup.StartupInfo.hStdOutput = nul;
 		startup.StartupInfo.hStdError = nul;
 		startup.lpAttributeList = list;
+		SetHandleInformation(pipe.client, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
 		created = CreateProcessW(
 			path.c_str(),
 			line.data(),
@@ -544,10 +545,11 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 			TRUE,
 			EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | DETACHED_PROCESS
 				| CREATE_UNICODE_ENVIRONMENT,
-			bareEnvironment ? environment.data() : nullptr,
+			environment.data(),
 			nullptr,
 			&startup.StartupInfo,
 			&info) != FALSE;
+		SetHandleInformation(pipe.client, HANDLE_FLAG_INHERIT, 0);
 		if (!created) {
 			problems += std::string(" [create ")
 				+ (bareEnvironment ? "b" : "-") + " "

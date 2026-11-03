@@ -107,6 +107,11 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 		program = "/proc/self/fd/" + std::to_string(kExecutableFd);
 #endif // __APPLE__
 	}
+#if defined __GLIBC__ && (__GLIBC__ > 2 || __GLIBC_MINOR__ >= 34)
+	posix_spawn_file_actions_addclosefrom_np(
+		&actions,
+		(executable >= 0) ? (kExecutableFd + 1) : (kHostFd + 1));
+#endif // __GLIBC__ >= 2.34
 	auto arguments = std::vector<std::string>{
 		spec.path,
 		"--ipc-fd=" + std::to_string(kHostFd),
