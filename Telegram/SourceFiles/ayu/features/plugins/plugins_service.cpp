@@ -1075,7 +1075,7 @@ namespace {
 void ApplyChanges(
 		Api::MessageToSend &message,
 		const fgpl::OutgoingResult &result) {
-	auto &action = message.action;
+	auto action = message.action;
 	const auto history = action.history;
 	const auto peer = history->peer;
 	if (result.silent) {
@@ -1121,6 +1121,7 @@ void ApplyChanges(
 	if (replyTo.topicRootId && !replyTo.messageId) {
 		replyTo.messageId = FullMsgId(peer->id, replyTo.topicRootId);
 	}
+	message.action = std::move(action);
 }
 
 void SendNow(Outgoing &&outgoing) {
