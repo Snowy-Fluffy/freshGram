@@ -908,7 +908,7 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 		const QByteArray &bytes,
 		const QString &kind,
 		QSize want) {
-	constexpr auto kMaxPixels = 4 * 1024 * 1024;
+	constexpr auto kMaxPixels = qint64(4) * 1024 * 1024;
 	if (kind == u"svg"_q || kind == u"lottie"_q) {
 		if (want.isEmpty() || want.width() > 512 || want.height() > 512) {
 			return QImage();
@@ -940,9 +940,12 @@ void ApplyTextColor(not_null<Ui::FlatLabel*> label, const QString &style) {
 	const auto size = reader.size();
 	if ((format != "png" && format != "jpeg")
 		|| size.isEmpty()
-		|| size.width() * size.height() > kMaxPixels) {
+		|| qint64(size.width()) * size.height() > kMaxPixels) {
 		return QImage();
 	}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	reader.setAllocationLimit(int(kMaxPixels * 4 / (1024 * 1024)) + 1);
+#endif // Qt >= 6.0
 	return reader.read();
 }
 
