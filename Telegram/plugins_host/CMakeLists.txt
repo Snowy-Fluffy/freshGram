@@ -27,7 +27,7 @@ if (fgpl_target_arch MATCHES "^(aarch64|arm64|ARM64)$")
 else()
 	set(fgpl_wasmtime_arch x86_64)
 endif()
-set(FGPL_WASMTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wasmtime-v50.0.0-${fgpl_wasmtime_arch}-${fgpl_wasmtime_os}-c-api"
+set(FGPL_WASMTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wasmtime-v50.0.1-${fgpl_wasmtime_arch}-${fgpl_wasmtime_os}-c-api"
 	CACHE PATH "Unpacked Wasmtime C API release")
 
 if (MSVC)

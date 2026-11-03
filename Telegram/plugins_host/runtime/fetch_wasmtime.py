@@ -14,7 +14,7 @@ import tarfile
 import urllib.request
 import zipfile
 
-VERSION = "50.0.0"
+VERSION = "50.0.1"
 HERE = pathlib.Path(__file__).resolve().parent
 THIRD_PARTY = HERE.parent / "third_party"
 URL = "https://github.com/bytecodealliance/wasmtime/releases/download/v{version}/{name}"

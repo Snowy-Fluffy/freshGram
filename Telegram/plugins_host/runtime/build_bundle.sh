@@ -2,10 +2,10 @@
 # Builds the plugin runtime bundles on Rocky Linux 8 (glibc 2.28) in Docker: x86_64 natively, aarch64 with clang.
 set -euo pipefail
 
-WASMTIME_VERSION=50.0.0
+WASMTIME_VERSION=50.0.1
 declare -A WASMTIME_SHA256=(
-	[x86_64]=631643d8be5dac2a1abe026528f0ca18a515bce275bcfa7eb9731c9468a592f1
-	[aarch64]=cf29164de6379e17f6175d42b6a828a8e045c56575cf84db8183337cc6c682cb
+	[x86_64]=e2c0c26e1aef52f82f0b9918ad6f34cc30f4b557aee3e261cb127a9462be8f4d
+	[aarch64]=1a36140a016a9cc098f02a37bb0cc7be6451032861ba70049127928d2f31ef84
 )
 declare -A LOADER=(
 	[x86_64]=ld-linux-x86-64.so.2

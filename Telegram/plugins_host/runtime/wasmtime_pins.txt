@@ -1,8 +1,8 @@
 # Wasmtime C API release assets: <name> <sha256>. Every download is checked against this file.
-# The release is https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.0/<name>
-wasmtime-v50.0.0-x86_64-linux-c-api.tar.xz 631643d8be5dac2a1abe026528f0ca18a515bce275bcfa7eb9731c9468a592f1
-wasmtime-v50.0.0-aarch64-linux-c-api.tar.xz cf29164de6379e17f6175d42b6a828a8e045c56575cf84db8183337cc6c682cb
-wasmtime-v50.0.0-x86_64-windows-c-api.zip 3c3d04bc910d18fac9f85ad11293aab63ea023fff5021d39be858d4e3b9d058f
-wasmtime-v50.0.0-aarch64-windows-c-api.zip 396954ffc655f26e00786bb448126db5f3e70845f4d5cca5bf40393ab1a96160
-wasmtime-v50.0.0-x86_64-macos-c-api.tar.xz f521aa9e6fbb77a3cc25a8899ec9d407882edae219b2e4796a3a5ac2b8f44819
-wasmtime-v50.0.0-aarch64-macos-c-api.tar.xz bff3b03d2a68aeb26f0b4557c5fc442e3e60f31d68b9b72c5a9c2beafc799f44
+# The release is https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/<name>
+wasmtime-v50.0.1-x86_64-linux-c-api.tar.xz e2c0c26e1aef52f82f0b9918ad6f34cc30f4b557aee3e261cb127a9462be8f4d
+wasmtime-v50.0.1-aarch64-linux-c-api.tar.xz 1a36140a016a9cc098f02a37bb0cc7be6451032861ba70049127928d2f31ef84
+wasmtime-v50.0.1-x86_64-windows-c-api.zip 8b461d9dc12b076d0414b1023433bbb2dc08d3b1c0f0a156853ede35f0147802
+wasmtime-v50.0.1-aarch64-windows-c-api.zip 84580636d4896df45d6a21d8c60ad9cf702d3934c6c70d98d49c21eba0470253
+wasmtime-v50.0.1-x86_64-macos-c-api.tar.xz b6d436cba5c0964785c6ff7c9b5a743131555a0227b4f742185c4fb520c502c5
+wasmtime-v50.0.1-aarch64-macos-c-api.tar.xz a49327ca596fae51cd92e230265132112bb7896c5a24e4d58cd05b56612e26bb
