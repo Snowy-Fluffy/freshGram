@@ -34,6 +34,21 @@ const auto kTopKeys = std::set<std::string>{
 	return true;
 }
 
+[[nodiscard]] bool ReservedName(std::string_view name) {
+	auto letters = std::string();
+	for (const auto ch : name) {
+		if (std::isalnum(static_cast<unsigned char>(ch))) {
+			letters.push_back(char(std::tolower(static_cast<unsigned char>(ch))));
+		}
+	}
+	for (const auto reserved : { "telegram", "telegramdesktop", "freshgram", "freshgramdesktop", "ayugram", "ayugramdesktop" }) {
+		if (letters == reserved) {
+			return true;
+		}
+	}
+	return false;
+}
+
 [[nodiscard]] bool ValidId(const std::string &id) {
 	if (id.size() < 5 || id.size() > 64 || id.find('.') == std::string::npos) {
 		return false;
@@ -604,6 +619,12 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 		manifest.id = *id;
 	}
 	if (const auto name = reader.localized(document, "name", "", true, 80)) {
+		for (const auto &[language, text] : name->text) {
+			if (ReservedName(text)) {
+				reader.error("name", "must not be the name of the app");
+				break;
+			}
+		}
 		manifest.name = *name;
 	}
 	if (const auto version = reader.text(document, "version", "", true, 64)) {

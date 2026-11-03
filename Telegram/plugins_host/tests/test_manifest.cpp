@@ -148,6 +148,11 @@ void TestRejections() {
 	ExpectError("not an object", [](auto &d) { d = Int(1); }, "must be an object");
 	ExpectError("unknown key", [](auto &d) { Set(d, "surprise", Int(1)); }, "unknown key 'surprise'");
 	ExpectError("typo", [](auto &d) { Set(d, "permisions", Int(1)); }, "unknown key");
+	ExpectError("app name", [](auto &d) { Set(d, "name", Text("Telegram")); }, "name of the app");
+	ExpectError("app name spaced", [](auto &d) { Set(d, "name", Text(" fresh Gram ")); }, "name of the app");
+	ExpectError("app name localized", [](auto &d) {
+		Set(d, "name", cbor::Value::FromMap({ { "default", Text("Tools") }, { "ru", Text("AyuGram") } }));
+	}, "name of the app");
 	ExpectError("schema", [](auto &d) { Set(d, "schema", Int(2)); }, "schema");
 	ExpectError("no schema", [](auto &d) { Remove(d, "schema"); }, "schema");
 	ExpectError("no id", [](auto &d) { Remove(d, "id"); }, "id");
