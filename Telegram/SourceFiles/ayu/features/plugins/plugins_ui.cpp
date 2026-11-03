@@ -2610,10 +2610,6 @@ void BuildDetails(
 		});
 	}
 	Ui::AddSkip(content);
-	AddInfoBlock(
-		content,
-		rpl::single(AboutLines(*snapshot, *info, parsed.get(), account)));
-	Ui::AddSkip(content);
 
 	const auto weak = base::make_weak(box);
 	Settings::AddButtonWithIcon(
@@ -2643,6 +2639,10 @@ void BuildDetails(
 			.confirmStyle = &st::attentionBoxButton,
 		}));
 	});
+	Ui::AddSkip(content);
+	AddInfoBlock(
+		content,
+		rpl::single(AboutLines(*snapshot, *info, parsed.get(), account)));
 }
 
 [[nodiscard]] std::optional<QString> StateKey(const std::string &plugin) {
