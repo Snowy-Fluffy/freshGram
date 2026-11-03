@@ -94,6 +94,35 @@ int main() {
 		CHECK(Has(hello, "[com.example.hello] message 1 in chat 1"));
 		CHECK(Has(hello, "[app] send chat=1 \"Hello! I have seen 1 messages.\""));
 		CHECK(Has(hello, "[run] count = 1"));
+
+		const auto listener = root / "listener";
+		fs::create_directories(listener);
+		Write(listener / "manifest.json", Bytes(
+			"{\"schema\":1,\"id\":\"com.example.listener\",\"name\":\"Listener\",\"version\":\"1.0.0\","
+			"\"compat\":{\"freshgram\":\">=7.0.0 <8.0.0\",\"api\":6},"
+			"\"runtime\":{\"kind\":\"python\",\"entry\":\"main.py\"},"
+			"\"permissions\":{\"required\":["
+			"{\"id\":\"transcribe.provide\",\"reason\":\"Hears.\"},"
+			"{\"id\":\"media.read\",\"reason\":\"Needs the audio.\"}]},"
+			"\"contributes\":{\"transcriber\":{\"name\":\"Listener\",\"maxSeconds\":60}}}"));
+		Write(listener / "main.py", Bytes(
+			"import freshgram\n\n\n"
+			"@freshgram.on_transcribe\n"
+			"def hear(request):\n"
+			"    if request['video']:\n"
+			"        raise Exception('no video')\n"
+			"    return 'heard %d in %d' % (request['message'], request['chat'])\n\n\n"
+			"freshgram.run()\n"));
+		Write(script, Bytes(
+			"chat add 1 Alice\n"
+			"transcribe 1 100 seconds=10\n"
+			"transcribe 1 100 seconds=61\n"
+			"transcribe 1 100 video=true\n"));
+		CHECK(Run(listener.string() + " --script " + script.string(), log) == 3);
+		const auto heard = Read(log);
+		CHECK(Has(heard, "[run] transcribe: \"heard 100 in 1\""));
+		CHECK(Has(heard, "transcribe: too_long"));
+		CHECK(Has(heard, "transcribe: no video"));
 	}
 
 	fs::remove_all(root);

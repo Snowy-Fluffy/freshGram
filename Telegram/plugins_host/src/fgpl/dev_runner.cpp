@@ -33,6 +33,7 @@ namespace fs = std::filesystem;
 
 constexpr auto kDrainMs = 10000;
 constexpr auto kTickMs = 50;
+constexpr auto kTranscribeMs = 120000;
 
 class Console {
 public:
@@ -216,6 +217,7 @@ const char *kHelp =
 	"  window <window> click|change|close <id> [value]\n"
 	"  toast click|close <id> [reason]\n"
 	"  link <path> [key=value ...]          open a tg://plugin link\n"
+	"  transcribe <chat> <message> [seconds=N] [video=true]   ask the plugin to transcribe a voice message\n"
 	"  outgoing <chat> <text>                run the message.outgoing hooks on a text\n"
 	"  timer advance <ms>                    move the clock so that timers fire\n"
 	"  mock <url-prefix> <status> <body|@file>   answer net.fetch calls\n"
@@ -279,6 +281,8 @@ public:
 			return command(tokens);
 		} else if (name == "link") {
 			return link(tokens);
+		} else if (name == "transcribe") {
+			return transcribe(tokens);
 		} else if (name == "menu") {
 			return menu(tokens);
 		} else if (name == "settings" || name == "dialog" || name == "window" || name == "toast") {
@@ -424,6 +428,64 @@ private:
 			{ "path", cbor::Value::FromText(tokens[1].text) },
 			{ "query", cbor::Value::FromMap(std::move(query)) },
 		}));
+	}
+
+	[[nodiscard]] Result transcribe(const std::vector<Token> &tokens) {
+		const auto chat = (tokens.size() >= 3) ? Number(tokens[1].text) : std::nullopt;
+		const auto message = (tokens.size() >= 3) ? Number(tokens[2].text) : std::nullopt;
+		if (!chat || !message) {
+			return fail("usage: transcribe <chat> <message> [seconds=N] [video=true]");
+		}
+		auto fields = ParseFields(tokens, 3);
+		if (!fields.error.empty()) {
+			return fail(fields.error);
+		}
+		auto request = TranscribeRequest();
+		request.chat = *chat;
+		request.message = *message;
+		for (const auto &field : fields.map) {
+			if (field.key == "seconds" && field.value.asInt()) {
+				request.duration = *field.value.asInt();
+			} else if (field.key == "video" && field.value.asBool()) {
+				request.video = *field.value.asBool();
+			} else {
+				return fail("unknown or bad field " + field.key);
+			}
+		}
+		struct State {
+			std::mutex mutex;
+			std::optional<TranscribeResult> result;
+		};
+		const auto state = std::make_shared<State>();
+		_manager.transcribeAsync(
+			_options.account,
+			_id,
+			request,
+			kTranscribeMs,
+			[state](TranscribeResult result) {
+				const auto lock = std::scoped_lock(state->mutex);
+				state->result = std::move(result);
+			});
+		const auto until = std::chrono::steady_clock::now()
+			+ std::chrono::milliseconds(kTranscribeMs + kDrainMs);
+		auto answer = std::optional<TranscribeResult>();
+		while (!answer && std::chrono::steady_clock::now() < until) {
+			_manager.pump();
+			{
+				const auto lock = std::scoped_lock(state->mutex);
+				answer = state->result;
+			}
+			if (!answer) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(kTickMs));
+			}
+		}
+		if (!answer) {
+			return fail("no answer from the plugin");
+		} else if (!answer->error.empty()) {
+			return fail("transcribe: " + answer->error);
+		}
+		_console.say("[run] transcribe: " + json::Canonical(cbor::Value::FromText(answer->text)));
+		return Result::Ok;
 	}
 
 	[[nodiscard]] Result menu(const std::vector<Token> &tokens) {
