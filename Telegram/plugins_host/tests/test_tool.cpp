@@ -76,6 +76,13 @@ int main() {
 	CHECK(!fs::exists(root / "bad.fgpl"));
 	fs::remove(source / "helper.so");
 
+	Write(root / "secret.txt", Bytes("key"));
+	fs::create_symlink(root / "secret.txt", source / "docs" / "notes.md");
+	CHECK(Run("pack " + source.string() + " " + (root / "linked.fgpl").string(), log) == 1);
+	CHECK(Read(log).find("notes.md") != std::string::npos);
+	CHECK(!fs::exists(root / "linked.fgpl"));
+	fs::remove(source / "docs" / "notes.md");
+
 	CHECK(Run("verify " + (root / "missing.fgpl").string(), log) == 1);
 	CHECK(Run("", log) == 64);
 	CHECK(Run("pack " + (root / "nothing").string() + " " + output.string(), log) == 1);

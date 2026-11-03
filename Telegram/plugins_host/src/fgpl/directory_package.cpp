@@ -31,10 +31,12 @@ Result<DirectoryPackage, std::string> ReadDirectoryPackage(const fs::path &direc
 	}
 	auto result = DirectoryPackage();
 	for (const auto &entry : fs::recursive_directory_iterator(directory)) {
-		if (!entry.is_regular_file()) {
+		const auto relative = entry.path().lexically_relative(directory).generic_string();
+		if (entry.is_symlink()) {
+			return "symbolic links are not packed: " + relative;
+		} else if (!entry.is_regular_file()) {
 			continue;
 		}
-		const auto relative = fs::relative(entry.path(), directory).generic_string();
 		if (relative == "manifest.json") {
 			continue;
 		}
