@@ -96,6 +96,7 @@ struct Events {
 
 struct Watched {
 	std::string id;
+	Main::Session *session = nullptr;
 	rpl::lifetime lifetime;
 	rpl::lifetime events;
 };
@@ -120,6 +121,7 @@ struct Service {
 	std::map<Main::Account*, Watched> watched;
 	std::map<not_null<History*>, std::deque<Outgoing>> outgoing;
 	uint64 lastSend = 0;
+	uint64 generation = 0;
 	bool sending = false;
 	rpl::variable<State> state = State::Disabled;
 	rpl::event_stream<> list;
@@ -260,8 +262,11 @@ void StartAccounts(Service &service) {
 	}
 }
 
+void Next(not_null<History*> history);
+
 void DropManager(Service &service) {
 	if (service.control) {
+		++service.generation;
 		CloseData();
 		service.control = nullptr;
 		ReleaseData();
@@ -273,8 +278,25 @@ void DropManager(Service &service) {
 	service.revision = 0;
 }
 
+// Sends queued behind a dropped manager go through the hooks of the new one.
+void ResumeOutgoing(Service &service, uint64 generation) {
+	if (service.generation == generation) {
+		return;
+	}
+	auto histories = std::vector<not_null<History*>>();
+	for (const auto &[history, queue] : service.outgoing) {
+		if (!queue.empty()) {
+			histories.push_back(history);
+		}
+	}
+	for (const auto history : histories) {
+		Next(history);
+	}
+}
+
 void Refresh() {
 	auto &service = GetService();
+	const auto generation = service.generation;
 	const auto wanted = Compute();
 	if (wanted != State::Ready) {
 		DropManager(service);
@@ -294,9 +316,11 @@ void Refresh() {
 		} else {
 			DropManager(service);
 			service.state = FreshVault::HasKey() ? State::NoRuntime : State::NoKey;
+			ResumeOutgoing(service, generation);
 			return;
 		}
 	}
+	ResumeOutgoing(service, generation);
 	service.state = wanted;
 	service.list.fire({});
 }
@@ -830,6 +854,12 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 		}
 		i->second.events.destroy();
 		if (!session) {
+			if (const auto ended = std::exchange(i->second.session, nullptr)) {
+				auto &outgoing = service.outgoing;
+				for (auto j = begin(outgoing); j != end(outgoing);) {
+					j = (&j->first->session() == ended) ? outgoing.erase(j) : std::next(j);
+				}
+			}
 			const auto id = std::exchange(i->second.id, std::string());
 			if (!id.empty()) {
 				Post([=](not_null<fgpl::PluginManager*> manager) {
@@ -840,6 +870,7 @@ void WatchAccount(Service &service, not_null<Main::Account*> account) {
 		}
 		const auto id = AccountId(session).toStdString();
 		i->second.id = id;
+		i->second.session = session;
 		const auto active = (&Core::App().activeAccount() == account.get());
 		Post([=](not_null<fgpl::PluginManager*> manager) {
 			if (active) {
@@ -1174,15 +1205,16 @@ void Drop(const fgpl::OutgoingResult &result) {
 		QString::fromStdString(result.reason)));
 }
 
-void Next(not_null<History*> history);
-
 void Finish(
 		not_null<History*> history,
 		base::weak_ptr<Main::Session> weak,
+		uint64 generation,
 		fgpl::OutgoingResult result) {
 	auto &service = GetService();
 	const auto i = service.outgoing.find(history);
-	if (i == end(service.outgoing)) {
+	if (service.generation != generation) {
+		return;
+	} else if (i == end(service.outgoing)) {
 		return;
 	} else if (!weak || i->second.empty()) {
 		service.outgoing.erase(i);
@@ -1226,6 +1258,7 @@ void Next(not_null<History*> history) {
 		auto info = InfoOf(message, i->second.front().files.get());
 		info.send = i->second.front().send;
 		const auto weak = base::make_weak(&history->session());
+		const auto generation = service.generation;
 		const auto posted = Post([=](not_null<fgpl::PluginManager*> manager) {
 			manager->transformOutgoingAsync(
 				account,
@@ -1233,7 +1266,7 @@ void Next(not_null<History*> history) {
 				kOutgoingTimeoutMs,
 				[=](fgpl::OutgoingResult result) {
 					crl::on_main([=, result = std::move(result)] {
-						Finish(history, weak, result);
+						Finish(history, weak, generation, result);
 					});
 				});
 		}, false);
