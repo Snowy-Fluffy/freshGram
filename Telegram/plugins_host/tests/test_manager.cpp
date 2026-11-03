@@ -1611,6 +1611,22 @@ void TestFolderGrant() {
 		manager.shutdown();
 	}
 	{
+		const auto app = lab.root / "app";
+		fs::create_directories(app / "tdata" / "plugins");
+		auto config = lab.config();
+		config.privateFolders = { app / "tdata" };
+		auto manager = PluginManager(config);
+		const auto refused = [&](const fs::path &path) {
+			CHECK(manager.grant(id, "A", { { "fs.folder" }, std::nullopt, os::PathToUtf8(fs::canonical(path)) }));
+			return !manager.grants(id, "A")->granted.contains("fs.folder");
+		};
+		CHECK(refused(app));
+		CHECK(refused(app / "tdata"));
+		CHECK(refused(app / "tdata" / "plugins"));
+		CHECK(!refused(folder));
+		manager.shutdown();
+	}
+	{
 		auto manager = PluginManager(lab.config());
 		CHECK(!manager.stateWasTampered());
 		CHECK(manager.grants(id, "A")->folder == canonical);

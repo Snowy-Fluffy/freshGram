@@ -8,6 +8,7 @@
 #include "fgpl/sha256.h"
 
 #include <algorithm>
+#include <cwctype>
 #include <chrono>
 #include <fstream>
 #include <iterator>
@@ -46,6 +47,37 @@ constexpr auto kUnknownEventBytes = size_t(64) << 10;
 		}
 	}
 	return true;
+}
+
+[[nodiscard]] std::vector<fs::path> PathParts(const fs::path &path) {
+	auto error = std::error_code();
+	auto result = std::vector<fs::path>();
+	for (const auto &part : fs::weakly_canonical(path, error).lexically_normal()) {
+		if (!part.empty()) {
+#ifdef _WIN32
+			auto text = part.native();
+			std::transform(text.begin(), text.end(), text.begin(), ::towlower);
+			result.emplace_back(std::move(text));
+#else // _WIN32
+			result.push_back(part);
+#endif // _WIN32
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] bool FolderOverlaps(
+		const std::string &folder,
+		const std::vector<fs::path> &privateFolders) {
+	const auto chosen = PathParts(os::PathFromUtf8(folder));
+	for (const auto &item : privateFolders) {
+		const auto other = PathParts(item);
+		const auto common = std::min(chosen.size(), other.size());
+		if (std::equal(chosen.begin(), chosen.begin() + common, other.begin())) {
+			return true;
+		}
+	}
+	return false;
 }
 
 [[nodiscard]] cbor::Bytes ReadFile(const fs::path &path) {
@@ -946,7 +978,8 @@ bool PluginManager::grant(
 	}
 	if (stored.granted.contains("fs.folder")) {
 		const auto checked = folder::CheckRoot(decision.folder);
-		if (checked.ok()) {
+		if (checked.ok()
+			&& !FolderOverlaps(checked.value(), _config.privateFolders)) {
 			stored.folder = checked.value();
 		} else {
 			stored.granted.erase("fs.folder");
@@ -1783,6 +1816,11 @@ Result<std::shared_ptr<PluginManager::Instance>, std::string> PluginManager::pre
 		strong->wake.notify_one();
 	};
 	auto grants = MakeGrants(manifest, grant->second.decisionFor(account));
+	if (!grants.folder.empty()
+		&& FolderOverlaps(grants.folder, _config.privateFolders)) {
+		grants.folder.clear();
+		grants.permissions.erase("fs.folder");
+	}
 	grants.account = account;
 	instance->broker = std::make_shared<Broker>(std::move(grants), std::move(services));
 

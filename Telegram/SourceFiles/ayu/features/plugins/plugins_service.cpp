@@ -150,6 +150,7 @@ struct Service {
 		Service &service) {
 	auto config = fgpl::ManagerConfig();
 	config.root = PathOf(StorePath());
+	config.privateFolders = { PathOf(cWorkingDir() + u"tdata"_q) };
 	config.host.path = HostBinary().toStdString();
 	config.services.dataFor = &DataFor;
 	config.services.transport = NetworkTransport();

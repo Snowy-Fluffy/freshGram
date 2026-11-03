@@ -125,6 +125,8 @@ struct ManagerConfig {
 	size_t maxQueuedBytes = size_t(256) << 20;
 	int maxConcurrentStarts = 2;
 	int storageFlushMs = 2000;
+	// Folders of the app itself that a plugin is never given, nor any folder around them.
+	std::vector<std::filesystem::path> privateFolders;
 };
 
 struct InstallOptions {
