@@ -12,7 +12,10 @@
 #include <userenv.h>
 
 #include <array>
+#include <mutex>
 #include <random>
+#include <string_view>
+#include <utility>
 #include <vector>
 #include <string>
 
@@ -30,6 +33,8 @@ namespace fgpl::os {
 namespace {
 
 constexpr auto kContainerName = L"freshGram.PluginHost";
+constexpr auto kMappings = L"Software\\Classes\\Local Settings\\Software\\Microsoft"
+	L"\\Windows\\CurrentVersion\\AppContainer\\Mappings";
 
 // Older than Windows 8 has no AppContainer, so the functions are looked up.
 using CreateProfileFn = HRESULT (WINAPI *)(
@@ -40,10 +45,12 @@ using CreateProfileFn = HRESULT (WINAPI *)(
 	DWORD,
 	PSID *);
 using DeriveSidFn = HRESULT (WINAPI *)(PCWSTR, PSID *);
+using DeleteProfileFn = HRESULT (WINAPI *)(PCWSTR);
 
 struct ContainerApi {
 	CreateProfileFn create = nullptr;
 	DeriveSidFn derive = nullptr;
+	DeleteProfileFn remove = nullptr;
 };
 
 [[nodiscard]] const ContainerApi &Api() {
@@ -57,6 +64,8 @@ struct ContainerApi {
 				GetProcAddress(library, "CreateAppContainerProfile"));
 			result.derive = reinterpret_cast<DeriveSidFn>(
 				GetProcAddress(library, "DeriveAppContainerSidFromAppContainerName"));
+			result.remove = reinterpret_cast<DeleteProfileFn>(
+				GetProcAddress(library, "DeleteAppContainerProfile"));
 		}
 		return result;
 	}();
@@ -105,8 +114,42 @@ void AppendArgument(std::wstring &line, const std::wstring &argument) {
 	line += L'"';
 }
 
+void RemoveContainer(const std::wstring &name) {
+	if (const auto remove = Api().remove; remove && !name.empty()) {
+		remove(name.c_str());
+	}
+}
+
+// Profiles of hosts that did not get to remove their own, after a crash.
+void RemoveStaleContainers() {
+	auto key = HKEY();
+	if (RegOpenKeyExW(HKEY_CURRENT_USER, kMappings, 0, KEY_READ, &key) != ERROR_SUCCESS) {
+		return;
+	}
+	const auto prefix = std::wstring(kContainerName) + L'.';
+	auto stale = std::vector<std::wstring>();
+	for (auto index = DWORD(0);; ++index) {
+		wchar_t sid[256] = {};
+		auto size = DWORD(std::size(sid));
+		if (RegEnumKeyExW(key, index, sid, &size, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) {
+			break;
+		}
+		wchar_t moniker[256] = {};
+		auto bytes = DWORD(sizeof(moniker) - sizeof(wchar_t));
+		if (RegGetValueW(key, sid, L"Moniker", RRF_RT_REG_SZ, nullptr, moniker, &bytes) == ERROR_SUCCESS
+			&& std::wstring_view(moniker).starts_with(prefix)) {
+			stale.emplace_back(moniker);
+		}
+	}
+	RegCloseKey(key);
+	for (const auto &name : stale) {
+		RemoveContainer(name);
+	}
+}
+
 struct Container {
 	PSID sid = nullptr;
+	std::wstring name;
 
 	Container() = default;
 	Container(const Container &) = delete;
@@ -115,6 +158,7 @@ struct Container {
 		if (sid) {
 			FreeSid(sid);
 		}
+		RemoveContainer(name);
 	}
 };
 
@@ -124,16 +168,30 @@ struct Container {
 		error = "this Windows has no AppContainer";
 		return false;
 	}
+	static auto once = std::once_flag();
+	std::call_once(once, RemoveStaleContainers);
+
+	// WHY: hosts that share a package SID can open each other's process
+	// and threads, so every host gets a container of its own and a host
+	// broken out of Wasm cannot act as another plugin.
+	auto random = std::array<uint8_t, 8>();
+	RandomBytes(random);
+	auto name = std::wstring(kContainerName) + L'.';
+	for (const auto byte : random) {
+		name += L"0123456789abcdef"[byte >> 4];
+		name += L"0123456789abcdef"[byte & 0x0F];
+	}
 	auto result = api.create(
-		kContainerName,
-		kContainerName,
+		name.c_str(),
+		name.c_str(),
 		L"freshGram plugin host",
 		nullptr,
 		0,
 		&container.sid);
 	if (result == HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)) {
-		result = api.derive(kContainerName, &container.sid);
+		result = api.derive(name.c_str(), &container.sid);
 	}
+	container.name = std::move(name);
 	if (FAILED(result) || !container.sid) {
 		error = Describe("opening the AppContainer", DWORD(result));
 		return false;
@@ -336,6 +394,7 @@ constexpr auto kMitigationPreferSystem32 = DWORD64(0x00000001ULL) << 60;
 struct Child::Native {
 	HANDLE process = nullptr;
 	HANDLE job = nullptr;
+	std::wstring container;
 	DWORD pid = 0;
 	bool reaped = false;
 	DWORD exitCode = 0;
@@ -352,6 +411,7 @@ Child::~Child() {
 	if (_native->job) {
 		CloseHandle(_native->job);
 	}
+	RemoveContainer(_native->container);
 }
 
 Result<std::unique_ptr<Child>, std::string> Child::Spawn(
@@ -361,8 +421,12 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 	auto container = Container();
 	const auto path = Widen(spec.path);
 	if (spec.sandboxed) {
-		if (!OpenContainer(container, error)
-			|| !GrantRead(path, container.sid, error)) {
+		auto packages = std::array<uint8_t, SECURITY_MAX_SID_SIZE>();
+		auto size = DWORD(packages.size());
+		if (!CreateWellKnownSid(WinBuiltinAnyPackageSid, nullptr, packages.data(), &size)) {
+			return Describe("making the app packages SID");
+		} else if (!OpenContainer(container, error)
+			|| !GrantRead(path, packages.data(), error)) {
 			return error;
 		}
 	}
@@ -529,6 +593,7 @@ Result<std::unique_ptr<Child>, std::string> Child::Spawn(
 	native->process = info.hProcess;
 	native->job = job;
 	native->pid = info.dwProcessId;
+	native->container = std::exchange(container.name, std::wstring());
 	return std::unique_ptr<Child>(new Child(std::move(native)));
 }
 
