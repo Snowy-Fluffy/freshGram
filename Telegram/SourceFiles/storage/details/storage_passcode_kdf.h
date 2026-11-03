@@ -11,6 +11,7 @@ namespace Storage {
 enum class PasscodeKdfType : uchar {
 	Pbkdf2 = 0,
 	Argon2id = 1,
+	Scrypt = 2, // memoryKiB holds N, iterations r and lanes p
 };
 
 enum class PasscodeKdfLevel : uchar {
@@ -31,6 +32,7 @@ struct PasscodeKdf {
 };
 
 [[nodiscard]] bool PasscodeKdfArgon2Supported();
+[[nodiscard]] bool PasscodeKdfValid(const PasscodeKdf &kdf);
 [[nodiscard]] PasscodeKdf PasscodeKdfFor(PasscodeKdfLevel level);
 [[nodiscard]] PasscodeKdfLevel PasscodeKdfLevelOf(const PasscodeKdf &kdf);
 

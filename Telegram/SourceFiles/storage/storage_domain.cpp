@@ -25,6 +25,28 @@ namespace {
 
 using namespace details;
 
+// "KD2\0", the key file trailer of Telegram Desktop since 7.3.
+constexpr auto kKeyDataMagic = quint32(0x4B443200);
+constexpr auto kKeyDataFormatVersion = quint32(2);
+constexpr auto kMaxWrapCount = quint32(2);
+constexpr auto kWrapSaltMinSize = 8;
+
+struct KeyFile {
+	QByteArray salt;
+	QByteArray keyEncrypted;
+	QByteArray infoEncrypted;
+	PasscodeKdf kdf;
+	std::optional<PasscodeWrap> wrap;
+	quint32 generation = 0;
+	bool wrapped = false;
+};
+
+enum class ReadKeyFileResult {
+	Success,
+	UnknownKdf,
+	Failed,
+};
+
 [[nodiscard]] QString BaseGlobalPath() {
 	return cWorkingDir() + u"tdata/"_q;
 }
@@ -33,6 +55,122 @@ using namespace details;
 	// We dropped old test authorizations when migrated to multi auth.
 	//return "key_" + dataName + (cTestMode() ? "[test]" : "");
 	return "key_" + dataName;
+}
+
+[[nodiscard]] QByteArray RandomSalt() {
+	auto result = QByteArray(LocalEncryptSaltSize, Qt::Uninitialized);
+	base::RandomFill(result.data(), result.size());
+	return result;
+}
+
+[[nodiscard]] ReadKeyFileResult ReadWrappedTrailer(
+		const QByteArray &trailer,
+		KeyFile &file) {
+	auto stream = QDataStream(trailer);
+	stream.setVersion(QDataStream::Qt_5_1);
+	auto magic = quint32();
+	auto version = quint32();
+	auto count = quint32();
+	stream >> magic >> version >> file.generation >> count;
+	if (stream.status() != QDataStream::Ok
+		|| magic != kKeyDataMagic
+		|| version > kKeyDataFormatVersion) {
+		return ReadKeyFileResult::UnknownKdf;
+	} else if (count > kMaxWrapCount) {
+		LOG(("App Error: bad key data wrap count: %1").arg(count));
+		return ReadKeyFileResult::Failed;
+	}
+	file.wrapped = true;
+	auto unknown = false;
+	for (auto i = quint32(); i != count; ++i) {
+		auto kind = quint32();
+		auto generation = quint32();
+		auto wrap = PasscodeWrap();
+		stream
+			>> kind
+			>> generation
+			>> wrap.kdf.memoryKiB
+			>> wrap.kdf.iterations
+			>> wrap.kdf.lanes
+			>> wrap.salt
+			>> wrap.keyEncrypted;
+		if (!CheckStreamStatus(stream)
+			|| wrap.salt.size() < kWrapSaltMinSize) {
+			return ReadKeyFileResult::Failed;
+		} else if (generation != file.generation) {
+			continue;
+		} else if (file.wrap) {
+			LOG(("App Error: duplicate key data wrap generation."));
+			return ReadKeyFileResult::Failed;
+		}
+		wrap.kdf.type = PasscodeKdfType(kind);
+		if (kind == quint32(PasscodeKdfType::Pbkdf2)
+			|| kind > quint32(PasscodeKdfType::Scrypt)
+			|| !PasscodeKdfValid(wrap.kdf)) {
+			unknown = true;
+		}
+		file.wrap = std::move(wrap);
+	}
+	return unknown
+		? ReadKeyFileResult::UnknownKdf
+		: ReadKeyFileResult::Success;
+}
+
+[[nodiscard]] ReadKeyFileResult ReadKeyFile(
+		QDataStream &stream,
+		KeyFile &file) {
+	auto trailer = QByteArray();
+	stream >> file.salt >> file.keyEncrypted >> file.infoEncrypted;
+	if (!stream.atEnd()) {
+		stream >> trailer;
+	}
+	if (!CheckStreamStatus(stream)) {
+		return ReadKeyFileResult::Failed;
+	} else if (file.salt.size() != LocalEncryptSaltSize) {
+		LOG(("App Error: bad salt in info file, size: %1"
+			).arg(file.salt.size()));
+		return ReadKeyFileResult::Failed;
+	} else if (trailer.isEmpty()) {
+		return ReadKeyFileResult::Success;
+	} else if (const auto kdf = DeserializePasscodeKdf(trailer)) {
+		file.kdf = *kdf;
+		return ReadKeyFileResult::Success;
+	}
+	return ReadWrappedTrailer(trailer, file);
+}
+
+[[nodiscard]] QByteArray SerializeWrappedTrailer(
+		quint32 generation,
+		const PasscodeWrap &wrap) {
+	auto result = QByteArray();
+	auto stream = QDataStream(&result, QIODevice::WriteOnly);
+	stream.setVersion(QDataStream::Qt_5_1);
+	stream
+		<< kKeyDataMagic
+		<< kKeyDataFormatVersion
+		<< generation
+		<< quint32(1)
+		<< quint32(wrap.kdf.type)
+		<< generation
+		<< wrap.kdf.memoryKiB
+		<< wrap.kdf.iterations
+		<< wrap.kdf.lanes
+		<< wrap.salt
+		<< wrap.keyEncrypted;
+	return result;
+}
+
+[[nodiscard]] std::optional<PasscodeWrap> WrapToOpen(
+		const KeyFile &file,
+		bool withPasscode) {
+	if (!file.wrapped) {
+		return PasscodeWrap{ file.kdf, file.salt, file.keyEncrypted };
+	} else if (withPasscode) {
+		return file.wrap;
+	} else if (file.keyEncrypted.isEmpty()) {
+		return std::nullopt;
+	}
+	return PasscodeWrap{ PasscodeKdf(), file.salt, file.keyEncrypted };
 }
 
 } // namespace
@@ -49,7 +187,7 @@ StartResult Domain::start(
 		const PrecomputedPasscodeKey &precomputed) {
 	const auto modern = startModern(passcode, precomputed);
 	if (modern == StartModernResult::Success) {
-		if (_oldVersion < AppVersion) {
+		if (_oldVersion < AppVersion || _keyFileOutdated) {
 			writeAccounts();
 		}
 		return StartResult::Success;
@@ -113,10 +251,8 @@ void Domain::generateLocalKey() {
 	Expects(_passcodeKeyEncrypted.isEmpty());
 
 	auto pass = QByteArray(MTP::AuthKey::kSize, Qt::Uninitialized);
-	auto salt = QByteArray(LocalEncryptSaltSize, Qt::Uninitialized);
 	base::RandomFill(pass.data(), pass.size());
-	base::RandomFill(salt.data(), salt.size());
-	_localKey = CreateLocalKey(pass, salt);
+	_localKey = CreateLocalKey(pass, RandomSalt());
 	FreshVault::SetKey(_localKey);
 	AyuSettings::attachVault();
 
@@ -125,8 +261,7 @@ void Domain::generateLocalKey() {
 
 bool Domain::encryptLocalKey(const QByteArray &passcode) {
 	const auto kdf = passcode.isEmpty() ? PasscodeKdf() : _passcodeKdf;
-	auto salt = QByteArray(LocalEncryptSaltSize, Qt::Uninitialized);
-	base::RandomFill(salt.data(), salt.size());
+	const auto salt = RandomSalt();
 	auto key = DerivePasscodeKey(passcode, salt, kdf);
 	if (!key) {
 		LOG(("App Error: could not derive the passcode key."));
@@ -151,6 +286,8 @@ void Domain::applyPasscodeKey(
 	_localKey->write(passKeyData.stream);
 	_passcodeKeyEncrypted = PrepareEncrypted(passKeyData, _passcodeKey);
 	_hasLocalPasscode = !passcode.isEmpty();
+	_keptWrap = std::nullopt;
+	++_keyGeneration;
 }
 
 Domain::StartModernResult Domain::startModern(
@@ -164,36 +301,31 @@ Domain::StartModernResult Domain::startModern(
 	}
 	LOG(("App Info: reading accounts info..."));
 
-	QByteArray salt, keyEncrypted, infoEncrypted, kdfData;
-	keyData.stream >> salt >> keyEncrypted >> infoEncrypted;
-	if (!keyData.stream.atEnd()) {
-		keyData.stream >> kdfData;
-	}
-	if (!CheckStreamStatus(keyData.stream)) {
+	auto file = KeyFile();
+	const auto read = ReadKeyFile(keyData.stream, file);
+	if (read == ReadKeyFileResult::Failed) {
 		return StartModernResult::Failed;
-	}
-
-	if (salt.size() != LocalEncryptSaltSize) {
-		LOG(("App Error: bad salt in info file, size: %1").arg(salt.size()));
-		return StartModernResult::Failed;
-	}
-	const auto kdf = DeserializePasscodeKdf(kdfData);
-	if (!kdf) {
+	} else if (read == ReadKeyFileResult::UnknownKdf) {
 		// WHY: an unknown KDF must neither wipe the data like a broken file
 		// does nor count as a wrong passcode.
 		LOG(("App Error: unknown passcode KDF in info file."));
 		return StartModernResult::KeyUnavailable;
 	}
-	_passcodeKey = precomputed.matches(salt, *kdf)
+	const auto wrap = WrapToOpen(file, !passcode.isEmpty());
+	if (!wrap) {
+		LOG(("App Info: no passcode wrap to open the local key with."));
+		return StartModernResult::IncorrectPasscode;
+	}
+	_passcodeKey = precomputed.matches(wrap->salt, wrap->kdf)
 		? precomputed.key
-		: DerivePasscodeKey(passcode, salt, *kdf);
+		: DerivePasscodeKey(passcode, wrap->salt, wrap->kdf);
 	if (!_passcodeKey) {
 		LOG(("App Error: could not derive the passcode key."));
 		return StartModernResult::KeyUnavailable;
 	}
 
 	EncryptedDescriptor keyInnerData, info;
-	if (!DecryptLocal(keyInnerData, keyEncrypted, _passcodeKey)) {
+	if (!DecryptLocal(keyInnerData, wrap->keyEncrypted, _passcodeKey)) {
 		LOG(("App Info: could not decrypt pass-protected key from info file, "
 			"maybe bad password..."));
 		return StartModernResult::IncorrectPasscode;
@@ -208,12 +340,16 @@ Domain::StartModernResult Domain::startModern(
 	FreshVault::SetKey(_localKey);
 	AyuSettings::attachVault();
 
-	_passcodeKeyEncrypted = keyEncrypted;
-	_passcodeKeySalt = salt;
-	_passcodeKdf = *kdf;
+	_passcodeKeyEncrypted = wrap->keyEncrypted;
+	_passcodeKeySalt = wrap->salt;
+	_passcodeKdf = wrap->kdf;
 	_hasLocalPasscode = !passcode.isEmpty();
+	_keyGeneration = file.generation;
+	_keptWrap = _hasLocalPasscode ? std::nullopt : file.wrap;
+	_keyFileOutdated = !file.wrapped
+		&& (_passcodeKdf.type != PasscodeKdfType::Pbkdf2);
 
-	if (!DecryptLocal(info, infoEncrypted, _localKey)) {
+	if (!DecryptLocal(info, file.infoEncrypted, _localKey)) {
 		LOG(("App Error: could not decrypt info."));
 		return StartModernResult::Failed;
 	}
@@ -279,9 +415,12 @@ void Domain::writeAccounts() {
 		QDir().mkpath(path);
 	}
 
+	// WHY: Telegram Desktop 7.3 rejects a PBKDF2 wrap, while it reads
+	// the three blobs alone as a file of its older versions.
+	const auto wrapped = (_passcodeKdf.type != PasscodeKdfType::Pbkdf2);
 	FileWriteDescriptor key(ComputeKeyName(_dataName), path);
-	key.writeData(_passcodeKeySalt);
-	key.writeData(_passcodeKeyEncrypted);
+	key.writeData(wrapped ? RandomSalt() : _passcodeKeySalt);
+	key.writeData(wrapped ? QByteArray() : _passcodeKeyEncrypted);
 
 	const auto &list = _owner->accounts();
 
@@ -295,9 +434,16 @@ void Domain::writeAccounts() {
 	keyData.stream << qint32(_owner->activeForStorage());
 	key.writeEncrypted(keyData, _localKey);
 
-	if (const auto kdf = SerializePasscodeKdf(_passcodeKdf); !kdf.isEmpty()) {
-		key.writeData(kdf);
+	if (wrapped) {
+		key.writeData(SerializeWrappedTrailer(_keyGeneration, {
+			.kdf = _passcodeKdf,
+			.salt = _passcodeKeySalt,
+			.keyEncrypted = _passcodeKeyEncrypted,
+		}));
+	} else if (_keptWrap) {
+		key.writeData(SerializeWrappedTrailer(_keyGeneration, *_keptWrap));
 	}
+	_keyFileOutdated = false;
 }
 
 void Domain::startFromScratch() {
@@ -358,8 +504,7 @@ void Domain::setPasscodeAsync(
 	Expects(_localKey != nullptr);
 
 	const auto useKdf = passcode.isEmpty() ? PasscodeKdf() : kdf;
-	auto salt = QByteArray(LocalEncryptSaltSize, Qt::Uninitialized);
-	base::RandomFill(salt.data(), salt.size());
+	const auto salt = RandomSalt();
 	auto fake = std::make_shared<FreshFakePasscode::RebuildTask>(
 		FreshFakePasscode::PrepareRebuild(passcode, useKdf));
 	crl::async([=, weak = base::make_weak(this)] {
@@ -390,20 +535,15 @@ auto Domain::passcodeKdfInput() const -> std::optional<PasscodeKdfInput> {
 	if (!ReadFile(keyData, ComputeKeyName(_dataName), BaseGlobalPath())) {
 		return std::nullopt;
 	}
-	QByteArray salt, keyEncrypted, infoEncrypted, kdfData;
-	keyData.stream >> salt >> keyEncrypted >> infoEncrypted;
-	if (!keyData.stream.atEnd()) {
-		keyData.stream >> kdfData;
-	}
-	if (keyData.stream.status() != QDataStream::Ok
-		|| salt.size() != LocalEncryptSaltSize) {
+	auto file = KeyFile();
+	if (ReadKeyFile(keyData.stream, file) != ReadKeyFileResult::Success) {
 		return std::nullopt;
 	}
-	const auto kdf = DeserializePasscodeKdf(kdfData);
-	if (!kdf) {
+	const auto wrap = WrapToOpen(file, true);
+	if (!wrap) {
 		return std::nullopt;
 	}
-	return PasscodeKdfInput{ salt, *kdf };
+	return PasscodeKdfInput{ wrap->salt, wrap->kdf };
 }
 
 int Domain::oldVersion() const {

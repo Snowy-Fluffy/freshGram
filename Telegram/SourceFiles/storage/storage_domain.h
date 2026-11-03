@@ -36,6 +36,12 @@ enum class PasscodeCheck : uchar {
 	Failed,
 };
 
+struct PasscodeWrap {
+	PasscodeKdf kdf;
+	QByteArray salt;
+	QByteArray keyEncrypted;
+};
+
 class Domain final : public base::has_weak_ptr {
 public:
 	Domain(not_null<Main::Domain*> owner, const QString &dataName);
@@ -114,6 +120,9 @@ private:
 	QByteArray _passcodeKeySalt;
 	QByteArray _passcodeKeyEncrypted;
 	PasscodeKdf _passcodeKdf;
+	quint32 _keyGeneration = 0;
+	std::optional<PasscodeWrap> _keptWrap;
+	bool _keyFileOutdated = false;
 	int _oldVersion = 0;
 
 	bool _hasLocalPasscode = false;

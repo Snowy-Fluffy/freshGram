@@ -5,6 +5,7 @@
 #include "mtproto/mtproto_auth_key.h"
 #include "storage/details/storage_file_utilities.h"
 
+#include <openssl/evp.h>
 #include <openssl/opensslv.h>
 
 #if OPENSSL_VERSION_NUMBER >= 0x30200000L
@@ -20,9 +21,10 @@ namespace Storage {
 namespace {
 
 constexpr auto kMagic = 0x314B4746; // "FGK1"
-constexpr auto kMaxMemoryKiB = quint32(1024 * 1024);
-constexpr auto kMaxIterations = quint32(16);
-constexpr auto kMaxLanes = quint32(4);
+constexpr auto kMaxMemoryKiB = quint32(256 * 1024);
+constexpr auto kMaxIterations = quint32(64);
+constexpr auto kMaxLanes = quint32(16);
+constexpr auto kScryptMaxMem = quint64(192) * 1024 * 1024;
 
 [[nodiscard]] bool Valid(const PasscodeKdf &kdf) {
 	switch (kdf.type) {
@@ -35,6 +37,11 @@ constexpr auto kMaxLanes = quint32(4);
 			&& (kdf.iterations <= kMaxIterations)
 			&& (kdf.lanes >= 1)
 			&& (kdf.lanes <= kMaxLanes);
+	case PasscodeKdfType::Scrypt:
+		return (kdf.memoryKiB >= 2)
+			&& !(kdf.memoryKiB & (kdf.memoryKiB - 1))
+			&& (kdf.iterations >= 1)
+			&& (kdf.lanes >= 1);
 	}
 	return false;
 }
@@ -97,7 +104,37 @@ constexpr auto kMaxLanes = quint32(4);
 #endif // FRESHGRAM_HAS_ARGON2
 }
 
+[[nodiscard]] MTP::AuthKeyPtr Scrypt(
+		const QByteArray &passcode,
+		const QByteArray &salt,
+		const PasscodeKdf &kdf) {
+	auto key = MTP::AuthKey::Data{ { gsl::byte{} } };
+	const auto ok = EVP_PBE_scrypt(
+		passcode.constData(),
+		size_t(passcode.size()),
+		reinterpret_cast<const unsigned char*>(salt.constData()),
+		size_t(salt.size()),
+		uint64_t(kdf.memoryKiB),
+		uint64_t(kdf.iterations),
+		uint64_t(kdf.lanes),
+		kScryptMaxMem,
+		reinterpret_cast<unsigned char*>(key.data()),
+		key.size());
+	if (ok != 1) {
+		bytes::set_with_const(key, gsl::byte{});
+		LOG(("Passcode Error: scrypt derivation failed."));
+		return nullptr;
+	}
+	auto result = std::make_shared<MTP::AuthKey>(key);
+	bytes::set_with_const(key, gsl::byte{});
+	return result;
+}
+
 } // namespace
+
+bool PasscodeKdfValid(const PasscodeKdf &kdf) {
+	return Valid(kdf);
+}
 
 bool PasscodeKdfArgon2Supported() {
 #ifdef FRESHGRAM_HAS_ARGON2
@@ -135,8 +172,10 @@ PasscodeKdf PasscodeKdfFor(PasscodeKdfLevel level) {
 }
 
 PasscodeKdfLevel PasscodeKdfLevelOf(const PasscodeKdf &kdf) {
-	if (kdf.type != PasscodeKdfType::Argon2id) {
+	if (kdf.type == PasscodeKdfType::Pbkdf2) {
 		return PasscodeKdfLevel::Standard;
+	} else if (kdf.type == PasscodeKdfType::Scrypt) {
+		return PasscodeKdfLevel::Strong;
 	}
 	return (kdf.memoryKiB >= PasscodeKdfFor(PasscodeKdfLevel::Maximum).memoryKiB)
 		? PasscodeKdfLevel::Maximum
@@ -176,11 +215,11 @@ std::optional<PasscodeKdf> DeserializePasscodeKdf(const QByteArray &data) {
 		>> result.lanes;
 	if (stream.status() != QDataStream::Ok
 		|| magic != quint32(kMagic)
-		|| type != quint32(PasscodeKdfType::Argon2id)) {
+		|| type > quint32(PasscodeKdfType::Scrypt)) {
 		return std::nullopt;
 	}
-	result.type = PasscodeKdfType::Argon2id;
-	if (!Valid(result)) {
+	result.type = PasscodeKdfType(type);
+	if (result.type == PasscodeKdfType::Pbkdf2 || !Valid(result)) {
 		return std::nullopt;
 	}
 	return result;
@@ -196,6 +235,8 @@ MTP::AuthKeyPtr DerivePasscodeKey(
 		return nullptr;
 	} else if (kdf.type == PasscodeKdfType::Pbkdf2) {
 		return details::CreateLocalKey(passcode, salt);
+	} else if (kdf.type == PasscodeKdfType::Scrypt) {
+		return Scrypt(passcode, salt, kdf);
 	}
 	return Argon2(passcode, salt, kdf);
 }
