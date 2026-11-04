@@ -4070,19 +4070,17 @@ void ClearPluginDisplays(const std::string &plugin, const std::string &account) 
 		}
 	}
 	auto cleared = std::vector<std::pair<not_null<Main::Session*>, FullMsgId>>();
-	auto kept = std::vector<std::pair<HiddenKey, std::string>>();
+	auto kept = base::flat_map<HiddenKey, std::string>();
 	for (auto &entry : map) {
 		const auto session = sessions.find(entry.first.first);
 		if (session != sessions.end()
 			&& (plugin.empty() || entry.second == plugin)) {
 			cleared.emplace_back(session->second, entry.first.second);
 		} else {
-			kept.emplace_back(entry.first, std::move(entry.second));
+			kept.emplace(entry.first, std::move(entry.second));
 		}
 	}
-	map = base::flat_map<HiddenKey, std::string>(
-		kept.begin(),
-		kept.end());
+	map = std::move(kept);
 	for (const auto &[session, fullId] : cleared) {
 		if (const auto item = session->data().message(fullId)) {
 			item->setPluginDisplay(std::nullopt);
