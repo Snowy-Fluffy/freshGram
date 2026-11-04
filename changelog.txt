@@ -1,3 +1,18 @@
+7.6.0 (04.11.26)
+
+- Add plugins in Python, C and Wasm running in a sandbox with granted permissions.
+- Add a big plugin API: messages, stickers, folders, bots, polls, transcription and a private database.
+- Let plugins handle tg://plugin links, filter outgoing messages and silence notifications.
+- Add the Plugins section, plugin badges and icons, and the Network permissions panel.
+- Add offline translation, auto-translate on send and a translate button for the message field.
+- Add a new lock screen and Argon2id passcode protection with wipe after failed attempts.
+- Redesign story posting with a preview, video editing, audiences and albums.
+- Add saving, sending and wallpaper options to the message shot.
+- Blur names, avatars and premium badges in streamer mode and shots.
+- Add more app icon choices and start new profiles in the dark theme.
+- Fix opening comments of a deleted channel post.
+- Fix crashes on the system screen lock, in the profile status and in kept chats without messages.
+
 7.5.11 beta (02.11.26)
 
 - Run plugins on Windows and macOS, and add a Plugins item to the drawer.
