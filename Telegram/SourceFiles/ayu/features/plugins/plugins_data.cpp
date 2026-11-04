@@ -4077,7 +4077,7 @@ void ClearPluginDisplays(const std::string &plugin, const std::string &account) 
 			&& (plugin.empty() || entry.second == plugin)) {
 			cleared.emplace_back(session->second, entry.first.second);
 		} else {
-			kept.push_back(std::move(entry));
+			kept.emplace_back(entry.first, std::move(entry.second));
 		}
 	}
 	map = base::flat_map<HiddenKey, std::string>(
