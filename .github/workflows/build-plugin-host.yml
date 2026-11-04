@@ -51,18 +51,6 @@ jobs:
           dnf -q -y install gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils \
             cmake make git openssl-devel zlib-devel python3.11
 
-      # Rocky 8 ships SQLite 3.26, older than the C API the host calls.
-      - name: Build SQLite
-        run: |
-          source /opt/rh/gcc-toolset-13/enable
-          curl -sSfLO https://www.sqlite.org/2025/sqlite-autoconf-3500400.tar.gz
-          echo "a3db587a1b92ee5ddac2f66b3edb41b26f9c867275782d46c3a088977d6a5b18  sqlite-autoconf-3500400.tar.gz" | sha256sum -c -
-          tar xzf sqlite-autoconf-3500400.tar.gz
-          cd sqlite-autoconf-3500400
-          CFLAGS="-O2 -fPIC -DSQLITE_ENABLE_DBSTAT_VTAB" ./configure --prefix=/opt/sqlite --disable-shared --fts5 --disable-load-extension
-          make -j"$(nproc)"
-          make install
-
       - name: Clone
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -72,7 +60,7 @@ jobs:
       - name: Configure
         run: |
           source /opt/rh/gcc-toolset-13/enable
-          cmake -S Telegram/plugins_host -B build -D CMAKE_BUILD_TYPE=Release -D CMAKE_PREFIX_PATH=/opt/sqlite
+          cmake -S Telegram/plugins_host -B build -D CMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: |
@@ -135,9 +123,9 @@ jobs:
         shell: bash
         run: python Telegram/plugins_host/runtime/fetch_wasmtime.py ${{ matrix.wasmtime }}
 
-      - name: Install OpenSSL, zlib and SQLite
+      - name: Install OpenSSL and zlib
         shell: bash
-        run: vcpkg install openssl zlib "sqlite3[fts5,dbstat]" --triplet ${{ matrix.triplet }}
+        run: vcpkg install openssl zlib --triplet ${{ matrix.triplet }}
 
       - name: Configure
         shell: bash

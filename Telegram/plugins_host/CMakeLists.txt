@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(freshgram_plugins_host LANGUAGES CXX)
+project(freshgram_plugins_host LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,10 +75,19 @@ endif()
 if (NOT FGPL_HOST_ONLY)
 	find_package(ZLIB REQUIRED)
 	find_package(OpenSSL REQUIRED)
-	find_package(SQLite3 REQUIRED)
 endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+
+if (NOT FGPL_HOST_ONLY)
+	# WHY: the app compiles this SQLite, and the one in a distro is too old for the database API
+	# (Rocky 8 has 3.26), so the tests and the bundle build use the same amalgamation.
+	set(fgpl_sqlite_dir ${CMAKE_CURRENT_LIST_DIR}/../SourceFiles/ayu/libs/sqlite)
+	add_library(fgpl_sqlite STATIC ${fgpl_sqlite_dir}/sqlite3.c)
+	target_include_directories(fgpl_sqlite PUBLIC ${fgpl_sqlite_dir})
+	target_compile_definitions(fgpl_sqlite PRIVATE SQLITE_ENABLE_DBSTAT_VTAB SQLITE_ENABLE_FTS5)
+	target_link_libraries(fgpl_sqlite PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+endif()
 
 function(fgpl_warnings target)
 	if (MSVC)
@@ -117,7 +126,7 @@ else()
 		src/fgpl/base64.cpp src/fgpl/json.cpp src/fgpl/semver.cpp src/fgpl/zip_reader.cpp src/fgpl/signature.cpp src/fgpl/net_policy.cpp src/fgpl/manifest.cpp
 		src/fgpl/wasm_scan.cpp src/fgpl/package.cpp src/fgpl/zip_writer.cpp src/fgpl/text_markup.cpp src/fgpl/directory_package.cpp src/fgpl/broker.cpp
 		${fgpl_folder_sources} src/fgpl/permissions.cpp src/fgpl/file_storage.cpp src/fgpl/database.cpp src/fgpl/runtime_bundle.cpp src/fgpl/ui_tree.cpp)
-	target_link_libraries(fgpl_core PUBLIC fgpl_base ZLIB::ZLIB OpenSSL::Crypto SQLite::SQLite3)
+	target_link_libraries(fgpl_core PUBLIC fgpl_base ZLIB::ZLIB OpenSSL::Crypto fgpl_sqlite)
 	fgpl_options(fgpl_core)
 	set(fgpl_common fgpl_core)
 endif()

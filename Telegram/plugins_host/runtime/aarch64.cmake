@@ -2,8 +2,12 @@ set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 
 set(CMAKE_SYSROOT /sysroot/aarch64)
+set(CMAKE_C_COMPILER clang)
 set(CMAKE_CXX_COMPILER clang++)
+set(CMAKE_C_COMPILER_TARGET aarch64-redhat-linux)
 set(CMAKE_CXX_COMPILER_TARGET aarch64-redhat-linux)
+set(CMAKE_C_FLAGS_INIT
+	"--gcc-install-dir=${CMAKE_SYSROOT}/opt/rh/gcc-toolset-13/root/usr/lib/gcc/aarch64-redhat-linux/13")
 set(CMAKE_CXX_FLAGS_INIT
 	"--gcc-install-dir=${CMAKE_SYSROOT}/opt/rh/gcc-toolset-13/root/usr/lib/gcc/aarch64-redhat-linux/13")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")

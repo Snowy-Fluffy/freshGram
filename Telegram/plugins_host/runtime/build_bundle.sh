@@ -101,6 +101,10 @@ build_tree() {
 	local arch=$1 targets=$2 build
 	build=$(build_dir "$arch")
 	mkdir -p "$build"
+	# WHY: a cache from before a toolchain change keeps the old compiler flags, since _INIT values only seed it.
+	if [[ -f $build/CMakeCache.txt && $here/aarch64.cmake -nt $build/CMakeCache.txt ]]; then
+		rm -rf "$build/CMakeCache.txt" "$build/CMakeFiles"
+	fi
 	local configure="-DCMAKE_BUILD_TYPE=Release -DFGPL_WASMTIME_DIR=/t/plugins_host/third_party/$(wasmtime_name "$arch")"
 	local strip="strip"
 	if [[ $arch == aarch64 ]]; then
