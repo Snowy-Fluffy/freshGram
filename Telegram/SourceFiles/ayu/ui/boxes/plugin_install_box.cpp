@@ -205,7 +205,7 @@ void FillInstallBox(
 			st::pluginDangerHigh));
 	}
 	auto environment = fgpl::HostEnvironment();
-	if (const auto app = fgpl::ParseVersion(AppVersionStr)) {
+	if (const auto app = fgpl::ParseAppVersion(AppVersionStr)) {
 		environment.app = *app;
 	}
 	if (fgpl::Outdated(manifest, environment)) {

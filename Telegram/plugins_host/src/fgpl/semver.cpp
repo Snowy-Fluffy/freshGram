@@ -135,6 +135,24 @@ std::optional<Version> ParseVersion(std::string_view text) {
 	return version;
 }
 
+std::optional<Version> ParseAppVersion(std::string_view text) {
+	if (const auto full = ParseVersion(text)) {
+		return full;
+	}
+	const auto dash = text.find('-');
+	const auto core = text.substr(0, dash);
+	const auto first = core.find('.');
+	if (first == std::string_view::npos
+		|| core.find('.', first + 1) != std::string_view::npos) {
+		return std::nullopt;
+	}
+	auto padded = std::string(core) + ".0";
+	if (dash != std::string_view::npos) {
+		padded += text.substr(dash);
+	}
+	return ParseVersion(padded);
+}
+
 int Compare(const Version &a, const Version &b) {
 	if (a.major != b.major) {
 		return a.major < b.major ? -1 : 1;

@@ -19,6 +19,9 @@ struct Version {
 
 [[nodiscard]] std::optional<Version> ParseVersion(std::string_view text);
 
+// Application releases are numbered "7.6" while plugins use full semver.
+[[nodiscard]] std::optional<Version> ParseAppVersion(std::string_view text);
+
 [[nodiscard]] int Compare(const Version &a, const Version &b);
 
 class VersionRange {

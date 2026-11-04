@@ -125,6 +125,13 @@ void TestVersions() {
 	CHECK(Compare(v("1.0.0-beta.007"), v("1.0.0-beta.7")) == 0);
 	CHECK(Compare(v("1.0.0-beta.0"), v("1.0.0-beta.00")) == 0);
 	CHECK(v("7.5.9-beta.1").text() == "7.5.9-beta.1");
+
+	CHECK(ParseAppVersion("7.6").value().text() == "7.6.0");
+	CHECK(ParseAppVersion("7.5.11").value().text() == "7.5.11");
+	CHECK(ParseAppVersion("7.6-beta.1").value().text() == "7.6.0-beta.1");
+	for (const auto bad : { "", "7", "7.", "7.x", "1.2.3.4", "7.6-", ".6" }) {
+		CHECK(!ParseAppVersion(bad));
+	}
 }
 
 void TestRanges() {

@@ -235,7 +235,11 @@ struct Service {
 		return std::nullopt;
 	}
 
-	config.environment.app = *fgpl::ParseVersion(AppVersionStr);
+	const auto app = fgpl::ParseAppVersion(AppVersionStr);
+	if (!app) {
+		return std::nullopt;
+	}
+	config.environment.app = *app;
 	config.environment.apiLevel = 8;
 	if (!Platform::TrayIconSupported()) {
 		config.environment.features.erase("menu.tray");
