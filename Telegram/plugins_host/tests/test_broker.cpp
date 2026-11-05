@@ -2673,8 +2673,8 @@ void TestImageCalls() {
 	CHECK(invalid("image.resize", { { "data", file(png) }, { "width", Int(10) }, { "format", Text("gif") } }));
 	CHECK(invalid("image.convert", { { "data", file(png) } }));
 	CHECK(invalid("image.crop", { { "data", file(png) }, { "width", Int(3) } }));
-	CHECK(Code(call("image.info", { { "data", file(cbor::Bytes((size_t(16) << 20) + 1, 1)) } })) == "invalid"
-		|| Code(call("image.info", { { "data", file(cbor::Bytes((size_t(16) << 20) + 1, 1)) } })) == "limit");
+	CHECK(Code(call("image.info", { { "data", file(cbor::Bytes((size_t(128) << 20) + 1, 1)) } })) == "invalid"
+		|| Code(call("image.info", { { "data", file(cbor::Bytes((size_t(128) << 20) + 1, 1)) } })) == "limit");
 	auto failing = png;
 	failing.push_back(0xEE);
 	CHECK(Code(call("image.info", { { "data", file(failing) } })) == "failed");
