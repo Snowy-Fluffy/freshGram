@@ -326,7 +326,8 @@ void ChatTheme::adjustPalette(const ChatThemeDescriptor &descriptor) {
 	const auto &data = descriptor.backgroundData;
 	const auto &background = data.colors;
 	const auto useImage = !data.isPattern
-		&& (!data.path.isEmpty() || !data.bytes.isEmpty());
+		&& (!data.path.isEmpty() || !data.bytes.isEmpty())
+		&& !_mutableBackground.prepared.isNull();
 	if (useImage || !background.empty()) {
 		const auto average = useImage
 			? Ui::CountAverageColor(_mutableBackground.prepared)
