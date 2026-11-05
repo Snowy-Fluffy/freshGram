@@ -2365,6 +2365,7 @@ void AddInfoBlock(
 		object_ptr<Ui::RpWidget>(container),
 		st::boxRowPadding);
 	const auto inner = Ui::CreateChild<Ui::VerticalLayout>(block);
+	inner->show();
 	Ui::ResizeFitChild(block, inner);
 	block->paintRequest(
 	) | rpl::on_next([=] {
