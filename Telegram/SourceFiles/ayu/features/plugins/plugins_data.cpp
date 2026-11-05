@@ -2475,6 +2475,9 @@ public:
 				base->mime = thumbnail ? "image/jpeg" : Utf8(document->mimeString());
 				base->name = thumbnail ? std::string() : Utf8(document->filename());
 				const auto view = document->createMediaView();
+				// WHY: until save() is called the state is not ours: a cancelled or failed
+				// earlier download, or a video the player cached in slices, which
+				// media() cannot read, so the download has to be started anyway.
 				const auto started = std::make_shared<bool>(false);
 				measure = [=] {
 					const auto total = uint64(std::max<int64>(document->size, 0));
@@ -2493,11 +2496,10 @@ public:
 						return true;
 					} else if (!document->loading()
 						&& (!document->filepath(true).isEmpty()
-							|| document->loadedInMediaCache())) {
+							|| (*started && document->loadedInMediaCache()))) {
 						finish(QByteArray());
 						return true;
 					}
-					// A failed or cancelled earlier download is reset by save().
 					if (*started
 						&& !document->loading()
 						&& (document->status == FileDownloadFailed
