@@ -13,8 +13,8 @@ flatpak install --user -y --noninteractive flathub org.gnome.Platform//51 org.gn
 mkdir -p "$(dirname "$bundle")"
 work="$(mktemp -d)"
 mkdir -p "$work/root"
-cp "$here/io.github.snowy-fluffy.freshgram.yml" "$work/"
+cp "$here/io.github.snowy_fluffy.freshgram.yml" "$work/"
 cp -a "$usr" "$work/root/usr"
 cd "$work"
-flatpak-builder --user --force-clean --disable-rofiles-fuse --repo=repo build io.github.snowy-fluffy.freshgram.yml
-flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo "$bundle" io.github.snowy-fluffy.freshgram
+flatpak-builder --user --force-clean --disable-rofiles-fuse --repo=repo build io.github.snowy_fluffy.freshgram.yml
+flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo "$bundle" io.github.snowy_fluffy.freshgram

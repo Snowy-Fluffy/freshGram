@@ -3,7 +3,7 @@ Name=freshGram
 Comment=Telegram Desktop client with Material Design look and AyuGram features
 TryExec=freshGram
 Exec=env DESKTOPINTEGRATION=1 freshGram -- %U
-Icon=io.github.snowy-fluffy.freshgram
+Icon=io.github.snowy_fluffy.freshgram
 Terminal=false
 StartupWMClass=freshGram
 Type=Application
