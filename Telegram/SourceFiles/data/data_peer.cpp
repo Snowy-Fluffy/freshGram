@@ -404,6 +404,12 @@ void PeerData::setUserpicPhoto(const MTPPhoto &data) {
 }
 
 QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
+	if (isNotificationsUser()) {
+		static auto result = Window::LogoTelegramDefault().scaledToWidth(
+			kUserpicSize,
+			Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
+		return &result;
+	}
 	if (!_userpic.isCurrentView(view.cloud)) {
 		if (!_userpic.empty()) {
 			view.cloud = _userpic.createView();
@@ -416,11 +422,6 @@ QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
 	if (const auto image = view.cloud.get(); image && !image->isNull()) {
 		_userpicEmpty = nullptr;
 		return image;
-	} else if (isNotificationsUser()) {
-		static auto result = Window::LogoTelegramDefault().scaledToWidth(
-			kUserpicSize,
-			Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
-		return &result;
 	}
 	return nullptr;
 }
