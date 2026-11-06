@@ -762,7 +762,7 @@ class _Bots(_Namespace):
 
 
 class _Image(_Namespace):
-    """Pictures (image.process): the app decodes and encodes them, a PNG, a JPEG or a WebP up to 16 MiB.
+    """Pictures (image.process): the app decodes and encodes them, a PNG, a JPEG or a WebP up to 128 MiB.
 
     Each call answers {"format", "width", "height", "data"} (no data for info); format is "png",
     "jpeg" or "webp". Animated pictures are refused, and the app asks for one call every 100 ms.
