@@ -2196,6 +2196,13 @@ void TestBadges() {
 	CHECK(*received.back().second.find("user")->asInt() == 5);
 	CHECK(*received.back().second.find("items")->asArray()->front().find("tooltip")->asText() == "A star");
 	CHECK(IsOk(set(5, { badge("pic", { { "image", Png(64, 64) } }) })));
+	CHECK(IsOk(set(5, { badge("fire", { { "icon", Text("emoji:5368324170671202286") } }) })));
+	CHECK(received.back().second.find("items")->asArray()->front().find("icon")->asText()
+		&& *received.back().second.find("items")->asArray()->front().find("icon")->asText() == "emoji:5368324170671202286");
+	CHECK(Code(set(5, { badge("fire", { { "icon", Text("emoji:") } }) })) == "invalid");
+	CHECK(Code(set(5, { badge("fire", { { "icon", Text("emoji:12ab") } }) })) == "invalid");
+	CHECK(Code(set(5, { badge("fire", { { "icon", Text("emoji:123456789012345678901") } }) })) == "invalid");
+	CHECK(Code(set(5, { badge("who", { { "icon", Text("peer:5") } }) })) == "invalid");
 	CHECK(IsOk(set(5, {})));
 	CHECK(Code(set(5, { badge("pic", { { "image", Png(512, 512) } }) })) == "invalid");
 	CHECK(Code(set(5, { badge("pic", { { "icon", Text("star") }, { "image", Png(8, 8) } }) })) == "invalid");

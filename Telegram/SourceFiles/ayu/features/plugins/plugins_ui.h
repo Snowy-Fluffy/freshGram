@@ -55,6 +55,7 @@ struct PluginBadge {
 	std::string icon;
 	QByteArray image;
 	QString tooltip;
+	Main::Session *session = nullptr;
 
 	friend inline bool operator==(
 		const PluginBadge &a,
@@ -74,6 +75,8 @@ void ForgetBadges(const std::string &plugin);
 // WHY: message shots in privacy mode must not show the plugins' badges.
 void SetBadgesHidden(bool hidden);
 [[nodiscard]] rpl::producer<> BadgesChanged();
+// WHY: an emoji badge is animated, so the surfaces repaint on each frame.
+[[nodiscard]] rpl::producer<> BadgesAnimated();
 [[nodiscard]] int BadgesWidth(
 	const std::vector<PluginBadge> &badges,
 	int side);

@@ -1966,6 +1966,9 @@ void TopBar::setupPluginBadges(
 	};
 	refresh();
 	FreshPlugins::BadgesChanged() | rpl::on_next(refresh, widget->lifetime());
+	FreshPlugins::BadgesAnimated() | rpl::on_next([=] {
+		widget->update();
+	}, widget->lifetime());
 
 	widget->paintRequest() | rpl::on_next([=] {
 		auto p = QPainter(widget);

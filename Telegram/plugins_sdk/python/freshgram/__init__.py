@@ -862,8 +862,9 @@ class _Badges(_Namespace):
         """Show icons or mini pictures next to the name of a user (ui.badges).
 
         items is a list of up to 4 dicts {"id", "icon" or "image", "tooltip"}: icon is a
-        built-in or the plugin's own icon name, image is PNG or JPEG bytes (up to 128x128
-        and 64 KiB). An empty list removes the badges. A click comes as on_badge_click.
+        built-in or the plugin's own icon name, or "emoji:<custom emoji id>" for a custom
+        emoji that keeps its animation, image is PNG or JPEG bytes (up to 128x128 and
+        64 KiB). An empty list removes the badges. A click comes as on_badge_click.
         """
         return self._call("badges.set", _nothing, user=user, items=list(items))
 

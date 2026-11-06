@@ -11,6 +11,9 @@
 #include "data/stickers/data_custom_emoji.h"
 #include "ui/dynamic_image.h"
 #include "ui/dynamic_thumbnails.h"
+#include "ui/emoji_config.h"
+#include "ui/power_saving.h"
+#include "ui/text/text_custom_emoji.h"
 #include "ayu/features/plugins/plugins_transport.h"
 #include "ayu/secret/secret_peer.h"
 #include "core/application.h"
@@ -87,6 +90,7 @@
 #include "fgpl/folder.h"
 #include "fgpl/manager.h"
 #include "fgpl/permissions.h"
+#include "fgpl/ui_tree.h"
 #endif
 
 #include <QtCore/QBuffer>
@@ -4087,14 +4091,116 @@ namespace {
 
 constexpr auto kBadgeGap = 3;
 
+struct EmojiBadge {
+	std::shared_ptr<Ui::DynamicImage> image;
+	QColor color;
+};
+
+using EmojiKey = std::pair<Main::Session*, uint64>;
+
 struct BadgeStore {
 	std::map<std::pair<std::string, int64_t>, std::vector<PluginBadge>> users;
+	std::map<EmojiKey, std::unique_ptr<EmojiBadge>> emoji;
+	std::set<Main::Session*> watched;
 	rpl::event_stream<> changes;
+	rpl::event_stream<> animated;
 };
 
 [[nodiscard]] BadgeStore &GetBadgeStore() {
 	static auto result = BadgeStore();
 	return result;
+}
+
+[[nodiscard]] bool IsEmojiBadge(const std::string &icon) {
+	return fgpl::ui::ValidEmojiIcon(icon);
+}
+
+[[nodiscard]] uint64 EmojiBadgeId(const std::string &icon) {
+	return uint64(std::strtoull(icon.c_str() + icon.find(':') + 1, nullptr, 10));
+}
+
+void RepaintEmojiBadgeViews() {
+	auto users = std::set<int64_t>();
+	for (const auto &[key, list] : GetBadgeStore().users) {
+		for (const auto &badge : list) {
+			if (IsEmojiBadge(badge.icon)) {
+				users.insert(key.second);
+				break;
+			}
+		}
+	}
+	if (users.empty() || !Core::App().domain().started()) {
+		return;
+	}
+	for (const auto &entry : Core::App().domain().accounts()) {
+		const auto session = entry.account->maybeSession();
+		if (!session) {
+			continue;
+		}
+		session->data().requestViewsRepaint([&](not_null<const HistoryItem*> item) {
+			const auto from = item->from();
+			const auto shown = item->displayFrom();
+			return (from && users.contains(int64_t(from->id.value)))
+				|| (shown && users.contains(int64_t(shown->id.value)));
+		});
+	}
+}
+
+[[nodiscard]] EmojiBadge &EmojiBadgeFor(
+		not_null<Main::Session*> session,
+		uint64 id) {
+	auto &store = GetBadgeStore();
+	auto &slot = store.emoji[{ session.get(), id }];
+	if (slot) {
+		return *slot;
+	}
+	if (store.watched.emplace(session.get()).second) {
+		session->lifetime().add([=] {
+			auto &store = GetBadgeStore();
+			store.watched.erase(session.get());
+			for (auto i = store.emoji.begin(); i != store.emoji.end();) {
+				i = (i->first.first == session.get())
+					? store.emoji.erase(i)
+					: std::next(i);
+			}
+		});
+	}
+	slot = std::make_unique<EmojiBadge>();
+	const auto raw = slot.get();
+	raw->image = Ui::MakeEmojiThumbnail(
+		&session->data(),
+		Data::SerializeCustomEmojiId(DocumentId(id)),
+		[] { return PowerSaving::On(PowerSaving::kEmojiStatus); },
+		[=] { return raw->color; });
+	raw->image->subscribeToUpdates([] {
+		RepaintEmojiBadgeViews();
+		GetBadgeStore().animated.fire({});
+	});
+	return *raw;
+}
+
+[[nodiscard]] QImage EmojiBadgeGlyph(
+		const PluginBadge &badge,
+		int side,
+		QColor color) {
+	if (!badge.session) {
+		return QImage();
+	}
+	auto &emoji = EmojiBadgeFor(badge.session, EmojiBadgeId(badge.icon));
+	emoji.color = color;
+	const auto ratio = style::DevicePixelRatio();
+	const auto full = QSize(side, side) * ratio;
+	const auto native = Ui::Text::AdjustCustomEmojiSize(
+		Ui::Emoji::GetSizeLarge() / ratio);
+	auto frame = emoji.image->image(native);
+	if (frame.isNull()) {
+		return QImage();
+	}
+	frame.setDevicePixelRatio(1.);
+	return frame.scaled(
+		full,
+		Qt::KeepAspectRatio,
+		Qt::SmoothTransformation);
 }
 
 using GlyphKey = std::tuple<std::string, std::string, size_t, int, int, QRgb>;
@@ -4161,6 +4267,11 @@ using GlyphKey = std::tuple<std::string, std::string, size_t, int, int, QRgb>;
 		const PluginBadge &badge,
 		int side,
 		QColor color) {
+	if (IsEmojiBadge(badge.icon)) {
+		auto glyph = EmojiBadgeGlyph(badge, side, color);
+		glyph.setDevicePixelRatio(style::DevicePixelRatio());
+		return glyph;
+	}
 	const auto ratio = style::DevicePixelRatio();
 	const auto picture = !badge.image.isEmpty();
 	const auto key = GlyphKey{
@@ -4381,11 +4492,13 @@ std::vector<PluginBadge> BadgesFor(not_null<PeerData*> peer) {
 			|| !grants->granted.contains("ui.badges")) {
 			continue;
 		} else if (badge.image.isEmpty()
+			&& !IsEmojiBadge(badge.icon)
 			&& !BuiltinIcon(badge.icon)
 			&& !HasCustomIcon(badge.plugin, badge.icon)) {
 			continue;
 		}
 		result.push_back(badge);
+		result.back().session = &peer->session();
 	}
 	return result;
 }
@@ -4397,6 +4510,10 @@ rpl::producer<> BadgesChanged() {
 		AyuFeatures::StreamerMode::spoilersActiveValue()
 			| rpl::skip(1)
 			| rpl::to_empty);
+}
+
+rpl::producer<> BadgesAnimated() {
+	return GetBadgeStore().animated.events();
 }
 
 int BadgesWidth(const std::vector<PluginBadge> &badges, int side) {
@@ -5188,6 +5305,10 @@ void SetBadgesHidden(bool) {
 }
 
 rpl::producer<> BadgesChanged() {
+	return rpl::never<>();
+}
+
+rpl::producer<> BadgesAnimated() {
 	return rpl::never<>();
 }
 

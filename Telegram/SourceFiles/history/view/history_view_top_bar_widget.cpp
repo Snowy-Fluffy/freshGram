@@ -183,6 +183,11 @@ TopBarWidget::TopBarWidget(
 		update();
 	}, lifetime());
 
+	FreshPlugins::BadgesAnimated(
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
+
 	_forward->setClickedCallback([=] { _forwardSelection.fire({}); });
 	_forward->setWidthChangedCallback([=] { updateControlsGeometry(); });
 	_sendNow->setClickedCallback([=] { _sendNowSelection.fire({}); });

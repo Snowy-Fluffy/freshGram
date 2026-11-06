@@ -349,6 +349,10 @@ bool ValidRichIcon(const std::string &name) {
 		});
 }
 
+bool ValidEmojiIcon(const std::string &name) {
+	return name.starts_with("emoji:") && ValidRichIcon(name);
+}
+
 const std::set<std::string> &BuiltinIcons() {
 	static const auto result = std::set<std::string>{
 		"add", "archive", "block", "bot", "cancel", "chat", "chats", "clear",
@@ -420,8 +424,8 @@ Result<cbor::Value, std::string> ValidateBadges(const cbor::Value &items) {
 		entry.push_back({ "id", Text(*id) });
 		if (icon) {
 			const auto name = icon->asText();
-			if (!name || !ValidIconName(*name)) {
-				return std::string("a badge has a bad icon name");
+			if (!name || !(ValidIconName(*name) || ValidEmojiIcon(*name))) {
+				return std::string("a badge icon is a name or emoji:<id>");
 			}
 			entry.push_back({ "icon", Text(*name) });
 		} else {

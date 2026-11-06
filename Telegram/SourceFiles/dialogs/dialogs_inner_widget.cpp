@@ -347,6 +347,11 @@ InnerWidget::InnerWidget(
 		update();
 	}, lifetime());
 
+	FreshPlugins::BadgesAnimated(
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
+
 	session().downloaderTaskFinished(
 	) | rpl::on_next([=] {
 		invalidateLoadedUserpics();

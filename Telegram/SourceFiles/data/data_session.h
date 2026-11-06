@@ -412,6 +412,8 @@ public:
 	void requestViewResize(not_null<ViewElement*> view);
 	void requestViewsResize(
 		Fn<bool(not_null<const HistoryItem*>)> filter);
+	void requestViewsRepaint(
+		Fn<bool(not_null<const HistoryItem*>)> filter);
 	[[nodiscard]] rpl::producer<not_null<ViewElement*>> viewResizeRequest() const;
 	struct ViewHeightAdjusted {
 		not_null<ViewElement*> view;
