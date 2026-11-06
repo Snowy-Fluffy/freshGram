@@ -136,6 +136,7 @@ struct InstallOptions {
 	bool allowDowngrade = false;
 	bool acceptUnsigned = false;
 	bool acceptNewPublisher = false;
+	bool allowReserved = false;
 };
 
 enum class InstallError : uint8_t {
@@ -143,6 +144,7 @@ enum class InstallError : uint8_t {
 	Incompatible,
 	UnsignedRefused,
 	PublisherChanged,
+	ReservedName,
 	SameVersion,
 	DowngradeRefused,
 	MissingDependency,

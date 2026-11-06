@@ -122,6 +122,12 @@ void ShowPluginWindow(
 	const std::string &mode,
 	const fgpl::cbor::Value *page);
 
+enum class PluginTrust {
+	Unsigned,
+	Signed,
+	Official,
+};
+
 struct PluginHeader {
 	QString name;
 	QString version;
@@ -131,10 +137,20 @@ struct PluginHeader {
 	QString homepage;
 	QString repository;
 	QString support;
-	bool official = false;
+	PluginTrust trust = PluginTrust::Unsigned;
+	QString key;
+	QString trusted;
 	QByteArray icon;
 };
 
+[[nodiscard]] PluginTrust TrustOf(const std::string &publisher);
+[[nodiscard]] QString PublisherShort(const std::string &publisher);
+[[nodiscard]] QString RememberedPublisher(const std::string &publisher);
+void ShowRememberPublisher(
+	not_null<Window::SessionController*> controller,
+	const std::string &publisher,
+	const QString &suggested,
+	Fn<void()> done);
 [[nodiscard]] PluginHeader HeaderFor(
 	const fgpl::Manifest &manifest,
 	const std::string &publisher,

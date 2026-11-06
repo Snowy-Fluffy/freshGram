@@ -49,6 +49,7 @@ constexpr auto kMaxPackageBytes = qint64(64) << 20;
 	case fgpl::InstallError::Incompatible: result = u"incompatible with this app"_q; break;
 	case fgpl::InstallError::UnsignedRefused: result = u"unsigned package"_q; break;
 	case fgpl::InstallError::PublisherChanged: result = u"publisher changed"_q; break;
+	case fgpl::InstallError::ReservedName: result = u"reserved name"_q; break;
 	case fgpl::InstallError::SameVersion: result = u"this version is already installed"_q; break;
 	case fgpl::InstallError::DowngradeRefused: result = u"a newer version is installed"_q; break;
 	case fgpl::InstallError::MissingDependency: result = u"missing dependency"_q; break;
@@ -81,12 +82,31 @@ void Installed(
 		const auto failure = result.error();
 		if (failure.error == fgpl::InstallError::PublisherChanged
 			&& !options.acceptNewPublisher) {
-			const auto unknown = failure.details.empty()
-				|| failure.details.front().empty();
+			const auto before = failure.details.empty()
+				? std::string()
+				: failure.details.front();
+			const auto after = (failure.details.size() > 1)
+				? failure.details[1]
+				: std::string();
 			controller->show(Ui::MakeConfirmBox({
-				.text = unknown
+				.text = before.empty()
+					? after.empty()
 					? tr::fresh_PluginPublisherUnknown(tr::now)
-					: tr::fresh_PluginPublisherChanged(tr::now),
+					: tr::fresh_PluginPublisherSigned(
+						tr::now,
+						lt_to,
+						FreshPlugins::PublisherShort(after))
+					: after.empty()
+					? tr::fresh_PluginPublisherDropped(
+						tr::now,
+						lt_from,
+						FreshPlugins::PublisherShort(before))
+					: tr::fresh_PluginPublisherChanged(
+						tr::now,
+						lt_from,
+						FreshPlugins::PublisherShort(before),
+						lt_to,
+						FreshPlugins::PublisherShort(after)),
 				.confirmed = [=](Fn<void()> &&close) {
 					auto again = options;
 					again.acceptNewPublisher = true;
@@ -185,7 +205,6 @@ void FillInstallBox(
 	box->setWidth(st::boxWideWidth);
 
 	const auto signedPackage = (package->signature == fgpl::SignatureState::Valid);
-	const auto official = FreshPlugins::IsOfficialPublisher(package->publisher);
 	const auto icon = package->files.find(manifest.icon);
 	FreshPlugins::AddPluginHeader(
 		box->verticalLayout(),
@@ -198,11 +217,23 @@ void FillInstallBox(
 					qsizetype(icon->second.size()))
 				: QByteArray()));
 	Ui::AddSkip(box->verticalLayout());
-	if (!official) {
+	const auto trust = FreshPlugins::TrustOf(package->publisher);
+	const auto official = (trust == FreshPlugins::PluginTrust::Official);
+	if (trust == FreshPlugins::PluginTrust::Unsigned) {
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
 			tr::fresh_PluginUnofficialWarning(tr::now),
 			st::pluginDangerHigh));
+	}
+	const auto reserved = !official
+		&& (fgpl::ClaimedReservedName(manifest) != fgpl::ReservedName::None);
+	if (reserved) {
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::fresh_PluginReservedName(tr::now),
+			st::pluginDangerHigh));
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+		return;
 	}
 	auto environment = fgpl::HostEnvironment();
 	if (const auto app = fgpl::ParseAppVersion(AppVersionStr)) {
@@ -218,6 +249,14 @@ void FillInstallBox(
 			st::pluginDangerMedium));
 	}
 
+	if (installed
+		&& !installed->publisher.empty()
+		&& installed->publisher == package->publisher) {
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::fresh_PluginSamePublisher(tr::now),
+			st::boxDividerLabel));
+	}
 	if (installed) {
 		const auto from = QString::fromStdString(installed->version);
 		const auto to = QString::fromStdString(manifest.version.text());
@@ -329,6 +368,7 @@ void FillInstallBox(
 		auto options = fgpl::InstallOptions();
 		options.acceptUnsigned = !signedPackage;
 		options.allowDowngrade = downgrade;
+		options.allowReserved = official;
 		Install(controller, archive, *chosen, options, [=] {
 			if (const auto strong = weak.get()) {
 				strong->closeBox();
@@ -338,6 +378,18 @@ void FillInstallBox(
 		});
 	});
 	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	if (trust == FreshPlugins::PluginTrust::Signed
+		&& FreshPlugins::RememberedPublisher(package->publisher).isEmpty()) {
+		const auto publisher = package->publisher;
+		const auto suggested = QString::fromStdString(manifest.authorName);
+		box->addLeftButton(tr::fresh_PluginRememberPublisher(), [=] {
+			FreshPlugins::ShowRememberPublisher(
+				controller,
+				publisher,
+				suggested,
+				[=] { controller->showToast(tr::fresh_PluginPublisherRemembered(tr::now)); });
+		});
+	}
 }
 
 #endif

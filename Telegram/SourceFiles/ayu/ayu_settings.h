@@ -540,6 +540,7 @@ public:
 	[[nodiscard]] bool pluginsEnabled() const { return _pluginsEnabled.current(); }
 	[[nodiscard]] const std::vector<std::string> &pluginMenuHidden() const { return _pluginMenuHidden; }
 	[[nodiscard]] const std::vector<std::string> &pluginMenuOrder() const { return _pluginMenuOrder; }
+	[[nodiscard]] const std::map<std::string, std::string> &pluginPublishers() const { return _pluginPublishers; }
 	[[nodiscard]] bool pluginsRuntimeAutoUpdate() const { return _pluginsRuntimeAutoUpdate.current(); }
 	[[nodiscard]] bool pluginsBlockHttps() const { return _pluginsBlockHttps.current(); }
 	[[nodiscard]] bool pluginsBlockTcp() const { return _pluginsBlockTcp.current(); }
@@ -716,6 +717,7 @@ public:
 	void setCrashReporting(bool val);
 	void setPluginsEnabled(bool val);
 	void setPluginMenuState(std::vector<std::string> hidden, std::vector<std::string> order);
+	void setPluginPublisher(const std::string &publisher, std::string name);
 	void setPluginsRuntimeAutoUpdate(bool val);
 	void setPluginsBlockHttps(bool val);
 	void setPluginsBlockTcp(bool val);
@@ -1146,6 +1148,7 @@ private:
 	rpl::variable<bool> _pluginsEnabled = false;
 	std::vector<std::string> _pluginMenuHidden;
 	std::vector<std::string> _pluginMenuOrder;
+	std::map<std::string, std::string> _pluginPublishers;
 	rpl::variable<bool> _pluginsRuntimeAutoUpdate = true;
 	rpl::variable<bool> _pluginsBlockHttps = false;
 	rpl::variable<bool> _pluginsBlockTcp = false;

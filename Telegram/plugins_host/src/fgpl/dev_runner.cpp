@@ -868,6 +868,7 @@ int Run(const RunOptions &options) {
 	InstallOptions install;
 	install.acceptUnsigned = true;
 	install.acceptNewPublisher = true;
+	install.allowReserved = true;
 	install.allowDowngrade = true;
 	const auto installed = manager.install(archive, install);
 	if (!installed.ok()) {

@@ -777,6 +777,9 @@ Result<InstallReport, InstallFailure> PluginManager::install(
 	} else if (package.signature == SignatureState::Unsigned
 		&& !options.acceptUnsigned) {
 		return fail(InstallError::UnsignedRefused, { "the package is not signed" });
+	} else if (!options.allowReserved
+		&& ClaimedReservedName(manifest) != ReservedName::None) {
+		return fail(InstallError::ReservedName, { manifest.id });
 	}
 	for (const auto &dependency : manifest.dependencies) {
 		const auto found = _records.find(dependency.id);

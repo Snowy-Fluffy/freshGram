@@ -1866,6 +1866,17 @@ void AyuSettings::setPluginMenuState(
 	save();
 }
 
+void AyuSettings::setPluginPublisher(const std::string &publisher, std::string name) {
+	if (name.empty()) {
+		if (!_pluginPublishers.erase(publisher)) return;
+	} else {
+		auto &stored = _pluginPublishers[publisher];
+		if (stored == name) return;
+		stored = std::move(name);
+	}
+	save();
+}
+
 void AyuSettings::setPluginsRuntimeAutoUpdate(bool val) {
 	if (_pluginsRuntimeAutoUpdate.current() == val) return;
 	_pluginsRuntimeAutoUpdate = val;
@@ -2138,6 +2149,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"pluginsEnabled", s._pluginsEnabled.current()},
 		{"pluginMenuHidden", s._pluginMenuHidden},
 		{"pluginMenuOrder", s._pluginMenuOrder},
+		{"pluginPublishers", s._pluginPublishers},
 		{"pluginsRuntimeAutoUpdate", s._pluginsRuntimeAutoUpdate.current()},
 		{"pluginsBlockHttps", s._pluginsBlockHttps.current()},
 		{"pluginsBlockTcp", s._pluginsBlockTcp.current()},
@@ -2337,6 +2349,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._pluginsEnabled = j.value("pluginsEnabled", defaults._pluginsEnabled.current());
 	s._pluginMenuHidden = j.value("pluginMenuHidden", defaults._pluginMenuHidden);
 	s._pluginMenuOrder = j.value("pluginMenuOrder", defaults._pluginMenuOrder);
+	s._pluginPublishers = j.value("pluginPublishers", defaults._pluginPublishers);
 	s._pluginsRuntimeAutoUpdate = j.value("pluginsRuntimeAutoUpdate", defaults._pluginsRuntimeAutoUpdate.current());
 	s._pluginsBlockHttps = j.value("pluginsBlockHttps", defaults._pluginsBlockHttps.current());
 	s._pluginsBlockTcp = j.value("pluginsBlockTcp", defaults._pluginsBlockTcp.current());

@@ -75,6 +75,22 @@ void TestPermissions() {
 	}
 }
 
+void TestReservedNames() {
+	const auto claim = [](const char *id, const char *author) {
+		auto manifest = Manifest();
+		manifest.id = id;
+		manifest.authorName = author;
+		return ClaimedReservedName(manifest);
+	};
+	CHECK(claim("com.example.demo", "Alice") == ReservedName::None);
+	CHECK(claim("com.example.freshgramfan", "Alice") == ReservedName::None);
+	CHECK(claim("org.freshgram.translate", "Alice") == ReservedName::Id);
+	CHECK(claim("io.github.snowy_fluffy.tool", "Alice") == ReservedName::Id);
+	CHECK(claim("com.example.demo", "freshGram Team") == ReservedName::Author);
+	CHECK(claim("com.example.demo", "Fresh Gram") == ReservedName::Author);
+	CHECK(claim("com.example.demo", "fr\xD0\xB5shgr\xD0\xB0m") == ReservedName::Author);
+}
+
 void TestInstalledPackageRunsInTheSandbox() {
 #ifdef FGPL_COUNTER_WASM
 	auto document = ValidDocument();
@@ -132,6 +148,7 @@ void TestInstalledPackageRunsInTheSandbox() {
 
 int main() {
 	TestPermissions();
+	TestReservedNames();
 	TestInstalledPackageRunsInTheSandbox();
 	return Failures() ? 1 : 0;
 }

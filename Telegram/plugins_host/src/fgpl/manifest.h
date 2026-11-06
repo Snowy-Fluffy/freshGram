@@ -303,4 +303,12 @@ struct CompatIssue {
 
 [[nodiscard]] std::string SignedText(const cbor::Value &document);
 
+enum class ReservedName : uint8_t {
+	None,
+	Id,
+	Author,
+};
+
+[[nodiscard]] ReservedName ClaimedReservedName(const Manifest &manifest);
+
 } // namespace fgpl

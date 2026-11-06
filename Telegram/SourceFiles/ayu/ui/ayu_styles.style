@@ -292,6 +292,8 @@ pluginHeaderTitle: FlatLabel(boxTitle) {
 pluginHeaderSubtitle: FlatLabel(boxDividerLabel) {
 	minWidth: 120px;
 }
+pluginHeaderKeySize: 14px;
+pluginHeaderKeySkip: 4px;
 pluginHeaderOfficial: FlatLabel(pluginHeaderSubtitle) {
 	textFg: boxTextFgGood;
 }

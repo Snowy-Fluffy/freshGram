@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <string_view>
 
 namespace fgpl {
 namespace {
@@ -1347,6 +1348,61 @@ std::vector<CompatIssue> CheckCompatibility(
 		issues.push_back({ Problem::PremiumRequired, "needs a Premium account" });
 	}
 	return issues;
+}
+
+namespace {
+
+// Lowercase letters and digits only, with Cyrillic lookalikes mapped to Latin.
+[[nodiscard]] std::string LookalikeFold(std::string_view text) {
+	auto result = std::string();
+	for (auto i = size_t(0); i != text.size(); ++i) {
+		const auto byte = uint8_t(text[i]);
+		if (byte < 0x80) {
+			if (std::isalnum(byte)) {
+				result.push_back(char(std::tolower(byte)));
+			}
+		} else if (byte >= 0xC0 && byte < 0xE0 && i + 1 < text.size()) {
+			const auto code = ((byte & 0x1F) << 6) | (uint8_t(text[++i]) & 0x3F);
+			switch (code) {
+			case 0x0430: case 0x0410: result.push_back('a'); break;
+			case 0x0435: case 0x0415: result.push_back('e'); break;
+			case 0x043E: case 0x041E: result.push_back('o'); break;
+			case 0x0440: case 0x0420: result.push_back('p'); break;
+			case 0x0441: case 0x0421: result.push_back('c'); break;
+			case 0x0445: case 0x0425: result.push_back('x'); break;
+			case 0x0443: case 0x0423: result.push_back('y'); break;
+			case 0x0456: case 0x0406: result.push_back('i'); break;
+			case 0x0455: case 0x0405: result.push_back('s'); break;
+			case 0x04BB: case 0x04BA: result.push_back('h'); break;
+			}
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] bool IsReservedWord(const std::string &folded) {
+	return folded.find("freshgram") != std::string::npos
+		|| folded.find("snowyfluffy") != std::string::npos;
+}
+
+} // namespace
+
+ReservedName ClaimedReservedName(const Manifest &manifest) {
+	auto label = std::string();
+	for (const auto ch : manifest.id + '.') {
+		if (ch != '.') {
+			label.push_back(ch);
+			continue;
+		}
+		const auto folded = LookalikeFold(label);
+		if (folded == "freshgram" || folded == "snowyfluffy") {
+			return ReservedName::Id;
+		}
+		label.clear();
+	}
+	return IsReservedWord(LookalikeFold(manifest.authorName))
+		? ReservedName::Author
+		: ReservedName::None;
 }
 
 } // namespace fgpl

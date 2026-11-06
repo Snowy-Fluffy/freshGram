@@ -2479,7 +2479,9 @@ void BuildDetails(
 			: PluginHeader{
 				.name = name,
 				.version = Utf8(info->version),
-				.official = IsOfficialPublisher(info->publisher),
+				.trust = TrustOf(info->publisher),
+				.key = PublisherShort(info->publisher),
+				.trusted = RememberedPublisher(info->publisher),
 			});
 	Ui::AddSkip(content);
 	if (broken) {
@@ -2577,6 +2579,34 @@ void BuildDetails(
 			{ &st::menuIconCustomize }
 		)->addClickHandler([=] {
 			controller->show(Box(FillMenuItemsBox, controller, plugin));
+		});
+	}
+	if (TrustOf(info->publisher) == PluginTrust::Signed) {
+		const auto publisher = info->publisher;
+		const auto remembered = RememberedPublisher(publisher);
+		const auto id = Utf8(plugin);
+		const auto reopen = [=] {
+			box->closeBox();
+			ShowPluginDetails(controller, id);
+		};
+		Settings::AddButtonWithIcon(
+			content,
+			remembered.isEmpty()
+				? tr::fresh_PluginRememberPublisher()
+				: tr::fresh_PluginForgetPublisher(),
+			st::settingsButton,
+			{ remembered.isEmpty() ? &st::menuIconInfo : &st::menuIconDelete }
+		)->addClickHandler([=] {
+			if (remembered.isEmpty()) {
+				ShowRememberPublisher(
+					controller,
+					publisher,
+					name,
+					reopen);
+			} else {
+				AyuSettings::getInstance().setPluginPublisher(publisher, std::string());
+				reopen();
+			}
 		});
 	}
 	Settings::AddButtonWithIcon(
@@ -3620,6 +3650,78 @@ Fn<std::optional<fgpl::GrantDecision>()> AddPermissionsEditor(
 	};
 }
 
+PluginTrust TrustOf(const std::string &publisher) {
+	return IsOfficialPublisher(publisher)
+		? PluginTrust::Official
+		: publisher.empty()
+		? PluginTrust::Unsigned
+		: PluginTrust::Signed;
+}
+
+QString PublisherShort(const std::string &publisher) {
+	auto digits = QString();
+	for (const auto ch : publisher) {
+		if (ch != ' ') {
+			digits.push_back(QChar(uchar(ch)).toUpper());
+		}
+	}
+	return (digits.size() < 8)
+		? digits
+		: digits.mid(0, 4) + QChar(0x00B7) + digits.mid(4, 4);
+}
+
+QString RememberedPublisher(const std::string &publisher) {
+	const auto &known = AyuSettings::getInstance().pluginPublishers();
+	const auto found = known.find(publisher);
+	return (found != known.end() && TrustOf(publisher) == PluginTrust::Signed)
+		? Utf8(found->second)
+		: QString();
+}
+
+namespace {
+
+void FillRememberBox(
+		not_null<Ui::GenericBox*> box,
+		std::string publisher,
+		QString suggested,
+		Fn<void()> done) {
+	box->setTitle(tr::fresh_PluginRememberTitle());
+	const auto field = box->addRow(object_ptr<Ui::InputField>(
+		box,
+		st::defaultInputField,
+		tr::fresh_PluginRememberName(),
+		suggested));
+	field->setMaxLength(40);
+	box->setFocusCallback([=] { field->setFocusFast(); });
+	const auto save = [=] {
+		const auto name = field->getLastText().trimmed();
+		if (name.isEmpty()) {
+			field->showError();
+			return;
+		}
+		AyuSettings::getInstance().setPluginPublisher(
+			publisher,
+			name.toUtf8().toStdString());
+		box->closeBox();
+		if (done) {
+			done();
+		}
+	};
+	field->submits() | rpl::on_next(save, field->lifetime());
+	box->addButton(tr::lng_settings_save(), save);
+	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+}
+
+} // namespace
+
+void ShowRememberPublisher(
+		not_null<Window::SessionController*> controller,
+		const std::string &publisher,
+		const QString &suggested,
+		Fn<void()> done) {
+	controller->show(Box(FillRememberBox, publisher, suggested, std::move(done)));
+}
+
 PluginHeader HeaderFor(
 		const fgpl::Manifest &manifest,
 		const std::string &publisher,
@@ -3633,7 +3735,9 @@ PluginHeader HeaderFor(
 		.homepage = Utf8(manifest.homepage.empty() ? manifest.authorUrl : manifest.homepage),
 		.repository = Utf8(manifest.repository),
 		.support = Utf8(manifest.support),
-		.official = IsOfficialPublisher(publisher),
+		.trust = TrustOf(publisher),
+		.key = PublisherShort(publisher),
+		.trusted = RememberedPublisher(publisher),
 		.icon = std::move(icon),
 	};
 }
@@ -3739,22 +3843,71 @@ void AddPluginHeader(
 		row,
 		details.join(u" · "_q),
 		st::pluginHeaderSubtitle);
+	const auto keyed = (data.trust == PluginTrust::Signed);
 	const auto badge = Ui::CreateChild<Ui::FlatLabel>(
 		row,
-		data.official
+		(data.trust == PluginTrust::Official)
 			? (u"✓ "_q + tr::fresh_PluginOfficial(tr::now))
+			: keyed
+			? tr::fresh_PluginSignedKey(tr::now, lt_key, data.key)
 			: (u"⚠ "_q + tr::fresh_PluginUnofficial(tr::now)),
-		data.official ? st::pluginHeaderOfficial : st::pluginHeaderUnofficial);
-	for (const auto label : { title, subtitle, badge }) {
+		(data.trust == PluginTrust::Official)
+			? st::pluginHeaderOfficial
+			: keyed
+			? st::pluginHeaderSubtitle
+			: st::pluginHeaderUnofficial);
+	auto labels = std::vector<Ui::FlatLabel*>{ title, subtitle, badge };
+	const auto keyIcon = keyed ? Ui::CreateChild<Ui::RpWidget>(row) : nullptr;
+	if (keyed) {
+		labels.push_back(Ui::CreateChild<Ui::FlatLabel>(
+			row,
+			tr::fresh_PluginNotOfficial(tr::now),
+			st::pluginHeaderSubtitle));
+		keyIcon->resize(st::pluginHeaderKeySize, st::pluginHeaderKeySize);
+		keyIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+		keyIcon->show();
+		keyIcon->paintRequest() | rpl::on_next([=] {
+			auto p = QPainter(keyIcon);
+			PainterHighQualityEnabler hq(p);
+			const auto side = qreal(st::pluginHeaderKeySize);
+			const auto ring = side * 0.2;
+			auto pen = QPen(st::pluginHeaderSubtitle.textFg->c);
+			pen.setWidthF(side / 10.);
+			pen.setCapStyle(Qt::RoundCap);
+			p.setPen(pen);
+			p.setBrush(Qt::NoBrush);
+			p.drawEllipse(QPointF(side * 0.25, side * 0.5), ring, ring);
+			p.drawLine(QPointF(side * 0.45, side * 0.5), QPointF(side * 0.95, side * 0.5));
+			p.drawLine(QPointF(side * 0.95, side * 0.5), QPointF(side * 0.95, side * 0.72));
+			p.drawLine(QPointF(side * 0.75, side * 0.5), QPointF(side * 0.75, side * 0.68));
+		}, keyIcon->lifetime());
+	}
+	if (keyed && !data.trusted.isEmpty()) {
+		labels.push_back(Ui::CreateChild<Ui::FlatLabel>(
+			row,
+			tr::fresh_PluginTrustedPublisher(tr::now, lt_name, data.trusted),
+			st::pluginHeaderSubtitle));
+	}
+	for (const auto label : labels) {
 		label->show();
 	}
+	const auto indent = keyed
+		? (st::pluginHeaderKeySize + st::pluginHeaderKeySkip)
+		: 0;
 	row->widthValue() | rpl::on_next([=](int width) {
 		const auto left = size + st::pluginHeaderSkip;
 		const auto available = std::max(width - left, 1);
 		auto top = 0;
-		for (const auto label : { title, subtitle, badge }) {
-			label->resizeToWidth(available);
-			label->moveToLeft(left, top, width);
+		for (const auto label : labels) {
+			const auto shift = (label == badge) ? indent : 0;
+			label->resizeToWidth(std::max(available - shift, 1));
+			label->moveToLeft(left + shift, top, width);
+			if (keyIcon && label == badge) {
+				keyIcon->moveToLeft(
+					left,
+					top + (st::pluginHeaderSubtitle.style.font->height - st::pluginHeaderKeySize) / 2,
+					width);
+			}
 			top += label->height() + st::pluginHeaderLineSkip;
 		}
 		const auto height = std::max(size, top);
