@@ -481,21 +481,9 @@ public:
 	[[nodiscard]] bool showSReadToggleInDrawer() const { return _showSReadToggleInDrawer.current(); }
 	[[nodiscard]] bool showNightModeToggleInDrawer() const { return _showNightModeToggleInDrawer.current(); }
 	[[nodiscard]] bool showGhostToggleInDrawer() const { return _showGhostToggleInDrawer.current(); }
-	[[nodiscard]] bool showStreamerToggleInDrawer() const {
-#ifdef Q_OS_LINUX
-		return true;
-#else // Q_OS_LINUX
-		return _showStreamerToggleInDrawer.current();
-#endif // Q_OS_LINUX
-	}
+	[[nodiscard]] bool showStreamerToggleInDrawer() const { return _showStreamerToggleInDrawer.current(); }
 	[[nodiscard]] bool showGhostToggleInTray() const { return _showGhostToggleInTray.current(); }
-	[[nodiscard]] bool showStreamerToggleInTray() const {
-#ifdef Q_OS_LINUX
-		return true;
-#else // Q_OS_LINUX
-		return _showStreamerToggleInTray.current();
-#endif // Q_OS_LINUX
-	}
+	[[nodiscard]] bool showStreamerToggleInTray() const { return _showStreamerToggleInTray.current(); }
 	[[nodiscard]] const QString &monoFont() const { return _monoFont.current(); }
 	[[nodiscard]] bool hideNotificationCounters() const { return _hideNotificationCounters.current(); }
 	[[nodiscard]] bool hideNotificationBadge() const { return _hideNotificationBadge.current(); }
@@ -979,6 +967,12 @@ public:
 private:
 	AyuSettings();
 
+#ifdef Q_OS_LINUX
+	static constexpr auto kStreamerTogglesShown = true;
+#else // Q_OS_LINUX
+	static constexpr auto kStreamerTogglesShown = false;
+#endif // Q_OS_LINUX
+
 	[[nodiscard]] uint64 getOverriddenGhostUserId(uint64 userId) const { return _useGlobalGhostMode.current() ? 0 : userId; }
 
 	rpl::variable<bool> _saveDeletedMessages = true;
@@ -1102,9 +1096,9 @@ private:
 	rpl::variable<bool> _showSReadToggleInDrawer = true;
 	rpl::variable<bool> _showNightModeToggleInDrawer = true;
 	rpl::variable<bool> _showGhostToggleInDrawer = true;
-	rpl::variable<bool> _showStreamerToggleInDrawer = false;
+	rpl::variable<bool> _showStreamerToggleInDrawer = kStreamerTogglesShown;
 	rpl::variable<bool> _showGhostToggleInTray = true;
-	rpl::variable<bool> _showStreamerToggleInTray = false;
+	rpl::variable<bool> _showStreamerToggleInTray = kStreamerTogglesShown;
 	rpl::variable<bool> _hidePremiumStatuses = false;
 	rpl::variable<QString> _monoFont;
 	rpl::variable<bool> _hideNotificationCounters = false;
