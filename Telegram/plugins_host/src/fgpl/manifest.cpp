@@ -35,7 +35,7 @@ const auto kTopKeys = std::set<std::string>{
 	return true;
 }
 
-[[nodiscard]] bool ReservedName(std::string_view name) {
+[[nodiscard]] bool IsAppName(std::string_view name) {
 	auto letters = std::string();
 	for (const auto ch : name) {
 		if (std::isalnum(static_cast<unsigned char>(ch))) {
@@ -628,7 +628,7 @@ Result<Manifest, std::vector<std::string>> ParseManifest(
 	}
 	if (const auto name = reader.localized(document, "name", "", true, 80)) {
 		for (const auto &[language, text] : name->text) {
-			if (ReservedName(text)) {
+			if (IsAppName(text)) {
 				reader.error("name", "must not be the name of the app");
 				break;
 			}
