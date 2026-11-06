@@ -16,6 +16,7 @@
 #include "base/unixtime.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
+#include "storage/file_download.h"
 #include "storage/file_upload.h"
 #include "storage/localimageloader.h"
 #include "storage/storage_media_prepare.h"
@@ -2474,6 +2475,10 @@ public:
 				base->mime = thumbnail ? "image/jpeg" : Utf8(document->mimeString());
 				base->name = thumbnail ? std::string() : Utf8(document->filename());
 				const auto view = document->createMediaView();
+				// WHY: until save() is called the state is not ours: a cancelled or failed
+				// earlier download, or a video the player cached in slices, which
+				// media() cannot read, so the download has to be started anyway.
+				const auto started = std::make_shared<bool>(false);
 				measure = [=] {
 					const auto total = uint64(std::max<int64>(document->size, 0));
 					return std::make_pair(
@@ -2491,11 +2496,12 @@ public:
 						return true;
 					} else if (!document->loading()
 						&& (!document->filepath(true).isEmpty()
-							|| document->loadedInMediaCache())) {
+							|| (*started && document->loadedInMediaCache()))) {
 						finish(QByteArray());
 						return true;
 					}
-					if (!document->loading()
+					if (*started
+						&& !document->loading()
 						&& (document->status == FileDownloadFailed
 							|| document->cancelled())) {
 						fail(fgpl::api::error::kFailed);
@@ -2504,10 +2510,19 @@ public:
 					return false;
 				};
 				if (!check()) {
+					*started = true;
 					if (thumbnail) {
 						document->loadThumbnail(origin);
-					} else {
+					} else if (document->size < Storage::kMaxFileInMemory) {
+						// Without a file name a document that is not cached by default is dropped once loaded.
+						document->forceToCache(true);
 						document->save(origin, QString());
+					} else {
+						const auto folder = OutboxPath()
+							+ QString::number(base::RandomValue<uint64>(), 16)
+							+ '/';
+						QDir().mkpath(folder);
+						document->save(origin, folder + QString::number(document->id));
 					}
 				}
 			} else {
