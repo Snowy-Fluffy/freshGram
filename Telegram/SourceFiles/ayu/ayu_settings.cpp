@@ -2107,9 +2107,9 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"showSReadToggleInDrawer", s._showSReadToggleInDrawer.current()},
 		{"showNightModeToggleInDrawer", s._showNightModeToggleInDrawer.current()},
 		{"showGhostToggleInDrawer", s._showGhostToggleInDrawer.current()},
-		{"showStreamerToggleInDrawer", s._showStreamerToggleInDrawer.current()},
+		{"streamerToggleInDrawer", s._showStreamerToggleInDrawer.current()},
 		{"showGhostToggleInTray", s._showGhostToggleInTray.current()},
-		{"showStreamerToggleInTray", s._showStreamerToggleInTray.current()},
+		{"streamerToggleInTray", s._showStreamerToggleInTray.current()},
 		{"monoFont", s._monoFont.current()},
 		{"hideNotificationCounters", s._hideNotificationCounters.current()},
 		{"hideNotificationBadge", s._hideNotificationBadge.current()},
@@ -2307,9 +2307,16 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._showSReadToggleInDrawer = j.value("showSReadToggleInDrawer", defaults._showSReadToggleInDrawer.current());
 	s._showNightModeToggleInDrawer = j.value("showNightModeToggleInDrawer", defaults._showNightModeToggleInDrawer.current());
 	s._showGhostToggleInDrawer = j.value("showGhostToggleInDrawer", defaults._showGhostToggleInDrawer.current());
-	s._showStreamerToggleInDrawer = j.value("showStreamerToggleInDrawer", defaults._showStreamerToggleInDrawer.current());
+	// WHY: Linux had no switches for these items and always showed them,
+	// so its old keys hold a value nobody chose; other systems keep theirs.
+	const auto oldKeysChosen = !AyuSettings::kStreamerTogglesShown;
+	s._showStreamerToggleInDrawer = j.value("streamerToggleInDrawer", oldKeysChosen
+		? j.value("showStreamerToggleInDrawer", defaults._showStreamerToggleInDrawer.current())
+		: defaults._showStreamerToggleInDrawer.current());
 	s._showGhostToggleInTray = j.value("showGhostToggleInTray", defaults._showGhostToggleInTray.current());
-	s._showStreamerToggleInTray = j.value("showStreamerToggleInTray", defaults._showStreamerToggleInTray.current());
+	s._showStreamerToggleInTray = j.value("streamerToggleInTray", oldKeysChosen
+		? j.value("showStreamerToggleInTray", defaults._showStreamerToggleInTray.current())
+		: defaults._showStreamerToggleInTray.current());
 	s._monoFont = j.value("monoFont", defaults._monoFont.current());
 	s._hideNotificationCounters = j.value("hideNotificationCounters", defaults._hideNotificationCounters.current());
 	s._hideNotificationBadge = j.value("hideNotificationBadge", defaults._hideNotificationBadge.current());

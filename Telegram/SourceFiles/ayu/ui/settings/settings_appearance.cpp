@@ -319,14 +319,12 @@ void BuildTrayElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.setter = &AyuSettings::setShowGhostToggleInTray,
 	});
 
-#if defined Q_OS_WIN || defined Q_OS_MAC
 	ayu.addSettingToggle({
 		.id = u"ayu/showStreamerToggleInTray"_q,
 		.title = tr::ayu_EnableStreamerModeTray(),
 		.getter = &AyuSettings::showStreamerToggleInTray,
 		.setter = &AyuSettings::setShowStreamerToggleInTray,
 	});
-#endif
 
 	ayu.addSectionDivider();
 }
@@ -451,7 +449,6 @@ void BuildDrawerElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.icon = { &st::ayuGhostIcon },
 	});
 
-#if defined Q_OS_WIN || defined Q_OS_MAC
 	ayu.addSettingToggle({
 		.id = u"ayu/showStreamerToggleInDrawer"_q,
 		.title = tr::ayu_StreamerModeToggle(),
@@ -459,7 +456,6 @@ void BuildDrawerElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.setter = &AyuSettings::setShowStreamerToggleInDrawer,
 		.icon = { &st::ayuStreamerModeMenuIcon },
 	});
-#endif
 
 	builder.addSkip();
 }
