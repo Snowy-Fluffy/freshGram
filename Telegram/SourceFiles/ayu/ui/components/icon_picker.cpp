@@ -19,6 +19,10 @@
 #include "ayu/utils/windows_utils.h"
 #endif
 
+#ifdef Q_OS_LINUX
+#include "platform/platform_specific.h"
+#endif
+
 namespace {
 
 const QVector<QString> icons{
@@ -46,6 +50,10 @@ void applyIcon() {
 #ifdef Q_OS_WIN
 	AyuAssets::loadAppIco();
 	reloadAppIconFromTaskBar();
+#endif
+
+#ifdef Q_OS_LINUX
+	Platform::UpdateLauncherIcon();
 #endif
 
 	Window::OverrideApplicationIcon(AyuAssets::currentAppLogo());
