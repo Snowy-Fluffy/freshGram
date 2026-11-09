@@ -29,6 +29,7 @@ inline bool PreventsQuit(Core::QuitReason reason) {
 }
 
 void ActivateThisProcess();
+void UpdateLauncherIcon();
 
 inline uint64 ActivationWindowId(not_null<QWidget*> window) {
 	return 1;

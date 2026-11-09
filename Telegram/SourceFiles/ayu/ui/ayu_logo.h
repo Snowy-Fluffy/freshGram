@@ -30,6 +30,7 @@ void loadAppIco();
 QString appIcoPath();
 
 QImage loadPreview(const QString& name);
+QImage appLogo(const QString &name, int size);
 
 QString currentAppLogoName();
 QImage currentAppLogo();

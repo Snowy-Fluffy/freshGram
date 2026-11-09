@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/invoke_queued.h"
 #include "base/qt_signal_producer.h"
 #include "base/platform/linux/base_linux_dbus_utilities.h"
+#include "ayu/ayu_settings.h"
 #include "core/application.h"
 #include "core/sandbox.h"
 #include "core/version.h"
@@ -53,6 +54,7 @@ private:
 	struct State {
 		QIcon systemIcon;
 		QString iconThemeName;
+		QString appIcon;
 		bool monochrome = false;
 		int32 counter = 0;
 		bool muted = false;
@@ -81,6 +83,7 @@ IconGraphic::~IconGraphic() = default;
 
 QIcon IconGraphic::systemIcon() const {
 	if (_new.iconThemeName == _current.iconThemeName
+		&& _new.appIcon == _current.appIcon
 		&& _new.monochrome == _current.monochrome
 		&& (_new.counter > 0) == (_current.counter > 0)
 		&& _new.muted == _current.muted) {
@@ -123,6 +126,7 @@ QSize IconGraphic::dprSize(const QImage &image) const {
 
 void IconGraphic::updateState() {
 	_new.iconThemeName = QIcon::themeName();
+	_new.appIcon = AyuSettings::getInstance().appIcon();
 	_new.monochrome = Core::App().settings().trayIconMonochrome();
 	_new.counter = Core::App().unreadBadge();
 	_new.muted = Core::App().unreadBadgeMuted();
@@ -132,6 +136,7 @@ void IconGraphic::updateState() {
 bool IconGraphic::isRefreshNeeded() const {
 	return _trayIcon.isNull()
 		|| _new.iconThemeName != _current.iconThemeName
+		|| _new.appIcon != _current.appIcon
 		|| _new.systemIcon.name() != _current.systemIcon.name()
 		|| (isCounterNeeded(_new)
 			? _new.muted != _current.muted
@@ -161,6 +166,7 @@ QIcon IconGraphic::trayIcon() {
 
 		if (currentImageBack.isNull()
 			|| _new.iconThemeName != _current.iconThemeName
+			|| _new.appIcon != _current.appIcon
 			|| _new.systemIcon.name() != _current.systemIcon.name()) {
 			currentImageBack = {};
 

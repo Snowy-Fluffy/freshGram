@@ -104,6 +104,14 @@ QImage loadPreview(const QString &name) {
 	return CreateImage(name, Size(st::iconPickerIconSize), st::iconPickerImagePadding);
 }
 
+QImage appLogo(const QString &name, int size) {
+	return CreateImage(name, Size(size)).scaled(
+		size,
+		size,
+		Qt::IgnoreAspectRatio,
+		Qt::SmoothTransformation);
+}
+
 QString currentAppLogoName() {
 	return LAST_LOADED_NAME;
 }

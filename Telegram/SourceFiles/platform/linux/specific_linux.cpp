@@ -15,6 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/linux/base_linux_xdp_utilities.h"
 #include "base/platform/linux/base_linux_app_launch_context.h"
 #include "base/platform/base_platform_process.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/ui/ayu_logo.h"
 #include "lang/lang_keys.h"
 #include "core/launcher.h"
 #include "core/sandbox.h"
@@ -40,6 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <xdprequest/xdprequest.hpp>
 
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <cstdlib>
@@ -854,6 +857,49 @@ QString ApplicationIconName() {
 		: QGuiApplication::desktopFileName().remove(
 		u"._"_q + Core::Launcher::Instance().instanceHash());
 	return Result;
+}
+
+void UpdateLauncherIcon() {
+	if (KSandbox::isInside()) {
+		return;
+	}
+	const auto name = AyuSettings::getInstance().appIcon();
+	const auto custom = (name != AyuAssets::DEFAULT_ICON);
+	const auto hicolor = QStandardPaths::writableLocation(
+		QStandardPaths::GenericDataLocation) + u"/icons/hicolor/"_q;
+
+	// Every size the package installs, or its own closer one is shown.
+	const auto sizes = { 16, 32, 48, 64, 128, 256, 512 };
+	for (const auto size : sizes) {
+		for (const auto scale : { 1, 2 }) {
+			const auto apps = hicolor
+				+ u"%1x%1%2/apps/"_q.arg(size).arg(
+					(scale > 1) ? u"@2"_q : QString());
+			const auto path = apps + ApplicationIconName() + u".png"_q;
+			QFile::remove(path);
+			if (custom) {
+				QDir().mkpath(apps);
+				AyuAssets::appLogo(name, size * scale).save(path, "PNG");
+			}
+		}
+	}
+	if (!custom) {
+		InstallLauncher();
+	}
+
+	// WHY: shells reload a theme only when its folder changes, and look
+	// again after update-desktop-database; Qt keeps the folders it found
+	// until the search paths are set, even to the same ones.
+	utimensat(
+		AT_FDCWD,
+		QFile::encodeName(hicolor).constData(),
+		nullptr,
+		0);
+	QProcess::startDetached(u"update-desktop-database"_q, {
+		QStandardPaths::writableLocation(
+			QStandardPaths::ApplicationsLocation),
+	});
+	QIcon::setThemeSearchPaths(QIcon::themeSearchPaths());
 }
 
 void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail) {
