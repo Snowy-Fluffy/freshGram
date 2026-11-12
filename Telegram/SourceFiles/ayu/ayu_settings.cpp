@@ -2309,12 +2309,12 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._showGhostToggleInDrawer = j.value("showGhostToggleInDrawer", defaults._showGhostToggleInDrawer.current());
 	// WHY: Linux had no switches for these items and always showed them,
 	// so its old keys hold a value nobody chose; other systems keep theirs.
-	const auto oldKeysChosen = !AyuSettings::kStreamerTogglesShown;
-	s._showStreamerToggleInDrawer = j.value("streamerToggleInDrawer", oldKeysChosen
+	const auto readLegacyKeys = !AyuSettings::kStreamerTogglesShown;
+	s._showStreamerToggleInDrawer = j.value("streamerToggleInDrawer", readLegacyKeys
 		? j.value("showStreamerToggleInDrawer", defaults._showStreamerToggleInDrawer.current())
 		: defaults._showStreamerToggleInDrawer.current());
 	s._showGhostToggleInTray = j.value("showGhostToggleInTray", defaults._showGhostToggleInTray.current());
-	s._showStreamerToggleInTray = j.value("streamerToggleInTray", oldKeysChosen
+	s._showStreamerToggleInTray = j.value("streamerToggleInTray", readLegacyKeys
 		? j.value("showStreamerToggleInTray", defaults._showStreamerToggleInTray.current())
 		: defaults._showStreamerToggleInTray.current());
 	s._monoFont = j.value("monoFont", defaults._monoFont.current());
