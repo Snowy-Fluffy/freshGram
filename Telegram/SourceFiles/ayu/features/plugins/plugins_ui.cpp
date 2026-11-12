@@ -3339,7 +3339,7 @@ void ChooseChats(
 	auto list = std::make_unique<EditFilterChatsListController>(
 		session,
 		tr::fresh_PluginChatsChoose(),
-		Data::ChatFilter::Flags(),
+		Data::ChatFilter::Flag::Chatlist,
 		Data::ChatFilter::Flags(),
 		peers,
 		kMaxPluginChats,
