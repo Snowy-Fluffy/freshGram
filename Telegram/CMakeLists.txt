@@ -354,6 +354,8 @@ set(ayugram_files
         ayu/features/peek/peek_online.h
         ayu/features/message_shot/message_shot.cpp
         ayu/features/message_shot/message_shot.h
+        ayu/features/message_shot/message_shot_sticker.cpp
+        ayu/features/message_shot/message_shot_sticker.h
         ayu/features/message_shot/message_shot_theme_state.cpp
         ayu/features/message_shot/message_shot_theme_state.h
         ayu/features/forward/ayu_forward.cpp

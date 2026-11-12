@@ -9884,3 +9884,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "fresh_MessageShotSaved" = "Screenshot saved";
 "fresh_MessageShotSaveFailed" = "Could not save the screenshot";
 "fresh_MessageShotCopied" = "Screenshot copied to clipboard";
+"fresh_MessageShotSticker" = "Sticker";
+"fresh_MessageShotStickerEmoji" = "Emoji";
+"fresh_MessageShotStickerSaved" = "Send to Saved Messages";
+"fresh_MessageShotStickerActive" = "Send to current chat";
+"fresh_MessageShotStickerCustom" = "Send to another chat";
+"fresh_MessageShotStickerPack" = "Add to sticker pack";
+"fresh_MessageShotStickerChoosePack" = "Choose sticker pack";
+"fresh_MessageShotStickerNewPack" = "New sticker pack";
+"fresh_MessageShotStickerPackTitle" = "Pack title";
+"fresh_MessageShotStickerAdded" = "Sticker added to the pack";
+"fresh_MessageShotStickerSent" = "Sticker sent";
+"fresh_MessageShotStickerFailed" = "Could not create the sticker";
+"fresh_MessageShotStickerNoChat" = "Open a chat first";

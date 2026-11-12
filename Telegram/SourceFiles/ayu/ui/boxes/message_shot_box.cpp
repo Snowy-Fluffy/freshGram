@@ -8,7 +8,10 @@
 
 #include "lang_auto.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/features/message_shot/message_shot_sticker.h"
+#include "ayu/ui/boxes/edit_mark_box.h"
 #include "ayu/ui/boxes/theme_selector_box.h"
+#include "data/data_session.h"
 #include "ayu/ui/components/image_view.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "boxes/abstract_box.h"
@@ -41,11 +44,15 @@
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QRegularExpression>
+#include <QTextBoundaryFinder>
 
 namespace {
 
 constexpr auto kJpegQuality = 95;
 constexpr auto kFileNameLimit = 32;
+constexpr auto kStickerRenderScale = 2;
+
+namespace ShotSticker = AyuFeatures::MessageShot::Sticker;
 
 [[nodiscard]] QString DefaultFileNamePrefix(
 		const AyuFeatures::MessageShot::ShotConfig &config) {
@@ -700,6 +707,138 @@ void MessageShotBox::setupContent() {
 						  Ui::LayerOption::KeepOther);
 				  });
 			  });
+
+	const auto makeSticker = [=](Fn<void(QByteArray)> done)
+	{
+		if (*exporting) {
+			return;
+		}
+		*exporting = true;
+		auto &shot = AyuSettings::getInstance().messageShotSettings();
+		const auto savedBackground = shot.background();
+		shot.setBackground(Background::Transparent);
+		AyuFeatures::MessageShot::Make(this, _config, [=](const QImage &image, bool final)
+		{
+			if (!weak || !final) {
+				return;
+			}
+			*exporting = false;
+			auto bytes = ShotSticker::Encode(image);
+			if (bytes.isEmpty()) {
+				_config.controller->showToast(tr::fresh_MessageShotStickerFailed(tr::now));
+				return;
+			}
+			done(std::move(bytes));
+		}, kStickerRenderScale);
+		shot.setBackground(savedBackground);
+	};
+
+	const auto sendSticker = [=](not_null<Data::Thread*> thread)
+	{
+		makeSticker([=](QByteArray bytes)
+		{
+			const auto weakThread = base::make_weak(thread);
+			const auto controller = _config.controller;
+			if (const auto strong = weakThread.get()) {
+				ShotSticker::Send(controller, strong, bytes);
+				controller->showToast(tr::fresh_MessageShotStickerSent(tr::now));
+				_tookShot = true;
+				closeBox();
+			}
+		});
+	};
+
+	AddSkip(content);
+	AddDivider(content);
+	AddSkip(content);
+	AddSubsectionTitle(content, tr::fresh_MessageShotSticker());
+
+	const auto emoji = content->lifetime().make_state<
+		rpl::variable<QString>>(QString::fromUtf8("\xF0\x9F\x99\x82"));
+	AddButtonWithLabel(
+		content,
+		tr::fresh_MessageShotStickerEmoji(),
+		emoji->value(),
+		st::settingsButtonNoIcon
+	)->addClickHandler([=]
+	{
+		_config.controller->show(Box<EditMarkBox>(
+			tr::fresh_MessageShotStickerEmoji(),
+			emoji->current(),
+			emoji->current(),
+			[=](const QString &text)
+			{
+				const auto trimmed = text.trimmed();
+				auto finder = QTextBoundaryFinder(
+					QTextBoundaryFinder::Grapheme,
+					trimmed);
+				const auto end = finder.toNextBoundary();
+				if (end > 0) {
+					*emoji = trimmed.left(end);
+				}
+			}), Ui::LayerOption::KeepOther);
+	});
+
+	const auto addStickerAction = [=](tr::phrase<> title, Fn<void()> callback)
+	{
+		AddButtonWithIcon(
+			content,
+			title(),
+			st::settingsButtonNoIcon
+		)->addClickHandler(std::move(callback));
+	};
+	addStickerAction(
+		tr::fresh_MessageShotStickerSaved,
+		[=]
+		{
+			const auto session = &_config.controller->session();
+			sendSticker(session->data().history(session->user()));
+		});
+	addStickerAction(
+		tr::fresh_MessageShotStickerActive,
+		[=]
+		{
+			const auto thread = _config.controller->activeChatCurrent().thread();
+			if (!thread) {
+				_config.controller->showToast(tr::fresh_MessageShotStickerNoChat(tr::now));
+				return;
+			}
+			sendSticker(thread);
+		});
+	addStickerAction(
+		tr::fresh_MessageShotStickerCustom,
+		[=]
+		{
+			const auto controller = _config.controller;
+			controller->show(
+				Window::PrepareChooseRecipientBox(
+					&controller->session(),
+					[=](not_null<Data::Thread*> thread)
+					{
+						crl::on_main(this, [=]
+						{
+							sendSticker(thread);
+						});
+						return true;
+					},
+					tr::fresh_MessageShotStickerCustom()),
+				Ui::LayerOption::KeepOther);
+		});
+	addStickerAction(
+		tr::fresh_MessageShotStickerPack,
+		[=]
+		{
+			makeSticker([=](QByteArray bytes)
+			{
+				ShotSticker::AddToPack(_config.controller, bytes, emoji->current(), crl::guard(this, [=](bool added)
+				{
+					if (added) {
+						_tookShot = true;
+						closeBox();
+					}
+				}));
+			});
+		});
 
 	updatePreview();
 	firstPreviewLatch->await(std::chrono::seconds(1));

@@ -1119,3 +1119,16 @@
 "fresh_MessageShotSaved" = "Скриншот сохранён";
 "fresh_MessageShotSaveFailed" = "Не удалось сохранить скриншот";
 "fresh_MessageShotCopied" = "Скриншот скопирован в буфер обмена";
+"fresh_MessageShotSticker" = "Стикер";
+"fresh_MessageShotStickerEmoji" = "Эмодзи";
+"fresh_MessageShotStickerSaved" = "Отправить в избранное";
+"fresh_MessageShotStickerActive" = "Отправить в текущий чат";
+"fresh_MessageShotStickerCustom" = "Отправить в другой чат";
+"fresh_MessageShotStickerPack" = "Добавить в стикерпак";
+"fresh_MessageShotStickerChoosePack" = "Выберите стикерпак";
+"fresh_MessageShotStickerNewPack" = "Новый стикерпак";
+"fresh_MessageShotStickerPackTitle" = "Название набора";
+"fresh_MessageShotStickerAdded" = "Стикер добавлен в набор";
+"fresh_MessageShotStickerSent" = "Стикер отправлен";
+"fresh_MessageShotStickerFailed" = "Не удалось создать стикер";
+"fresh_MessageShotStickerNoChat" = "Сначала откройте чат";
