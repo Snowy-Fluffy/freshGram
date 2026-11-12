@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/linux/specific_linux.h"
 
+#include "ayu/ayu_settings.h"
+#include "ayu/ui/ayu_logo.h"
 #include "base/openssl_help.h"
 #include "base/random.h"
 #include "base/platform/base_platform_info.h"
@@ -15,8 +17,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/linux/base_linux_xdp_utilities.h"
 #include "base/platform/linux/base_linux_app_launch_context.h"
 #include "base/platform/base_platform_process.h"
-#include "ayu/ayu_settings.h"
-#include "ayu/ui/ayu_logo.h"
 #include "lang/lang_keys.h"
 #include "core/launcher.h"
 #include "core/sandbox.h"
@@ -41,8 +41,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <xdpopenuri/xdpopenuri.hpp>
 #include <xdprequest/xdprequest.hpp>
 
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <cstdlib>
@@ -466,15 +466,19 @@ bool GenerateServiceFile(bool silent = false) {
 	return true;
 }
 
-void InstallLauncher() {
+[[nodiscard]] bool LauncherInstallDisabled() {
 	static const auto DisabledByEnv = !qEnvironmentVariableIsEmpty(
 		"DESKTOPINTEGRATION");
 
 	// don't update desktop file for alpha version or if updater is disabled
-	if (cAlphaVersion()
-			|| Core::UpdaterDisabled()
-			|| KSandbox::isInside()
-			|| DisabledByEnv) {
+	return cAlphaVersion()
+		|| Core::UpdaterDisabled()
+		|| KSandbox::isInside()
+		|| DisabledByEnv;
+}
+
+void InstallLauncher() {
+	if (LauncherInstallDisabled()) {
 		return;
 	}
 
@@ -860,7 +864,7 @@ QString ApplicationIconName() {
 }
 
 void UpdateLauncherIcon() {
-	if (KSandbox::isInside()) {
+	if (LauncherInstallDisabled()) {
 		return;
 	}
 	const auto name = AyuSettings::getInstance().appIcon();
