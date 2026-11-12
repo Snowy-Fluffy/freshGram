@@ -967,11 +967,11 @@ public:
 private:
 	AyuSettings();
 
-#ifdef Q_OS_LINUX
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
 	static constexpr auto kStreamerTogglesShown = true;
-#else // Q_OS_LINUX
+#else // !Q_OS_WIN && !Q_OS_MAC
 	static constexpr auto kStreamerTogglesShown = false;
-#endif // Q_OS_LINUX
+#endif // else for !Q_OS_WIN && !Q_OS_MAC
 
 	[[nodiscard]] uint64 getOverriddenGhostUserId(uint64 userId) const { return _useGlobalGhostMode.current() ? 0 : userId; }
 

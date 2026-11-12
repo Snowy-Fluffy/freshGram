@@ -19,9 +19,9 @@
 #include "ayu/utils/windows_utils.h"
 #endif
 
-#ifdef Q_OS_LINUX
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
 #include "platform/platform_specific.h"
-#endif
+#endif // !Q_OS_WIN && !Q_OS_MAC
 
 namespace AyuInfra {
 
@@ -52,12 +52,12 @@ void initIcon() {
 	reloadAppIconFromTaskBar();
 #endif
 
-#ifdef Q_OS_LINUX
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
 	// InstallLauncher() has just put the default icon back.
 	if (AyuSettings::getInstance().appIcon() != AyuAssets::DEFAULT_ICON) {
 		Platform::UpdateLauncherIcon();
 	}
-#endif
+#endif // !Q_OS_WIN && !Q_OS_MAC
 }
 
 void init() {

@@ -19,9 +19,9 @@
 #include "ayu/utils/windows_utils.h"
 #endif
 
-#ifdef Q_OS_LINUX
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
 #include "platform/platform_specific.h"
-#endif
+#endif // !Q_OS_WIN && !Q_OS_MAC
 
 namespace {
 
@@ -52,9 +52,9 @@ void applyIcon() {
 	reloadAppIconFromTaskBar();
 #endif
 
-#ifdef Q_OS_LINUX
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
 	Platform::UpdateLauncherIcon();
-#endif
+#endif // !Q_OS_WIN && !Q_OS_MAC
 
 	Window::OverrideApplicationIcon(AyuAssets::currentAppLogo());
 	Core::App().refreshApplicationIcon();
