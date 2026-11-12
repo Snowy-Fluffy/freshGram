@@ -41,6 +41,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <xdpopenuri/xdpopenuri.hpp>
 #include <xdprequest/xdprequest.hpp>
 
+#include <atomic>
+#include <mutex>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -867,43 +869,64 @@ void UpdateLauncherIcon() {
 	if (LauncherInstallDisabled()) {
 		return;
 	}
+	static auto Generation = std::atomic<int>(0);
+	static auto Mutex = std::mutex();
+
 	const auto name = AyuSettings::getInstance().appIcon();
 	const auto custom = (name != AyuAssets::DEFAULT_ICON);
 	const auto hicolor = QStandardPaths::writableLocation(
 		QStandardPaths::GenericDataLocation) + u"/icons/hicolor/"_q;
+	const auto iconName = ApplicationIconName();
+	const auto generation = ++Generation;
 
-	// Every size the package installs, or its own closer one is shown.
-	const auto sizes = { 16, 32, 48, 64, 128, 256, 512 };
-	for (const auto size : sizes) {
-		for (const auto scale : { 1, 2 }) {
-			const auto apps = hicolor
-				+ u"%1x%1%2/apps/"_q.arg(size).arg(
-					(scale > 1) ? u"@2"_q : QString());
-			const auto path = apps + ApplicationIconName() + u".png"_q;
-			QFile::remove(path);
-			if (custom) {
+	crl::async([=] {
+		const auto lock = std::lock_guard(Mutex);
+
+		// Every size the package installs, or its own closer one is shown.
+		const auto sizes = { 16, 32, 48, 64, 128, 256, 512 };
+		for (const auto size : sizes) {
+			for (const auto scale : { 1, 2 }) {
+				if (Generation != generation) {
+					return;
+				}
+				const auto apps = hicolor
+					+ u"%1x%1%2/apps/"_q.arg(size).arg(
+						(scale > 1) ? u"@2"_q : QString());
+				const auto path = apps + iconName + u".png"_q;
+				QFile::remove(path);
+				if (!custom) {
+					continue;
+				}
 				QDir().mkpath(apps);
-				AyuAssets::appLogo(name, size * scale).save(path, "PNG");
+				if (!AyuAssets::appLogo(name, size * scale).save(path, "PNG")) {
+					LOG(("App Error: Could not save icon '%1'.").arg(path));
+				}
 			}
 		}
-	}
-	if (!custom) {
-		InstallLauncher();
-	}
 
-	// WHY: shells reload a theme only when its folder changes, and look
-	// again after update-desktop-database; Qt keeps the folders it found
-	// until the search paths are set, even to the same ones.
-	utimensat(
-		AT_FDCWD,
-		QFile::encodeName(hicolor).constData(),
-		nullptr,
-		0);
-	QProcess::startDetached(u"update-desktop-database"_q, {
-		QStandardPaths::writableLocation(
-			QStandardPaths::ApplicationsLocation),
+		crl::on_main([=] {
+			if (Generation != generation) {
+				return;
+			}
+			if (!custom) {
+				InstallLauncher();
+			}
+
+			// WHY: shells reload a theme only when its folder changes, and
+			// look again after update-desktop-database; Qt keeps the folders
+			// it found until the search paths are set, even to the same ones.
+			utimensat(
+				AT_FDCWD,
+				QFile::encodeName(hicolor).constData(),
+				nullptr,
+				0);
+			QProcess::startDetached(u"update-desktop-database"_q, {
+				QStandardPaths::writableLocation(
+					QStandardPaths::ApplicationsLocation),
+			});
+			QIcon::setThemeSearchPaths(QIcon::themeSearchPaths());
+		});
 	});
-	QIcon::setThemeSearchPaths(QIcon::themeSearchPaths());
 }
 
 void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail) {
