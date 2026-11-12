@@ -4390,7 +4390,11 @@ bool Message::getStateFromName(
 			}
 		}();
 
-		const auto statusWidth = (from && _fromNameStatus)
+		const auto hidePremiumStatuses
+			= AyuSettings::getInstance().hidePremiumStatuses();
+		const auto statusWidth = (from
+			&& _fromNameStatus
+			&& !hidePremiumStatuses)
 			? st::dialogsPremiumIcon.icon.width()
 			: 0;
 		const auto via = item->Get<HistoryMessageVia>();
@@ -4448,7 +4452,7 @@ bool Message::getStateFromName(
 		}
 
 		const auto skipWidth = nameWidth
-			+ (_fromNameStatus
+			+ (statusWidth
 				? (st::dialogsPremiumIcon.icon.width()
 					+ st::msgServiceFont->spacew)
 				: 0)

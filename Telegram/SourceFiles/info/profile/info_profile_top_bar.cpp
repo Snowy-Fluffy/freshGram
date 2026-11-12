@@ -1957,7 +1957,7 @@ void TopBar::setupPluginBadges(
 
 	const auto refresh = [=] {
 		state->list = FreshPlugins::BadgesFor(_peer);
-		state->side = std::clamp(_title->height() * 3 / 4, 12, 24);
+		state->side = _title->st().style.font->height;
 		widget->resize(
 			FreshPlugins::BadgesWidth(state->list, state->side),
 			state->side);

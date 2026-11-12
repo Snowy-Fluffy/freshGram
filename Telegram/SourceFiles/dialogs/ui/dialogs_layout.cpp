@@ -976,6 +976,19 @@ void PaintRow(
 					- muteIcon.width()
 					- st::dialogsMuteIconSkip);
 		}
+		const auto pluginBadges = (history && !context.search)
+			? FreshPlugins::BadgesFor(from)
+			: std::vector<FreshPlugins::PluginBadge>();
+		const auto pluginSide = st::semiboldFont->height;
+		const auto pluginSkip = pluginBadges.empty()
+			? 0
+			: (FreshPlugins::BadgesWidth(pluginBadges, pluginSide)
+				+ st::dialogsChatTypeSkip);
+		const auto pluginShown = (pluginSkip > 0)
+			&& (pluginSkip < rectForName.width());
+		if (pluginShown) {
+			rectForName.setWidth(rectForName.width() - pluginSkip);
+		}
 		auto badgeWidth = 0;
 		if ((history || sublist) && !context.search) {
 			const auto widthBefore = rectForName.width();
@@ -1009,47 +1022,36 @@ void PaintRow(
 			muteIcon.paint(p, muteLeft, muteTop, context.width);
 		}
 		auto badgeRects = std::vector<QRect>();
-		if (history && !context.search) {
-			const auto badges = FreshPlugins::BadgesFor(from);
-			if (!badges.empty()) {
-				const auto side = st::semiboldFont->height;
-				const auto muteExtra = drawMuteIcon
-					? (ThreeStateIcon(
-						st::dialogsMuteIcon,
-						context.active,
-						context.selected).width()
-						+ st::dialogsMuteIconSkip)
-					: 0;
-				const auto left = rectForName.left()
-					+ std::min(rowName.maxWidth(), rectForName.width())
-					+ badgeWidth
-					+ muteExtra
-					+ st::dialogsChatTypeSkip;
-				const auto limit = rectForName.left()
-					+ rectForName.width()
-					+ badgeWidth
-					+ muteExtra;
-				const auto badgesWidth = FreshPlugins::BadgesWidth(badges, side);
-				if (left + badgesWidth <= limit) {
-					const auto top = rectForName.top();
-					FreshPlugins::PaintBadges(
-						p,
-						left,
-						top,
-						side,
-						context.width,
-						badges,
-						(context.active
-							? st::dialogsNameFgActive
-							: context.selected
-							? st::dialogsNameFgOver
-							: st::dialogsNameFg)->c);
-					for (auto i = 0; i != int(badges.size()); ++i) {
-						badgeRects.push_back(style::rtlrect(
-							FreshPlugins::BadgeRect(i, left, top, side),
-							context.width));
-					}
-				}
+		if (pluginShown) {
+			const auto muteExtra = drawMuteIcon
+				? (ThreeStateIcon(
+					st::dialogsMuteIcon,
+					context.active,
+					context.selected).width()
+					+ st::dialogsMuteIconSkip)
+				: 0;
+			const auto left = rectForName.left()
+				+ std::min(rowName.maxWidth(), rectForName.width())
+				+ badgeWidth
+				+ muteExtra
+				+ st::dialogsChatTypeSkip;
+			const auto top = rectForName.top();
+			FreshPlugins::PaintBadges(
+				p,
+				left,
+				top,
+				pluginSide,
+				context.width,
+				pluginBadges,
+				(context.active
+					? st::dialogsNameFgActive
+					: context.selected
+					? st::dialogsNameFgOver
+					: st::dialogsNameFg)->c);
+			for (auto i = 0; i != int(pluginBadges.size()); ++i) {
+				badgeRects.push_back(style::rtlrect(
+					FreshPlugins::BadgeRect(i, left, top, pluginSide),
+					context.width));
 			}
 		}
 		FreshPlugins::NoteListBadges(entry, std::move(badgeRects));

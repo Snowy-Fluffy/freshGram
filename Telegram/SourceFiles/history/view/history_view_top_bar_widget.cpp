@@ -778,6 +778,16 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			nameleft += trash.width() + st::dialogsChatTypeSkip;
 			namewidth -= trash.width() + st::dialogsChatTypeSkip;
 		}
+		const auto pluginBadges = FreshPlugins::BadgesFor(namePeer);
+		const auto pluginSide = st::msgNameStyle.font->height;
+		const auto pluginSkip = pluginBadges.empty()
+			? 0
+			: (FreshPlugins::BadgesWidth(pluginBadges, pluginSide)
+				+ st::dialogsChatTypeSkip);
+		const auto pluginShown = (pluginSkip > 0) && (pluginSkip < namewidth);
+		if (pluginShown) {
+			namewidth -= pluginSkip;
+		}
 		const auto badgeWidth = _titleBadge.drawGetWidth(p, {
 			.peer = namePeer,
 			.rectForName = QRect(
@@ -798,7 +808,6 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			.paused = _controller->isGifPausedAtLeastFor(
 				Window::GifPauseReason::Any),
 		});
-		const auto nameLimit = nameleft + namewidth;
 		namewidth -= badgeWidth;
 
 		p.setPen(st::dialogsNameFg);
@@ -807,26 +816,25 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			.availableWidth = namewidth,
 			.elisionLines = 1,
 		});
-		if (const auto badges = FreshPlugins::BadgesFor(namePeer); !badges.empty()) {
-			const auto side = st::msgNameStyle.font->height;
+		if (pluginShown) {
 			const auto badgesLeft = nameleft
-				+ std::min(_title.maxWidth(), namewidth)
+				+ std::min(_title.maxWidth(), std::max(namewidth, 0))
 				+ badgeWidth
 				+ st::dialogsChatTypeSkip;
-			const auto badgesWidth = FreshPlugins::BadgesWidth(badges, side);
-			if (badgesLeft + badgesWidth <= nameLimit) {
-				FreshPlugins::PaintBadges(
-					p,
+			FreshPlugins::PaintBadges(
+				p,
+				badgesLeft,
+				nametop,
+				pluginSide,
+				width(),
+				pluginBadges,
+				st::dialogsNameFg->c);
+			for (auto i = 0; i != int(pluginBadges.size()); ++i) {
+				_pluginBadgeRects.push_back(myrtlrect(FreshPlugins::BadgeRect(
+					i,
 					badgesLeft,
 					nametop,
-					side,
-					width(),
-					badges,
-					st::dialogsNameFg->c);
-				for (auto i = 0; i != int(badges.size()); ++i) {
-					_pluginBadgeRects.push_back(myrtlrect(
-						FreshPlugins::BadgeRect(i, badgesLeft, nametop, side)));
-				}
+					pluginSide)));
 			}
 		}
 
