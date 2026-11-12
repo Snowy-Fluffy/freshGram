@@ -505,6 +505,33 @@ struct BoldFace {
 	return result;
 }
 
+[[nodiscard]] std::optional<BoldFace> FindSemiboldFace(
+		const QString &family,
+		bool italic) {
+	auto result = std::optional<BoldFace>();
+	auto distance = 10000;
+	const auto consider = [&](const QString &candidate) {
+		for (const auto &style : DatabaseStyles(candidate)) {
+			if (DatabaseItalic(candidate, style) != italic) {
+				continue;
+			}
+			const auto weight = DatabaseWeight(candidate, style);
+			if (weight < int(QFont::Medium) || weight >= int(QFont::Bold)) {
+				continue;
+			}
+			const auto delta = std::abs(weight - int(QFont::DemiBold));
+			if (delta < distance) {
+				distance = delta;
+				result = BoldFace{ candidate, weight };
+			}
+		}
+	};
+	consider(family);
+	consider(family + u" Semibold"_q);
+	consider(family + u" SemiBold"_q);
+	return result;
+}
+
 [[nodiscard]] FontResolveResult ResolveFont(
 		const QString &family,
 		FontFlags flags,
@@ -546,12 +573,23 @@ struct BoldFace {
 				font.setWeight(QFont::Weight(face->weight));
 			} else if (!overriden && !system) {
 				if (AyuUiSettings::isTelegramDesign()) {
-					font.setWeight(QFont::DemiBold);
-					const auto style = QFontInfo(font).styleName();
-					if (!style.isEmpty() && !style.startsWith(
-							"Semibold",
-							Qt::CaseInsensitive)) {
-						font.setBold(true);
+					// WHY: Windows lists Open Sans Semibold under its own
+					// family, so the style name never says "Semibold" there
+					// and the fallback below turned every label full bold.
+					const auto semibold = FindSemiboldFace(
+						font.family(),
+						(flags & FontFlag::Italic) != 0);
+					if (semibold) {
+						font.setFamily(semibold->family);
+						font.setWeight(QFont::Weight(semibold->weight));
+					} else {
+						font.setWeight(QFont::DemiBold);
+						const auto style = QFontInfo(font).styleName();
+						if (!style.isEmpty() && !style.startsWith(
+								"Semibold",
+								Qt::CaseInsensitive)) {
+							font.setBold(true);
+						}
 					}
 				} else if (IsFagramDesign() && !(flags & FontFlag::Italic)) {
 					font.setWeight(QFont::Medium);
@@ -631,6 +669,9 @@ void StartFonts() {
 	}
 
 	auto families = QStringList{ name, name + u" Medium"_q };
+	if (AyuUiSettings::isTelegramDesign()) {
+		families.push_back(name + u" Semibold"_q);
+	}
 	if (IsFagramDesign()) {
 		families.push_back(u"Google Sans"_q);
 		families.push_back(u"Google Sans Medium"_q);

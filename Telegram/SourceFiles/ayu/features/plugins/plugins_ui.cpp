@@ -4591,18 +4591,28 @@ void StoreBadges(
 
 void ForgetBadges(const std::string &plugin) {
 	auto &store = GetBadgeStore();
+	auto users = std::vector<int64_t>();
 	for (auto i = store.users.begin(); i != store.users.end();) {
 		auto &list = i->second;
+		const auto was = list.size();
 		list.erase(
 			std::remove_if(list.begin(), list.end(), [&](const PluginBadge &badge) {
 				return badge.plugin == plugin;
 			}),
 			list.end());
+		if (list.size() != was) {
+			users.push_back(i->first.second);
+		}
 		i = list.empty() ? store.users.erase(i) : std::next(i);
+	}
+	if (users.empty()) {
+		return;
 	}
 	GlyphCache().clear();
 	store.changes.fire({});
-	RefreshBadgeViews(0);
+	for (const auto user : users) {
+		RefreshBadgeViews(user);
+	}
 }
 
 namespace {
