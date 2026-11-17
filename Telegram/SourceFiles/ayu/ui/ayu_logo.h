@@ -26,6 +26,21 @@ ICON(PLANE, "plane");
 ICON(WHEELOLD, "wheelold");
 ICON(SEGMENT, "segment");
 
+// Icons the user uploads live in tdata/custom_icons/<id>.png
+// and are stored in the appIcon setting as "custom:<id>"
+[[nodiscard]] bool isCustomIcon(const QString &name);
+[[nodiscard]] QString customIconPath(const QString &name);
+[[nodiscard]] QStringList customIcons();
+
+// Returns the new icon name, or an empty string if the image is unreadable
+[[nodiscard]] QString importCustomIcon(
+	const QString &path,
+	const QByteArray &content);
+void removeCustomIcon(const QString &name);
+
+// A custom icon whose file is gone falls back to the default one
+[[nodiscard]] QString resolvedIconName(const QString &name);
+
 void loadAppIco();
 QString appIcoPath();
 

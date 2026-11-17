@@ -10,10 +10,19 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/ui/ayu_logo.h"
 #include "core/application.h"
+#include "core/file_utilities.h"
+#include "lang/lang_keys.h"
 #include "main/main_domain.h"
 #include "styles/style_ayu_styles.h"
+#include "styles/style_basic.h"
+#include "styles/style_menu_icons.h"
+#include "styles/style_widgets.h"
 #include "ui/painter.h"
+#include "ui/toast/toast.h"
+#include "ui/widgets/popup_menu.h"
 #include "window/main_window.h"
+
+#include <QtGui/QContextMenuEvent>
 
 #ifdef Q_OS_WIN
 #include "ayu/utils/windows_utils.h"
@@ -25,7 +34,7 @@
 
 namespace {
 
-const QVector<QString> icons{
+const QVector<QString> builtInIcons{
 	AyuAssets::DEFAULT_ICON,
 	AyuAssets::ALT_ICON,
 	AyuAssets::DISCORD_ICON,
@@ -43,8 +52,11 @@ const QVector<QString> icons{
 	AyuAssets::SEGMENT_ICON,
 };
 
-const auto rows = static_cast<int>(icons.size()) / IconPicker::kColumns
-	+ std::min(1, static_cast<int>(icons.size()) % IconPicker::kColumns);
+[[nodiscard]] QString CustomIconFilter() {
+	return u"Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.svg)"_q
+		+ u";;"_q
+		+ FileDialog::AllFilesFilter();
+}
 
 void applyIcon() {
 #ifdef Q_OS_WIN
@@ -66,13 +78,41 @@ void applyIcon() {
 
 IconPicker::IconPicker(QWidget *parent)
 	: RpWidget(parent) {
+	setMouseTracking(true);
+	refreshIcons();
 	widthValue() | rpl::on_next([=](int w) {
-		const auto cell = w / kColumns;
-		const auto iconSize = st::iconPickerIconSize;
-		const auto contentSize = iconSize + st::iconPickerImagePadding * 2;
-		const auto h = rows * cell - (cell - contentSize);
-		resize(w, h);
+		updateHeight(w);
 	}, lifetime());
+}
+
+IconPicker::~IconPicker() = default;
+
+void IconPicker::refreshIcons() {
+	_icons.assign(builtInIcons.begin(), builtInIcons.end());
+	for (const auto &name : AyuAssets::customIcons()) {
+		_icons.push_back(name);
+	}
+	updateHeight(width());
+	update();
+}
+
+int IconPicker::rows() const {
+	const auto cells = static_cast<int>(_icons.size()) + 1;
+	return (cells + kColumns - 1) / kColumns;
+}
+
+void IconPicker::updateHeight(int w) {
+	const auto cell = w / kColumns;
+	const auto iconSize = st::iconPickerIconSize;
+	const auto contentSize = iconSize + st::iconPickerImagePadding * 2;
+	const auto h = rows() * cell - (cell - contentSize);
+	if (height() != h) {
+		resize(w, h);
+	}
+}
+
+bool IconPicker::isAddCell(int index) const {
+	return (index == static_cast<int>(_icons.size()));
 }
 
 void IconPicker::drawIcon(QPainter &p, const QImage &icon, int x, int y, float strokeOpacity) {
@@ -102,8 +142,49 @@ void IconPicker::drawIcon(QPainter &p, const QImage &icon, int x, int y, float s
 	p.drawImage(rect, icon);
 }
 
+void IconPicker::drawAddButton(QPainter &p, int x, int y) {
+	const auto inner = st::iconPickerImagePadding * 2;
+	const auto rect = QRect(
+		x + inner,
+		y + inner,
+		st::iconPickerIconSize - inner * 2 + st::iconPickerImagePadding * 2,
+		st::iconPickerIconSize - inner * 2 + st::iconPickerImagePadding * 2);
+
+	PainterHighQualityEnabler hq(p);
+	p.save();
+	p.setPen(Qt::NoPen);
+	p.setBrush(st::boxDividerBg);
+	p.drawEllipse(rect);
+
+	const auto half = rect.width() / 6;
+	const auto center = rect.center();
+	auto pen = st::windowSubTextFg->p;
+	pen.setWidth(st::lineWidth * 3);
+	pen.setCapStyle(Qt::RoundCap);
+	p.setPen(pen);
+	p.drawLine(center.x() - half, center.y(), center.x() + half, center.y());
+	p.drawLine(center.x(), center.y() - half, center.x(), center.y() + half);
+	p.restore();
+}
+
 int IconPicker::cellWidth() const {
 	return width() / kColumns;
+}
+
+int IconPicker::cellAt(QPoint position) const {
+	const auto cell = cellWidth();
+	const auto iconSize = st::iconPickerIconSize;
+	const auto cells = static_cast<int>(_icons.size()) + 1;
+
+	for (auto idx = 0; idx < cells; ++idx) {
+		const auto x = (idx % kColumns) * cell + (cell - iconSize) / 2;
+		const auto y = (idx / kColumns) * cell;
+		if (position.x() >= x && position.x() <= x + iconSize
+			&& position.y() >= y && position.y() <= y + iconSize) {
+			return idx;
+		}
+	}
+	return -1;
 }
 
 void IconPicker::paintEvent(QPaintEvent *e) {
@@ -111,83 +192,132 @@ void IconPicker::paintEvent(QPaintEvent *e) {
 
 	const auto cell = cellWidth();
 	const auto iconSize = st::iconPickerIconSize;
+	const auto cells = static_cast<int>(_icons.size()) + 1;
 
-	for (int row = 0; row < rows; row++) {
-		const auto columns = std::min(kColumns, static_cast<int>(icons.size()) - row * kColumns);
-		for (int i = 0; i < columns; i++) {
-			auto const idx = i + row * kColumns;
+	for (auto idx = 0; idx < cells; ++idx) {
+		const auto x = (idx % kColumns) * cell + (cell - iconSize) / 2;
+		const auto y = (idx / kColumns) * cell;
 
-			const auto &iconName = icons[idx];
-			if (iconName.isEmpty()) {
-				continue;
-			}
-			QImage icon;
-			if (const auto cached = _cachedIcons.find(iconName); cached != _cachedIcons.end()) {
-				icon = cached->second;
-			} else {
-				icon = _cachedIcons[iconName] = AyuAssets::loadPreview(iconName);
-			}
-			auto opacity = 0.0f;
-			if (iconName == _wasSelected) {
-				opacity = 1.0f - _animation.value(1.0f);
-			} else if (iconName == AyuAssets::currentAppLogoName()) {
-				opacity = _wasSelected.isEmpty() ? 1.0f : _animation.value(1.0f);
-			}
-
-			const auto x = i * cell + (cell - iconSize) / 2;
-			const auto y = row * cell;
-
-			drawIcon(p, icon, x, y, opacity);
+		if (isAddCell(idx)) {
+			drawAddButton(p, x, y);
+			continue;
 		}
+
+		const auto &iconName = _icons[idx];
+		QImage icon;
+		if (const auto cached = _cachedIcons.find(iconName); cached != _cachedIcons.end()) {
+			icon = cached->second;
+		} else {
+			icon = _cachedIcons[iconName] = AyuAssets::loadPreview(iconName);
+		}
+		auto opacity = 0.0f;
+		if (iconName == _wasSelected) {
+			opacity = 1.0f - _animation.value(1.0f);
+		} else if (iconName == AyuAssets::currentAppLogoName()) {
+			opacity = _wasSelected.isEmpty() ? 1.0f : _animation.value(1.0f);
+		}
+
+		drawIcon(p, icon, x, y, opacity);
 	}
 }
 
 void IconPicker::mousePressEvent(QMouseEvent *e) {
-	const auto &settings = AyuSettings::getInstance();
-	auto changed = false;
+	if (e->button() != Qt::LeftButton) {
+		return;
+	}
+	const auto idx = cellAt(e->pos());
+	if (idx < 0) {
+		return;
+	} else if (isAddCell(idx)) {
+		chooseCustomIcon();
+	} else {
+		selectIcon(_icons[idx]);
+	}
+}
 
-	const auto cell = cellWidth();
-	const auto iconSize = st::iconPickerIconSize;
+void IconPicker::mouseMoveEvent(QMouseEvent *e) {
+	setCursor((cellAt(e->pos()) >= 0)
+		? style::cur_pointer
+		: style::cur_default);
+}
 
-	for (int row = 0; row < rows; row++) {
-		const auto columns = std::min(kColumns, static_cast<int>(icons.size()) - row * kColumns);
-		for (int i = 0; i < columns; i++) {
-			auto const idx = i + row * kColumns;
+void IconPicker::contextMenuEvent(QContextMenuEvent *e) {
+	const auto idx = cellAt(e->pos());
+	if (idx < 0 || isAddCell(idx)) {
+		return;
+	}
+	const auto name = _icons[idx];
+	if (!AyuAssets::isCustomIcon(name)) {
+		return;
+	}
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
+	_menu->addAction(
+		tr::ayu_AppIconRemoveCustom(tr::now),
+		crl::guard(this, [=] { removeCustomIcon(name); }),
+		&st::menuIconDelete);
+	_menu->popup(e->globalPos());
+}
 
-			const auto x = i * cell + (cell - iconSize) / 2;
-			const auto y = row * cell;
+void IconPicker::selectIcon(const QString &name) {
+	auto &settings = AyuSettings::getInstance();
+	if (settings.appIcon() == name) {
+		return;
+	}
+	_wasSelected = settings.appIcon();
+	_animation.start(
+		[=]
+		{
+			update();
+		},
+		0.0,
+		1.0,
+		200,
+		anim::easeOutCubic
+	);
 
-			if (e->pos().x() >= x && e->pos().x() <= x + iconSize
-				&& e->pos().y() >= y && e->pos().y() <= y + iconSize) {
-				const auto &iconName = icons[idx];
-				if (iconName.isEmpty()) {
-					break;
-				}
+	settings.setAppIcon(name);
+	applyIcon();
 
-				if (settings.appIcon() != iconName) {
-					_wasSelected = settings.appIcon();
-					_animation.start(
-						[=]
-						{
-							update();
-						},
-						0.0,
-						1.0,
-						200,
-						anim::easeOutCubic
-					);
+	repaint();
+}
 
-					AyuSettings::getInstance().setAppIcon(iconName);
-					changed = true;
-					break;
-				}
-			}
+void IconPicker::chooseCustomIcon() {
+	const auto callback = crl::guard(this, [=](
+			FileDialog::OpenResult &&result) {
+		const auto path = result.paths.isEmpty()
+			? QString()
+			: result.paths.front();
+		const auto name = AyuAssets::importCustomIcon(
+			path,
+			result.remoteContent);
+		if (name.isEmpty()) {
+			Ui::Toast::Show(tr::ayu_AppIconLoadFailed(tr::now));
+			return;
 		}
-	}
+		refreshIcons();
+		selectIcon(name);
+	});
+	FileDialog::GetOpenPath(
+		this,
+		tr::ayu_AppIconChooseFile(tr::now),
+		CustomIconFilter(),
+		callback);
+}
 
-	if (changed) {
+void IconPicker::removeCustomIcon(const QString &name) {
+	auto &settings = AyuSettings::getInstance();
+	if (settings.appIcon() == name) {
+		_wasSelected = QString();
+		_animation.stop();
+		settings.setAppIcon(AyuAssets::DEFAULT_ICON);
 		applyIcon();
-
-		repaint();
 	}
+	AyuAssets::removeCustomIcon(name);
+	_cachedIcons.erase(name);
+	if (_wasSelected == name) {
+		_wasSelected = QString();
+	}
+	refreshIcons();
 }

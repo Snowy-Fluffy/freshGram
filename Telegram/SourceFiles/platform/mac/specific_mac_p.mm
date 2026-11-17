@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <IOKit/hidsystem/ev_keymap.h>
 
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/ayu_logo.h"
 
 
 using Platform::Q2NSString;
@@ -192,7 +193,21 @@ void SetApplicationIcon(const QIcon &icon) {
         return;
     }
 
-	const auto name = QString("AppIcon-") + settings.appIcon()[0].toUpper() + settings.appIcon().mid(1);
+	const auto iconName = AyuAssets::resolvedIconName(settings.appIcon());
+	if (AyuAssets::isCustomIcon(iconName)) {
+		// Uploaded icons are not in the bundle, so the Dock shows them
+		// only while the app is runnin
+		@autoreleasepool {
+			NSImage *icon = [[[NSImage alloc] initWithContentsOfFile:Q2NSString(
+				AyuAssets::customIconPath(iconName))] autorelease];
+			if (icon) {
+				NSApplication.sharedApplication.applicationIconImage = icon;
+			}
+		}
+		return;
+	}
+
+	const auto name = QString("AppIcon-") + iconName[0].toUpper() + iconName.mid(1);
     @autoreleasepool {
         if (name == QString("AppIcon-Default")) {
             NSApplication.sharedApplication.applicationIconImage = nil;

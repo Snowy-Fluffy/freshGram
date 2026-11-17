@@ -513,6 +513,9 @@
 "ayu_FiltersClearPopupActionText" = "清空";
 "ayu_FiltersClearPopupAltActionText" = "清空未知项";
 "ayu_AppIconHeader" = "应用图标";
+"ayu_AppIconChooseFile" = "选择应用图标图片";
+"ayu_AppIconRemoveCustom" = "删除图标";
+"ayu_AppIconLoadFailed" = "无法读取此图片。";
 "ayu_IconDefault" = "默认";
 "ayu_IconAlternative" = "备用";
 "ayu_WALMode" = "启用 WAL 模式";

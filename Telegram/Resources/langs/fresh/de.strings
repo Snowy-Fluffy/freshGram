@@ -521,6 +521,9 @@
 "ayu_FiltersClearPopupActionText" = "Leeren";
 "ayu_FiltersClearPopupAltActionText" = "Unbekannte leeren";
 "ayu_AppIconHeader" = "App-Symbol";
+"ayu_AppIconChooseFile" = "Bild für das App-Symbol auswählen";
+"ayu_AppIconRemoveCustom" = "Symbol entfernen";
+"ayu_AppIconLoadFailed" = "Dieses Bild konnte nicht gelesen werden.";
 "ayu_IconDefault" = "Standard";
 "ayu_IconAlternative" = "Alternativ";
 "ayu_WALMode" = "WAL-Modus aktivieren";

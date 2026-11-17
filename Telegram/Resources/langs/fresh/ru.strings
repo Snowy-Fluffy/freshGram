@@ -554,6 +554,9 @@
 "ayu_FiltersClearPopupActionText" = "Очистить";
 "ayu_FiltersClearPopupAltActionText" = "Очистить неизвестные";
 "ayu_AppIconHeader" = "Значок приложения";
+"ayu_AppIconChooseFile" = "Выберите изображение для значка";
+"ayu_AppIconRemoveCustom" = "Удалить значок";
+"ayu_AppIconLoadFailed" = "Не удалось прочитать это изображение.";
 "ayu_IconDefault" = "По умолчанию";
 "ayu_IconAlternative" = "Альтернативный";
 "ayu_WALMode" = "Включить режим WAL";

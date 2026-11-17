@@ -9322,6 +9322,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_FiltersClearPopupActionText" = "Clear";
 "ayu_FiltersClearPopupAltActionText" = "Clear unknown";
 "ayu_AppIconHeader" = "App Icon";
+"ayu_AppIconChooseFile" = "Choose an image for the app icon";
+"ayu_AppIconRemoveCustom" = "Remove icon";
+"ayu_AppIconLoadFailed" = "Could not read this image.";
 "ayu_IconDefault" = "Default";
 "ayu_IconAlternative" = "Alt";
 "ayu_IconDiscord" = "Discord";
