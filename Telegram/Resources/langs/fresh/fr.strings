@@ -529,6 +529,9 @@
 "ayu_FiltersClearPopupActionText" = "Effacer";
 "ayu_FiltersClearPopupAltActionText" = "Effacer les inconnus";
 "ayu_AppIconHeader" = "Icône de l'application";
+"ayu_AppIconChooseFile" = "Choisir une image pour l'icône";
+"ayu_AppIconRemoveCustom" = "Supprimer l'icône";
+"ayu_AppIconLoadFailed" = "Impossible de lire cette image.";
 "ayu_IconDefault" = "Par défaut";
 "ayu_IconAlternative" = "Alternative";
 "ayu_WALMode" = "Activer le mode WAL";
