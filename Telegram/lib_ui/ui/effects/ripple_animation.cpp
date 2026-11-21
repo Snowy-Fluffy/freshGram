@@ -133,6 +133,12 @@ void RippleAnimation::Ripple::paint(
 		Assert(!std::isnan(diff));
 		const auto mult = diff * shown;
 		Assert(!std::isnan(mult));
+		if (_frame.isNull()) {
+			// _frame is moved into _cache once the ripple is fully shown,
+			// but a repaint with a color override regenerates it.
+			_frame = QImage(mask.size(), QImage::Format_ARGB32_Premultiplied);
+			_frame.setDevicePixelRatio(mask.devicePixelRatio());
+		}
 		const auto interpolated = _radiusFrom + mult;
 		//anim::interpolateF(_radiusFrom, _radiusTo, shown);
 		Assert(!std::isnan(interpolated));
@@ -182,7 +188,8 @@ void RippleAnimation::Ripple::paint(
 				const auto bpl = noise.bytesPerLine() / 4;
 				const auto w = _frame.width();
 				const auto h = _frame.height();
-				for (auto by = 0; by < _noiseBlockH; ++by) {
+				const auto blocksH = noisePixels ? _noiseBlockH : 0;
+				for (auto by = 0; by < blocksH; ++by) {
 					for (auto bx = 0; bx < _noiseBlockW; ++bx) {
 						const auto random = _noisePattern[by * _noiseBlockW + bx];
 						if (random > 230) {
